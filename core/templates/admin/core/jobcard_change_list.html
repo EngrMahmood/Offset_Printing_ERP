@@ -1,0 +1,15 @@
+{% extends "admin/change_list.html" %}
+
+{% block object-tools-items %}
+
+    <!-- DEFAULT: Add Job Card -->
+    {{ block.super }}
+
+    <!-- CUSTOM: Bulk Upload -->
+    <li>
+        <a href="{% url 'admin:jobcard_bulk_upload' %}" class="addlink">
+            📥 Bulk Upload
+        </a>
+    </li>
+
+{% endblock %}

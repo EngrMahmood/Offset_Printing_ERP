@@ -1,11 +1,9 @@
 from django.contrib import admin
-from django.utils.html import format_html
-from django.urls import path
+from django.urls import path, reverse
 from django.template.response import TemplateResponse
-from django.utils.safestring import mark_safe
+from django.utils.html import format_html
 
-from .models import JobCard, Production, Dispatch
-from .models import Machine, Department, Material
+from .models import JobCard, Production, Dispatch, Machine, Department, Material
 
 
 # =========================
@@ -23,12 +21,17 @@ class DispatchInline(admin.TabularInline):
 
 
 # =========================
-# JOB CARD ADMIN (MAIN ERP SCREEN)
+# JOB CARD ADMIN (ERP CORE)
 # =========================
 
 @admin.register(JobCard)
 class JobCardAdmin(admin.ModelAdmin):
 
+    change_list_template = "admin/core/jobcard_change_list.html"
+
+    # -------------------------
+    # LIST VIEW (ONLY KPIs)
+    # -------------------------
     list_display = (
         'job_card_no',
         'SKU',
@@ -37,47 +40,8 @@ class JobCardAdmin(admin.ModelAdmin):
         'total_dispatch',
         'balance_qty',
         'job_status',
-        'waste_percentage',
-        'bulk_upload_button'
+        'waste_percentage'
     )
-
-
-# =========================
-    # BUTTON IN LIST VIEW
-    # =========================
-    def bulk_upload_button(self, obj):
-        return mark_safe(
-            '<a class="button" style="background:#417690;color:white;padding:5px 10px;border-radius:5px;text-decoration:none;" href="/admin/core/jobcard/bulk-upload/">📥 Bulk Upload</a>'
-        )
-
-    bulk_upload_button.short_description = "Bulk Upload"
-
-    # =========================
-    # CUSTOM URL INSIDE ADMIN
-    # =========================
-    def get_urls(self):
-        urls = super().get_urls()
-        custom_urls = [
-            path(
-                'bulk-upload/',
-                self.admin_site.admin_view(self.bulk_upload_view),
-                name='jobcard_bulk_upload'
-            )
-        ]
-        return custom_urls + urls
-
-    def bulk_upload_view(self, request):
-        from django.shortcuts import render
-        from .bulk_upload import process_jobcard_upload
-
-        context = {}
-
-        if request.method == "POST":
-            file = request.FILES['file']
-            result = process_jobcard_upload(file)
-            context = result
-
-        return TemplateResponse(request, "admin/bulk_upload.html", context)
 
     list_filter = (
         'created_at',
@@ -96,24 +60,102 @@ class JobCardAdmin(admin.ModelAdmin):
 
     inlines = [ProductionInline, DispatchInline]
 
-    # OPTIONAL: show nice layout in form
+    # -------------------------
+    # ADD / EDIT FORM (ALL FIELDS)
+    # -------------------------
     fieldsets = (
-        ("Basic Info", {
-            "fields": ("job_card_no", "SKU", "PO_No", "po_date", "month")
+        ("Basic Information", {
+            "fields": (
+                "job_card_no",
+                "SKU",
+                "PO_No",
+                "po_date",
+                "month"
+            )
         }),
+
+        ("Material Details", {
+            "fields": (
+                "material",
+                "colour",
+                "application"
+            )
+        }),
+
         ("Production Details", {
-            "fields": ("order_qty", "ups", "wastage")
+            "fields": (
+                "order_qty",
+                "ups",
+                "wastage",
+                "actual_sheet_required"
+            )
         }),
-        ("Material Info", {
-            "fields": ("material", "colour", "application")
+
+        ("Printing Details", {
+            "fields": (
+                "print_sheet_size",
+                "purchase_sheet_size",
+                "purchase_sheet_ups"
+            )
         }),
-        ("Machine Info", {
-            "fields": ("machine_name", "department", "die_cutting")
+
+        ("Machine & Department", {
+            "fields": (
+                "machine_name",
+                "department",
+                "die_cutting"
+            )
         }),
-        ("Other Info", {
-            "fields": ("destination", "remarks", "status", "is_active")
+
+        ("Extra Information", {
+            "fields": (
+                "destination",
+                "remarks",
+                "status",
+                "is_active"
+            )
         }),
     )
+
+    # -------------------------
+    # BULK UPLOAD BUTTON
+    # -------------------------
+    def bulk_upload_button(self, obj):
+        url = reverse('admin:jobcard_bulk_upload')
+
+        return format_html(
+            '<a class="button" style="background:#417690;color:white;padding:5px 10px;border-radius:5px;text-decoration:none;" href="{}">📥 Bulk Upload</a>',
+            url
+        )
+
+    bulk_upload_button.short_description = "Bulk Upload"
+
+    # -------------------------
+    # CUSTOM ADMIN URL
+    # -------------------------
+    def get_urls(self):
+        urls = super().get_urls()
+        custom_urls = [
+            path(
+                'bulk-upload/',
+                self.admin_site.admin_view(self.bulk_upload_view),
+                name='jobcard_bulk_upload'
+            ),
+        ]
+        return custom_urls + urls
+
+    def bulk_upload_view(self, request):
+        from .bulk_upload import process_jobcard_upload
+
+        context = {}
+
+        if request.method == "POST":
+            file = request.FILES.get("file")
+            if file:
+                result = process_jobcard_upload(file)
+                context = result
+
+        return TemplateResponse(request, "admin/bulk_upload.html", context)
 
 
 # =========================
@@ -131,7 +173,7 @@ class ProductionAdmin(admin.ModelAdmin):
         'waste_qty'
     )
 
-    list_filter = ('date', 'shift', 'machine')
+    list_filter = ('date', 'shift')
     search_fields = ('job_card__job_card_no',)
 
 
@@ -151,7 +193,7 @@ class DispatchAdmin(admin.ModelAdmin):
 
 
 # =========================
-# MASTER TABLES
+# MASTER DATA ADMIN
 # =========================
 
 admin.site.register(Machine)
@@ -160,7 +202,7 @@ admin.site.register(Material)
 
 
 # =========================
-# ADMIN HEADER (ERP BRANDING)
+# ERP BRANDING
 # =========================
 
 admin.site.site_header = "Offset ERP System"

@@ -47,7 +47,7 @@ class JobCard(models.Model):
     month = models.CharField(max_length=20, null=True, blank=True)
 
     po_date = models.DateField(null=True, blank=True)
-    PO_No = models.IntegerField(null=True, blank=True)
+    PO_No = models.CharField(null=True, blank=True)
 
     SKU = models.CharField(max_length=100)
 

@@ -2,28 +2,110 @@
 
 {% block content %}
 
-<h2>📥 Bulk Upload Job Cards</h2>
+<style>
+    .erp-card {
+        background: #fff;
+        padding: 20px;
+        border-radius: 8px;
+        border: 1px solid #ddd;
+        margin-bottom: 20px;
+    }
 
-<form method="POST" enctype="multipart/form-data">
-    {% csrf_token %}
-    <input type="file" name="file" required>
-    <button type="submit" class="button default">Upload</button>
-</form>
+    .erp-button {
+        display: inline-block;
+        padding: 8px 14px;
+        background: #417690;
+        color: white;
+        border-radius: 4px;
+        text-decoration: none;
+        margin-bottom: 15px;
+    }
 
-<hr>
+    .erp-button:hover {
+        background: #2f5b73;
+    }
 
-{% if success_count %}
-    <p>✅ Success: {{ success_count }}</p>
-    <p>❌ Errors: {{ error_count }}</p>
+    .upload-btn {
+        padding: 8px 16px;
+        background: #28a745;
+        color: white;
+        border: none;
+        border-radius: 4px;
+        cursor: pointer;
+    }
+
+    .error-box {
+        background: #ffe6e6;
+        padding: 10px;
+        border-radius: 6px;
+        margin-top: 10px;
+    }
+
+    .success-box {
+        background: #e6ffe6;
+        padding: 10px;
+        border-radius: 6px;
+        margin-top: 10px;
+    }
+</style>
+
+<div class="erp-card">
+
+   {% load static %}
+
+    <a href="{% static 'core/templates/jobcard_bulk_upload_template.csv' %}" class="button">
+    ⬇ Download JobCard CSV Template
+    </a>
+
+    <h2>📥 Bulk Upload Job Cards</h2>
+
+    <form method="POST" enctype="multipart/form-data">
+        {% csrf_token %}
+
+        <input type="file" name="file" required>
+        <br><br>
+
+        <button type="submit" class="upload-btn">
+            Upload CSV
+        </button>
+    </form>
+
+</div>
+
+{% if success_count or error_count %}
+
+<div class="erp-card">
+
+    <h3>📊 Upload Summary</h3>
+
+    <div class="success-box">
+        <p>✅ Success: {{ success_count }}</p>
+    </div>
+
+    <div class="error-box">
+        <p>❌ Errors: {{ error_count }}</p>
+    </div>
+
+</div>
+
 {% endif %}
 
 {% if errors %}
-    <h3>Error Details:</h3>
+
+<div class="erp-card">
+
+    <h3>⚠ Error Details</h3>
+
     <ul>
         {% for e in errors %}
-            <li>Row {{ e.row }} → {{ e.errors }}</li>
+            <li>
+                Row {{ e.row }} → {{ e.errors }}
+            </li>
         {% endfor %}
     </ul>
+
+</div>
+
 {% endif %}
 
 {% endblock %}
