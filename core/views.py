@@ -1,11 +1,12 @@
 from django.shortcuts import render
-from .bulk_upload import process_jobcard_upload
-import csv
 from django.http import HttpResponse
+import csv
+
+from .bulk_upload import process_jobcard_upload
+
 
 def home(request):
     return render(request, 'home.html')
-
 
 
 def bulk_upload_jobcards(request):
@@ -19,35 +20,58 @@ def bulk_upload_jobcards(request):
     return render(request, "upload.html")
 
 
-
-
-
 def download_template(request):
     response = HttpResponse(content_type='text/csv')
     response['Content-Disposition'] = 'attachment; filename="jobcard_template.csv"'
 
     writer = csv.writer(response)
 
-    # Header row
-    writer.writerow([
-        'job_card_no',
+    headers = [
+        'JC Number',
         'SKU',
-        'order_qty',
-        'material',
-        'colour',
-        'machine_name',
-        'department'
-    ])
+        'PO Number',
+        'PO Date',
+        'Month',
+        'Material',
+        'Colour',
+        'Application',
+        'Order Quantity',
+        'Ups',
+        'Print Sheet Size',
+        'Wastage (%)',
+        'Actual Sheet Required',
+        'Purchase Sheet Size',
+        'Purchase Sheet Ups',
+        'Remarks',
+        'Destination',
+        'Machine',
+        'Department',
+        'Die Cutting (Yes/No)'
+    ]
 
-    # Sample row
+    writer.writerow(headers)
+
     writer.writerow([
-        'JC001',
-        'SKU-A',
-        '1000',
-        'Paper',
-        '1',
-        'Machine-1',
-        'Printing'
+        'JC-26-1001',
+        'SKU-01',
+        'PO-7788',
+        '4/13/2026',
+        'April',
+        'Bleach230',
+        '4',
+        'UV',
+        '10000',
+        '12',
+        '20x30',
+        '5',
+        '10500',
+        '20x30',
+        '6',
+        'Urgent job',
+        'SITE 1',
+        'GTO 1A',
+        'Pillow',
+        'Yes'
     ])
 
     return response

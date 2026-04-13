@@ -6,6 +6,12 @@ from core import views
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', home),
+
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards),
-    path('download-template/', views.download_template),
+
+    path(
+        'download-template/',
+        views.download_template,
+        name='jobcard_template_download'   # ✅ ADD THIS
+    ),
 ]
