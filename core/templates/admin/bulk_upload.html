@@ -1,0 +1,29 @@
+{% extends "admin/base_site.html" %}
+
+{% block content %}
+
+<h2>📥 Bulk Upload Job Cards</h2>
+
+<form method="POST" enctype="multipart/form-data">
+    {% csrf_token %}
+    <input type="file" name="file" required>
+    <button type="submit" class="button default">Upload</button>
+</form>
+
+<hr>
+
+{% if success_count %}
+    <p>✅ Success: {{ success_count }}</p>
+    <p>❌ Errors: {{ error_count }}</p>
+{% endif %}
+
+{% if errors %}
+    <h3>Error Details:</h3>
+    <ul>
+        {% for e in errors %}
+            <li>Row {{ e.row }} → {{ e.errors }}</li>
+        {% endfor %}
+    </ul>
+{% endif %}
+
+{% endblock %}
