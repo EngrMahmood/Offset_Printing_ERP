@@ -1,5 +1,6 @@
 from django.db import models
 from django.core.exceptions import ValidationError
+from django.db.models import Sum
 
 
 # =========================
@@ -137,16 +138,22 @@ class Production(models.Model):
 
     machine = models.CharField(max_length=50)
 
-    output_qty = models.IntegerField()
+    output_qty = models.IntegerField(default=0)
     waste_qty = models.IntegerField(default=0)
 
     def clean(self):
-        total_production = sum(
-            p.output_qty for p in self.job_card.production_set.all()
-        )
+        if not self.job_card:
+         return
 
-        if total_production + self.output_qty > self.job_card.order_qty:
-            raise ValidationError("Production exceeds order quantity!")
+        existing = Production.objects.filter(
+            job_card=self.job_card
+    ).exclude(id=self.id).aggregate(
+        total=Sum('output_qty')
+    )['total'] or 0
+
+        if existing + (self.output_qty or 0) > self.job_card.order_qty:
+         raise ValidationError("Production exceeds order quantity!")
+
 
     def __str__(self):
         return f"{self.job_card.job_card_no} - {self.date}"
@@ -160,18 +167,26 @@ class Dispatch(models.Model):
     job_card = models.ForeignKey(JobCard, on_delete=models.CASCADE)
 
     dispatch_date = models.DateField()
-    dispatch_qty = models.IntegerField()
+    dispatch_qty = models.IntegerField(default=0)
 
     def clean(self):
-        total_dispatch = sum(
-            d.dispatch_qty for d in self.job_card.dispatch_set.all()
-        )
+        if not self.job_card:
+            return
 
-        if self.job_card.total_production == 0:
-            raise ValidationError("Cannot dispatch without production!")
+        existing_dispatch = Dispatch.objects.filter(
+          job_card=self.job_card
+         ).exclude(id=self.id).aggregate(
+         total=Sum('dispatch_qty')
+              )['total'] or 0
 
-        if total_dispatch + self.dispatch_qty > self.job_card.total_production:
-            raise ValidationError("Dispatch exceeds production!")
+        total_after_save = existing_dispatch + (self.dispatch_qty or 0)
+
+        total_production = self.job_card.production_set.aggregate(
+            total=Sum('output_qty')
+                 )['total'] or 0
+
+        if total_after_save > total_production:
+         raise ValidationError("Dispatch exceeds production!")
 
     def __str__(self):
         return f"{self.job_card.job_card_no} - {self.dispatch_date}"

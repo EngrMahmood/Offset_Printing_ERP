@@ -41,6 +41,7 @@ class JobCardAdmin(admin.ModelAdmin):
         'bulk_upload_button'
     )
 
+
 # =========================
     # BUTTON IN LIST VIEW
     # =========================
