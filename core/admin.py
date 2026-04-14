@@ -3,7 +3,8 @@ from django.urls import path, reverse
 from django.template.response import TemplateResponse
 from django.utils.html import format_html
 
-from .models import JobCard, Production, Dispatch, Machine, Department, Material
+
+from .models import JobCard, Production, Dispatch, Machine, Department, Material, Operator
 
 
 # =========================
@@ -173,9 +174,34 @@ class ProductionAdmin(admin.ModelAdmin):
         'waste_qty'
     )
 
-    list_filter = ('date', 'shift')
-    search_fields = ('job_card__job_card_no',)
+    autocomplete_fields = ['job_card', 'machine', 'operator']
 
+    search_fields = (
+        'job_card__job_card_no',   # ✅ correct
+        'machine__name',           # ✅ FIXED
+        'operator__name',          # ✅ FIXED
+    )
+
+
+    
+@admin.register(Operator)
+class OperatorAdmin(admin.ModelAdmin):
+    list_display = ['name', 'employee_code', 'is_active']
+    search_fields = ['name', 'employee_code']
+
+
+@admin.register(Machine)
+class MachineAdmin(admin.ModelAdmin):
+    list_display = ['name', 'standard_speed', 'is_active']
+    search_fields = ['name']
+
+@admin.register(Department)
+class DepartmentAdmin(admin.ModelAdmin):
+    search_fields = ['name']
+
+@admin.register(Material)
+class MaterialAdmin(admin.ModelAdmin):
+    search_fields = ['name']
 
 # =========================
 # DISPATCH ADMIN
@@ -196,9 +222,9 @@ class DispatchAdmin(admin.ModelAdmin):
 # MASTER DATA ADMIN
 # =========================
 
-admin.site.register(Machine)
-admin.site.register(Department)
-admin.site.register(Material)
+
+#admin.site.register(Department)
+#admin.site.register(Material)
 
 
 # =========================

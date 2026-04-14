@@ -31,6 +31,14 @@ class Material(models.Model):
         return self.name
 
 
+class Operator(models.Model):
+    name = models.CharField(max_length=100)
+    employee_code = models.CharField(max_length=50, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
 # =========================
 # JOB CARD
 # =========================
@@ -82,7 +90,7 @@ class JobCard(models.Model):
 
     @property
     def total_production(self):
-        return self.production_set.aggregate(total=Sum('output_qty'))['total'] or 0
+        return self.productions.aggregate(total=Sum('output_qty'))['total'] or 0
 
     @property
     def total_dispatch(self):
@@ -90,7 +98,7 @@ class JobCard(models.Model):
 
     @property
     def total_waste(self):
-        return self.production_set.aggregate(total=Sum('waste_qty'))['total'] or 0
+        return self.productions.aggregate(total=Sum('waste_qty'))['total'] or 0
 
     @property
     def balance_qty(self):
@@ -123,8 +131,8 @@ class Production(models.Model):
     SHIFT_CHOICES = [
         ('A', 'Shift A'),
         ('B', 'Shift B'),
-        ('C', 'Shift C'),
-    ]
+        
+            ]
 
     job_card = models.ForeignKey('JobCard', on_delete=models.CASCADE, related_name='productions')
 
@@ -144,11 +152,12 @@ class Production(models.Model):
     ideal_run_rate = models.FloatField(null=True, blank=True)
 
     operator = models.ForeignKey(
-        User,
+        'Operator',
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        limit_choices_to={'groups__name': 'Production Team'}
+        limit_choices_to={'is_active': True}
+        
     )
 
     created_at = models.DateTimeField(auto_now_add=True)
@@ -235,7 +244,7 @@ class Dispatch(models.Model):
 
         total_after = existing_dispatch + self.dispatch_qty
 
-        total_production = self.job_card.production_set.aggregate(
+        total_production = self.job_card.productions.aggregate(
             total=Sum('output_qty')
         )['total'] or 0
 
