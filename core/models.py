@@ -231,6 +231,7 @@ class Production(models.Model):
 class Dispatch(models.Model):
 
     job_card = models.ForeignKey(JobCard, on_delete=models.CASCADE)
+    dc_no = models.CharField(max_length=50,unique=True,null=True,blank=True,help_text="Dispatch Challan Number")
     dispatch_date = models.DateField()
     dispatch_qty = models.IntegerField(default=0)
 

@@ -165,29 +165,45 @@ class JobCardAdmin(admin.ModelAdmin):
 
 @admin.register(Production)
 class ProductionAdmin(admin.ModelAdmin):
+
     list_display = (
         'job_card',
         'date',
         'shift',
         'machine',
         'output_qty',
-        'waste_qty'
+        'waste_qty',
+        'operator',
+        'oee_display'
+    )
+
+    list_filter = (
+        'date',
+        'shift',
+        'machine',
+        'operator',
+    )
+
+    search_fields = (
+        'job_card__job_card_no',
+        'machine__name',
+        'operator__name',
     )
 
     autocomplete_fields = ['job_card', 'machine', 'operator']
 
-    search_fields = (
-        'job_card__job_card_no',   # ✅ correct
-        'machine__name',           # ✅ FIXED
-        'operator__name',          # ✅ FIXED
-    )
+    date_hierarchy = 'date'
 
+    def oee_display(self, obj):
+        return round(obj.oee() * 100, 2)
 
+    oee_display.short_description = "OEE %"
     
 @admin.register(Operator)
 class OperatorAdmin(admin.ModelAdmin):
     list_display = ['name', 'employee_code', 'is_active']
     search_fields = ['name', 'employee_code']
+    list_filter = ['is_active']
 
 
 @admin.register(Machine)
@@ -209,13 +225,29 @@ class MaterialAdmin(admin.ModelAdmin):
 
 @admin.register(Dispatch)
 class DispatchAdmin(admin.ModelAdmin):
+
     list_display = (
         'job_card',
+        'order_qty',
+        'dc_no',
         'dispatch_date',
-        'dispatch_qty'
+        'dispatch_qty',
+        'balance_check'
     )
 
     list_filter = ('dispatch_date',)
+
+    search_fields = ('job_card__job_card_no','dc_no',)
+
+    def balance_check(self, obj):
+        return obj.job_card.balance_qty
+
+    balance_check.short_description = "Remaining Balance"
+
+    def order_qty(self, obj):
+        return obj.job_card.order_qty
+
+    order_qty.short_description = "Order Qty"
 
 
 # =========================
