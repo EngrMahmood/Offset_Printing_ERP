@@ -37,6 +37,7 @@ class JobCardAdmin(admin.ModelAdmin):
         'job_card_no',
         'SKU',
         'order_qty',
+        'total_sheets_planned',
         'total_production',
         'total_dispatch',
         'balance_qty',
@@ -87,8 +88,7 @@ class JobCardAdmin(admin.ModelAdmin):
             "fields": (
                 "order_qty",
                 "ups",
-                "wastage",
-                "actual_sheet_required"
+                "wastage"
             )
         }),
 
@@ -167,15 +167,16 @@ class JobCardAdmin(admin.ModelAdmin):
 class ProductionAdmin(admin.ModelAdmin):
 
     list_display = (
-        'job_card',
-        'date',
-        'shift',
-        'machine',
-        'output_qty',
-        'waste_qty',
-        'operator',
-        'oee_display'
-    )
+    'job_card',
+    'date',
+    'shift',
+    'machine',
+    'output_sheets',
+    'waste_sheets',
+    'pcs_produced',
+    'impressions',
+    'oee'
+)
 
     list_filter = (
         'date',
