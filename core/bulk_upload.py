@@ -160,49 +160,72 @@ def read_upload_file(file):
 def normalize_headers(raw_headers):
     """Map flexible column names to standard field names"""
     normalized = {}
-    
+
     # Define multiple acceptable variations for each field
     field_mappings = {
         'job_card_no': ['job card number', 'job card no', 'jc number', 'jobcard number', 'job card'],
-        'po_no': ['po number', 'po no', 'po', 'poNo'],
+        'po_no': ['po number', 'po no', 'po', 'pono', 'po_no'],
         'po_date': ['po date', 'po_date', 'date'],
         'sku': ['sku', 'product code', 'product'],
         'material': ['material', 'material name'],
         'colour': ['colour', 'color', 'colour (count)', 'color count', 'colours'],
         'application': ['application', 'application type'],
-        'order_qty': ['order quantity', 'order qty', 'quantity', 'order quantity (pcs)'],
-        'ups': ['ups', 'units per sheet', 'units'],
-        'print_sheet_size': ['print sheet size', 'sheet size', 'print size'],
+        'order_qty': ['order quantity', 'order qty', 'quantity', 'order quantity (pcs)', 'orderqty'],
+        'ups': ['ups', 'units per sheet', 'units', 'ups (units per sheet)'],
+        'print_sheet_size': ['print sheet size', 'sheet size', 'print size', 'print_sheet_size'],
         'total_impressions_required': ['total impressions required', 'impressions required', 'impressions', 'total impressions'],
         'wastage': ['wastage', 'wastage (%)', 'waste %', 'waste percentage'],
-        'purchase_sheet_size': ['purchase sheet size', 'purchase size'],
-        'purchase_sheet_ups': ['purchase sheet ups', 'purchase ups'],
+        'purchase_sheet_size': ['purchase sheet size', 'purchase size', 'purchase_sheet_size'],
+        'purchase_sheet_ups': ['purchase sheet ups', 'purchase ups', 'purchase_sheet_ups'],
         'remarks': ['remarks', 'notes', 'comments'],
         'destination': ['destination', 'delivery location'],
         'machine_name': ['machine', 'machine name', 'press'],
         'department': ['department', 'dept'],
-        'die_cutting': ['die cutting', 'die cut', 'die cutting (yes/no)'],
+        'die_cutting': ['die cutting', 'die cut', 'die cutting (yes/no)', 'die_cutting'],
         'month': ['month']
     }
-    
+
     for raw_header in raw_headers:
         normalized_header = normalize(raw_header)
-        
-        # Find matching field
+        best_match = None
+        best_score = 0
+
         for field, variations in field_mappings.items():
             for variation in variations:
-                if normalized_header == normalize(variation) or normalize(variation) in normalized_header:
-                    normalized[raw_header] = field
-                    break
-    
+                normalized_variation = normalize(variation)
+                if normalized_header == normalized_variation:
+                    score = len(normalized_variation) + 100
+                elif normalized_variation in normalized_header:
+                    score = len(normalized_variation) + 10
+                elif normalized_header in normalized_variation:
+                    score = len(normalized_header)
+                else:
+                    score = 0
+
+                if score > best_score:
+                    best_score = score
+                    best_match = field
+
+        if best_match:
+            normalized[raw_header] = best_match
+
     return normalized
 
 
 def get_field_value(row, field_name, column_mapping):
     """Get value from row using flexible column names"""
     for raw_header, mapped_field in column_mapping.items():
-        if mapped_field == field_name:
+        if mapped_field == field_name and raw_header in row:
             return clean(row, raw_header)
+
+    # Fallback: support direct field name headers
+    if field_name in row:
+        return clean(row, field_name)
+    normalized_field = normalize(field_name)
+    for raw_header in row.keys():
+        if normalize(raw_header) == normalized_field:
+            return clean(row, raw_header)
+
     return ""
 
 
@@ -270,6 +293,17 @@ def process_jobcard_upload(file):
     
     # Map column names to standard fields
     column_mapping = normalize_headers(rows[0].keys()) if rows else {}
+    required_columns = ['job_card_no', 'machine_name', 'department', 'material', 'order_qty', 'ups']
+    missing_columns = [col for col in required_columns if col not in column_mapping.values()]
+    if missing_columns:
+        return {
+            "success_count": 0,
+            "error_count": 1,
+            "errors": [{
+                "row": 0,
+                "errors": f"Missing required columns: {', '.join(missing_columns)}"
+            }]
+        }
 
     for index, row in enumerate(rows, start=2):
         try:
@@ -379,3 +413,58 @@ def process_jobcard_upload(file):
         "error_count": error_count,
         "errors": errors
     }
+
+
+# ----------------------------
+# TEMPLATE GENERATION
+# ----------------------------
+def get_template_headers():
+    """Get the headers for the job card template"""
+    return [
+        'JC Number',
+        'SKU',
+        'PO Number',
+        'PO Date',
+        'Month',
+        'Material',
+        'Colour',
+        'Application',
+        'Order Quantity',
+        'Ups',
+        'Print Sheet Size',
+        'Wastage (%)',
+        'Actual Sheet Required',
+        'Purchase Sheet Size',
+        'Purchase Sheet Ups',
+        'Remarks',
+        'Destination',
+        'Machine',
+        'Department',
+        'Die Cutting (Yes/No)'
+    ]
+
+
+def get_template_example():
+    """Get example data for the job card template"""
+    return [
+        'JC-26-1001',
+        'SKU-01',
+        'PO-7788',
+        '4/13/2026',
+        'April',
+        'Bleach230',
+        '4',
+        'UV',
+        '10000',
+        '12',
+        '20x30',
+        '5',
+        '10500',
+        '20x30',
+        '6',
+        'Urgent job',
+        'SITE 1',
+        'GTO 1A',
+        'Pillow',
+        'Yes'
+    ]
