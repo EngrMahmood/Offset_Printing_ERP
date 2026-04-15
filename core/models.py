@@ -10,7 +10,8 @@ from django.contrib.auth import get_user_model
 
 class Machine(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    standard_speed = models.FloatField(default=4000)
+    standard_impressions_per_hour = models.FloatField(default=4000, help_text="Standard printing speed in impressions per hour")
+
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
@@ -97,8 +98,8 @@ class JobCard(models.Model):
         return int (self.required_sheets + self.wastage)
     
     @property
-    def total_impressions(self):
-        return self.total_sheets_planned * (self.colour or 1) # will add passes instead of color
+    def total_impressions_required(self):
+        return self.total_sheets_planned * (self.colour or 1) # Theoretical impressions needed
 
     @property
     def total_production(self):
@@ -161,10 +162,46 @@ class Production(models.Model):
     output_sheets = models.PositiveIntegerField()
     waste_sheets = models.PositiveIntegerField(default=0)
 
+    WASTE_CHOICES = [
+        ('paper_jam', 'Paper Jam (Affects OEE Quality)'),
+        ('color_issue', 'Color/Registration Issue (Affects OEE Quality)'),
+        ('material_defect', 'Material Defect (External - Excluded from OEE)'),
+        ('operator_error', 'Operator Error (Affects OEE Quality)'),
+        ('machine_issue', 'Machine Issue (Affects OEE Quality)'),
+        ('other', 'Other (Affects OEE Quality)'),
+    ]
+
+    waste_reason = models.CharField(
+        max_length=20,
+        choices=WASTE_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Primary reason for waste"
+    )
+
+    impressions = models.PositiveIntegerField(help_text="Total impressions produced (sheets × passes)")
+
     planned_time = models.FloatField(help_text="in minutes")
     run_time = models.FloatField(help_text="in minutes")
     downtime = models.FloatField(default=0,help_text="in minutes")
     setup_time = models.FloatField(default=0,help_text="in minutes")
+
+    DOWNTIME_CHOICES = [
+        ('setup', 'Setup Time (Planned - Excluded from OEE)'),
+        ('maintenance', 'Maintenance (Planned - Excluded from OEE)'),
+        ('breakdown', 'Machine Breakdown (Unplanned - Affects OEE)'),
+        ('material', 'Material Issue (External - Excluded from OEE)'),
+        ('operator', 'Operator Issue (Affects OEE)'),
+        ('other', 'Other (Affects OEE)'),
+    ]
+
+    downtime_category = models.CharField(
+        max_length=20,
+        choices=DOWNTIME_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Category of downtime"
+    )
 
     ideal_run_rate = models.FloatField(null=True, blank=True)
 
@@ -179,11 +216,6 @@ class Production(models.Model):
         if self.job_card.ups:
             return self.output_sheets * self.job_card.ups
         return 0
-    
-    @property
-    def impressions(self):
-        passes = self.job_card.colour or 1
-        return self.output_sheets * passes
     
     @property
     def good_sheets(self):
@@ -213,6 +245,12 @@ class Production(models.Model):
         if total_existing_consumption + current_consumption > self.job_card.total_sheets_planned:
          errors['output_sheets'] = "Total sheets (production + waste) exceed planned sheets!"
 
+        # Impressions validation
+        if self.impressions <= 0:
+            errors['impressions'] = "Impressions must be greater than 0"
+        if self.impressions < self.output_sheets:
+            errors['impressions'] = "Impressions should be at least equal to output sheets"
+
     # ⏱ TIME VALIDATIONS
         if self.run_time and self.planned_time:
          if self.run_time > self.planned_time:
@@ -232,7 +270,7 @@ class Production(models.Model):
 
     def save(self, *args, **kwargs):
         if not self.ideal_run_rate and self.machine:
-            self.ideal_run_rate = self.machine.standard_speed
+            self.ideal_run_rate = self.machine.standard_impressions_per_hour
 
         self.full_clean()
 
@@ -245,23 +283,32 @@ class Production(models.Model):
     # ===== OEE =====
 
     @property
-    def availability(self):
+    def expected_impressions(self):
+        """Expected impressions based on machine capacity and run time"""
+        if not self.machine or not self.machine.standard_impressions_per_hour:
+            return 0
+        run_time_hours = self.run_time / 60
+        return self.machine.standard_impressions_per_hour * run_time_hours
         if self.planned_time == 0:
             return 0
-        return self.run_time / self.planned_time
+        # OEE Availability excludes planned downtime
+        # Include only unplanned downtime categories
+        unplanned_categories = ['breakdown', 'operator', 'other']
+        unplanned_downtime = self.downtime if self.downtime_category in unplanned_categories else 0
+        return (self.planned_time - unplanned_downtime) / self.planned_time
 
     @property
     def performance(self):
-        if not self.machine or not self.machine.standard_speed:
+        if not self.machine or not self.machine.standard_impressions_per_hour:
             return 0
         
         run_time_hours = self.run_time/60
 
-        expected_output = self.machine.standard_speed * run_time_hours
-        if expected_output == 0:
+        expected_impressions = self.machine.standard_impressions_per_hour * run_time_hours
+        if expected_impressions == 0:
             return 0
 
-        return self.output_sheets / expected_output
+        return self.impressions / expected_impressions
     
 
 
@@ -269,7 +316,15 @@ class Production(models.Model):
     def quality(self):
         if self.total_sheets == 0:
             return 0
-        return self.good_sheets / self.total_sheets
+        # OEE Quality excludes wastes not caused by production process
+        # Only count wastes that affect machine/process quality
+        quality_affecting_wastes = ['paper_jam', 'color_issue', 'operator_error', 'machine_issue', 'other']
+        quality_waste = self.waste_sheets if self.waste_reason in quality_affecting_wastes else 0
+        good_sheets = self.output_sheets  # assuming output_sheets are good
+        total_quality_sheets = good_sheets + quality_waste
+        if total_quality_sheets == 0:
+            return 0
+        return good_sheets / total_quality_sheets
     
 
     @property
@@ -281,7 +336,10 @@ class Production(models.Model):
     def operator_efficiency(self):
         if self.run_time and self.ideal_run_rate:
             run_time_hours = self.run_time/60
-            return (self.output_sheets / (self.ideal_run_rate * run_time_hours)) * 100
+            expected_impressions = self.ideal_run_rate * run_time_hours
+            if expected_impressions == 0:
+                return 0
+            return (self.impressions / expected_impressions) * 100
         return 0
 
     def __str__(self):
@@ -298,11 +356,9 @@ class Dispatch(models.Model):
 
     dc_no = models.CharField(
         max_length=50,
-        unique=True,
         null=True,
         blank=True,
-        help_text="Dispatch Challan Number",
-        error_messages={"unique": "This DC number already exists!"}
+        help_text="Dispatch Challan Number (can be shared across multiple Job Cards)"
 
     )
 

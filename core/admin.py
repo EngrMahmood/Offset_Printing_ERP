@@ -173,6 +173,7 @@ class ProductionAdmin(admin.ModelAdmin):
     'machine',
     'output_sheets',
     'waste_sheets',
+    'waste_reason',
     'pcs_produced',
     'impressions',
     'oee'
@@ -183,6 +184,8 @@ class ProductionAdmin(admin.ModelAdmin):
         'shift',
         'machine',
         'operator',
+        'waste_reason',
+        'downtime_category',
     )
 
     search_fields = (
@@ -195,10 +198,34 @@ class ProductionAdmin(admin.ModelAdmin):
 
     date_hierarchy = 'date'
 
-    def oee_display(self, obj):
-        return round(obj.oee() * 100, 2)
-
-    oee_display.short_description = "OEE %"
+    fieldsets = (
+        ("Production Details", {
+            "fields": (
+                "job_card",
+                "date",
+                "shift",
+                "machine",
+                "operator"
+            )
+        }),
+        ("Output & Waste", {
+            "fields": (
+                "output_sheets",
+                "waste_sheets",
+                "waste_reason",
+                "impressions"
+            )
+        }),
+        ("Time Tracking", {
+            "fields": (
+                "planned_time",
+                "run_time",
+                "downtime",
+                "downtime_category",
+                "setup_time"
+            )
+        }),
+    )
     
 @admin.register(Operator)
 class OperatorAdmin(admin.ModelAdmin):
@@ -209,7 +236,7 @@ class OperatorAdmin(admin.ModelAdmin):
 
 @admin.register(Machine)
 class MachineAdmin(admin.ModelAdmin):
-    list_display = ['name', 'standard_speed', 'is_active']
+    list_display = ['name', 'standard_impressions_per_hour', 'is_active']
     search_fields = ['name']
 
 @admin.register(Department)
