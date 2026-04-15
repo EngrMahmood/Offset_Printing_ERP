@@ -1,36 +1,189 @@
-{% extends "admin/base_site.html" %}
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Bulk Upload Job Cards - Offset ERP</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background: #f3f6f9;
+        }
 
-{% block content %}
+        .container {
+            max-width: 980px;
+            margin: 0 auto;
+        }
 
-<h2>📥 Bulk Upload Job Cards</h2>
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 22px;
+            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
+            margin-bottom: 18px;
+        }
 
-<p><strong>Download Template:</strong></p>
-<a href="{% url 'jobcard_template_download' %}?format=csv" class="button">CSV Template</a>
-<a href="{% url 'jobcard_template_download' %}?format=excel" class="button">Excel Template</a>
+        .top-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 18px;
+        }
 
-<hr>
+        .btn {
+            display: inline-block;
+            text-decoration: none;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 14px;
+            cursor: pointer;
+            font-size: 14px;
+            background: #417690;
+            color: white;
+        }
 
-<form method="POST" enctype="multipart/form-data">
-    {% csrf_token %}
-    <p><strong>Supported Formats:</strong> CSV (.csv) or Excel (.xlsx, .xls)</p>
-    <input type="file" name="file" accept=".csv,.xlsx,.xls" required>
-    <button type="submit" class="button default">Upload</button>
-</form>
+        .btn:hover {
+            background: #2f5b73;
+        }
 
-<hr>
+        .btn-green {
+            background: #198754;
+        }
 
-{% if success_count %}
-    <p>✅ Success: {{ success_count }}</p>
-    <p>❌ Errors: {{ error_count }}</p>
-{% endif %}
+        .btn-green:hover {
+            background: #136a42;
+        }
 
-{% if errors %}
-    <h3>Error Details:</h3>
-    <ul>
-        {% for e in errors %}
-            <li>Row {{ e.row }} → {{ e.errors }}</li>
-        {% endfor %}
-    </ul>
-{% endif %}
+        h1 {
+            margin: 0 0 8px;
+            color: #1f2d3d;
+        }
 
-{% endblock %}
+        .muted {
+            color: #5f6b7a;
+            margin-bottom: 16px;
+        }
+
+        .download-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 16px;
+        }
+
+        .file-input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ccd4dd;
+            border-radius: 6px;
+            margin: 10px 0 14px;
+            box-sizing: border-box;
+        }
+
+        .summary {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+        }
+
+        .summary-box {
+            border-radius: 8px;
+            padding: 12px;
+            font-weight: 600;
+        }
+
+        .ok {
+            background: #e7f6ec;
+            color: #1c6d3b;
+            border: 1px solid #b8e2c8;
+        }
+
+        .bad {
+            background: #fdeaea;
+            color: #8d2222;
+            border: 1px solid #f5c7c7;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 8px;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid #e4e8ec;
+            vertical-align: top;
+        }
+
+        th {
+            background: #f7f9fb;
+        }
+
+        @media (max-width: 720px) {
+            .summary {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+</head>
+<body>
+    <div class="container">
+        <div class="top-actions">
+            <a href="/" class="btn">Home</a>
+            <a href="javascript:history.back()" class="btn">Back</a>
+        </div>
+
+        <div class="card">
+            <h1>Bulk Upload Job Cards</h1>
+            <div class="muted">Upload CSV or Excel files to create multiple job cards in one go.</div>
+
+            <div class="download-row">
+                <a href="{% url 'jobcard_template_download' %}?format=csv" class="btn">Download CSV Template</a>
+                <a href="{% url 'jobcard_template_download' %}?format=excel" class="btn">Download Excel Template</a>
+            </div>
+
+            <form method="POST" enctype="multipart/form-data">
+                {% csrf_token %}
+                <label><strong>Supported formats:</strong> .csv, .xlsx, .xls</label>
+                <input class="file-input" type="file" name="file" accept=".csv,.xlsx,.xls" required>
+                <button type="submit" class="btn btn-green">Upload File</button>
+            </form>
+        </div>
+
+        {% if success_count or error_count %}
+        <div class="card">
+            <h2>Upload Summary</h2>
+            <div class="summary">
+                <div class="summary-box ok">Success: {{ success_count|default:0 }}</div>
+                <div class="summary-box bad">Errors: {{ error_count|default:0 }}</div>
+            </div>
+        </div>
+        {% endif %}
+
+        {% if errors %}
+        <div class="card">
+            <h2>Error Details</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th style="width: 120px;">Row</th>
+                        <th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for e in errors %}
+                    <tr>
+                        <td>{{ e.row }}</td>
+                        <td>{{ e.errors }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+</body>
+</html>

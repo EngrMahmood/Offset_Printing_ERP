@@ -291,6 +291,9 @@ class Production(models.Model):
             return 0
         run_time_hours = self.run_time / 60
         return self.machine.standard_impressions_per_hour * run_time_hours
+
+    @property
+    def availability(self):
         if self.planned_time == 0:
             return 0
         # OEE Availability excludes planned downtime

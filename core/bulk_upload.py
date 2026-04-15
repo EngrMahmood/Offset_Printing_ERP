@@ -69,7 +69,6 @@ def get_template_headers():
         'SKU',
         'PO Number',
         'PO Date (dd/mm/yyyy)',
-        'Month',
         'Material',
         'Colour (Count)',
         'Application',
@@ -95,7 +94,6 @@ def get_template_example():
         'SKU-01',
         'PO-7788',
         '15/04/2026',
-        'April',
         'Bleach230',
         '4',
         'UV',
@@ -181,8 +179,7 @@ def normalize_headers(raw_headers):
         'destination': ['destination', 'delivery location'],
         'machine_name': ['machine', 'machine name', 'press'],
         'department': ['department', 'dept'],
-        'die_cutting': ['die cutting', 'die cut', 'die cutting (yes/no)', 'die_cutting'],
-        'month': ['month']
+        'die_cutting': ['die cutting', 'die cut', 'die cutting (yes/no)', 'die_cutting']
     }
 
     for raw_header in raw_headers:
@@ -349,6 +346,8 @@ def process_jobcard_upload(file):
             # ----------------------------
             order_qty = parse_int(get_field_value(row, 'order_qty', column_mapping))
             ups = parse_int(get_field_value(row, 'ups', column_mapping))
+            po_date_value = parse_date(get_field_value(row, 'po_date', column_mapping))
+            month_value = po_date_value.strftime('%B') if po_date_value else None
 
             if ups <= 0:
                 errors.append({
@@ -364,8 +363,8 @@ def process_jobcard_upload(file):
             jobcards.append(JobCard(
                 job_card_no=job_card_no,
 
-                month=get_field_value(row, 'month', column_mapping),
-                po_date=parse_date(get_field_value(row, 'po_date', column_mapping)),
+                month=month_value,
+                po_date=po_date_value,
                 PO_No=get_field_value(row, 'po_no', column_mapping),
                 SKU=get_field_value(row, 'sku', column_mapping),
 
@@ -425,7 +424,6 @@ def get_template_headers():
         'SKU',
         'PO Number',
         'PO Date',
-        'Month',
         'Material',
         'Colour',
         'Application',
@@ -451,7 +449,6 @@ def get_template_example():
         'SKU-01',
         'PO-7788',
         '4/13/2026',
-        'April',
         'Bleach230',
         '4',
         'UV',
