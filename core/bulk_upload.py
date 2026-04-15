@@ -23,7 +23,10 @@ def normalize(value):
 
 
 def clean(row, key):
-    return (row.get(key) or "").strip()
+    value = row.get(key)
+    if value is None:
+        return ""
+    return str(value).strip()
 
 
 def parse_int(value):
@@ -145,10 +148,10 @@ def read_excel_file(file):
 
 def read_upload_file(file):
     """Auto-detect file type and read accordingly"""
-    if file.name.endswith('.xlsx') or file.name.endswith('.xls'):
+    file_name = file.name.lower()
+    if file_name.endswith('.xlsx') or file_name.endswith('.xls'):
         return read_excel_file(file)
-    else:
-        return read_csv_file(file)
+    return read_csv_file(file)
 
 
 # ----------------------------
