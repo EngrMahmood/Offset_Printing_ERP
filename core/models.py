@@ -124,7 +124,12 @@ class JobCard(models.Model):
 
     @property
     def job_status(self):
-        if self.total_dispatch >= self.order_qty:
+        if self.order_qty == 0:
+            return "Open"
+
+        dispatch_ratio = (self.total_dispatch / self.order_qty) * 100
+
+        if dispatch_ratio >= 95:
             return "Completed"
         elif self.total_production > 0:
             return "In Progress"
@@ -304,6 +309,7 @@ class Dispatch(models.Model):
     dispatch_date = models.DateField()
 
     dispatch_qty = models.IntegerField(default=0)
+
 
     # =========================
     # VALIDATION ONLY

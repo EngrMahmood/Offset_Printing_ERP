@@ -1,8 +1,7 @@
 import csv
 import re
 from dateutil import parser
-from datetime import datetime
-
+from django.db import transaction
 
 from .models import JobCard, Material, Machine, Department
 
@@ -29,7 +28,6 @@ def parse_int(value):
 
 def parse_bool(value):
     return str(value).strip().lower() in ["yes", "true", "1"]
-
 
 
 def parse_date(value):
@@ -64,11 +62,11 @@ def resolve(value, cache, label, errors, row_no):
         })
         return None
 
-    # 1. exact match
+    # exact match
     if key in cache:
         return cache[key]
 
-    # 2. partial/flexible match
+    # partial match
     for k, v in cache.items():
         if key in k or k in key:
             return v
@@ -95,7 +93,7 @@ def process_jobcard_upload(file):
     error_count = 0
 
     # ----------------------------
-    # LOAD ALL MASTER DATA ONCE
+    # LOAD MASTER DATA
     # ----------------------------
     MATERIAL_MAP = build_cache(Material)
     MACHINE_MAP = build_cache(Machine)
@@ -104,6 +102,9 @@ def process_jobcard_upload(file):
     for index, row in enumerate(reader, start=2):
 
         try:
+            # 🔥 Remove deprecated field safely
+            row.pop("actual_sheet_required", None)
+
             job_card_no = clean(row, "job_card_no")
 
             # ----------------------------
@@ -117,7 +118,6 @@ def process_jobcard_upload(file):
                 error_count += 1
                 continue
 
-            # duplicate check
             if JobCard.objects.filter(job_card_no=job_card_no).exists():
                 errors.append({
                     "row": index,
@@ -127,69 +127,62 @@ def process_jobcard_upload(file):
                 continue
 
             # ----------------------------
-            # SMART FK RESOLUTION
+            # FK RESOLUTION
             # ----------------------------
-            material = resolve(
-                clean(row, "material"),
-                MATERIAL_MAP,
-                "Material",
-                errors,
-                index
-            )
-
-            machine = resolve(
-                clean(row, "machine_name"),
-                MACHINE_MAP,
-                "Machine",
-                errors,
-                index
-            )
-
-            department = resolve(
-                clean(row, "department"),
-                DEPARTMENT_MAP,
-                "Department",
-                errors,
-                index
-            )
+            material = resolve(clean(row, "material"), MATERIAL_MAP, "Material", errors, index)
+            machine = resolve(clean(row, "machine_name"), MACHINE_MAP, "Machine", errors, index)
+            department = resolve(clean(row, "department"), DEPARTMENT_MAP, "Department", errors, index)
 
             if not (material and machine and department):
                 error_count += 1
                 continue
 
             # ----------------------------
-            # CREATE JOBCARD OBJECT
+            # FIELD PARSING
+            # ----------------------------
+            order_qty = parse_int(clean(row, "order_qty"))
+            ups = parse_int(clean(row, "ups"))
+
+            if ups <= 0:
+                errors.append({
+                    "row": index,
+                    "errors": "UPS must be greater than 0"
+                })
+                error_count += 1
+                continue
+
+            # ----------------------------
+            # CREATE OBJECT
             # ----------------------------
             jobcards.append(JobCard(
-                 job_card_no=job_card_no,
+                job_card_no=job_card_no,
 
                 month=clean(row, "month"),
                 po_date=parse_date(clean(row, "po_date")),
-                PO_No=parse_int(clean(row, "PO_No")),
+                PO_No=clean(row, "PO_No"),  # ✅ fixed (string)
                 SKU=clean(row, "SKU"),
 
                 material=material,
                 colour=parse_int(clean(row, "colour")),
                 application=clean(row, "application"),
 
-                order_qty=parse_int(clean(row, "order_qty")),
-                ups=parse_int(clean(row, "ups")),
+                order_qty=order_qty,
+                ups=ups,
 
                 print_sheet_size=clean(row, "print_sheet_size"),
                 wastage=parse_int(clean(row, "wastage")),
-                actual_sheet_required=parse_int(clean(row, "actual_sheet_required")),
 
                 purchase_sheet_size=clean(row, "purchase_sheet_size"),
                 purchase_sheet_ups=parse_int(clean(row, "purchase_sheet_ups")),
 
                 remarks=clean(row, "remarks"),
                 destination=clean(row, "destination"),
-                machine_name=machine,          # ✅ FIXED
-                department=department,        # ✅ FIXED
+
+                machine_name=machine,
+                department=department,
 
                 die_cutting=clean(row, "die_cutting")
-
-                 ))
+            ))
 
             success_count += 1
 
@@ -201,9 +194,11 @@ def process_jobcard_upload(file):
             error_count += 1
 
     # ----------------------------
-    # BULK INSERT
+    # BULK INSERT (SAFE)
     # ----------------------------
-    JobCard.objects.bulk_create(jobcards)
+    if jobcards:
+        with transaction.atomic():
+            JobCard.objects.bulk_create(jobcards)
 
     return {
         "success_count": success_count,

@@ -233,17 +233,30 @@ class DispatchAdmin(admin.ModelAdmin):
         'dc_no',
         'dispatch_date',
         'dispatch_qty',
-        'balance_check'
+        'balance_check',
+        'balance_qty_percentage'
     )
 
     list_filter = ('dispatch_date',)
 
     search_fields = ('job_card__job_card_no','dc_no',)
 
+    
+    def balance_qty_percentage(self, obj):
+     if obj.job_card.order_qty == 0:
+        return "0%"
+
+     balance = obj.job_card.balance_qty
+     percent = (balance / obj.job_card.order_qty) * 100
+
+     return f"{round(percent, 2)}%"
+    balance_qty_percentage.short_description = "Balance %"
+
     def balance_check(self, obj):
         return obj.job_card.balance_qty
 
-    balance_check.short_description = "Remaining Balance"
+    balance_check.short_description = "DC Balance"
+
 
     def order_qty(self, obj):
         return obj.job_card.order_qty
