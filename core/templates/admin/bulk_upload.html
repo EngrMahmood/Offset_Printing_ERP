@@ -53,8 +53,12 @@
 
    {% load static %}
 
-    <a href="{% static 'core/templates/jobcard_bulk_upload_template.csv' %}" class="button">
-    ⬇ Download JobCard CSV Template
+    <h3>📋 Download Template</h3>
+    <a href="{% url 'jobcard_template_download' %}?format=csv" class="button">
+    ⬇ CSV Template
+    </a>
+    <a href="{% url 'jobcard_template_download' %}?format=excel" class="button">
+    ⬇ Excel Template
     </a>
 
     <h2>📥 Bulk Upload Job Cards</h2>
@@ -62,11 +66,12 @@
     <form method="POST" enctype="multipart/form-data">
         {% csrf_token %}
 
-        <input type="file" name="file" required>
+        <p><strong>Supported Formats:</strong> CSV (.csv) or Excel (.xlsx, .xls)</p>
+        <input type="file" name="file" accept=".csv,.xlsx,.xls" required>
         <br><br>
 
         <button type="submit" class="upload-btn">
-            Upload CSV
+            Upload
         </button>
     </form>
 

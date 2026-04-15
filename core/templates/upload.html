@@ -4,9 +4,16 @@
 
 <h2>📥 Bulk Upload Job Cards</h2>
 
+<p><strong>Download Template:</strong></p>
+<a href="{% url 'jobcard_template_download' %}?format=csv" class="button">CSV Template</a>
+<a href="{% url 'jobcard_template_download' %}?format=excel" class="button">Excel Template</a>
+
+<hr>
+
 <form method="POST" enctype="multipart/form-data">
     {% csrf_token %}
-    <input type="file" name="file" required>
+    <p><strong>Supported Formats:</strong> CSV (.csv) or Excel (.xlsx, .xls)</p>
+    <input type="file" name="file" accept=".csv,.xlsx,.xls" required>
     <button type="submit" class="button default">Upload</button>
 </form>
 
