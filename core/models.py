@@ -60,6 +60,12 @@ class JobCard(models.Model):
 
     order_qty = models.IntegerField()
 
+    total_impressions_required = models.IntegerField(
+        null=True, 
+        blank=True,
+        help_text="Total impressions required for this job (manually entered based on machine config - 1/2/5 color, front-back, etc.)"
+    )
+
     ups = models.IntegerField(null=True, blank=True)
     print_sheet_size = models.CharField(max_length=50, null=True, blank=True)
 
@@ -97,10 +103,6 @@ class JobCard(models.Model):
     def total_sheets_planned(self):
         return int (self.required_sheets + self.wastage)
     
-    @property
-    def total_impressions_required(self):
-        return self.total_sheets_planned * (self.colour or 1) # Theoretical impressions needed
-
     @property
     def total_production(self):
         return self.productions.aggregate(total=Sum('output_sheets'))['total'] or 0

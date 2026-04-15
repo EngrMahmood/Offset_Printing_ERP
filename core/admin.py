@@ -37,6 +37,7 @@ class JobCardAdmin(admin.ModelAdmin):
         'job_card_no',
         'SKU',
         'order_qty',
+        'total_impressions_required',
         'total_sheets_planned',
         'total_production',
         'total_dispatch',
@@ -88,6 +89,7 @@ class JobCardAdmin(admin.ModelAdmin):
             "fields": (
                 "order_qty",
                 "ups",
+                "total_impressions_required",
                 "wastage"
             )
         }),
