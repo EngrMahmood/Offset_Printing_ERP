@@ -1,0 +1,31 @@
+<div style="display:inline-flex;align-items:center;gap:8px;padding:4px 7px 4px 4px;background:rgba(255,255,255,0.94);border:1px solid #e6dedd;border-radius:999px;box-shadow:0 2px 8px rgba(57,27,31,0.05);">
+    <div style="width:26px;height:26px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg, #5b0a15, #7b1c27);color:#fff;font-size:0.68rem;font-weight:700;letter-spacing:0.04em;">{{ user.username|slice:":2"|upper }}</div>
+    <div style="display:flex;flex-direction:column;align-items:flex-start;gap:1px;line-height:1.05;">
+        <div style="font-size:0.75rem;font-weight:600;color:#2b1b1d;max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">{{ user.get_full_name|default:user.username }}</div>
+        <div>
+            {% if user.profile.role == 'admin' %}
+                <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:0.6rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:#ffebeb;color:#9f1d1d;">Admin</span>
+            {% elif user.profile.role == 'manager' %}
+                <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:0.6rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:#e8fbf8;color:#1e7c75;">Manager</span>
+            {% elif user.profile.role == 'planner' %}
+                <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:0.6rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:#e7f6fb;color:#1e728b;">Planner</span>
+            {% elif user.profile.role == 'production' %}
+                <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:0.6rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:#ecf8f0;color:#25734a;">Production</span>
+            {% elif user.profile.role == 'operator' %}
+                <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:0.6rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:#fff8db;color:#7f6611;">Operator</span>
+            {% elif user.profile.role == 'dispatch' %}
+                <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:0.6rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:#eef1f3;color:#55636f;">Dispatch</span>
+            {% elif user.profile.role == 'qc' %}
+                <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:0.6rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:#f0ebff;color:#5b46b5;">QC</span>
+            {% elif user.profile.role == 'storekeeper' %}
+                <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:0.6rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:#ffeaf3;color:#b03b69;">Store</span>
+            {% elif user.profile.role == 'finance' %}
+                <span style="display:inline-flex;align-items:center;padding:1px 6px;border-radius:999px;font-size:0.6rem;font-weight:700;letter-spacing:0.04em;text-transform:uppercase;background:#ede9ff;color:#4f43b8;">Finance</span>
+            {% endif %}
+        </div>
+    </div>
+    <form method="post" action="{% url 'logout' %}" style="margin:0;display:flex;align-items:center;">
+        {% csrf_token %}
+        <button type="submit" style="border:none;background:transparent;color:#5b0a15;font-size:0.68rem;font-weight:700;cursor:pointer;padding:3px 7px;border-radius:999px;">Sign Out</button>
+    </form>
+</div>

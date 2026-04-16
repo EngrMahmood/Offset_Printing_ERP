@@ -105,15 +105,15 @@ class JobCard(models.Model):
     
     @property
     def total_production(self):
-        return self.productions.aggregate(total=Sum('output_sheets'))['total'] or 0
+        return self.productions.filter(is_active=True).aggregate(total=Sum('output_sheets'))['total'] or 0
 
     @property
     def total_dispatch(self):
-        return self.dispatch_set.aggregate(total=Sum('dispatch_qty'))['total'] or 0
+        return self.dispatch_set.filter(is_active=True).aggregate(total=Sum('dispatch_qty'))['total'] or 0
 
     @property
     def total_waste(self):
-        return self.productions.aggregate(total=Sum('waste_sheets'))['total'] or 0
+        return self.productions.filter(is_active=True).aggregate(total=Sum('waste_sheets'))['total'] or 0
 
     @property
     def balance_qty(self):
@@ -127,6 +127,8 @@ class JobCard(models.Model):
 
     @property
     def job_status(self):
+        if not self.is_active:
+            return "Archived"
         if self.order_qty == 0:
             return "Open"
 
@@ -209,6 +211,7 @@ class Production(models.Model):
 
     operator = models.ForeignKey('Operator',on_delete=models.SET_NULL,null=True,blank=True,limit_choices_to={'is_active': True})
 
+    is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     #Calculated Fields
@@ -230,7 +233,7 @@ class Production(models.Model):
     def clean(self):
         errors = {}
 
-        existing = Production.objects.filter(job_card=self.job_card)\
+        existing = Production.objects.filter(job_card=self.job_card, is_active=True)\
             .exclude(id=self.id)\
             .aggregate(
                 total_output=Sum('output_sheets'),
@@ -371,6 +374,8 @@ class Dispatch(models.Model):
 
     dispatch_qty = models.IntegerField(default=0)
 
+    is_active = models.BooleanField(default=True)
+
 
     # =========================
     # VALIDATION ONLY
@@ -381,14 +386,14 @@ class Dispatch(models.Model):
         if self.dispatch_qty <= 0:
             errors['dispatch_qty'] = "Dispatch must be greater than 0"
 
-        existing_dispatch = Dispatch.objects.filter(job_card=self.job_card)\
+        existing_dispatch = Dispatch.objects.filter(job_card=self.job_card, is_active=True)\
             .exclude(id=self.id)\
             .aggregate(total=Sum('dispatch_qty'))['total'] or 0
 
         total_after = existing_dispatch + (self.dispatch_qty or 0)
 
         total_production = sum(
-            p.pcs_produced for p in self.job_card.productions.all()
+            p.pcs_produced for p in self.job_card.productions.filter(is_active=True)
         )
 
         if total_after > total_production:
@@ -406,3 +411,160 @@ class Dispatch(models.Model):
 
     def __str__(self):
         return f"{self.job_card.job_card_no} - {self.dispatch_date}"
+
+
+class ChangeLog(models.Model):
+    ENTITY_CHOICES = [
+        ('job_card', 'Job Card'),
+        ('production', 'Production'),
+        ('dispatch', 'Dispatch'),
+    ]
+
+    ACTION_CHOICES = [
+        ('create', 'Created'),
+        ('update', 'Updated'),
+        ('delete', 'Deleted'),
+        ('restore', 'Restored'),
+    ]
+
+    entity_type = models.CharField(max_length=20, choices=ENTITY_CHOICES)
+    record_id = models.PositiveIntegerField()
+    record_label = models.CharField(max_length=200)
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    changed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='change_logs')
+    change_reason = models.TextField(blank=True)
+    field_changes = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['entity_type', 'record_id']),
+            models.Index(fields=['created_at']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_entity_type_display()} {self.record_label} - {self.get_action_display()}"
+
+
+# =========================
+# USER ROLES & PERMISSIONS
+# =========================
+
+class UserProfile(models.Model):
+    """Extended user model with role-based access control"""
+    
+    ROLE_CHOICES = [
+        ('admin', 'Admin — Full system access & configuration'),
+        ('manager', 'Manager — Overall oversight (jobs, production, dispatch, reports)'),
+        ('planner', 'Planner — Create & manage job cards, view analytics'),
+        ('production', 'Production Supervisor — Manage production entries & team'),
+        ('operator', 'Machine Operator — Production entry only'),
+        ('dispatch', 'Dispatch Coordinator — Dispatch approval & tracking'),
+        ('qc', 'QC Inspector — Quality checks & approvals'),
+        ('storekeeper', 'Store Keeper — Material & inventory management'),
+        ('finance', 'Finance Viewer — Read-only analytics & reports'),
+    ]
+    
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='operator')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        verbose_name = "User Profile"
+        verbose_name_plural = "User Profiles"
+    
+    def __str__(self):
+        return f"{self.user.username} — {self.get_role_display()}"
+    
+    # Permission helpers
+    def can_edit_jobcard(self):
+        """Can create/edit job cards"""
+        return self.role in ('admin', 'manager', 'planner')
+    
+    def can_edit_production(self):
+        """Can log production data"""
+        return self.role in ('admin', 'manager', 'production', 'operator')
+    
+    def can_approve_dispatch(self):
+        """Can approve/edit dispatch"""
+        return self.role in ('admin', 'manager', 'dispatch')
+    
+    def can_view_analytics(self):
+        """Can view dashboard and analytics"""
+        return self.role in ('admin', 'manager', 'planner', 'production', 'dispatch', 'finance')
+    
+    def can_manage_masters(self):
+        """Can manage machines, operators, materials, departments"""
+        return self.role in ('admin', 'manager')
+    
+    def can_approve_qc(self):
+        """Can perform QC checks"""
+        return self.role in ('admin', 'qc')
+    
+    def can_manage_operators(self):
+        """Can assign operators to shifts/jobs"""
+        return self.role in ('admin', 'manager', 'production')
+
+    def can_archive_records(self):
+        """Can archive and restore operational records"""
+        return self.role in ('admin', 'manager')
+    
+    def can_view_reports(self):
+        """Can view financial/operational reports"""
+        return self.role in ('admin', 'manager', 'finance')
+
+
+# =========================
+# EDIT OVERRIDE REQUESTS
+# =========================
+
+class EditOverrideRequest(models.Model):
+    ENTITY_CHOICES = [
+        ('production', 'Production'),
+        ('dispatch', 'Dispatch'),
+    ]
+    STATUS_CHOICES = [
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    entity_type = models.CharField(max_length=20, choices=ENTITY_CHOICES)
+    record_id = models.PositiveIntegerField()
+    record_label = models.CharField(max_length=200)
+    requested_by = models.ForeignKey(
+        User, on_delete=models.CASCADE, related_name='override_requests'
+    )
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    reviewed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_overrides'
+    )
+    review_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    expires_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['entity_type', 'record_id', 'requested_by']),
+            models.Index(fields=['status', 'created_at']),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.get_entity_type_display()} #{self.record_id}"
+            f" — {self.get_status_display()} — {self.requested_by}"
+        )
+
+    @property
+    def is_valid_for_edit(self):
+        from django.utils import timezone as _tz
+        return (
+            self.status == 'approved'
+            and self.expires_at is not None
+            and self.expires_at > _tz.now()
+        )

@@ -134,6 +134,12 @@
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
             <a href="javascript:history.back()" class="btn">Back</a>
+            {% if user.profile.can_edit_jobcard %}
+            <a href="{% url 'job_card_records' %}" class="btn">Job Card Records</a>
+            {% endif %}
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
         </div>
 
         <div class="card">

@@ -1,0 +1,144 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Archived Records - Offset ERP</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; }
+        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; }
+        .btn:hover { background: #2f5b73; }
+        .btn-green { background: #198754; }
+        .btn-green:hover { background: #136a42; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 14px; flex-wrap: wrap; }
+        .tab-active { background: #5b0a15; }
+        .filters { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-bottom: 14px; }
+        input { padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; border-bottom: 1px solid #e7ebef; text-align: left; vertical-align: top; }
+        th { background: #f7f9fb; }
+        .muted { color: #697586; }
+        .actions-cell { white-space: nowrap; }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+</head>
+<body>
+    <div class="container">
+        <div class="top-actions">
+            <a href="/" class="btn">Home</a>
+            <a href="javascript:history.back()" class="btn">Back</a>
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
+        </div>
+
+        <div class="card">
+            <h1>Archived Records</h1>
+
+            <div class="tabs">
+                {% for item in accessible_entities %}
+                <a href="{% url 'archived_records' %}?entity={{ item }}" class="btn {% if entity_type == item %}tab-active{% endif %}">
+                    {{ item|title }}
+                </a>
+                {% endfor %}
+            </div>
+
+            <form method="get" class="filters">
+                <input type="hidden" name="entity" value="{{ entity_type }}">
+                <input name="q" value="{{ query }}" placeholder="Search archived {{ entity_type|title }} records">
+                <button type="submit" class="btn">Filter</button>
+            </form>
+
+            {% if entity_type == 'job_card' %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Job Card</th>
+                        <th>SKU</th>
+                        <th>PO No</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in records %}
+                    <tr>
+                        <td>{{ row.job_card_no }}</td>
+                        <td>{{ row.SKU }}</td>
+                        <td>{{ row.PO_No|default:'-' }}</td>
+                        <td>{{ row.status }}</td>
+                        <td class="actions-cell">
+                            <a href="{% url 'change_history' 'job_card' row.id %}" class="btn">History</a>
+                            <a href="{% url 'restore_record' 'job_card' row.id %}" class="btn btn-green">Restore</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="muted">No archived job cards found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% elif entity_type == 'production' %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Job Card</th>
+                        <th>Machine</th>
+                        <th>Operator</th>
+                        <th>Output</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in records %}
+                    <tr>
+                        <td>{{ row.date }}</td>
+                        <td>{{ row.job_card.job_card_no }}</td>
+                        <td>{{ row.machine.name }}</td>
+                        <td>{{ row.operator.name|default:'-' }}</td>
+                        <td>{{ row.output_sheets }}</td>
+                        <td class="actions-cell">
+                            <a href="{% url 'change_history' 'production' row.id %}" class="btn">History</a>
+                            <a href="{% url 'restore_record' 'production' row.id %}" class="btn btn-green">Restore</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="muted">No archived production records found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Job Card</th>
+                        <th>DC No</th>
+                        <th>Dispatch Qty</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in records %}
+                    <tr>
+                        <td>{{ row.dispatch_date }}</td>
+                        <td>{{ row.job_card.job_card_no }}</td>
+                        <td>{{ row.dc_no|default:'-' }}</td>
+                        <td>{{ row.dispatch_qty }}</td>
+                        <td class="actions-cell">
+                            <a href="{% url 'change_history' 'dispatch' row.id %}" class="btn">History</a>
+                            <a href="{% url 'restore_record' 'dispatch' row.id %}" class="btn btn-green">Restore</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="muted">No archived dispatch records found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+        </div>
+    </div>
+</body>
+</html>

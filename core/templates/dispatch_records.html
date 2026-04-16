@@ -19,6 +19,7 @@
         th, td { padding: 10px; border-bottom: 1px solid #e7ebef; text-align: left; }
         th { background: #f7f9fb; }
         .muted { color: #697586; }
+        .actions-cell { white-space: nowrap; }
     </style>
     <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
 </head>
@@ -26,12 +27,30 @@
     <div class="container">
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
+            {% if user.profile.can_approve_dispatch %}
             <a href="{% url 'dispatch_entry' %}" class="btn btn-green">+ Add Dispatch</a>
+            {% endif %}
             <a href="javascript:history.back()" class="btn">Back</a>
+            {% if user.profile.can_archive_records %}
+            <a href="{% url 'archived_records' %}?entity=dispatch" class="btn">Archived</a>
+            {% endif %}
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
         </div>
 
         <div class="card">
             <h1>Dispatch Records</h1>
+            {% if edit_lock_days > 0 %}
+            <p class="muted">
+                Dispatch records dated before {{ edit_lock_cutoff }}
+                {% if can_bypass_edit_lock %}
+                are locked for operational roles. Manager and admin can still edit them.
+                {% else %}
+                are locked. Contact manager or admin for override.
+                {% endif %}
+            </p>
+            {% endif %}
 
             <form method="GET" class="filters">
                 <input name="q" value="{{ q }}" placeholder="Search by Job Card or DC No">
@@ -45,6 +64,7 @@
                         <th>Job Card</th>
                         <th>DC No</th>
                         <th>Dispatch Qty</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -54,9 +74,26 @@
                         <td>{{ row.job_card.job_card_no }}</td>
                         <td>{{ row.dc_no|default:'-' }}</td>
                         <td>{{ row.dispatch_qty }}</td>
+                        <td class="actions-cell">
+                            {% if edit_lock_cutoff and row.dispatch_date < edit_lock_cutoff and not can_bypass_edit_lock %}
+                                {% if row.id in approved_override_ids %}
+                                <a href="{% url 'dispatch_entry' %}?edit={{ row.id }}" class="btn">Edit (Approved)</a>
+                                {% elif row.id in pending_override_ids %}
+                                <span class="muted">Override Pending</span>
+                                {% else %}
+                                <a href="{% url 'request_edit_override' 'dispatch' row.id %}" class="btn">Request Override</a>
+                                {% endif %}
+                            {% else %}
+                            <a href="{% url 'dispatch_entry' %}?edit={{ row.id }}" class="btn">Edit</a>
+                            {% endif %}
+                            <a href="{% url 'change_history' 'dispatch' row.id %}" class="btn btn-green">History</a>
+                            {% if user.profile.can_archive_records %}
+                            <a href="{% url 'delete_record' 'dispatch' row.id %}" class="btn">Archive</a>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="4" class="muted">No dispatch records found.</td></tr>
+                    <tr><td colspan="5" class="muted">No dispatch records found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

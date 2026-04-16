@@ -1,0 +1,67 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Request Edit Override - Offset ERP</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
+        .container { max-width: 680px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 14px; }
+        .btn { background: #417690; color: #fff; text-decoration: none; padding: 8px 14px; border-radius: 6px; border: none; cursor: pointer; }
+        .btn:hover { background: #2f5b73; }
+        .btn-amber { background: #b45309; }
+        .btn-amber:hover { background: #92400e; }
+        h1 { margin-top: 0; font-size: 1.2rem; }
+        .info-box { background: #fffbeb; border: 1px solid #fcd34d; border-radius: 8px; padding: 12px 14px; margin-bottom: 16px; font-size: 0.9rem; color: #78350f; }
+        .form-group { margin-bottom: 14px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 0.9rem; }
+        textarea { width: 100%; box-sizing: border-box; padding: 9px; border: 1px solid #cfd6de; border-radius: 6px; min-height: 90px; font-size: 0.9rem; resize: vertical; }
+        .record-meta { background: #f7f9fb; border: 1px solid #e7ebef; border-radius: 8px; padding: 10px 12px; margin-bottom: 16px; font-size: 0.88rem; }
+        .record-meta dt { font-weight: 600; color: #555; display: inline; }
+        .record-meta dd { display: inline; margin: 0 16px 0 4px; color: #333; }
+        .alert { border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; font-size: 0.9rem; }
+        .alert-error { background: #fce8e6; color: #8a1c1c; border: 1px solid #f5c2c7; }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+</head>
+<body>
+    <div class="container">
+        <div class="top-actions">
+            <a href="{% url back_view_name %}" class="btn">← Back to Records</a>
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
+        </div>
+
+        <h1>Request Edit Override — {{ entity_label }}</h1>
+
+        <div class="info-box">
+            This record is older than the allowed edit window and has been locked.
+            Submit a reason below and a manager or admin will review your request.
+            Once approved you will have <strong>{{ override_hours }} hour(s)</strong> to make the edit.
+        </div>
+
+        <div class="record-meta">
+            <dl>
+                <dt>Record:</dt><dd>{{ record }}</dd>
+                <dt>Type:</dt><dd>{{ entity_label }}</dd>
+            </dl>
+        </div>
+
+        {% if messages %}
+            {% for message in messages %}
+            <div class="alert alert-error">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+
+        <form method="POST">
+            {% csrf_token %}
+            <div class="form-group">
+                <label for="reason">Reason for Edit Override <span style="color:#dc3545">*</span></label>
+                <textarea id="reason" name="reason" placeholder="Describe what needs to be corrected and why it could not be done within the allowed edit window." required></textarea>
+            </div>
+            <button type="submit" class="btn btn-amber">Submit Override Request</button>
+        </form>
+    </div>
+</body>
+</html>

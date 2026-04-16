@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Dispatch Entry - Offset ERP</title>
+    <title>{% if edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %} - Offset ERP</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
         .container { max-width: 820px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
@@ -25,11 +25,19 @@
     <div class="container">
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
+            {% if user.profile.can_approve_dispatch %}
             <a href="{% url 'dispatch_records' %}" class="btn">Dispatch Records</a>
+            {% endif %}
+            {% if edit_record %}
+            <a href="{% url 'change_history' 'dispatch' edit_record.id %}" class="btn">History</a>
+            {% endif %}
             <a href="javascript:history.back()" class="btn">Back</a>
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
         </div>
 
-        <h1>Dispatch Entry</h1>
+        <h1>{% if edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %}</h1>
 
         {% if messages %}
             {% for message in messages %}
@@ -37,34 +45,50 @@
             {% endfor %}
         {% endif %}
 
+        {% if edit_record and edit_lock_applies %}
+        <div class="alert alert-success">
+            This dispatch record is past the {{ edit_lock_days }}-day edit window. You are editing with manager/admin override.
+        </div>
+        {% endif %}
+
         <form method="POST">
             {% csrf_token %}
+            {% if edit_record %}
+            <input type="hidden" name="edit_id" value="{{ edit_record.id }}">
+            {% endif %}
             <div class="form-group">
                 <label for="job_card">Job Card</label>
                 <select id="job_card" name="job_card" required>
                     <option value="">Select job card</option>
                     {% for item in job_cards %}
-                    <option value="{{ item.id }}">{{ item.job_card_no }} - {{ item.SKU }}</option>
+                    <option value="{{ item.id }}" {% if edit_record.job_card_id == item.id %}selected{% endif %}>{{ item.job_card_no }} - {{ item.SKU }}</option>
                     {% endfor %}
                 </select>
             </div>
 
             <div class="form-group">
                 <label for="dc_no">DC No (optional)</label>
-                <input id="dc_no" name="dc_no" placeholder="DC-2026-001">
+                <input id="dc_no" name="dc_no" value="{{ edit_record.dc_no|default:'' }}" placeholder="DC-2026-001">
             </div>
 
             <div class="form-group">
                 <label for="dispatch_date">Dispatch Date</label>
-                <input id="dispatch_date" name="dispatch_date" type="date" value="{{ today }}" required>
+                <input id="dispatch_date" name="dispatch_date" type="date" value="{{ today|date:'Y-m-d' }}" required>
             </div>
 
             <div class="form-group">
                 <label for="dispatch_qty">Dispatch Qty (pcs)</label>
-                <input id="dispatch_qty" name="dispatch_qty" type="number" min="1" required>
+                <input id="dispatch_qty" name="dispatch_qty" type="number" min="1" value="{{ edit_record.dispatch_qty|default:'' }}" required>
             </div>
 
-            <button type="submit" class="btn btn-green">Save Dispatch</button>
+            {% if edit_record %}
+            <div class="form-group">
+                <label for="change_reason">Reason For Change <span class="required">*</span></label>
+                <input id="change_reason" name="change_reason" placeholder="Explain what was corrected and why." required>
+            </div>
+            {% endif %}
+
+            <button type="submit" class="btn btn-green">{% if edit_record %}Update Dispatch{% else %}Save Dispatch{% endif %}</button>
         </form>
     </div>
 </body>
