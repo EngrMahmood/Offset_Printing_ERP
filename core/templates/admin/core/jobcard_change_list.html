@@ -1,9 +1,38 @@
 {% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+<style>
+    .object-tools a.addlink {
+        background: #5b0a15 !important;
+        border-color: #440811 !important;
+        color: #fff !important;
+    }
+
+    .object-tools a.addlink:hover {
+        background: #440811 !important;
+    }
+</style>
+{% endblock %}
 
 {% block object-tools-items %}
 
     <!-- DEFAULT: Add Job Card -->
     {{ block.super }}
+
+    <li>
+        <a href="/" class="addlink">
+            Home
+        </a>
+    </li>
+
+    <li>
+        <a href="javascript:history.back()" class="addlink">
+            Back
+        </a>
+    </li>
 
     <!-- CUSTOM: Bulk Upload -->
     <li>

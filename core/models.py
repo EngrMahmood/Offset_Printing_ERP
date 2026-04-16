@@ -10,7 +10,8 @@ from django.contrib.auth import get_user_model
 
 class Machine(models.Model):
     name = models.CharField(max_length=100, unique=True)
-    standard_speed = models.FloatField(default=4000)
+    standard_impressions_per_hour = models.FloatField(default=4000, help_text="Standard printing speed in impressions per hour")
+
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
@@ -44,7 +45,7 @@ class Operator(models.Model):
 # =========================
 
 class JobCard(models.Model):
-    job_card_no = models.CharField(max_length=50)
+    job_card_no = models.CharField(max_length=50, unique=True)
 
     month = models.CharField(max_length=20, null=True, blank=True)
     po_date = models.DateField(null=True, blank=True)
@@ -59,12 +60,16 @@ class JobCard(models.Model):
 
     order_qty = models.IntegerField()
 
+    total_impressions_required = models.IntegerField(
+        null=True, 
+        blank=True,
+        help_text="Total impressions required for this job (manually entered based on machine config - 1/2/5 color, front-back, etc.)"
+    )
+
     ups = models.IntegerField(null=True, blank=True)
     print_sheet_size = models.CharField(max_length=50, null=True, blank=True)
 
-    wastage = models.IntegerField(default=0)
-
-    actual_sheet_required = models.IntegerField(null=True, blank=True)
+    wastage = models.IntegerField(default=0,help_text="in Sheets")
 
     purchase_sheet_size = models.CharField(max_length=50, null=True, blank=True)
     purchase_sheet_ups = models.IntegerField(null=True, blank=True)
@@ -89,8 +94,18 @@ class JobCard(models.Model):
     # ===== ERP PROPERTIES =====
 
     @property
+    def required_sheets(self):
+        if self.ups:
+            return self.order_qty / self.ups
+        return 0
+    
+    @property
+    def total_sheets_planned(self):
+        return int (self.required_sheets + self.wastage)
+    
+    @property
     def total_production(self):
-        return self.productions.aggregate(total=Sum('output_qty'))['total'] or 0
+        return self.productions.aggregate(total=Sum('output_sheets'))['total'] or 0
 
     @property
     def total_dispatch(self):
@@ -98,7 +113,7 @@ class JobCard(models.Model):
 
     @property
     def total_waste(self):
-        return self.productions.aggregate(total=Sum('waste_qty'))['total'] or 0
+        return self.productions.aggregate(total=Sum('waste_sheets'))['total'] or 0
 
     @property
     def balance_qty(self):
@@ -112,7 +127,12 @@ class JobCard(models.Model):
 
     @property
     def job_status(self):
-        if self.total_dispatch >= self.order_qty:
+        if self.order_qty == 0:
+            return "Open"
+
+        dispatch_ratio = (self.total_dispatch / self.order_qty) * 100
+
+        if dispatch_ratio >= 95:
             return "Completed"
         elif self.total_production > 0:
             return "In Progress"
@@ -137,58 +157,122 @@ class Production(models.Model):
     job_card = models.ForeignKey('JobCard', on_delete=models.CASCADE, related_name='productions')
 
     date = models.DateField()
-    shift = models.CharField(max_length=10, choices=SHIFT_CHOICES)
+    shift = models.CharField(max_length=1, choices=SHIFT_CHOICES)
 
     machine = models.ForeignKey('Machine', on_delete=models.PROTECT)
 
-    output_qty = models.PositiveIntegerField()
-    waste_qty = models.PositiveIntegerField(default=0)
+    output_sheets = models.PositiveIntegerField()
+    waste_sheets = models.PositiveIntegerField(default=0)
 
-    planned_time = models.FloatField()
-    run_time = models.FloatField()
-    downtime = models.FloatField(default=0)
-    setup_time = models.FloatField(default=0)
+    WASTE_CHOICES = [
+        ('paper_jam', 'Paper Jam (Affects OEE Quality)'),
+        ('color_issue', 'Color/Registration Issue (Affects OEE Quality)'),
+        ('material_defect', 'Material Defect (External - Excluded from OEE)'),
+        ('operator_error', 'Operator Error (Affects OEE Quality)'),
+        ('machine_issue', 'Machine Issue (Affects OEE Quality)'),
+        ('other', 'Other (Affects OEE Quality)'),
+    ]
+
+    waste_reason = models.CharField(
+        max_length=20,
+        choices=WASTE_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Primary reason for waste"
+    )
+
+    impressions = models.PositiveIntegerField(help_text="Total impressions produced (sheets × passes)")
+
+    planned_time = models.FloatField(help_text="in minutes")
+    run_time = models.FloatField(help_text="in minutes")
+    downtime = models.FloatField(default=0,help_text="in minutes")
+    setup_time = models.FloatField(default=0,help_text="in minutes")
+
+    DOWNTIME_CHOICES = [
+        ('setup', 'Setup Time (Planned - Excluded from OEE)'),
+        ('maintenance', 'Maintenance (Planned - Excluded from OEE)'),
+        ('breakdown', 'Machine Breakdown (Unplanned - Affects OEE)'),
+        ('material', 'Material Issue (External - Excluded from OEE)'),
+        ('operator', 'Operator Issue (Affects OEE)'),
+        ('other', 'Other (Affects OEE)'),
+    ]
+
+    downtime_category = models.CharField(
+        max_length=20,
+        choices=DOWNTIME_CHOICES,
+        null=True,
+        blank=True,
+        help_text="Category of downtime"
+    )
 
     ideal_run_rate = models.FloatField(null=True, blank=True)
 
-    operator = models.ForeignKey(
-        'Operator',
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        limit_choices_to={'is_active': True}
-        
-    )
+    operator = models.ForeignKey('Operator',on_delete=models.SET_NULL,null=True,blank=True,limit_choices_to={'is_active': True})
 
     created_at = models.DateTimeField(auto_now_add=True)
+
+    #Calculated Fields
+
+    @property
+    def pcs_produced(self):
+        if self.job_card.ups:
+            return self.output_sheets * self.job_card.ups
+        return 0
+    
+    @property
+    def good_sheets(self):
+        return self.output_sheets
+    
+    @property
+    def total_sheets(self):
+        return self.output_sheets + self.waste_sheets
 
     def clean(self):
         errors = {}
 
         existing = Production.objects.filter(job_card=self.job_card)\
             .exclude(id=self.id)\
-            .aggregate(total=Sum('output_qty'))['total'] or 0
+            .aggregate(
+                total_output=Sum('output_sheets'),
+                total_waste=Sum('waste_sheets')
+        )
 
-        if existing + self.output_qty > self.job_card.order_qty:
-            errors['output_qty'] = "Production exceeds order quantity!"
+        existing_output = existing['total_output'] or 0
+        existing_waste = existing['total_waste'] or 0
 
+        total_existing_consumption = existing_output + existing_waste
+        current_consumption = (self.output_sheets or 0) + (self.waste_sheets or 0)
+
+    # 🔴 MAIN VALIDATION (FIXED)
+        if total_existing_consumption + current_consumption > self.job_card.total_sheets_planned:
+         errors['output_sheets'] = "Total sheets (production + waste) exceed planned sheets!"
+
+        # Impressions validation
+        if self.impressions <= 0:
+            errors['impressions'] = "Impressions must be greater than 0"
+        if self.impressions < self.output_sheets:
+            errors['impressions'] = "Impressions should be at least equal to output sheets"
+
+    # ⏱ TIME VALIDATIONS
         if self.run_time and self.planned_time:
-            if self.run_time > self.planned_time:
-                errors['run_time'] = "Run time cannot exceed planned time."
+         if self.run_time > self.planned_time:
+            errors['run_time'] = "Run time cannot exceed planned time."
 
         total_time = (self.run_time or 0) + (self.downtime or 0) + (self.setup_time or 0)
         if self.planned_time and total_time > self.planned_time:
-            errors['planned_time'] = "Total time exceeds planned time."
+         errors['planned_time'] = "Total time exceeds planned time."
 
+    # ⚙️ RATE VALIDATION
         if self.ideal_run_rate is not None and self.ideal_run_rate <= 0:
             errors['ideal_run_rate'] = "Must be > 0"
 
+    # 🔥 VERY IMPORTANT (OUTSIDE ALL BLOCKS)
         if errors:
-            raise ValidationError(errors)
+         raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         if not self.ideal_run_rate and self.machine:
-            self.ideal_run_rate = self.machine.standard_speed
+            self.ideal_run_rate = self.machine.standard_impressions_per_hour
 
         self.full_clean()
 
@@ -200,56 +284,125 @@ class Production(models.Model):
 
     # ===== OEE =====
 
+    @property
+    def expected_impressions(self):
+        """Expected impressions based on machine capacity and run time"""
+        if not self.machine or not self.machine.standard_impressions_per_hour:
+            return 0
+        run_time_hours = self.run_time / 60
+        return self.machine.standard_impressions_per_hour * run_time_hours
+
+    @property
     def availability(self):
-        return self.run_time / self.planned_time if self.planned_time else 0
+        if self.planned_time == 0:
+            return 0
+        # OEE Availability excludes planned downtime
+        # Include only unplanned downtime categories
+        unplanned_categories = ['breakdown', 'operator', 'other']
+        unplanned_downtime = self.downtime if self.downtime_category in unplanned_categories else 0
+        return (self.planned_time - unplanned_downtime) / self.planned_time
 
+    @property
     def performance(self):
-        if self.run_time and self.ideal_run_rate:
-            return self.output_qty / (self.ideal_run_rate * self.run_time)
-        return 0
+        if not self.machine or not self.machine.standard_impressions_per_hour:
+            return 0
+        
+        run_time_hours = self.run_time/60
 
+        expected_impressions = self.machine.standard_impressions_per_hour * run_time_hours
+        if expected_impressions == 0:
+            return 0
+
+        return self.impressions / expected_impressions
+    
+
+
+    @property
     def quality(self):
-        total = self.output_qty + self.waste_qty
-        return self.output_qty / total if total else 0
+        if self.total_sheets == 0:
+            return 0
+        # OEE Quality excludes wastes not caused by production process
+        # Only count wastes that affect machine/process quality
+        quality_affecting_wastes = ['paper_jam', 'color_issue', 'operator_error', 'machine_issue', 'other']
+        quality_waste = self.waste_sheets if self.waste_reason in quality_affecting_wastes else 0
+        good_sheets = self.output_sheets  # assuming output_sheets are good
+        total_quality_sheets = good_sheets + quality_waste
+        if total_quality_sheets == 0:
+            return 0
+        return good_sheets / total_quality_sheets
+    
 
+    @property
     def oee(self):
-        return self.availability() * self.performance() * self.quality()
+        return round((self.availability * self.performance * self.quality),2)
+    
+
 
     def operator_efficiency(self):
         if self.run_time and self.ideal_run_rate:
-            return (self.output_qty / (self.ideal_run_rate * self.run_time)) * 100
+            run_time_hours = self.run_time/60
+            expected_impressions = self.ideal_run_rate * run_time_hours
+            if expected_impressions == 0:
+                return 0
+            return (self.impressions / expected_impressions) * 100
         return 0
 
     def __str__(self):
         return f"{self.job_card.job_card_no} - {self.date}"
 
+# ========================= 
+# DISPATCH 
+# =========================
 
-# =========================
-# DISPATCH
-# =========================
 
 class Dispatch(models.Model):
 
     job_card = models.ForeignKey(JobCard, on_delete=models.CASCADE)
+
+    dc_no = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        help_text="Dispatch Challan Number (can be shared across multiple Job Cards)"
+
+    )
+
     dispatch_date = models.DateField()
+
     dispatch_qty = models.IntegerField(default=0)
 
+
+    # =========================
+    # VALIDATION ONLY
+    # =========================
     def clean(self):
-        if not self.job_card:
-            return
+        errors = {}
+
+        if self.dispatch_qty <= 0:
+            errors['dispatch_qty'] = "Dispatch must be greater than 0"
 
         existing_dispatch = Dispatch.objects.filter(job_card=self.job_card)\
             .exclude(id=self.id)\
             .aggregate(total=Sum('dispatch_qty'))['total'] or 0
 
-        total_after = existing_dispatch + self.dispatch_qty
+        total_after = existing_dispatch + (self.dispatch_qty or 0)
 
-        total_production = self.job_card.productions.aggregate(
-            total=Sum('output_qty')
-        )['total'] or 0
+        total_production = sum(
+            p.pcs_produced for p in self.job_card.productions.all()
+        )
 
         if total_after > total_production:
-            raise ValidationError("Dispatch exceeds production!")
+            errors['dispatch_qty'] = "Dispatch cannot exceed total produced quantity!"
+
+        if errors:
+            raise ValidationError(errors)
+
+    # =========================
+    # SAVE LOGIC
+    # =========================
+    def save(self, *args, **kwargs):
+        self.full_clean()   # runs clean() + field validation
+        super().save(*args, **kwargs)
 
     def __str__(self):
         return f"{self.job_card.job_card_no} - {self.dispatch_date}"

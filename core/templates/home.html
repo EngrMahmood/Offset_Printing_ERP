@@ -1,10 +1,279 @@
+{% load static %}
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <title>Offset ERP</title>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Offset Printing ERP</title>
+    <style>
+        :root {
+            --bg: #f8f6f4;
+            --surface: #ffffff;
+            --text: #2b1b1d;
+            --muted: #6f6265;
+            --line: #e6dedd;
+            --primary: #5b0a15;
+            --accent: #a78a2f;
+            --primary-soft: #f7f1e1;
+            --shadow: 0 6px 20px rgba(57, 27, 31, 0.08);
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            font-family: "Segoe UI", "Tahoma", sans-serif;
+            background: var(--bg);
+            color: var(--text);
+        }
+
+        .page {
+            max-width: 1060px;
+            margin: 0 auto;
+            padding: 20px 14px 32px;
+        }
+
+        .header {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 12px;
+            box-shadow: var(--shadow);
+            overflow: hidden;
+            margin-bottom: 14px;
+        }
+
+        .header-grid {
+            display: grid;
+            grid-template-columns: 1.2fr 1fr;
+        }
+
+        .header-copy {
+            padding: 22px;
+        }
+
+        .brand-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .brand-logo {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            border: 1px solid #d9cccc;
+            object-fit: contain;
+            background: #ffffff;
+            padding: 4px;
+        }
+
+        .brand-fallback {
+            width: 42px;
+            height: 42px;
+            border-radius: 10px;
+            border: 1px solid #d9cccc;
+            background: #f9f3f3;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            color: var(--primary);
+            font-weight: 700;
+            font-size: 0.78rem;
+        }
+
+        .eyebrow {
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: var(--primary);
+            margin-bottom: 0;
+        }
+
+        h1 {
+            font-size: clamp(1.45rem, 2.5vw, 2rem);
+            margin: 0 0 6px;
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        .header-copy p {
+            margin: 0;
+            color: var(--muted);
+            line-height: 1.5;
+            max-width: 54ch;
+            font-size: 0.95rem;
+        }
+
+        .header-image {
+            min-height: 205px;
+            background: #f2e9ea;
+            position: relative;
+        }
+
+        .header-image img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            display: block;
+        }
+
+        .header-image::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(120deg, rgba(91, 10, 21, 0.2), rgba(167, 138, 47, 0.12));
+            pointer-events: none;
+        }
+
+        .section-title {
+            margin: 0 0 8px;
+            font-size: 1.02rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .section-subtitle {
+            margin: 0 0 12px;
+            color: var(--muted);
+            font-size: 0.88rem;
+        }
+
+        .nav-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 10px;
+        }
+
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-left: 3px solid #d5c48a;
+            border-radius: 9px;
+            padding: 13px;
+            text-decoration: none;
+            color: inherit;
+            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+            transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
+        }
+
+        .card:hover {
+            border-left-color: var(--accent);
+            transform: translateY(-2px);
+            box-shadow: 0 8px 18px rgba(91, 10, 21, 0.12);
+        }
+
+        .card h3 {
+            margin: 0 0 4px;
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .card p {
+            margin: 0;
+            font-size: 0.84rem;
+            color: var(--muted);
+            line-height: 1.4;
+        }
+
+        .footer-note {
+            margin-top: 16px;
+            padding: 10px;
+            border-radius: 8px;
+            background: var(--primary-soft);
+            color: #5a4a23;
+            font-size: 0.83rem;
+            border: 1px solid #eadfbf;
+        }
+
+        @media (max-width: 860px) {
+            .header-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .header-image {
+                min-height: 180px;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
 </head>
 <body>
-    <h1>Welcome to Offset Printing ERP System</h1>
-    <a href="/admin/">Go to Admin Panel</a>
+    <main class="page">
+        <section class="header">
+            <div class="header-grid">
+                <div class="header-copy">
+                    <div class="brand-row">
+                        <img
+                            class="brand-logo"
+                            src="{% static 'core/image/logo.jpg' %}"
+                            alt="Company logo"
+                            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                        >
+                        <div class="brand-fallback">LOGO</div>
+                        <div class="eyebrow">Offset Printing ERP</div>
+                    </div>
+                    <h1>Production Operations Workspace</h1>
+                    <p>
+                        Manage daily printing operations from one place: create job cards,
+                        capture production, monitor OEE performance, and control dispatch records.
+                    </p>
+                </div>
+                <div class="header-image">
+                    <img src="{% static 'core/image/cmyk.jpg' %}" alt="CMYK offset printing process image">
+                </div>
+            </div>
+        </section>
+
+        <section>
+            <h2 class="section-title">Modules</h2>
+            <p class="section-subtitle">Select a module to continue with planning, execution, analytics, or dispatch operations.</p>
+
+            <div class="nav-grid">
+                <a href="{% url 'job_card_entry' %}" class="card">
+                    <h3>Job Card Entry</h3>
+                    <p>Create job cards with PO details and quantities for production planning.</p>
+                </a>
+
+                <a href="{% url 'job_card_records' %}" class="card">
+                    <h3>Job Card Records</h3>
+                    <p>View all job cards and track produced and dispatched balance.</p>
+                </a>
+
+                <a href="{% url 'production_entry' %}" class="card">
+                    <h3>Production Entry</h3>
+                    <p>Submit impressions, output, waste, and downtime from the shop floor.</p>
+                </a>
+
+                <a href="{% url 'production_records' %}" class="card">
+                    <h3>Production Records</h3>
+                    <p>Review historical production entries for machine and operator analysis.</p>
+                </a>
+
+                <a href="{% url 'production_dashboard' %}" class="card">
+                    <h3>Production Dashboard</h3>
+                    <p>Track OEE, trends, and dispatch fulfillment for selected periods.</p>
+                </a>
+
+                <a href="{% url 'dispatch_entry' %}" class="card">
+                    <h3>Dispatch Entry</h3>
+                    <p>Post dispatch quantities against job cards with quantity controls.</p>
+                </a>
+
+                <a href="{% url 'dispatch_records' %}" class="card">
+                    <h3>Dispatch Records</h3>
+                    <p>Search dispatch history by date, DC number, and job card number.</p>
+                </a>
+            </div>
+
+            <div class="footer-note">
+                This home screen is operations-only and does not include admin shortcuts.
+            </div>
+        </section>
+    </main>
 </body>
 </html>

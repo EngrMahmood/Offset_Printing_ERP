@@ -37,6 +37,8 @@ class JobCardAdmin(admin.ModelAdmin):
         'job_card_no',
         'SKU',
         'order_qty',
+        'total_impressions_required',
+        'total_sheets_planned',
         'total_production',
         'total_dispatch',
         'balance_qty',
@@ -87,8 +89,8 @@ class JobCardAdmin(admin.ModelAdmin):
             "fields": (
                 "order_qty",
                 "ups",
-                "wastage",
-                "actual_sheet_required"
+                "total_impressions_required",
+                "wastage"
             )
         }),
 
@@ -165,34 +167,78 @@ class JobCardAdmin(admin.ModelAdmin):
 
 @admin.register(Production)
 class ProductionAdmin(admin.ModelAdmin):
+
     list_display = (
-        'job_card',
+    'job_card',
+    'date',
+    'shift',
+    'machine',
+    'output_sheets',
+    'waste_sheets',
+    'waste_reason',
+    'pcs_produced',
+    'impressions',
+    'oee'
+)
+
+    list_filter = (
         'date',
         'shift',
         'machine',
-        'output_qty',
-        'waste_qty'
+        'operator',
+        'waste_reason',
+        'downtime_category',
+    )
+
+    search_fields = (
+        'job_card__job_card_no',
+        'machine__name',
+        'operator__name',
     )
 
     autocomplete_fields = ['job_card', 'machine', 'operator']
 
-    search_fields = (
-        'job_card__job_card_no',   # ✅ correct
-        'machine__name',           # ✅ FIXED
-        'operator__name',          # ✅ FIXED
+    date_hierarchy = 'date'
+
+    fieldsets = (
+        ("Production Details", {
+            "fields": (
+                "job_card",
+                "date",
+                "shift",
+                "machine",
+                "operator"
+            )
+        }),
+        ("Output & Waste", {
+            "fields": (
+                "output_sheets",
+                "waste_sheets",
+                "waste_reason",
+                "impressions"
+            )
+        }),
+        ("Time Tracking", {
+            "fields": (
+                "planned_time",
+                "run_time",
+                "downtime",
+                "downtime_category",
+                "setup_time"
+            )
+        }),
     )
-
-
     
 @admin.register(Operator)
 class OperatorAdmin(admin.ModelAdmin):
     list_display = ['name', 'employee_code', 'is_active']
     search_fields = ['name', 'employee_code']
+    list_filter = ['is_active']
 
 
 @admin.register(Machine)
 class MachineAdmin(admin.ModelAdmin):
-    list_display = ['name', 'standard_speed', 'is_active']
+    list_display = ['name', 'standard_impressions_per_hour', 'is_active']
     search_fields = ['name']
 
 @admin.register(Department)
@@ -209,13 +255,42 @@ class MaterialAdmin(admin.ModelAdmin):
 
 @admin.register(Dispatch)
 class DispatchAdmin(admin.ModelAdmin):
+
     list_display = (
         'job_card',
+        'order_qty',
+        'dc_no',
         'dispatch_date',
-        'dispatch_qty'
+        'dispatch_qty',
+        'balance_check',
+        'balance_qty_percentage'
     )
 
     list_filter = ('dispatch_date',)
+
+    search_fields = ('job_card__job_card_no','dc_no',)
+
+    
+    def balance_qty_percentage(self, obj):
+     if obj.job_card.order_qty == 0:
+        return "0%"
+
+     balance = obj.job_card.balance_qty
+     percent = (balance / obj.job_card.order_qty) * 100
+
+     return f"{round(percent, 2)}%"
+    balance_qty_percentage.short_description = "Balance %"
+
+    def balance_check(self, obj):
+        return obj.job_card.balance_qty
+
+    balance_check.short_description = "DC Balance"
+
+
+    def order_qty(self, obj):
+        return obj.job_card.order_qty
+
+    order_qty.short_description = "Order Qty"
 
 
 # =========================

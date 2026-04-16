@@ -1,0 +1,13 @@
+{% extends "admin/base_site.html" %}
+{% load static %}
+
+{% block branding %}
+<div id="site-branding">
+    <a href="{% url 'admin:index' %}" class="brand-link">
+        <img src="{% static 'core/image/logo.jpg' %}" alt="Company logo" class="brand-logo" onerror="this.style.display='none';">
+        <span class="brand-text">UTOPIA ERP Admin</span>
+    </a>
+</div>
+{% endblock %}
+
+{% block nav-global %}{% endblock %}

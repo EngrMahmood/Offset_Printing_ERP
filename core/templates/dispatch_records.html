@@ -1,0 +1,66 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dispatch Records - Offset ERP</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
+        .container { max-width: 1100px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; }
+        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; }
+        .btn:hover { background: #2f5b73; }
+        .btn-green { background: #198754; }
+        .btn-green:hover { background: #136a42; }
+        h1 { margin-top: 0; }
+        .filters { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-bottom: 14px; }
+        input { padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 10px; border-bottom: 1px solid #e7ebef; text-align: left; }
+        th { background: #f7f9fb; }
+        .muted { color: #697586; }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+</head>
+<body>
+    <div class="container">
+        <div class="top-actions">
+            <a href="/" class="btn">Home</a>
+            <a href="{% url 'dispatch_entry' %}" class="btn btn-green">+ Add Dispatch</a>
+            <a href="javascript:history.back()" class="btn">Back</a>
+        </div>
+
+        <div class="card">
+            <h1>Dispatch Records</h1>
+
+            <form method="GET" class="filters">
+                <input name="q" value="{{ q }}" placeholder="Search by Job Card or DC No">
+                <button type="submit" class="btn">Filter</button>
+            </form>
+
+            <table>
+                <thead>
+                    <tr>
+                        <th>Date</th>
+                        <th>Job Card</th>
+                        <th>DC No</th>
+                        <th>Dispatch Qty</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in records %}
+                    <tr>
+                        <td>{{ row.dispatch_date }}</td>
+                        <td>{{ row.job_card.job_card_no }}</td>
+                        <td>{{ row.dc_no|default:'-' }}</td>
+                        <td>{{ row.dispatch_qty }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="muted">No dispatch records found.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>

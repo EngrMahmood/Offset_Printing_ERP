@@ -1,3 +1,0 @@
-job_card_no,SKU,PO_No,po_date,month,material,colour,application,order_qty,ups,print_sheet_size,wastage,actual_sheet_required,purchase_sheet_size,purchase_sheet_ups,remarks,destination,machine_name,department,die_cutting
-JC-04-26-22,SKU-01,7788,13/04/2026,April,Bleach230,4,UV,10000,12,20x30,5,10500,20x30,6,Urgent job,SITE 1,GTO 1A,Pillow,Yes
-JC-04-26-12,SKU-02,7790,13/04/2026,April,Artpaper128,2,Lamination,5000,10,18x24,4,5200,18x24,5,Normal job,SITE2,GTO 2B,Comforter,No

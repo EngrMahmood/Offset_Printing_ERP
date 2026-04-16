@@ -1,0 +1,136 @@
+:root {
+    --brand-bg: #f8f6f4;
+    --brand-surface: #ffffff;
+    --brand-text: #2b1b1d;
+    --brand-muted: #6f6265;
+    --brand-line: #e6dedd;
+    --brand-primary: #5b0a15;
+    --brand-primary-dark: #440811;
+    --brand-accent: #a78a2f;
+    --brand-accent-soft: #f7f1e1;
+    --brand-shadow: 0 8px 24px rgba(57, 27, 31, 0.08);
+    --brand-success-bg: #f1f8f1;
+    --brand-success-text: #1f5e2c;
+    --brand-success-line: #c8decf;
+    --brand-error-bg: #fceff0;
+    --brand-error-text: #7b1c27;
+    --brand-error-line: #edc8cd;
+}
+
+body {
+    background: var(--brand-bg) !important;
+    color: var(--brand-text);
+}
+
+h1, h2, h3, h4 {
+    color: var(--brand-primary);
+}
+
+.container,
+.card,
+.metric-card,
+.chart-card,
+.recent-productions,
+.filters {
+    background: var(--brand-surface) !important;
+    border-color: var(--brand-line) !important;
+    box-shadow: var(--brand-shadow) !important;
+}
+
+label,
+.metric-label,
+.muted,
+.hint,
+.section-subtitle {
+    color: var(--brand-muted) !important;
+}
+
+input,
+select,
+textarea,
+.file-input {
+    border: 1px solid var(--brand-line) !important;
+    border-radius: 6px;
+    background: #fff;
+    color: var(--brand-text);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+    outline: none;
+    border-color: var(--brand-accent) !important;
+    box-shadow: 0 0 0 3px rgba(167, 138, 47, 0.15) !important;
+}
+
+.btn,
+.nav-btn,
+.submit-btn,
+.erp-button,
+button[type="submit"] {
+    background: var(--brand-primary) !important;
+    color: #fff !important;
+    border: 1px solid var(--brand-primary-dark) !important;
+}
+
+.btn:hover,
+.nav-btn:hover,
+.submit-btn:hover,
+.erp-button:hover,
+button[type="submit"]:hover {
+    background: var(--brand-primary-dark) !important;
+}
+
+.btn-green,
+.btn-primary,
+.plus-btn,
+.upload-btn,
+.dashboard-link {
+    background: var(--brand-accent) !important;
+    color: #2f2508 !important;
+    border: 1px solid #8c7428 !important;
+}
+
+.btn-green:hover,
+.btn-primary:hover,
+.plus-btn:hover,
+.upload-btn:hover,
+.dashboard-link:hover {
+    background: #8f7529 !important;
+    color: #fff !important;
+}
+
+.alert-success,
+.ok,
+.success-box {
+    background: var(--brand-success-bg) !important;
+    color: var(--brand-success-text) !important;
+    border: 1px solid var(--brand-success-line) !important;
+}
+
+.alert-error,
+.bad,
+.error-box {
+    background: var(--brand-error-bg) !important;
+    color: var(--brand-error-text) !important;
+    border: 1px solid var(--brand-error-line) !important;
+}
+
+th {
+    background: #f5efdf !important;
+    color: var(--brand-primary) !important;
+}
+
+table,
+th,
+td,
+.production-table th,
+.production-table td {
+    border-color: var(--brand-line) !important;
+}
+
+.footer-note {
+    background: var(--brand-accent-soft) !important;
+    border-color: #e5d5a8 !important;
+    color: #5f4b19 !important;
+}
