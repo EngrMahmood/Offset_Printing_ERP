@@ -35,6 +35,13 @@
             padding: 20px 14px 32px;
         }
 
+        .utility-bar {
+            display: flex;
+            justify-content: flex-end;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
         .header {
             background: var(--surface);
             border: 1px solid var(--line);
@@ -191,6 +198,10 @@
         }
 
         @media (max-width: 860px) {
+            .utility-bar {
+                justify-content: center;
+            }
+
             .header-grid {
                 grid-template-columns: 1fr;
             }
@@ -204,6 +215,9 @@
 </head>
 <body>
     <main class="page">
+        <div class="utility-bar">
+            {% include 'includes/user_identity_chip.html' %}
+        </div>
         <section class="header">
             <div class="header-grid">
                 <div class="header-copy">
@@ -234,6 +248,7 @@
             <p class="section-subtitle">Select a module to continue with planning, execution, analytics, or dispatch operations.</p>
 
             <div class="nav-grid">
+                {% if user.profile.can_edit_jobcard %}
                 <a href="{% url 'job_card_entry' %}" class="card">
                     <h3>Job Card Entry</h3>
                     <p>Create job cards with PO details and quantities for production planning.</p>
@@ -243,7 +258,9 @@
                     <h3>Job Card Records</h3>
                     <p>View all job cards and track produced and dispatched balance.</p>
                 </a>
+                {% endif %}
 
+                {% if user.profile.can_edit_production %}
                 <a href="{% url 'production_entry' %}" class="card">
                     <h3>Production Entry</h3>
                     <p>Submit impressions, output, waste, and downtime from the shop floor.</p>
@@ -253,12 +270,16 @@
                     <h3>Production Records</h3>
                     <p>Review historical production entries for machine and operator analysis.</p>
                 </a>
+                {% endif %}
 
+                {% if user.profile.can_view_analytics %}
                 <a href="{% url 'production_dashboard' %}" class="card">
                     <h3>Production Dashboard</h3>
                     <p>Track OEE, trends, and dispatch fulfillment for selected periods.</p>
                 </a>
+                {% endif %}
 
+                {% if user.profile.can_approve_dispatch %}
                 <a href="{% url 'dispatch_entry' %}" class="card">
                     <h3>Dispatch Entry</h3>
                     <p>Post dispatch quantities against job cards with quantity controls.</p>
@@ -268,10 +289,38 @@
                     <h3>Dispatch Records</h3>
                     <p>Search dispatch history by date, DC number, and job card number.</p>
                 </a>
+                {% endif %}
+
+                {% if user.profile.can_archive_records %}
+                <a href="{% url 'archived_records' %}" class="card">
+                    <h3>Archived Records</h3>
+                    <p>Review archived entries and restore records with full audit traceability.</p>
+                </a>
+
+                <a href="{% url 'override_requests' %}" class="card">
+                    <h3>Edit Override Requests</h3>
+                    <p>Approve or reject locked-record edit requests from operational users.</p>
+                </a>
+                {% endif %}
             </div>
 
+            {% if user.profile.role == 'admin' %}
+            <h2 class="section-title">Admin Panel</h2>
+            <p class="section-subtitle">System administration and configuration tools.</p>
+            <div class="nav-grid">
+                <a href="{% url 'manage_user_roles' %}" class="card">
+                    <h3>👥 Manage User Roles</h3>
+                    <p>Assign roles and permissions to team members (Admin only).</p>
+                </a>
+                <a href="/admin/" class="card">
+                    <h3>⚙️ Django Admin</h3>
+                    <p>Master data management: Machines, operators, materials, departments.</p>
+                </a>
+            </div>
+            {% endif %}
+
             <div class="footer-note">
-                This home screen is operations-only and does not include admin shortcuts.
+                This home screen is operations-only and does not include full admin shortcuts.
             </div>
         </section>
     </main>

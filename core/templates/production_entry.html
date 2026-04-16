@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Production Data Entry - Offset ERP</title>
+    <title>{% if edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %} - Offset ERP</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -138,11 +138,21 @@
         <div class="top-actions">
             <a href="/" class="nav-btn">Home</a>
             <a href="javascript:history.back()" class="nav-btn">Back</a>
+            {% if user.profile.can_edit_production %}
             <a href="{% url 'production_records' %}" class="nav-btn">Production Records</a>
+            {% endif %}
+            {% if edit_record %}
+            <a href="{% url 'change_history' 'production' edit_record.id %}" class="nav-btn">History</a>
+            {% endif %}
+            {% if user.profile.can_approve_dispatch %}
             <a href="{% url 'dispatch_entry' %}" class="nav-btn">Dispatch Entry</a>
+            {% endif %}
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
         </div>
 
-        <h1>📊 Production Data Entry</h1>
+        <h1>{% if edit_record %}Edit Production Data{% else %}📊 Production Data Entry{% endif %}</h1>
 
         {% if messages %}
             {% for message in messages %}
@@ -152,8 +162,17 @@
             {% endfor %}
         {% endif %}
 
+        {% if edit_record and edit_lock_applies %}
+        <div class="alert alert-success">
+            This production record is past the {{ edit_lock_days }}-day edit window. You are editing with manager/admin override.
+        </div>
+        {% endif %}
+
         <form method="POST">
             {% csrf_token %}
+            {% if edit_record %}
+            <input type="hidden" name="edit_id" value="{{ edit_record.id }}">
+            {% endif %}
 
             <div class="row">
                 <div class="col">
@@ -162,7 +181,7 @@
                         <select name="job_card" id="job_card" required>
                             <option value="">Select Job Card</option>
                             {% for job_card in job_cards %}
-                                <option value="{{ job_card.id }}">{{ job_card.job_card_no }} - {{ job_card.SKU }}</option>
+                                <option value="{{ job_card.id }}" {% if edit_record.job_card_id == job_card.id %}selected{% endif %}>{{ job_card.job_card_no }} - {{ job_card.SKU }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -174,7 +193,7 @@
                         <select name="machine" id="machine" required>
                             <option value="">Select Machine</option>
                             {% for machine in machines %}
-                                <option value="{{ machine.id }}">{{ machine.name }}</option>
+                                <option value="{{ machine.id }}" {% if edit_record.machine_id == machine.id %}selected{% endif %}>{{ machine.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -188,7 +207,7 @@
                         <select name="operator" id="operator" required>
                             <option value="">Select Operator</option>
                             {% for operator in operators %}
-                                <option value="{{ operator.id }}">{{ operator.name }}</option>
+                                <option value="{{ operator.id }}" {% if edit_record.operator_id == operator.id %}selected{% endif %}>{{ operator.name }}</option>
                             {% endfor %}
                         </select>
                     </div>
@@ -199,8 +218,8 @@
                         <label for="shift">Shift <span class="required">*</span></label>
                         <select name="shift" id="shift" required>
                             <option value="">Select Shift</option>
-                            <option value="A">Shift A</option>
-                            <option value="B">Shift B</option>
+                            <option value="A" {% if edit_record.shift == 'A' %}selected{% endif %}>Shift A</option>
+                            <option value="B" {% if edit_record.shift == 'B' %}selected{% endif %}>Shift B</option>
                         </select>
                     </div>
                 </div>
@@ -208,21 +227,21 @@
 
             <div class="form-group">
                 <label for="date">Production Date <span class="required">*</span></label>
-                <input type="date" name="date" id="date" value="{{ today }}" required>
+                <input type="date" name="date" id="date" value="{{ today|date:'Y-m-d' }}" required>
             </div>
 
             <div class="row">
                 <div class="col">
                     <div class="form-group">
                         <label for="impressions">Impressions (Actual) <span class="required">*</span></label>
-                        <input type="number" name="impressions" id="impressions" placeholder="e.g., 10000" required>
+                        <input type="number" name="impressions" id="impressions" value="{{ edit_record.impressions|default:'' }}" placeholder="e.g., 10000" required>
                     </div>
                 </div>
 
                 <div class="col">
                     <div class="form-group">
                         <label for="output_sheets">Output Sheets <span class="required">*</span></label>
-                        <input type="number" name="output_sheets" id="output_sheets" placeholder="e.g., 500" required>
+                        <input type="number" name="output_sheets" id="output_sheets" value="{{ edit_record.output_sheets|default:'' }}" placeholder="e.g., 500" required>
                     </div>
                 </div>
             </div>
@@ -231,14 +250,14 @@
                 <div class="col">
                     <div class="form-group">
                         <label for="waste_sheets">Waste Sheets</label>
-                        <input type="number" name="waste_sheets" id="waste_sheets" placeholder="e.g., 10" value="0">
+                        <input type="number" name="waste_sheets" id="waste_sheets" placeholder="e.g., 10" value="{{ edit_record.waste_sheets|default:0 }}">
                     </div>
                 </div>
 
                 <div class="col">
                     <div class="form-group">
                         <label for="downtime_minutes">Downtime (minutes)</label>
-                        <input type="number" name="downtime_minutes" id="downtime_minutes" placeholder="e.g., 30" value="0">
+                        <input type="number" name="downtime_minutes" id="downtime_minutes" placeholder="e.g., 30" value="{{ edit_record.downtime|default:0 }}">
                     </div>
                 </div>
             </div>
@@ -247,21 +266,21 @@
                 <div class="col">
                     <div class="form-group">
                         <label for="planned_time">Planned Time (minutes) <span class="required">*</span></label>
-                        <input type="number" name="planned_time" id="planned_time" placeholder="e.g., 480" min="1" required>
+                        <input type="number" name="planned_time" id="planned_time" value="{{ edit_record.planned_time|default:'' }}" placeholder="e.g., 480" min="1" required>
                     </div>
                 </div>
 
                 <div class="col">
                     <div class="form-group">
                         <label for="run_time">Run Time (minutes) <span class="required">*</span></label>
-                        <input type="number" name="run_time" id="run_time" placeholder="e.g., 420" min="1" required>
+                        <input type="number" name="run_time" id="run_time" value="{{ edit_record.run_time|default:'' }}" placeholder="e.g., 420" min="1" required>
                     </div>
                 </div>
             </div>
 
             <div class="form-group">
                 <label for="setup_time">Setup Time (minutes)</label>
-                <input type="number" name="setup_time" id="setup_time" placeholder="e.g., 30" min="0" value="0">
+                <input type="number" name="setup_time" id="setup_time" value="{{ edit_record.setup_time|default:0 }}" placeholder="e.g., 30" min="0">
             </div>
 
             <div class="row">
@@ -270,12 +289,12 @@
                         <label for="downtime_category">Downtime Category</label>
                         <select name="downtime_category" id="downtime_category">
                             <option value="">Select Category</option>
-                            <option value="setup">Setup Time</option>
-                            <option value="maintenance">Maintenance</option>
-                            <option value="breakdown">Machine Breakdown</option>
-                            <option value="material">Material Issue</option>
-                            <option value="operator">Operator Issue</option>
-                            <option value="other">Other</option>
+                            <option value="setup" {% if edit_record.downtime_category == 'setup' %}selected{% endif %}>Setup Time</option>
+                            <option value="maintenance" {% if edit_record.downtime_category == 'maintenance' %}selected{% endif %}>Maintenance</option>
+                            <option value="breakdown" {% if edit_record.downtime_category == 'breakdown' %}selected{% endif %}>Machine Breakdown</option>
+                            <option value="material" {% if edit_record.downtime_category == 'material' %}selected{% endif %}>Material Issue</option>
+                            <option value="operator" {% if edit_record.downtime_category == 'operator' %}selected{% endif %}>Operator Issue</option>
+                            <option value="other" {% if edit_record.downtime_category == 'other' %}selected{% endif %}>Other</option>
                         </select>
                     </div>
                 </div>
@@ -285,12 +304,12 @@
                         <label for="waste_reason">Waste Reason</label>
                         <select name="waste_reason" id="waste_reason">
                             <option value="">Select Reason</option>
-                            <option value="paper_jam">Paper Jam</option>
-                            <option value="color_issue">Color/Registration Issue</option>
-                            <option value="material_defect">Material Defect</option>
-                            <option value="operator_error">Operator Error</option>
-                            <option value="machine_issue">Machine Issue</option>
-                            <option value="other">Other</option>
+                            <option value="paper_jam" {% if edit_record.waste_reason == 'paper_jam' %}selected{% endif %}>Paper Jam</option>
+                            <option value="color_issue" {% if edit_record.waste_reason == 'color_issue' %}selected{% endif %}>Color/Registration Issue</option>
+                            <option value="material_defect" {% if edit_record.waste_reason == 'material_defect' %}selected{% endif %}>Material Defect</option>
+                            <option value="operator_error" {% if edit_record.waste_reason == 'operator_error' %}selected{% endif %}>Operator Error</option>
+                            <option value="machine_issue" {% if edit_record.waste_reason == 'machine_issue' %}selected{% endif %}>Machine Issue</option>
+                            <option value="other" {% if edit_record.waste_reason == 'other' %}selected{% endif %}>Other</option>
                         </select>
                     </div>
                 </div>
@@ -301,7 +320,14 @@
                 <textarea name="remarks" id="remarks" rows="3" placeholder="Any additional notes..."></textarea>
             </div>
 
-            <button type="submit" class="btn">💾 Save Production Data</button>
+            {% if edit_record %}
+            <div class="form-group">
+                <label for="change_reason">Reason For Change <span class="required">*</span></label>
+                <textarea name="change_reason" id="change_reason" rows="3" placeholder="Explain what was corrected and why." required></textarea>
+            </div>
+            {% endif %}
+
+            <button type="submit" class="btn">{% if edit_record %}Update Production Data{% else %}💾 Save Production Data{% endif %}</button>
         </form>
 
         <div style="text-align: center; margin-top: 30px;">

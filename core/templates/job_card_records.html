@@ -19,6 +19,7 @@
         th, td { padding: 10px; border-bottom: 1px solid #e7ebef; text-align: left; }
         th { background: #f7f9fb; }
         .muted { color: #697586; }
+        .actions-cell { white-space: nowrap; }
     </style>
     <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
 </head>
@@ -26,8 +27,16 @@
     <div class="container">
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
+            {% if user.profile.can_edit_jobcard %}
             <a href="{% url 'job_card_entry' %}" class="btn btn-green">+ Add Job Card</a>
             <a href="{% url 'bulk_upload_jobcards' %}" class="btn">Bulk Upload</a>
+            {% endif %}
+            {% if user.profile.can_archive_records %}
+            <a href="{% url 'archived_records' %}?entity=job_card" class="btn">Archived</a>
+            {% endif %}
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
         </div>
 
         <div class="card">
@@ -55,6 +64,7 @@
                         <th>Total Dispatch</th>
                         <th>Balance</th>
                         <th>Status</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -68,9 +78,16 @@
                         <td>{{ row.total_dispatch }}</td>
                         <td>{{ row.balance_qty }}</td>
                         <td>{{ row.job_status }}</td>
+                        <td class="actions-cell">
+                            <a href="{% url 'job_card_entry' %}?edit={{ row.id }}" class="btn">Edit</a>
+                            <a href="{% url 'change_history' 'job_card' row.id %}" class="btn btn-green">History</a>
+                            {% if user.profile.can_archive_records %}
+                            <a href="{% url 'delete_record' 'job_card' row.id %}" class="btn">Archive</a>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="8" class="muted">No job cards found.</td></tr>
+                    <tr><td colspan="9" class="muted">No job cards found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
