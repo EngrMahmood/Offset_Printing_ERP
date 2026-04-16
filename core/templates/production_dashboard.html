@@ -118,6 +118,7 @@
             display: flex;
             gap: 20px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .btn {
@@ -183,7 +184,7 @@
 
         <h1>📊 Production Dashboard</h1>
 
-        <div class="filters">
+        <form class="filters" method="GET">
             <div>
                 <label>Time Period:</label>
                 <select id="days" onchange="changePeriod(this.value)">
@@ -192,10 +193,22 @@
                     <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 Days</option>
                 </select>
             </div>
+            <div>
+                <label for="start_date">Start Date:</label>
+                <input type="date" id="start_date" name="start_date" value="{{ start_date }}">
+            </div>
+            <div>
+                <label for="end_date">End Date:</label>
+                <input type="date" id="end_date" name="end_date" value="{{ end_date }}">
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-end;">
+                <button type="submit" class="btn">Apply Date Filter</button>
+                <a href="{% url 'production_dashboard' %}?days=7" class="btn">Reset</a>
+            </div>
             {% if user.profile.can_edit_production %}
             <a href="{% url 'production_entry' %}" class="btn btn-primary">➕ Add Production Data</a>
             {% endif %}
-        </div>
+        </form>
 
         <!-- Period OEE Metrics -->
         <div class="metrics-grid">
@@ -235,6 +248,11 @@
                 <div class="metric-label">{{ period_label }} Downtime (minutes)</div>
                 <div class="metric-value">{{ total_downtime|floatformat:0 }}</div>
             </div>
+            <div class="metric-card">
+                <div class="metric-label">Open Jobs Pending Start (All)</div>
+                <div class="metric-value">{{ pending_start_count }}</div>
+                <div class="metric-label" style="margin-top:6px;">In selected period: {{ pending_start_in_period_count }}</div>
+            </div>
         </div>
 
         <!-- Dispatch Summary -->
@@ -260,7 +278,7 @@
         <!-- Charts -->
         <div class="charts-grid">
             <div class="chart-card">
-                <h3>Production Trend ({{ days }} days)</h3>
+                <h3>Production Trend ({{ period_label }})</h3>
                 <div class="chart-container">
                     <canvas id="productionChart"></canvas>
                 </div>
@@ -290,7 +308,7 @@
 
         <div class="charts-grid">
             <div class="chart-card">
-                <h3>Dispatch Trend ({{ days }} days)</h3>
+                <h3>Dispatch Trend ({{ period_label }})</h3>
                 <div class="chart-container">
                     <canvas id="dispatchTrendChart"></canvas>
                 </div>
@@ -540,6 +558,37 @@
                     {% empty %}
                     <tr>
                         <td colspan="4">No dispatch records found for selected period.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="recent-productions">
+            <h3>🗂 Planned Jobs Not Started Yet</h3>
+            <p style="color:#666;font-size:0.85rem;margin:4px 0 12px;">These jobs have planning data but no production entries yet. Keep them in planning; do not create production rows until run starts.</p>
+            <table class="production-table">
+                <thead>
+                    <tr>
+                        <th>Job Card</th>
+                        <th>SKU</th>
+                        <th>Order Qty</th>
+                        <th>Total Impressions Required</th>
+                        <th>Created Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pending_start_jobs %}
+                    <tr>
+                        <td>{{ row.job_card_no }}</td>
+                        <td>{{ row.sku }}</td>
+                        <td>{{ row.order_qty }}</td>
+                        <td>{{ row.total_impressions_required }}</td>
+                        <td>{{ row.created_at }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5">No planned-only jobs found.</td>
                     </tr>
                     {% endfor %}
                 </tbody>

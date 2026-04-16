@@ -261,6 +261,12 @@
                 </div>
 
                 <div>
+                    <label for="actual_sheet_required">Actual Sheet Required (calculated)</label>
+                    <input id="actual_sheet_required" type="number" value="{{ edit_record.total_sheets_planned|default:0 }}" readonly>
+                    <div class="hint">Auto-calculated as (Order Qty / UPS) + Wastage (sheets).</div>
+                </div>
+
+                <div>
                     <label for="print_sheet_size">Print Sheet Size</label>
                     <input id="print_sheet_size" name="print_sheet_size" value="{{ edit_record.print_sheet_size|default:'' }}" placeholder="20x30">
                 </div>
@@ -342,6 +348,10 @@
     <script>
         const poDateInput = document.getElementById('po_date');
         const monthInput = document.getElementById('month');
+        const orderQtyInput = document.getElementById('order_qty');
+        const upsInput = document.getElementById('ups');
+        const wastageInput = document.getElementById('wastage');
+        const actualSheetRequiredInput = document.getElementById('actual_sheet_required');
 
         function updateMonthFromPoDate() {
             if (!poDateInput.value) {
@@ -352,6 +362,16 @@
             if (!Number.isNaN(dateValue.getTime())) {
                 monthInput.value = dateValue.toLocaleString('en-US', { month: 'long' });
             }
+        }
+
+        function updateActualSheetRequired() {
+            const orderQty = Number(orderQtyInput.value || 0);
+            const ups = Number(upsInput.value || 0);
+            const wastageSheets = Number(wastageInput.value || 0);
+
+            const requiredSheets = ups > 0 ? (orderQty / ups) : 0;
+            const actualSheets = Math.floor(requiredSheets + wastageSheets);
+            actualSheetRequiredInput.value = Number.isFinite(actualSheets) ? actualSheets : 0;
         }
 
         async function quickAddMaster(type, selectId) {
@@ -396,7 +416,11 @@
         }
 
         poDateInput.addEventListener('change', updateMonthFromPoDate);
+        orderQtyInput.addEventListener('input', updateActualSheetRequired);
+        upsInput.addEventListener('input', updateActualSheetRequired);
+        wastageInput.addEventListener('input', updateActualSheetRequired);
         updateMonthFromPoDate();
+        updateActualSheetRequired();
     </script>
 </body>
 </html>

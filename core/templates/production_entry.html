@@ -246,6 +246,22 @@
                 </div>
             </div>
 
+            <div class="form-group">
+                <label style="display:flex;align-items:center;gap:8px;font-weight:600;">
+                    <input
+                        type="checkbox"
+                        id="intermediate_pass"
+                        name="intermediate_pass"
+                        {% if edit_record and edit_record.output_sheets == 0 and edit_record.impressions > 0 %}checked{% endif %}
+                        style="width:auto;"
+                    >
+                    Intermediate Pass Entry (Output pending until final pass)
+                </label>
+                <div style="color:#5f6b7a;font-size:0.85rem;margin-top:6px;">
+                    Use this when only pass-1 is complete. Impressions are recorded, and Output Sheets stay 0 until final pass is done.
+                </div>
+            </div>
+
             <div class="row">
                 <div class="col">
                     <div class="form-group">
@@ -334,5 +350,22 @@
             <a href="{% url 'production_dashboard' %}" class="dashboard-link">📈 View Production Dashboard</a>
         </div>
     </div>
+
+    <script>
+        const intermediatePassInput = document.getElementById('intermediate_pass');
+        const outputSheetsInput = document.getElementById('output_sheets');
+
+        function syncIntermediateMode() {
+            if (intermediatePassInput.checked) {
+                outputSheetsInput.value = '0';
+                outputSheetsInput.setAttribute('readonly', 'readonly');
+            } else {
+                outputSheetsInput.removeAttribute('readonly');
+            }
+        }
+
+        intermediatePassInput.addEventListener('change', syncIntermediateMode);
+        syncIntermediateMode();
+    </script>
 </body>
 </html>

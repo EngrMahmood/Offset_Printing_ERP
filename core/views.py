@@ -577,6 +577,7 @@ def production_entry(request):
         impressions = request.POST.get('impressions')
         output_sheets = request.POST.get('output_sheets')
         waste_sheets = request.POST.get('waste_sheets')
+        intermediate_pass = request.POST.get('intermediate_pass') == 'on'
         downtime_minutes = request.POST.get('downtime_minutes')
         planned_time = request.POST.get('planned_time')
         run_time = request.POST.get('run_time')
@@ -593,6 +594,10 @@ def production_entry(request):
             planned_time_val = float(planned_time) if planned_time else 0
             run_time_val = float(run_time) if run_time else 0
             setup_time_val = float(setup_time) if setup_time else 0
+            impressions_val = int(impressions) if impressions else 0
+
+            if intermediate_pass:
+                output_sheets_val = 0
 
             if edit_record and not change_reason:
                 raise ValueError("Change reason is required when editing production data")
@@ -606,6 +611,10 @@ def production_entry(request):
                 raise ValueError("Waste reason is required when waste sheets are greater than 0")
             if (run_time_val + downtime_val + setup_time_val) > planned_time_val:
                 raise ValueError("Run time + downtime + setup time cannot exceed planned time")
+            if intermediate_pass and impressions_val <= 0:
+                raise ValueError("Impressions must be greater than 0 for intermediate pass entry")
+            if intermediate_pass and waste_sheets_val < 0:
+                raise ValueError("Waste sheets cannot be negative")
 
             job_card = get_active_record_or_404(JobCard, job_card_id)
             machine = get_object_or_404(Machine, pk=machine_id)
@@ -617,7 +626,7 @@ def production_entry(request):
                 'operator': operator,
                 'shift': shift,
                 'date': date,
-                'impressions': int(impressions) if impressions else 0,
+                'impressions': impressions_val,
                 'output_sheets': output_sheets_val,
                 'waste_sheets': waste_sheets_val,
                 'planned_time': planned_time_val,
@@ -1086,16 +1095,34 @@ def production_dashboard(request):
     from django.db.models import Count
     from datetime import timedelta
 
-    # Get date range (default to last 7 days)
-    try:
-        days = int(request.GET.get('days', 7))
-    except (TypeError, ValueError):
-        days = 7
-    if days < 1:
-        days = 1
+    # Flexible date filtering: explicit start/end date overrides quick day presets.
+    today = timezone.now().date()
+    start_date_input = (request.GET.get('start_date') or '').strip()
+    end_date_input = (request.GET.get('end_date') or '').strip()
 
-    end_date = timezone.now().date()
-    start_date = end_date - timedelta(days=days - 1)
+    start_date = None
+    end_date = None
+    if start_date_input and end_date_input:
+        try:
+            start_date = datetime.strptime(start_date_input, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_date_input, '%Y-%m-%d').date()
+            if start_date > end_date:
+                start_date, end_date = end_date, start_date
+        except ValueError:
+            start_date = None
+            end_date = None
+
+    if start_date is None or end_date is None:
+        try:
+            days = int(request.GET.get('days', 7))
+        except (TypeError, ValueError):
+            days = 7
+        if days < 1:
+            days = 1
+        end_date = today
+        start_date = end_date - timedelta(days=days - 1)
+    else:
+        days = max((end_date - start_date).days + 1, 1)
 
     period_productions = Production.objects.filter(is_active=True, job_card__is_active=True, date__gte=start_date, date__lte=end_date)
     period_dispatches = Dispatch.objects.filter(is_active=True, job_card__is_active=True, dispatch_date__gte=start_date, dispatch_date__lte=end_date)
@@ -1113,13 +1140,22 @@ def production_dashboard(request):
     avg_dispatch_qty = (total_dispatch_qty / dispatch_count) if dispatch_count else 0
     dispatch_fulfillment_pct = (total_dispatch_qty / total_output * 100) if total_output > 0 else 0
 
-    # Calculate OEE (simplified - you may want to adjust based on your machine standards)
+    # Calculate OEE from aggregated period data.
     available_time_minutes = period_productions.count() * 480  # Assuming 8 hours per production record
     actual_run_time = available_time_minutes - total_downtime
 
     availability = (actual_run_time / available_time_minutes * 100) if available_time_minutes > 0 else 0
-    performance = 85.0  # Placeholder - would need machine standards
-    quality = ((total_output / (total_output + total_waste)) * 100) if (total_output + total_waste) > 0 else 100
+
+    # Convert run-time minutes to expected impressions using each machine's standard speed.
+    ideal_impressions = sum(
+        ((p.run_time or 0) / 60) * ((p.machine.standard_impressions_per_hour if p.machine else 0) or 4000)
+        for p in period_productions.select_related('machine')
+    )
+
+    performance = (total_impressions / ideal_impressions * 100) if ideal_impressions > 0 else 0
+    performance = min(performance, 100)
+
+    quality = ((total_output / (total_output + total_waste)) * 100) if (total_output + total_waste) > 0 else 0
 
     oee_value = (availability * performance * quality) / 10000
 
@@ -1380,6 +1416,32 @@ def production_dashboard(request):
             })
     at_risk_jobs.sort(key=lambda x: (0 if x['risk'] == 'No Production' else 1 if x['risk'] == 'High Risk' else 2))
 
+    # ── Planned but not started jobs ────────────────────────────────────────────
+    pending_start_qs = JobCard.objects.filter(is_active=True, status__in=['Open', 'In Progress']) \
+        .annotate(prod_entries=Count('productions', filter=Q(productions__is_active=True))) \
+        .filter(prod_entries=0)
+
+    pending_start_count = pending_start_qs.count()
+    pending_start_in_period_count = pending_start_qs.filter(
+        created_at__date__gte=start_date,
+        created_at__date__lte=end_date,
+    ).count()
+
+    pending_start_jobs = pending_start_qs.values(
+        'job_card_no', 'SKU', 'order_qty', 'total_impressions_required', 'created_at'
+    ).order_by('-created_at')[:15]
+
+    pending_start_jobs_data = [
+        {
+            'job_card_no': item['job_card_no'],
+            'sku': item['SKU'],
+            'order_qty': int(item['order_qty'] or 0),
+            'total_impressions_required': int(item['total_impressions_required'] or 0),
+            'created_at': item['created_at'].date().isoformat() if item['created_at'] else '-',
+        }
+        for item in pending_start_jobs
+    ]
+
     # Convert query data into JSON-serializable lists for charts.
     production_by_date_data = [
         {
@@ -1432,7 +1494,13 @@ def production_dashboard(request):
     context = {
         'today': end_date,
         'days': days,
-        'period_label': 'Today' if days == 1 else f'Last {days} Days',
+        'period_label': (
+            f'{start_date.isoformat()} to {end_date.isoformat()}'
+            if start_date_input and end_date_input
+            else ('Today' if days == 1 else f'Last {days} Days')
+        ),
+        'start_date': start_date.isoformat() if start_date else '',
+        'end_date': end_date.isoformat() if end_date else '',
         'oee_value': round(oee_value, 2),
         'availability_value': round(availability, 2),
         'performance_value': round(performance, 2),
@@ -1462,6 +1530,9 @@ def production_dashboard(request):
         'shift_comparison_json': json.dumps([shift_a, shift_b]),
         'job_cycle_data': job_cycle_data,
         'at_risk_jobs': at_risk_jobs,
+        'pending_start_count': pending_start_count,
+        'pending_start_in_period_count': pending_start_in_period_count,
+        'pending_start_jobs': pending_start_jobs_data,
     }
 
     return render(request, 'production_dashboard.html', context)

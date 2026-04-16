@@ -61,6 +61,7 @@
                         <th>PO No</th>
                         <th>PO Date</th>
                         <th>Order Qty</th>
+                        <th>Actual Sheet Required</th>
                         <th>Total Dispatch</th>
                         <th>Balance</th>
                         <th>Status</th>
@@ -75,6 +76,7 @@
                         <td>{{ row.PO_No|default:'-' }}</td>
                         <td>{{ row.po_date|default:'-' }}</td>
                         <td>{{ row.order_qty }}</td>
+                        <td>{{ row.total_sheets_planned }}</td>
                         <td>{{ row.total_dispatch }}</td>
                         <td>{{ row.balance_qty }}</td>
                         <td>{{ row.job_status }}</td>
@@ -87,7 +89,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="9" class="muted">No job cards found.</td></tr>
+                    <tr><td colspan="10" class="muted">No job cards found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

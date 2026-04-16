@@ -1,5 +1,6 @@
 import csv
 import re
+import math
 from io import BytesIO
 from dateutil import parser
 from django.db import transaction
@@ -57,59 +58,6 @@ def build_cache(model):
         if key:
             cache[key] = obj
     return cache
-
-
-# ----------------------------
-# TEMPLATE HEADERS (AUTO-GENERATED)
-# ----------------------------
-def get_template_headers():
-    """Dynamically generate template headers based on JobCard fields"""
-    return [
-        'Job Card Number',
-        'SKU',
-        'PO Number',
-        'PO Date (dd/mm/yyyy)',
-        'Material',
-        'Colour (Count)',
-        'Application',
-        'Order Quantity (pcs)',
-        'UPS (Units per Sheet)',
-        'Print Sheet Size',
-        'Total Impressions Required',
-        'Wastage (%)',
-        'Purchase Sheet Size',
-        'Purchase Sheet UPS',
-        'Remarks',
-        'Destination',
-        'Machine',
-        'Department',
-        'Die Cutting (Yes/No)'
-    ]
-
-
-def get_template_example():
-    """Generate example row for template"""
-    return [
-        'JC-26-1001',
-        'SKU-01',
-        'PO-7788',
-        '15/04/2026',
-        'Bleach230',
-        '4',
-        'UV',
-        '10000',
-        '12',
-        '20x30',
-        '400',  # total impressions = sheets x colours
-        '5',
-        '20x30',
-        '6',
-        'Urgent job',
-        'SITE 1',
-        'GTO 1A',
-        'Pillow',
-        'Yes'
-    ]
 
 
 # ----------------------------
@@ -172,7 +120,9 @@ def normalize_headers(raw_headers):
         'ups': ['ups', 'units per sheet', 'units', 'ups (units per sheet)'],
         'print_sheet_size': ['print sheet size', 'sheet size', 'print size', 'print_sheet_size'],
         'total_impressions_required': ['total impressions required', 'impressions required', 'impressions', 'total impressions'],
-        'wastage': ['wastage', 'wastage (%)', 'waste %', 'waste percentage'],
+        'wastage': ['wastage', 'wastage sheets', 'waste sheets', 'wastage (sheets)'],
+        'wastage_percent': ['wastage (%)', 'waste %', 'waste percentage', 'wastage percent'],
+        'actual_sheet_required': ['actual sheet required', 'actual sheets required', 'actual sheet'],
         'purchase_sheet_size': ['purchase sheet size', 'purchase size', 'purchase_sheet_size'],
         'purchase_sheet_ups': ['purchase sheet ups', 'purchase ups', 'purchase_sheet_ups'],
         'remarks': ['remarks', 'notes', 'comments'],
@@ -224,6 +174,31 @@ def get_field_value(row, field_name, column_mapping):
             return clean(row, raw_header)
 
     return ""
+
+
+def calculate_wastage_sheets(row, column_mapping, order_qty, ups):
+    """Convert incoming wastage inputs into sheet count for JobCard.wastage."""
+    wastage_sheets_raw = get_field_value(row, 'wastage', column_mapping)
+    if str(wastage_sheets_raw).strip():
+        return max(parse_int(wastage_sheets_raw), 0)
+
+    required_sheets = (order_qty / ups) if ups > 0 else 0
+
+    actual_sheet_required_raw = get_field_value(row, 'actual_sheet_required', column_mapping)
+    if str(actual_sheet_required_raw).strip():
+        actual_sheet_required = max(parse_int(actual_sheet_required_raw), 0)
+        return max(actual_sheet_required - math.floor(required_sheets), 0)
+
+    wastage_percent_raw = get_field_value(row, 'wastage_percent', column_mapping)
+    if str(wastage_percent_raw).strip():
+        cleaned_percent = str(wastage_percent_raw).replace('%', '').strip()
+        try:
+            wastage_percent = max(float(cleaned_percent), 0)
+        except Exception:
+            wastage_percent = 0
+        return int(round(required_sheets * (wastage_percent / 100)))
+
+    return 0
 
 
 # ----------------------------
@@ -377,7 +352,7 @@ def process_jobcard_upload(file):
 
                 print_sheet_size=get_field_value(row, 'print_sheet_size', column_mapping),
                 total_impressions_required=parse_int(get_field_value(row, 'total_impressions_required', column_mapping)),
-                wastage=parse_int(get_field_value(row, 'wastage', column_mapping)),
+                wastage=calculate_wastage_sheets(row, column_mapping, order_qty, ups),
 
                 purchase_sheet_size=get_field_value(row, 'purchase_sheet_size', column_mapping),
                 purchase_sheet_ups=parse_int(get_field_value(row, 'purchase_sheet_ups', column_mapping)),
@@ -430,8 +405,7 @@ def get_template_headers():
         'Order Quantity',
         'Ups',
         'Print Sheet Size',
-        'Wastage (%)',
-        'Actual Sheet Required',
+        'Wastage (sheets)',
         'Purchase Sheet Size',
         'Purchase Sheet Ups',
         'Remarks',
@@ -455,8 +429,7 @@ def get_template_example():
         '10000',
         '12',
         '20x30',
-        '5',
-        '10500',
+        '50',
         '20x30',
         '6',
         'Urgent job',
