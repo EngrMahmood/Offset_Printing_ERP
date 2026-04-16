@@ -1,0 +1,382 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Job Card Entry - Offset ERP</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f3f6f9;
+        }
+
+        .container {
+            max-width: 980px;
+            margin: 0 auto;
+            background: white;
+            padding: 28px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+        }
+
+        h1 {
+            margin: 0 0 20px;
+            color: #1f2d3d;
+        }
+
+        .top-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .nav-btn {
+            background: #417690;
+            color: #fff;
+            text-decoration: none;
+            padding: 10px 14px;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .nav-btn:hover {
+            background: #2f5b73;
+        }
+
+        .alert {
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 16px;
+        }
+
+        .alert-success {
+            background: #e6f4ea;
+            color: #1e6d33;
+            border: 1px solid #bee3c7;
+        }
+
+        .alert-error {
+            background: #fce8e6;
+            color: #8a1c1c;
+            border: 1px solid #f5c2c7;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        .full {
+            grid-column: 1 / -1;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            color: #334;
+            font-weight: 600;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            box-sizing: border-box;
+            padding: 10px;
+            border: 1px solid #cfd6de;
+            border-radius: 6px;
+            font-size: 14px;
+        }
+
+        .select-with-add {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .select-with-add select {
+            flex: 1;
+        }
+
+        .plus-btn {
+            display: inline-block;
+            min-width: 36px;
+            text-align: center;
+            text-decoration: none;
+            background: #198754;
+            color: #fff;
+            border-radius: 6px;
+            padding: 10px 0;
+            font-weight: 700;
+            line-height: 1;
+        }
+
+        .plus-btn:hover {
+            background: #136a42;
+        }
+
+        .hint {
+            margin-top: 4px;
+            font-size: 12px;
+            color: #5f6b7a;
+        }
+
+        textarea {
+            min-height: 90px;
+            resize: vertical;
+        }
+
+        .required {
+            color: #b60000;
+        }
+
+        .submit-btn {
+            margin-top: 18px;
+            background: #1f8f4c;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 12px 18px;
+            cursor: pointer;
+            font-size: 15px;
+            width: 100%;
+        }
+
+        .submit-btn:hover {
+            background: #16733d;
+        }
+
+        @media (max-width: 760px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+</head>
+<body>
+    <div class="container">
+        <div class="top-actions">
+            <a href="/" class="nav-btn">Home</a>
+            <a href="javascript:history.back()" class="nav-btn">Back</a>
+            <a href="{% url 'bulk_upload_jobcards' %}" class="nav-btn">Bulk Upload</a>
+            <a href="{% url 'job_card_records' %}" class="nav-btn">Job Card Records</a>
+            <a href="{% url 'dispatch_entry' %}" class="nav-btn">Dispatch Entry</a>
+        </div>
+
+        <h1>Job Card Entry</h1>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <form method="POST">
+            {% csrf_token %}
+
+            <div class="grid">
+                <div>
+                    <label for="job_card_no">Job Card No <span class="required">*</span></label>
+                    <input id="job_card_no" name="job_card_no" required>
+                </div>
+
+                <div>
+                    <label for="sku">SKU <span class="required">*</span></label>
+                    <input id="sku" name="sku" required>
+                </div>
+
+                <div>
+                    <label for="po_no">PO Number</label>
+                    <input id="po_no" name="po_no">
+                </div>
+
+                <div>
+                    <label for="po_date">PO Date</label>
+                    <input id="po_date" name="po_date" type="date" value="{{ today }}">
+                </div>
+
+                <div>
+                    <label for="month">Month</label>
+                    <input id="month" name="month" placeholder="Auto from PO Date" readonly>
+                </div>
+
+                <div>
+                    <label for="material">Material</label>
+                    <div class="select-with-add">
+                        <select id="material" name="material">
+                            <option value="">Select material</option>
+                            {% for item in materials %}
+                                <option value="{{ item.id }}">{{ item.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button class="plus-btn" type="button" title="Add new material" onclick="quickAddMaster('material', 'material')">+</button>
+                    </div>
+                    <div class="hint">Use + to add new material instantly.</div>
+                </div>
+
+                <div>
+                    <label for="colour">Colours</label>
+                    <input id="colour" name="colour" type="number" min="0" placeholder="4">
+                </div>
+
+                <div>
+                    <label for="application">Application</label>
+                    <input id="application" name="application" placeholder="UV / Matte / Glossy">
+                </div>
+
+                <div>
+                    <label for="order_qty">Order Qty (pcs) <span class="required">*</span></label>
+                    <input id="order_qty" name="order_qty" type="number" min="1" required>
+                </div>
+
+                <div>
+                    <label for="total_impressions_required">Total Impressions Required</label>
+                    <input id="total_impressions_required" name="total_impressions_required" type="number" min="0">
+                </div>
+
+                <div>
+                    <label for="ups">UPS</label>
+                    <input id="ups" name="ups" type="number" min="0">
+                </div>
+
+                <div>
+                    <label for="wastage">Wastage (sheets)</label>
+                    <input id="wastage" name="wastage" type="number" min="0" value="0">
+                </div>
+
+                <div>
+                    <label for="print_sheet_size">Print Sheet Size</label>
+                    <input id="print_sheet_size" name="print_sheet_size" placeholder="20x30">
+                </div>
+
+                <div>
+                    <label for="purchase_sheet_size">Purchase Sheet Size</label>
+                    <input id="purchase_sheet_size" name="purchase_sheet_size" placeholder="20x30">
+                </div>
+
+                <div>
+                    <label for="purchase_sheet_ups">Purchase Sheet UPS</label>
+                    <input id="purchase_sheet_ups" name="purchase_sheet_ups" type="number" min="0">
+                </div>
+
+                <div>
+                    <label for="machine_name">Machine</label>
+                    <div class="select-with-add">
+                        <select id="machine_name" name="machine_name">
+                            <option value="">Select machine</option>
+                            {% for item in machines %}
+                                <option value="{{ item.id }}">{{ item.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button class="plus-btn" type="button" title="Add new machine" onclick="quickAddMaster('machine', 'machine_name')">+</button>
+                    </div>
+                    <div class="hint">Use + to add new machine instantly.</div>
+                </div>
+
+                <div>
+                    <label for="department">Department</label>
+                    <div class="select-with-add">
+                        <select id="department" name="department">
+                            <option value="">Select department</option>
+                            {% for item in departments %}
+                                <option value="{{ item.id }}">{{ item.name }}</option>
+                            {% endfor %}
+                        </select>
+                        <button class="plus-btn" type="button" title="Add new department" onclick="quickAddMaster('department', 'department')">+</button>
+                    </div>
+                    <div class="hint">Use + to add new department instantly.</div>
+                </div>
+
+                <div>
+                    <label for="destination">Destination</label>
+                    <input id="destination" name="destination">
+                </div>
+
+                <div>
+                    <label for="die_cutting">Die Cutting</label>
+                    <input id="die_cutting" name="die_cutting" placeholder="Yes / No">
+                </div>
+
+                <div>
+                    <label for="status">Status</label>
+                    <select id="status" name="status">
+                        <option value="Open" selected>Open</option>
+                        <option value="In Progress">In Progress</option>
+                        <option value="Completed">Completed</option>
+                    </select>
+                </div>
+
+                <div class="full">
+                    <label for="remarks">Remarks</label>
+                    <textarea id="remarks" name="remarks"></textarea>
+                </div>
+            </div>
+
+            <button class="submit-btn" type="submit">Save Job Card</button>
+        </form>
+    </div>
+
+    <script>
+        const poDateInput = document.getElementById('po_date');
+        const monthInput = document.getElementById('month');
+
+        function updateMonthFromPoDate() {
+            if (!poDateInput.value) {
+                monthInput.value = '';
+                return;
+            }
+            const dateValue = new Date(poDateInput.value + 'T00:00:00');
+            if (!Number.isNaN(dateValue.getTime())) {
+                monthInput.value = dateValue.toLocaleString('en-US', { month: 'long' });
+            }
+        }
+
+        async function quickAddMaster(type, selectId) {
+            const name = window.prompt(`Enter new ${type} name:`);
+            if (!name || !name.trim()) {
+                return;
+            }
+
+            const csrf = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+            const payload = new URLSearchParams();
+            payload.append('type', type);
+            payload.append('name', name.trim());
+
+            try {
+                const response = await fetch('{% url "quick_add_master" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': csrf,
+                    },
+                    body: payload.toString(),
+                });
+
+                const data = await response.json();
+                if (!response.ok || !data.ok) {
+                    throw new Error(data.error || 'Unable to create value.');
+                }
+
+                const select = document.getElementById(selectId);
+                let option = Array.from(select.options).find(opt => String(opt.value) === String(data.id));
+
+                if (!option) {
+                    option = new Option(data.name, data.id);
+                    select.add(option);
+                }
+
+                select.value = String(data.id);
+                window.alert(data.message || 'Added successfully.');
+            } catch (error) {
+                window.alert(error.message || 'Something went wrong.');
+            }
+        }
+
+        poDateInput.addEventListener('change', updateMonthFromPoDate);
+        updateMonthFromPoDate();
+    </script>
+</body>
+</html>
