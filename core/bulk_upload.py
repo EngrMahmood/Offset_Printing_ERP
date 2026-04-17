@@ -1,8 +1,10 @@
 import csv
 import re
 import math
+import calendar
 from io import BytesIO
 from dateutil import parser
+from datetime import datetime, date
 from django.db import transaction
 
 from .models import JobCard, Material, Machine, Department
@@ -41,11 +43,90 @@ def parse_bool(value):
     return str(value).strip().lower() in ["yes", "true", "1"]
 
 
-def parse_date(value):
-    try:
-        return parser.parse(value, dayfirst=True).date()
-    except:
+def parse_month_hint(value):
+    """Return month number (1-12) from numeric/text month input, else None."""
+    if value is None:
         return None
+    raw = str(value).strip().lower()
+    if not raw:
+        return None
+
+    if raw.isdigit():
+        month_num = int(raw)
+        if 1 <= month_num <= 12:
+            return month_num
+        return None
+
+    month_lookup = {m.lower(): i for i, m in enumerate(calendar.month_name) if m}
+    month_abbr_lookup = {m.lower(): i for i, m in enumerate(calendar.month_abbr) if m}
+
+    if raw in month_lookup:
+        return month_lookup[raw]
+    if raw in month_abbr_lookup:
+        return month_abbr_lookup[raw]
+    return None
+
+
+def parse_date(value, month_hint=None):
+    if value is None:
+        return None
+
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+
+    raw = str(value).strip()
+    if not raw:
+        return None
+
+    hinted_month = parse_month_hint(month_hint)
+
+    # Preferred safe format (no ambiguity)
+    if re.fullmatch(r'\d{4}-\d{2}-\d{2}', raw):
+        parsed = datetime.strptime(raw, '%Y-%m-%d').date()
+        if hinted_month and parsed.month != hinted_month:
+            raise ValueError(
+                f"PO Date '{raw}' does not match Month column '{month_hint}'."
+            )
+        return parsed
+
+    # Handle dd-mm-yyyy / mm-dd-yyyy and dd/mm/yyyy / mm/dd/yyyy safely.
+    compact_match = re.fullmatch(r'(\d{1,2})[-/](\d{1,2})[-/](\d{4})', raw)
+    if compact_match:
+        first = int(compact_match.group(1))
+        second = int(compact_match.group(2))
+        year = int(compact_match.group(3))
+
+        # Unambiguous day-month.
+        if first > 12 and 1 <= second <= 12:
+            return date(year, second, first)
+        # Unambiguous month-day.
+        if second > 12 and 1 <= first <= 12:
+            return date(year, first, second)
+        # Ambiguous (both <= 12): use month hint if provided, otherwise reject.
+        if first <= 12 and second <= 12:
+            if hinted_month:
+                if first == hinted_month and second != hinted_month:
+                    # mm-dd-yyyy
+                    return date(year, first, second)
+                if second == hinted_month and first != hinted_month:
+                    # dd-mm-yyyy
+                    return date(year, second, first)
+                raise ValueError(
+                    f"Ambiguous date '{raw}' does not align with Month column '{month_hint}'. Use YYYY-MM-DD."
+                )
+            raise ValueError(
+                f"Ambiguous date '{raw}'. Provide Month column or use ISO format YYYY-MM-DD (example: 2026-03-12)."
+            )
+
+    # Fallback for long month names etc.
+    parsed = parser.parse(raw, dayfirst=True).date()
+    if hinted_month and parsed.month != hinted_month:
+        raise ValueError(
+            f"PO Date '{raw}' does not match Month column '{month_hint}'."
+        )
+    return parsed
 
 
 def normalize_colour_value(value):
@@ -170,6 +251,7 @@ def normalize_headers(raw_headers):
     # Define multiple acceptable variations for each field
     field_mappings = {
         'job_card_no': ['job card number', 'job card no', 'jc number', 'jobcard number', 'job card'],
+        'month': ['month', 'month name', 'po month'],
         'po_no': ['po number', 'po no', 'po', 'pono', 'po_no'],
         'po_date': ['po date', 'po_date', 'date'],
         'sku': ['sku', 'product code', 'product'],
@@ -328,6 +410,7 @@ def process_jobcard_upload(file, uploaded_by=None):
     required_columns = [
         'job_card_no',
         'sku',
+        'po_date',
         'machine_name',
         'department',
         'material',
@@ -395,8 +478,29 @@ def process_jobcard_upload(file, uploaded_by=None):
             colour_raw = get_field_value(row, 'colour', column_mapping)
             colour_value = normalize_colour_value(colour_raw)
             total_impressions_required = parse_int(get_field_value(row, 'total_impressions_required', column_mapping))
-            po_date_value = parse_date(get_field_value(row, 'po_date', column_mapping))
-            month_value = po_date_value.strftime('%B') if po_date_value else None
+            month_raw = get_field_value(row, 'month', column_mapping)
+            po_date_raw = get_field_value(row, 'po_date', column_mapping)
+            month_hint_num = parse_month_hint(month_raw)
+            month_hint_name = calendar.month_name[month_hint_num] if month_hint_num else None
+
+            if not po_date_raw:
+                errors.append({
+                    "row": index,
+                    "errors": "PO Date is required"
+                })
+                error_count += 1
+                continue
+
+            try:
+                po_date_value = parse_date(po_date_raw, month_hint=month_raw)
+            except Exception as exc:
+                errors.append({
+                    "row": index,
+                    "errors": f"PO Date error: {str(exc)}"
+                })
+                error_count += 1
+                continue
+            month_value = po_date_value.strftime('%B') if po_date_value else month_hint_name
 
             missing_row_fields = []
             if not sku_value:
@@ -501,8 +605,9 @@ def get_template_headers():
     return [
         'JC Number',
         'SKU',
+        'Month',
         'PO Number',
-        'PO Date',
+        'PO Date (YYYY-MM-DD)',
         'Material',
         'Colour',
         'Application',
@@ -526,8 +631,9 @@ def get_template_example():
     return [
         'JC-26-1001',
         'SKU-01',
+        'March',
         'PO-7788',
-        '4/13/2026',
+        '2026-04-13',
         'Bleach230',
         '4',
         'UV',

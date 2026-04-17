@@ -13,7 +13,7 @@
         .btn-green { background: #198754; }
         .btn-green:hover { background: #136a42; }
         h1 { margin-top: 0; }
-        .filters { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; margin-bottom: 14px; }
+        .filters { display: grid; grid-template-columns: 2fr 1fr 1fr auto; gap: 10px; margin-bottom: 14px; }
         input, select { padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 10px; border-bottom: 1px solid #e7ebef; text-align: left; }
@@ -43,6 +43,11 @@
 
         <div class="card">
             <h1>Production Records</h1>
+            {% if messages %}
+                {% for message in messages %}
+                    <div style="border-radius:6px;padding:10px 12px;margin-bottom:10px;{% if message.tags == 'success' %}background:#e6f4ea;color:#1e6d33;border:1px solid #bee3c7;{% else %}background:#fce8e6;color:#8a1c1c;border:1px solid #f5c2c7;{% endif %}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
             {% if edit_lock_days > 0 %}
             <p class="muted">
                 Production records dated before {{ edit_lock_cutoff }}
@@ -61,27 +66,43 @@
                     <option value="A" {% if shift == 'A' %}selected{% endif %}>Shift A</option>
                     <option value="B" {% if shift == 'B' %}selected{% endif %}>Shift B</option>
                 </select>
+                <select name="per_page">
+                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50 / page</option>
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100 / page</option>
+                </select>
                 <button type="submit" class="btn">Filter</button>
             </form>
+
+            <p class="muted" style="margin:6px 0 12px;">Total entries: {{ total_count }}</p>
+
+            {% if user.profile.role == 'admin' %}
+            <form id="bulk_archive_form_production" method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="bulk_delete">
+                <button type="submit" class="btn" onclick="return confirm('Permanently delete selected production records? This cannot be undone.');">Bulk Delete Selected</button>
+                <span class="muted" style="font-size:12px;">Admin only</span>
+            </form>
+            {% endif %}
 
             <table>
                 <thead>
                     <tr>
-                        <th>Date</th>
-                        <th>Job Card</th>
-                        <th>Machine</th>
-                        <th>Operator</th>
-                        <th>Shift</th>
-                        <th>Impressions</th>
-                        <th>Output</th>
-                        <th>Waste</th>
-                        <th>Planned (min)</th>
+                        {% if user.profile.role == 'admin' %}<th><input type="checkbox" id="select_all_production"></th>{% endif %}
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}">Date</a></th>
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}">Job Card</a></th>
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=machine&dir={% if sort == 'machine' and dir == 'asc' %}desc{% else %}asc{% endif %}">Machine</a></th>
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=operator&dir={% if sort == 'operator' and dir == 'asc' %}desc{% else %}asc{% endif %}">Operator</a></th>
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=shift&dir={% if sort == 'shift' and dir == 'asc' %}desc{% else %}asc{% endif %}">Shift</a></th>
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=impressions&dir={% if sort == 'impressions' and dir == 'asc' %}desc{% else %}asc{% endif %}">Impressions</a></th>
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=output&dir={% if sort == 'output' and dir == 'asc' %}desc{% else %}asc{% endif %}">Output</a></th>
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=waste&dir={% if sort == 'waste' and dir == 'asc' %}desc{% else %}asc{% endif %}">Waste</a></th>
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=planned&dir={% if sort == 'planned' and dir == 'asc' %}desc{% else %}asc{% endif %}">Planned (min)</a></th>
                         <th>Actual (min)</th>
                         <th>Variance (min)</th>
                         <th>Tolerance Use</th>
                         <th>Operator Eff.</th>
                         <th>OEE</th>
-                        <th>Added By</th>
+                        <th><a href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}">Added By</a></th>
                         <th>Overrun</th>
                         <th>Actions</th>
                     </tr>
@@ -89,6 +110,9 @@
                 <tbody>
                     {% for row in records %}
                     <tr>
+                        {% if user.profile.role == 'admin' %}
+                        <td><input type="checkbox" class="bulk-check-production" name="selected_ids" value="{{ row.id }}" form="bulk_archive_form_production"></td>
+                        {% endif %}
                         <td>{{ row.date }}</td>
                         <td>{{ row.job_card.job_card_no }}</td>
                         <td>{{ row.machine.name }}</td>
@@ -107,12 +131,12 @@
                         <td style="color:#888;">0.0</td>
                         {% endif %}
                         <td>
-                            {% if row.job_card.extra_sheets_used > 0 %}
-                                <span style="color:{% if row.job_card.extra_sheets_used > row.job_card.tolerance_sheets %}#b03a00{% else %}#7a4f18{% endif %};font-weight:700;">
-                                    {{ row.job_card.extra_sheets_used }} / {{ row.job_card.tolerance_sheets }}
+                            {% if row.job_card_extra_sheets_used > 0 %}
+                                <span style="color:{% if row.job_card_extra_sheets_used > row.job_card_tolerance_sheets %}#b03a00{% else %}#7a4f18{% endif %};font-weight:700;">
+                                    {{ row.job_card_extra_sheets_used }} / {{ row.job_card_tolerance_sheets }}
                                 </span>
                             {% else %}
-                                <span style="color:#1a6830;">0 / {{ row.job_card.tolerance_sheets }}</span>
+                                <span style="color:#1a6830;">0 / {{ row.job_card_tolerance_sheets }}</span>
                             {% endif %}
                         </td>
                         <td>{{ row.operator_efficiency|floatformat:1 }}%</td>
@@ -143,11 +167,34 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="17" class="muted">No production records found.</td></tr>
+                    <tr><td colspan="18" class="muted">No production records found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
+
+            {% if page_obj and page_obj.paginator.num_pages > 1 %}
+            <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;">
+                {% if page_obj.has_previous %}
+                <a class="btn" href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
+                {% endif %}
+                <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}
+                <a class="btn" href="?q={{ q }}&shift={{ shift }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
     </div>
+
+    <script>
+        const selectAllProduction = document.getElementById('select_all_production');
+        if (selectAllProduction) {
+            selectAllProduction.addEventListener('change', function () {
+                document.querySelectorAll('.bulk-check-production').forEach((el) => {
+                    el.checked = selectAllProduction.checked;
+                });
+            });
+        }
+    </script>
 </body>
 </html>

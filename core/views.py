@@ -7,6 +7,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.db.models import Q, Sum, Min, Max
 from django.db.models.functions import Coalesce
+from django.core.paginator import Paginator
 from django.urls import reverse
 from functools import wraps
 import csv
@@ -452,6 +453,79 @@ def restore_record_state(entity_type, record, user, reason):
     log_change(entity_type, record, before_snapshot, user, 'restore', reason)
 
 
+def run_bulk_archive(request, entity_type, record_ids):
+    """Archive multiple active records with the same validation/audit pipeline as single archive."""
+    config = AUDIT_CONFIG.get(entity_type)
+    if not config:
+        return (0, ['Unsupported entity type'])
+
+    archived_count = 0
+    failures = []
+    unique_ids = []
+    seen = set()
+    for raw_id in record_ids:
+        try:
+            rid = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if rid in seen:
+            continue
+        seen.add(rid)
+        unique_ids.append(rid)
+
+    for rid in unique_ids:
+        record = config['model'].objects.filter(pk=rid, is_active=True).first()
+        if record is None:
+            failures.append(f'#{rid}: record not found or already archived')
+            continue
+        try:
+            validate_delete_allowed(entity_type, record)
+            archive_record(entity_type, record, request.user, 'Bulk archive by admin')
+            archived_count += 1
+        except Exception as exc:
+            failures.append(f'#{rid}: {str(exc)}')
+
+    return (archived_count, failures)
+
+
+def run_bulk_permanent_delete(request, entity_type, record_ids):
+    """Permanently delete multiple active records (admin only)."""
+    config = AUDIT_CONFIG.get(entity_type)
+    if not config:
+        return (0, ['Unsupported entity type'])
+
+    deleted_count = 0
+    failures = []
+    unique_ids = []
+    seen = set()
+    for raw_id in record_ids:
+        try:
+            rid = int(raw_id)
+        except (TypeError, ValueError):
+            continue
+        if rid in seen:
+            continue
+        seen.add(rid)
+        unique_ids.append(rid)
+
+    for rid in unique_ids:
+        record = config['model'].objects.filter(pk=rid, is_active=True).first()
+        if record is None:
+            failures.append(f'#{rid}: record not found or already removed')
+            continue
+
+        try:
+            validate_delete_allowed(entity_type, record)
+            before_snapshot = build_audit_snapshot(entity_type, record)
+            log_change(entity_type, record, before_snapshot, request.user, 'delete', 'Permanent delete by admin (bulk)')
+            record.delete()
+            deleted_count += 1
+        except Exception as exc:
+            failures.append(f'#{rid}: {str(exc)}')
+
+    return (deleted_count, failures)
+
+
 @login_required
 def home(request):
     return render(request, 'home.html')
@@ -645,6 +719,8 @@ def job_card_entry(request):
                 raise ValueError(f"Job card number {job_card_no} already exists")
 
             po_date_raw = (request.POST.get('po_date') or '').strip()
+            if not po_date_raw:
+                raise ValueError("PO Date is required")
             po_date = datetime.strptime(po_date_raw, "%Y-%m-%d").date() if po_date_raw else None
             month_value = po_date.strftime("%B") if po_date else ((request.POST.get('month') or '').strip() or None)
 
@@ -781,11 +857,38 @@ def job_card_records(request):
             )
             add_unique_message(request, messages.SUCCESS, f'{pending_qty} pcs short-close moved to wastage for {row.job_card_no}.')
             return redirect('job_card_records')
+        elif action == 'bulk_delete':
+            if request.user.profile.role != 'admin':
+                add_unique_message(request, messages.ERROR, '❌ Only admin can run bulk delete.')
+                return redirect('job_card_records')
+            if not user_can_archive_records(request.user):
+                add_unique_message(request, messages.ERROR, '❌ You do not have permission to delete records.')
+                return redirect('job_card_records')
+
+            selected_ids = request.POST.getlist('selected_ids')
+            deleted_count, failures = run_bulk_permanent_delete(request, 'job_card', selected_ids)
+            if deleted_count:
+                add_unique_message(request, messages.SUCCESS, f'Deleted {deleted_count} job card record(s) permanently.')
+            if failures:
+                add_unique_message(request, messages.ERROR, f'Bulk delete completed with issues: {"; ".join(failures[:5])}')
+            return redirect('job_card_records')
 
     query = (request.GET.get('q') or '').strip()
     status = (request.GET.get('status') or '').strip()
+    sort = (request.GET.get('sort') or 'created_at').strip()
+    direction = (request.GET.get('dir') or 'desc').strip().lower()
+    per_page = request.GET.get('per_page') or '50'
+    try:
+        per_page = int(per_page)
+    except (TypeError, ValueError):
+        per_page = 50
+    if per_page not in (50, 100):
+        per_page = 50
 
-    jobcards = JobCard.objects.filter(is_active=True).select_related('material', 'machine_name', 'department', 'created_by').order_by('-created_at')
+    jobcards = JobCard.objects.filter(is_active=True).select_related('material', 'machine_name', 'department', 'created_by').annotate(
+        total_dispatch_agg=Coalesce(Sum('dispatch__dispatch_qty', filter=Q(dispatch__is_active=True)), 0),
+        total_production_agg=Coalesce(Sum('productions__output_sheets', filter=Q(productions__is_active=True)), 0),
+    ).order_by('-created_at')
 
     if query:
         jobcards = jobcards.filter(
@@ -797,10 +900,60 @@ def job_card_records(request):
     if status:
         jobcards = jobcards.filter(status=status)
 
+    sortable_fields = {
+        'job_card_no': 'job_card_no',
+        'sku': 'SKU',
+        'po_no': 'PO_No',
+        'po_date': 'po_date',
+        'order_qty': 'order_qty',
+        'dispatch': 'total_dispatch_agg',
+        'status': 'status',
+        'added_by': 'created_by__username',
+        'created_at': 'created_at',
+    }
+    order_field = sortable_fields.get(sort, 'created_at')
+    if direction not in ('asc', 'desc'):
+        direction = 'desc'
+    ordering = order_field if direction == 'asc' else f'-{order_field}'
+    jobcards = jobcards.order_by(ordering)
+
+    total_count = jobcards.count()
+    paginator = Paginator(jobcards, per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    jobcards = list(page_obj.object_list)
+    for row in jobcards:
+        total_dispatch = int(row.total_dispatch_agg or 0)
+        total_production = int(row.total_production_agg or 0)
+        row.total_dispatch_display = total_dispatch
+        row.dispatch_completion_percent_display = round((total_dispatch / row.order_qty) * 100, 2) if row.order_qty else 0
+        row.balance_qty_display = (row.order_qty or 0) - total_dispatch
+
+        if row.order_qty == 0:
+            row.job_status_display = 'Open'
+        elif row.dispatch_completion_percent_display >= 95:
+            row.job_status_display = 'Completed'
+        elif total_production > 0:
+            row.job_status_display = 'In Progress'
+        else:
+            row.job_status_display = 'Open'
+
+        if row.job_status_display == 'Completed' and total_dispatch < (row.order_qty or 0):
+            gap = (row.order_qty or 0) - total_dispatch
+            row.short_close_qty_display = max(gap - int(row.short_close_closed_qty or 0), 0)
+        else:
+            row.short_close_qty_display = 0
+
     context = {
         'jobcards': jobcards,
+        'page_obj': page_obj,
+        'total_count': total_count,
         'q': query,
         'status': status,
+        'sort': sort,
+        'dir': direction,
+        'per_page': per_page,
     }
     return render(request, 'job_card_records.html', context)
 
@@ -999,8 +1152,35 @@ def production_entry(request):
 @permission_required('can_edit_production')
 def production_records(request):
     """Production records list page"""
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        if action == 'bulk_delete':
+            if request.user.profile.role != 'admin':
+                add_unique_message(request, messages.ERROR, '❌ Only admin can run bulk delete.')
+                return redirect('production_records')
+            if not user_can_archive_records(request.user):
+                add_unique_message(request, messages.ERROR, '❌ You do not have permission to delete records.')
+                return redirect('production_records')
+
+            selected_ids = request.POST.getlist('selected_ids')
+            deleted_count, failures = run_bulk_permanent_delete(request, 'production', selected_ids)
+            if deleted_count:
+                add_unique_message(request, messages.SUCCESS, f'Deleted {deleted_count} production record(s) permanently.')
+            if failures:
+                add_unique_message(request, messages.ERROR, f'Bulk delete completed with issues: {"; ".join(failures[:5])}')
+            return redirect('production_records')
+
     query = (request.GET.get('q') or '').strip()
     shift = (request.GET.get('shift') or '').strip()
+    sort = (request.GET.get('sort') or 'date').strip()
+    direction = (request.GET.get('dir') or 'desc').strip().lower()
+    per_page = request.GET.get('per_page') or '50'
+    try:
+        per_page = int(per_page)
+    except (TypeError, ValueError):
+        per_page = 50
+    if per_page not in (50, 100):
+        per_page = 50
 
     records = Production.objects.filter(is_active=True, job_card__is_active=True).select_related('job_card', 'machine', 'operator', 'created_by').order_by('-date', '-id')
 
@@ -1013,6 +1193,43 @@ def production_records(request):
 
     if shift:
         records = records.filter(shift=shift)
+
+    sortable_fields = {
+        'date': 'date',
+        'job_card': 'job_card__job_card_no',
+        'machine': 'machine__name',
+        'operator': 'operator__name',
+        'shift': 'shift',
+        'impressions': 'impressions',
+        'output': 'output_sheets',
+        'waste': 'waste_sheets',
+        'planned': 'planned_time',
+        'added_by': 'created_by__username',
+    }
+    order_field = sortable_fields.get(sort, 'date')
+    if direction not in ('asc', 'desc'):
+        direction = 'desc'
+    ordering = order_field if direction == 'asc' else f'-{order_field}'
+    records = records.order_by(ordering)
+
+    total_count = records.count()
+    paginator = Paginator(records, per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    records = list(page_obj.object_list)
+    job_card_ids = list({row.job_card_id for row in records})
+    consumption_map = {
+        item['job_card_id']: int((item['total_output'] or 0) + (item['total_waste'] or 0))
+        for item in Production.objects.filter(is_active=True, job_card_id__in=job_card_ids).values('job_card_id').annotate(
+            total_output=Sum('output_sheets'),
+            total_waste=Sum('waste_sheets'),
+        )
+    }
+    for row in records:
+        consumed = consumption_map.get(row.job_card_id, 0)
+        row.job_card_extra_sheets_used = max(consumed - row.job_card.total_sheets_planned, 0)
+        row.job_card_tolerance_sheets = row.job_card.tolerance_sheets
 
     cutoff = get_record_edit_lock_cutoff()
     pending_ids: set = set()
@@ -1030,8 +1247,13 @@ def production_records(request):
 
     context = {
         'records': records,
+        'page_obj': page_obj,
+        'total_count': total_count,
         'q': query,
         'shift': shift,
+        'sort': sort,
+        'dir': direction,
+        'per_page': per_page,
         'edit_lock_days': get_record_edit_lock_days(),
         'edit_lock_cutoff': cutoff,
         'can_bypass_edit_lock': user_can_bypass_edit_lock(request.user),
@@ -1114,7 +1336,34 @@ def dispatch_entry(request):
 @permission_required('can_approve_dispatch')
 def dispatch_records(request):
     """Dispatch records list page"""
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        if action == 'bulk_delete':
+            if request.user.profile.role != 'admin':
+                add_unique_message(request, messages.ERROR, '❌ Only admin can run bulk delete.')
+                return redirect('dispatch_records')
+            if not user_can_archive_records(request.user):
+                add_unique_message(request, messages.ERROR, '❌ You do not have permission to delete records.')
+                return redirect('dispatch_records')
+
+            selected_ids = request.POST.getlist('selected_ids')
+            deleted_count, failures = run_bulk_permanent_delete(request, 'dispatch', selected_ids)
+            if deleted_count:
+                add_unique_message(request, messages.SUCCESS, f'Deleted {deleted_count} dispatch record(s) permanently.')
+            if failures:
+                add_unique_message(request, messages.ERROR, f'Bulk delete completed with issues: {"; ".join(failures[:5])}')
+            return redirect('dispatch_records')
+
     query = (request.GET.get('q') or '').strip()
+    sort = (request.GET.get('sort') or 'dispatch_date').strip()
+    direction = (request.GET.get('dir') or 'desc').strip().lower()
+    per_page = request.GET.get('per_page') or '50'
+    try:
+        per_page = int(per_page)
+    except (TypeError, ValueError):
+        per_page = 50
+    if per_page not in (50, 100):
+        per_page = 50
 
     records = Dispatch.objects.filter(is_active=True, job_card__is_active=True).select_related('job_card', 'created_by').order_by('-dispatch_date', '-id')
     if query:
@@ -1122,6 +1371,25 @@ def dispatch_records(request):
             Q(job_card__job_card_no__icontains=query) |
             Q(dc_no__icontains=query)
         )
+
+    sortable_fields = {
+        'date': 'dispatch_date',
+        'job_card': 'job_card__job_card_no',
+        'dc_no': 'dc_no',
+        'qty': 'dispatch_qty',
+        'added_by': 'created_by__username',
+    }
+    order_field = sortable_fields.get(sort, 'dispatch_date')
+    if direction not in ('asc', 'desc'):
+        direction = 'desc'
+    ordering = order_field if direction == 'asc' else f'-{order_field}'
+    records = records.order_by(ordering)
+
+    total_count = records.count()
+    paginator = Paginator(records, per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    records = list(page_obj.object_list)
 
     cutoff = get_record_edit_lock_cutoff()
     pending_ids: set = set()
@@ -1139,7 +1407,12 @@ def dispatch_records(request):
 
     context = {
         'records': records,
+        'page_obj': page_obj,
+        'total_count': total_count,
         'q': query,
+        'sort': sort,
+        'dir': direction,
+        'per_page': per_page,
         'edit_lock_days': get_record_edit_lock_days(),
         'edit_lock_cutoff': cutoff,
         'can_bypass_edit_lock': user_can_bypass_edit_lock(request.user),

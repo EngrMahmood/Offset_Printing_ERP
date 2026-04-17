@@ -13,7 +13,7 @@
         .btn-green { background: #198754; }
         .btn-green:hover { background: #136a42; }
         h1 { margin-top: 0; }
-        .filters { display: grid; grid-template-columns: 1fr auto; gap: 10px; margin-bottom: 14px; }
+        .filters { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; margin-bottom: 14px; }
         input { padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { padding: 10px; border-bottom: 1px solid #e7ebef; text-align: left; }
@@ -41,6 +41,11 @@
 
         <div class="card">
             <h1>Dispatch Records</h1>
+            {% if messages %}
+                {% for message in messages %}
+                    <div style="border-radius:6px;padding:10px 12px;margin-bottom:10px;{% if message.tags == 'success' %}background:#e6f4ea;color:#1e6d33;border:1px solid #bee3c7;{% else %}background:#fce8e6;color:#8a1c1c;border:1px solid #f5c2c7;{% endif %}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
             {% if edit_lock_days > 0 %}
             <p class="muted">
                 Dispatch records dated before {{ edit_lock_cutoff }}
@@ -54,23 +59,42 @@
 
             <form method="GET" class="filters">
                 <input name="q" value="{{ q }}" placeholder="Search by Job Card or DC No">
+                <select name="per_page">
+                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50 / page</option>
+                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100 / page</option>
+                </select>
                 <button type="submit" class="btn">Filter</button>
             </form>
+
+            <p class="muted" style="margin:6px 0 12px;">Total entries: {{ total_count }}</p>
+
+            {% if user.profile.role == 'admin' %}
+            <form id="bulk_archive_form_dispatch" method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="bulk_delete">
+                <button type="submit" class="btn" onclick="return confirm('Permanently delete selected dispatch records? This cannot be undone.');">Bulk Delete Selected</button>
+                <span class="muted" style="font-size:12px;">Admin only</span>
+            </form>
+            {% endif %}
 
             <table>
                 <thead>
                     <tr>
-                        <th>Date</th>
-                        <th>Job Card</th>
-                        <th>DC No</th>
-                        <th>Dispatch Qty</th>
-                        <th>Added By</th>
+                        {% if user.profile.role == 'admin' %}<th><input type="checkbox" id="select_all_dispatch"></th>{% endif %}
+                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}">Date</a></th>
+                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}">Job Card</a></th>
+                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=dc_no&dir={% if sort == 'dc_no' and dir == 'asc' %}desc{% else %}asc{% endif %}">DC No</a></th>
+                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=qty&dir={% if sort == 'qty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Dispatch Qty</a></th>
+                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}">Added By</a></th>
                         <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for row in records %}
                     <tr>
+                        {% if user.profile.role == 'admin' %}
+                        <td><input type="checkbox" class="bulk-check-dispatch" name="selected_ids" value="{{ row.id }}" form="bulk_archive_form_dispatch"></td>
+                        {% endif %}
                         <td>{{ row.dispatch_date }}</td>
                         <td>{{ row.job_card.job_card_no }}</td>
                         <td>{{ row.dc_no|default:'-' }}</td>
@@ -96,11 +120,34 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="6" class="muted">No dispatch records found.</td></tr>
+                    <tr><td colspan="7" class="muted">No dispatch records found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
+
+            {% if page_obj and page_obj.paginator.num_pages > 1 %}
+            <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;">
+                {% if page_obj.has_previous %}
+                <a class="btn" href="?q={{ q }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
+                {% endif %}
+                <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                {% if page_obj.has_next %}
+                <a class="btn" href="?q={{ q }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
+                {% endif %}
+            </div>
+            {% endif %}
         </div>
     </div>
+
+    <script>
+        const selectAllDispatch = document.getElementById('select_all_dispatch');
+        if (selectAllDispatch) {
+            selectAllDispatch.addEventListener('change', function () {
+                document.querySelectorAll('.bulk-check-dispatch').forEach((el) => {
+                    el.checked = selectAllDispatch.checked;
+                });
+            });
+        }
+    </script>
 </body>
 </html>

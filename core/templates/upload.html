@@ -169,7 +169,13 @@
             <h1>Bulk Upload Job Cards</h1>
             <div class="muted">Upload CSV or Excel files to create multiple job cards in one go.</div>
             <div class="muted" style="margin-top:-6px;">
-                Mandatory per row: Job Card No, SKU, Material, Machine, Department, Order Qty, UPS, Colour, Total Impressions Required.
+                Mandatory per row: Job Card No, SKU, PO Date, Material, Machine, Department, Order Qty, UPS, Colour, Total Impressions Required.
+            </div>
+            <div class="muted" style="margin-top:-6px;">
+                For PO Date, always use <strong>YYYY-MM-DD</strong> (example: 2026-03-12) to avoid day/month swap.
+            </div>
+            <div class="muted" style="margin-top:-6px;">
+                Optional: add <strong>Month</strong> column (e.g., March or 3). If PO Date is ambiguous like 12-03-2026, system will align using Month.
             </div>
 
             <div class="download-row">

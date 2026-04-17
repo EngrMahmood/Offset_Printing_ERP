@@ -219,8 +219,8 @@
                 </div>
 
                 <div>
-                    <label for="po_date">PO Date</label>
-                    <input id="po_date" name="po_date" type="date" value="{% if edit_record and edit_record.po_date %}{{ edit_record.po_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}">
+                    <label for="po_date">PO Date <span class="required">*</span></label>
+                    <input id="po_date" name="po_date" type="date" value="{% if edit_record and edit_record.po_date %}{{ edit_record.po_date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}" required>
                 </div>
 
                 <div>
