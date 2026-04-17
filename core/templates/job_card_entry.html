@@ -174,7 +174,7 @@
             </div>
         </div>
 
-        <h1>{% if edit_record %}Edit Job Card{% else %}Job Card Entry{% endif %}</h1>
+        <h1>{% if is_view_mode %}View Job Card{% elif edit_record %}Edit Job Card{% else %}Job Card Entry{% endif %}</h1>
 
         {% if messages %}
             {% for message in messages %}
@@ -189,6 +189,18 @@
             {% if edit_record %}
             <input type="hidden" name="edit_id" value="{{ edit_record.id }}">
             {% endif %}
+            <!-- hidden field carries the real boolean value -->
+            <input type="hidden" id="is_print_job_hidden" name="is_print_job" value="{% if edit_record and not edit_record.is_print_job %}false{% else %}true{% endif %}">
+
+            <!-- Job Type Toggle -->
+            <div style="background:#f0f7ff;border:1px solid #cce0ff;border-radius:8px;padding:14px 16px;margin-bottom:18px;display:flex;align-items:center;gap:14px;">
+                <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-weight:700;font-size:15px;margin:0;">
+                    <input type="checkbox" id="is_print_job_toggle" style="width:18px;height:18px;cursor:pointer;"
+                        {% if not edit_record or edit_record.is_print_job %}checked{% endif %}>
+                    <span>Print Job</span>
+                </label>
+                <span id="job_type_label" style="font-size:13px;color:#555;"></span>
+            </div>
 
             <div class="grid">
                 <div>
@@ -230,12 +242,12 @@
                     <div class="hint">Use + to add new material instantly.</div>
                 </div>
 
-                <div>
+                <div id="field_colour">
                     <label for="colour">Colours</label>
-                    <input id="colour" name="colour" type="number" min="0" value="{{ edit_record.colour|default:'' }}" placeholder="4">
+                    <input id="colour" name="colour" type="text" value="{{ edit_record.colour|default:'' }}" placeholder="4 or 1+1">
                 </div>
 
-                <div>
+                <div id="field_application">
                     <label for="application">Application</label>
                     <input id="application" name="application" value="{{ edit_record.application|default:'' }}" placeholder="UV / Matte / Glossy">
                 </div>
@@ -245,9 +257,27 @@
                     <input id="order_qty" name="order_qty" type="number" min="1" value="{{ edit_record.order_qty|default:'' }}" required>
                 </div>
 
-                <div>
+                <div id="field_impressions">
                     <label for="total_impressions_required">Total Impressions Required</label>
                     <input id="total_impressions_required" name="total_impressions_required" type="number" min="0" value="{{ edit_record.total_impressions_required|default:'' }}">
+                </div>
+
+                <div>
+                    <label for="estimated_run_time_minutes">Estimated Run Time (minutes)</label>
+                    <input id="estimated_run_time_minutes" type="number" value="{{ edit_record.estimated_run_time_minutes|default:'' }}" readonly>
+                    <div class="hint">Auto: (Total Impressions / Machine Speed) × 60</div>
+                </div>
+
+                <div>
+                    <label for="estimated_setup_time_minutes">Estimated Setup Time (minutes)</label>
+                    <input id="estimated_setup_time_minutes" type="number" value="{{ edit_record.estimated_setup_time_minutes|default:'' }}" readonly>
+                    <div class="hint">Auto: Setup Minutes per Color × Total Colors</div>
+                </div>
+
+                <div>
+                    <label for="estimated_total_time_minutes">Estimated Total Planned Time (minutes)</label>
+                    <input id="estimated_total_time_minutes" type="number" value="{{ edit_record.estimated_total_time_minutes|default:'' }}" readonly>
+                    <div class="hint">Auto: Estimated Run Time + Estimated Setup Time</div>
                 </div>
 
                 <div>
@@ -261,12 +291,18 @@
                 </div>
 
                 <div>
+                    <label for="production_tolerance_percent">Production Tolerance (%)</label>
+                    <input id="production_tolerance_percent" name="production_tolerance_percent" type="number" min="0" step="0.1" value="{{ edit_record.production_tolerance_percent|default:5 }}">
+                    <div class="hint">Allowed extra production over planned sheets (default 5%).</div>
+                </div>
+
+                <div>
                     <label for="actual_sheet_required">Actual Sheet Required (calculated)</label>
                     <input id="actual_sheet_required" type="number" value="{{ edit_record.total_sheets_planned|default:0 }}" readonly>
                     <div class="hint">Auto-calculated as (Order Qty / UPS) + Wastage (sheets).</div>
                 </div>
 
-                <div>
+                <div id="field_print_sheet_size">
                     <label for="print_sheet_size">Print Sheet Size</label>
                     <input id="print_sheet_size" name="print_sheet_size" value="{{ edit_record.print_sheet_size|default:'' }}" placeholder="20x30">
                 </div>
@@ -281,7 +317,7 @@
                     <input id="purchase_sheet_ups" name="purchase_sheet_ups" type="number" min="0" value="{{ edit_record.purchase_sheet_ups|default:'' }}">
                 </div>
 
-                <div>
+                <div id="field_machine_name">
                     <label for="machine_name">Machine</label>
                     <div class="select-with-add">
                         <select id="machine_name" name="machine_name">
@@ -341,7 +377,9 @@
                 {% endif %}
             </div>
 
+            {% if not is_view_mode %}
             <button class="submit-btn" type="submit">{% if edit_record %}Update Job Card{% else %}Save Job Card{% endif %}</button>
+            {% endif %}
         </form>
     </div>
 
@@ -352,6 +390,36 @@
         const upsInput = document.getElementById('ups');
         const wastageInput = document.getElementById('wastage');
         const actualSheetRequiredInput = document.getElementById('actual_sheet_required');
+        const colourInput = document.getElementById('colour');
+        const machineInput = document.getElementById('machine_name');
+        const impressionsInput = document.getElementById('total_impressions_required');
+        const estimatedRunInput = document.getElementById('estimated_run_time_minutes');
+        const estimatedSetupInput = document.getElementById('estimated_setup_time_minutes');
+        const estimatedTotalInput = document.getElementById('estimated_total_time_minutes');
+        const machineMeta = {{ machine_meta_json|safe }};
+
+        // ---- Print Job Toggle ----
+        const printToggle = document.getElementById('is_print_job_toggle');
+        const printJobHidden = document.getElementById('is_print_job_hidden');
+        const jobTypeLabel = document.getElementById('job_type_label');
+        const PRINT_ONLY_FIELDS = ['field_colour', 'field_application', 'field_impressions', 'field_print_sheet_size', 'field_machine_name'];
+
+        function applyPrintJobToggle() {
+            const isPrint = printToggle.checked;
+            printJobHidden.value = isPrint ? 'true' : 'false';
+            jobTypeLabel.textContent = isPrint
+                ? 'Print jobs go through production before dispatch.'
+                : 'Cut & Pack: no printing — dispatched directly against order qty.';
+            jobTypeLabel.style.color = isPrint ? '#1a6830' : '#7a4200';
+            PRINT_ONLY_FIELDS.forEach(function(id) {
+                const el = document.getElementById(id);
+                if (el) { el.style.display = isPrint ? '' : 'none'; }
+            });
+        }
+
+        printToggle.addEventListener('change', applyPrintJobToggle);
+        applyPrintJobToggle(); // run on page load
+        // ---- End Print Job Toggle ----
 
         function updateMonthFromPoDate() {
             if (!poDateInput.value) {
@@ -374,6 +442,71 @@
             actualSheetRequiredInput.value = Number.isFinite(actualSheets) ? actualSheets : 0;
         }
 
+        function normalizeColourField() {
+            if (!colourInput) {
+                return;
+            }
+
+            const value = (colourInput.value || '').trim();
+            const match = value.match(/^(\d+)\s*\+\s*(\d+)$/);
+            if (!match) {
+                return;
+            }
+
+            const front = Number(match[1]);
+            const back = Number(match[2]);
+            const frontLabel = front === 1 ? 'color' : 'colors';
+            const backLabel = back === 1 ? 'color' : 'colors';
+            colourInput.value = `${front} ${frontLabel} front and ${back} ${backLabel} back`;
+        }
+
+        function extractTotalColors(value) {
+            const raw = (value || '').trim().toLowerCase();
+            if (!raw) {
+                return 0;
+            }
+
+            let match = raw.match(/^(\d+)\s*\+\s*(\d+)$/);
+            if (match) {
+                return Number(match[1]) + Number(match[2]);
+            }
+
+            match = raw.match(/^(\d+)\s*colors?\s*front\s*and\s*(\d+)\s*colors?\s*back$/);
+            if (match) {
+                return Number(match[1]) + Number(match[2]);
+            }
+
+            match = raw.match(/^(\d+)$/);
+            if (match) {
+                return Number(match[1]);
+            }
+
+            return 0;
+        }
+
+        function updateEstimatedPlannedTime() {
+            const machineId = machineInput.value;
+            const meta = machineMeta[machineId] || null;
+            const impressions = Number(impressionsInput.value || 0);
+            const colors = extractTotalColors(colourInput.value || '');
+
+            if (!meta || !meta.speed || impressions <= 0) {
+                estimatedRunInput.value = '';
+                estimatedSetupInput.value = '';
+                estimatedTotalInput.value = '';
+                return;
+            }
+
+            const runMinutes = (impressions / Number(meta.speed)) * 60;
+            const setupPerColor = Number(meta.setup_per_color || 0);
+            const setupMinutes = colors * setupPerColor;
+            const totalMinutes = runMinutes + setupMinutes;
+
+            estimatedRunInput.value = Number.isFinite(runMinutes) ? runMinutes.toFixed(2) : '';
+            estimatedSetupInput.value = Number.isFinite(setupMinutes) ? setupMinutes.toFixed(2) : '';
+            estimatedTotalInput.value = Number.isFinite(totalMinutes) ? totalMinutes.toFixed(2) : '';
+        }
+
         async function quickAddMaster(type, selectId) {
             const name = window.prompt(`Enter new ${type} name:`);
             if (!name || !name.trim()) {
@@ -384,6 +517,13 @@
             const payload = new URLSearchParams();
             payload.append('type', type);
             payload.append('name', name.trim());
+
+            if (type === 'machine') {
+                const machineIdealSpeed = window.prompt('Enter machine ideal speed (impressions/hour):', '4000') || '4000';
+                const setupPerColor = window.prompt('Enter setup minutes per color:', '15') || '15';
+                payload.append('standard_impressions_per_hour', machineIdealSpeed.trim());
+                payload.append('standard_setup_minutes_per_color', setupPerColor.trim());
+            }
 
             try {
                 const response = await fetch('{% url "quick_add_master" %}', {
@@ -408,7 +548,15 @@
                     select.add(option);
                 }
 
+                if (type === 'machine') {
+                    machineMeta[String(data.id)] = {
+                        speed: Number(data.standard_impressions_per_hour || 0),
+                        setup_per_color: Number(data.standard_setup_minutes_per_color || 0),
+                    };
+                }
+
                 select.value = String(data.id);
+                updateEstimatedPlannedTime();
                 window.alert(data.message || 'Added successfully.');
             } catch (error) {
                 window.alert(error.message || 'Something went wrong.');
@@ -419,8 +567,23 @@
         orderQtyInput.addEventListener('input', updateActualSheetRequired);
         upsInput.addEventListener('input', updateActualSheetRequired);
         wastageInput.addEventListener('input', updateActualSheetRequired);
+        colourInput.addEventListener('blur', normalizeColourField);
+        colourInput.addEventListener('blur', updateEstimatedPlannedTime);
+        machineInput.addEventListener('change', updateEstimatedPlannedTime);
+        impressionsInput.addEventListener('input', updateEstimatedPlannedTime);
+        document.querySelector('form').addEventListener('submit', normalizeColourField);
         updateMonthFromPoDate();
         updateActualSheetRequired();
+        updateEstimatedPlannedTime();
+
+        {% if is_view_mode %}
+        document.querySelectorAll('form input, form select, form textarea, form button').forEach((el) => {
+            if (el.type === 'hidden') {
+                return;
+            }
+            el.disabled = true;
+        });
+        {% endif %}
     </script>
 </body>
 </html>

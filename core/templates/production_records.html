@@ -75,7 +75,14 @@
                         <th>Impressions</th>
                         <th>Output</th>
                         <th>Waste</th>
+                        <th>Planned (min)</th>
+                        <th>Actual (min)</th>
+                        <th>Variance (min)</th>
+                        <th>Tolerance Use</th>
+                        <th>Operator Eff.</th>
                         <th>OEE</th>
+                        <th>Added By</th>
+                        <th>Overrun</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -90,8 +97,34 @@
                         <td>{{ row.impressions }}</td>
                         <td>{{ row.output_sheets }}</td>
                         <td>{{ row.waste_sheets }}</td>
+                        <td>{{ row.planned_time|floatformat:1 }}</td>
+                        <td>{{ row.actual_total_time_minutes|floatformat:1 }}</td>
+                        {% if row.planned_variance_minutes > 0 %}
+                        <td style="color:#b03a00;font-weight:700;">+{{ row.planned_variance_minutes|floatformat:1 }}</td>
+                        {% elif row.planned_variance_minutes < 0 %}
+                        <td style="color:#1a6830;font-weight:700;">{{ row.planned_variance_minutes|floatformat:1 }}</td>
+                        {% else %}
+                        <td style="color:#888;">0.0</td>
+                        {% endif %}
+                        <td>
+                            {% if row.job_card.extra_sheets_used > 0 %}
+                                <span style="color:{% if row.job_card.extra_sheets_used > row.job_card.tolerance_sheets %}#b03a00{% else %}#7a4f18{% endif %};font-weight:700;">
+                                    {{ row.job_card.extra_sheets_used }} / {{ row.job_card.tolerance_sheets }}
+                                </span>
+                            {% else %}
+                                <span style="color:#1a6830;">0 / {{ row.job_card.tolerance_sheets }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.operator_efficiency|floatformat:1 }}%</td>
                         <td>{{ row.oee|floatformat:2 }}</td>
+                        <td>{{ row.created_by.username|default:'-' }}</td>
+                        {% if row.overrun_minutes > 0 %}
+                        <td style="color:#b03a00;font-weight:700;">+{{ row.overrun_minutes|floatformat:0 }}min</td>
+                        {% else %}
+                        <td style="color:#888;">—</td>
+                        {% endif %}
                         <td class="actions-cell">
+                            <a href="{% url 'production_entry' %}?view={{ row.id }}" class="btn">View</a>
                             {% if edit_lock_cutoff and row.date < edit_lock_cutoff and not can_bypass_edit_lock %}
                                 {% if row.id in approved_override_ids %}
                                 <a href="{% url 'production_entry' %}?edit={{ row.id }}" class="btn">Edit (Approved)</a>
@@ -110,7 +143,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="10" class="muted">No production records found.</td></tr>
+                    <tr><td colspan="17" class="muted">No production records found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

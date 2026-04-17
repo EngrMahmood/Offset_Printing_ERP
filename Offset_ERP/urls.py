@@ -34,4 +34,8 @@ urlpatterns = [
     path('request-edit-override/<str:entity_type>/<int:record_id>/', views.request_edit_override, name='request_edit_override'),
     path('override-requests/', views.override_requests, name='override_requests'),
     path('review-override/<int:override_id>/', views.review_override_request, name='review_override_request'),
+    path('shift-config/', views.shift_config, name='shift_config'),
+    path('machine-master-tools/', views.machine_master_tools, name='machine_master_tools'),
+    path('erp-readme/', views.erp_readme, name='erp_readme'),
+    path('erp-readme/download/', views.download_erp_readme, name='download_erp_readme'),
 ]

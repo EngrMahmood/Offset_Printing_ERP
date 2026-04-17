@@ -58,13 +58,18 @@
                     <tr>
                         <th>Job Card</th>
                         <th>SKU</th>
+                        <th>Type</th>
                         <th>PO No</th>
                         <th>PO Date</th>
                         <th>Order Qty</th>
                         <th>Actual Sheet Required</th>
                         <th>Total Dispatch</th>
+                        <th>Dispatch %</th>
                         <th>Balance</th>
+                        <th>Short Close</th>
+                        <th>Closed as Wastage</th>
                         <th>Status</th>
+                        <th>Added By</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -73,23 +78,50 @@
                     <tr>
                         <td>{{ row.job_card_no }}</td>
                         <td>{{ row.SKU }}</td>
+                        <td>
+                            {% if row.is_print_job %}
+                            <span style="background:#d0ebff;color:#1a5e96;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;">Print</span>
+                            {% else %}
+                            <span style="background:#fff3cd;color:#7a4200;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;">Cut & Pack</span>
+                            {% endif %}
+                        </td>
                         <td>{{ row.PO_No|default:'-' }}</td>
                         <td>{{ row.po_date|default:'-' }}</td>
                         <td>{{ row.order_qty }}</td>
                         <td>{{ row.total_sheets_planned }}</td>
                         <td>{{ row.total_dispatch }}</td>
+                        <td>{{ row.dispatch_completion_percent }}%</td>
                         <td>{{ row.balance_qty }}</td>
+                        <td>
+                            {% if row.short_close_qty > 0 %}
+                            <span style="background:#fff3cd;color:#7a4200;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;">{{ row.short_close_qty }} pcs</span>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>{{ row.short_close_wastage_qty|default:0 }} pcs</td>
                         <td>{{ row.job_status }}</td>
+                        <td>{{ row.created_by.username|default:'-' }}</td>
                         <td class="actions-cell">
+                            <a href="{% url 'job_card_entry' %}?view={{ row.id }}" class="btn">View</a>
                             <a href="{% url 'job_card_entry' %}?edit={{ row.id }}" class="btn">Edit</a>
                             <a href="{% url 'change_history' 'job_card' row.id %}" class="btn btn-green">History</a>
+                            {% if user.profile.can_approve_dispatch and row.short_close_qty > 0 %}
+                            <form method="POST" style="display:inline-block;margin-top:6px;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="close_short_close">
+                                <input type="hidden" name="job_card_id" value="{{ row.id }}">
+                                <input name="short_close_reason" placeholder="Reason to close gap as wastage" style="width:220px;padding:6px;border:1px solid #cfd6de;border-radius:4px;" required>
+                                <button type="submit" class="btn">Close Gap</button>
+                            </form>
+                            {% endif %}
                             {% if user.profile.can_archive_records %}
                             <a href="{% url 'delete_record' 'job_card' row.id %}" class="btn">Archive</a>
                             {% endif %}
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="10" class="muted">No job cards found.</td></tr>
+                    <tr><td colspan="15" class="muted">No job cards found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

@@ -277,6 +277,11 @@
                     <h3>Production Dashboard</h3>
                     <p>Track OEE, trends, and dispatch fulfillment for selected periods.</p>
                 </a>
+
+                <a href="{% url 'erp_readme' %}" class="card">
+                    <h3>ERP README / Guide</h3>
+                    <p>View formulas, calculated fields, tolerance rules, and dashboard KPI definitions.</p>
+                </a>
                 {% endif %}
 
                 {% if user.profile.can_approve_dispatch %}
@@ -311,6 +316,10 @@
                 <a href="{% url 'manage_user_roles' %}" class="card">
                     <h3>👥 Manage User Roles</h3>
                     <p>Assign roles and permissions to team members (Admin only).</p>
+                </a>
+                <a href="{% url 'machine_master_tools' %}" class="card">
+                    <h3>🛠 Master Corrections</h3>
+                    <p>Rename or deactivate wrong dropdown values (machine, operator, material, department).</p>
                 </a>
                 <a href="/admin/" class="card">
                     <h3>⚙️ Django Admin</h3>

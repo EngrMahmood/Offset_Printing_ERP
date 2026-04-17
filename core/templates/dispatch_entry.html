@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{% if edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %} - Offset ERP</title>
+    <title>{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %} - Offset ERP</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
         .container { max-width: 820px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
@@ -18,6 +18,38 @@
         .form-group { margin-bottom: 14px; }
         label { display: block; margin-bottom: 6px; font-weight: 600; }
         input, select { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
+        .search-meta { color: #5f6b7a; font-size: 12px; margin-top: 6px; }
+        .search-results {
+            border: 1px solid #dde3ea;
+            border-radius: 6px;
+            background: #fff;
+            max-height: 220px;
+            overflow: auto;
+            margin-top: 8px;
+            display: none;
+        }
+        .search-result-item {
+            width: 100%;
+            text-align: left;
+            background: #fff;
+            border: none;
+            border-bottom: 1px solid #eef2f6;
+            padding: 9px 10px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+        .search-result-item:hover { background: #f5f8fb; }
+        .search-tools { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px; }
+        .clear-btn {
+            border: none;
+            background: #eef3f8;
+            color: #355;
+            padding: 6px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        .clear-btn:hover { background: #dde8f2; }
     </style>
     <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
 </head>
@@ -32,12 +64,13 @@
             <a href="{% url 'change_history' 'dispatch' edit_record.id %}" class="btn">History</a>
             {% endif %}
             <a href="javascript:history.back()" class="btn">Back</a>
+            <a href="{% url 'erp_readme' %}" class="btn">Guide</a>
             <div style="margin-left:auto;display:flex;align-items:center;">
                 {% include 'includes/user_identity_chip.html' %}
             </div>
         </div>
 
-        <h1>{% if edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %}</h1>
+        <h1>{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %}</h1>
 
         {% if messages %}
             {% for message in messages %}
@@ -58,7 +91,13 @@
             {% endif %}
             <div class="form-group">
                 <label for="job_card">Job Card</label>
-                <select id="job_card" name="job_card" required>
+                <input type="text" id="job_card_search" placeholder="Type Job Card No, SKU, or PO and click result" autocomplete="off">
+                <div class="search-tools">
+                    <div id="job_card_search_meta" class="search-meta">Start typing to see matching job cards.</div>
+                    <button type="button" id="job_card_clear" class="clear-btn">Clear</button>
+                </div>
+                <div id="job_card_results" class="search-results"></div>
+                <select id="job_card" name="job_card" required style="display:none;">
                     <option value="">Select job card</option>
                     {% for item in job_cards %}
                     <option value="{{ item.id }}" {% if edit_record.job_card_id == item.id %}selected{% endif %}>{{ item.job_card_no }} - {{ item.SKU }}</option>
@@ -88,8 +127,92 @@
             </div>
             {% endif %}
 
+            {% if not is_view_mode %}
             <button type="submit" class="btn btn-green">{% if edit_record %}Update Dispatch{% else %}Save Dispatch{% endif %}</button>
+            {% endif %}
         </form>
     </div>
+
+    <script>
+        const jobCardSearchInput = document.getElementById('job_card_search');
+        const jobCardSelect = document.getElementById('job_card');
+        const jobCardResults = document.getElementById('job_card_results');
+        const jobCardSearchMeta = document.getElementById('job_card_search_meta');
+        const jobCardClearBtn = document.getElementById('job_card_clear');
+
+        function renderJobCardResults() {
+            const q = (jobCardSearchInput.value || '').trim().toLowerCase();
+            const options = Array.from(jobCardSelect.options).filter((opt, idx) => idx > 0);
+            const filtered = options.filter(opt => {
+                if (!q) return true;
+                return (opt.text || '').toLowerCase().includes(q);
+            }).slice(0, 30);
+
+            jobCardResults.innerHTML = '';
+
+            if (!filtered.length) {
+                jobCardResults.style.display = q ? 'block' : 'none';
+                jobCardSearchMeta.textContent = q ? 'No matching job cards found.' : 'Start typing to see matching job cards.';
+                if (q) {
+                    const noRow = document.createElement('div');
+                    noRow.className = 'search-result-item';
+                    noRow.textContent = 'No results';
+                    noRow.style.cursor = 'default';
+                    jobCardResults.appendChild(noRow);
+                }
+                return;
+            }
+
+            filtered.forEach(opt => {
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'search-result-item';
+                row.textContent = opt.text;
+                row.addEventListener('click', () => {
+                    jobCardSelect.value = opt.value;
+                    jobCardSearchInput.value = opt.text;
+                    jobCardResults.style.display = 'none';
+                    jobCardSearchMeta.textContent = 'Selected: ' + opt.text;
+                });
+                jobCardResults.appendChild(row);
+            });
+
+            jobCardResults.style.display = 'block';
+            jobCardSearchMeta.textContent = `Showing ${filtered.length} result(s). Click one to select.`;
+        }
+
+        jobCardSearchInput.addEventListener('input', renderJobCardResults);
+        jobCardSearchInput.addEventListener('focus', renderJobCardResults);
+
+        jobCardClearBtn.addEventListener('click', function () {
+            jobCardSearchInput.value = '';
+            jobCardSelect.value = '';
+            jobCardResults.style.display = 'none';
+            jobCardSearchMeta.textContent = 'Start typing to see matching job cards.';
+        });
+
+        document.addEventListener('click', function (event) {
+            if (!jobCardResults.contains(event.target) && event.target !== jobCardSearchInput) {
+                jobCardResults.style.display = 'none';
+            }
+        });
+
+        if (jobCardSelect.value) {
+            const selectedOpt = jobCardSelect.options[jobCardSelect.selectedIndex];
+            if (selectedOpt) {
+                jobCardSearchInput.value = selectedOpt.text;
+                jobCardSearchMeta.textContent = 'Selected: ' + selectedOpt.text;
+            }
+        }
+
+        {% if is_view_mode %}
+        document.querySelectorAll('form input, form select, form textarea, form button').forEach((el) => {
+            if (el.type === 'hidden') {
+                return;
+            }
+            el.disabled = true;
+        });
+        {% endif %}
+    </script>
 </body>
 </html>

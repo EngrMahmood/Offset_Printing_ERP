@@ -177,6 +177,9 @@
             <a href="{% url 'dispatch_entry' %}" class="nav-btn">Dispatch Entry</a>
             <a href="{% url 'dispatch_records' %}" class="nav-btn">Dispatch Records</a>
             {% endif %}
+            {% if user.profile.role == 'admin' %}
+            <a href="{% url 'shift_config' %}" class="nav-btn">Shift Config</a>
+            {% endif %}
             <div style="margin-left:auto;display:flex;align-items:center;">
                 {% include 'includes/user_identity_chip.html' %}
             </div>
@@ -255,6 +258,44 @@
             </div>
         </div>
 
+        <!-- Planning vs Actual & Schedule Utilization -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Planned Time (minutes)</div>
+                <div class="metric-value">{{ total_planned_minutes|floatformat:0 }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Actual Time Used (minutes)</div>
+                <div class="metric-value">{{ total_actual_minutes|floatformat:0 }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Planned Variance (Actual - Planned)</div>
+                <div class="metric-value" style="color:{% if planned_variance_minutes > 0 %}#b03a00{% elif planned_variance_minutes < 0 %}#1a6830{% else %}#666{% endif %};">
+                    {{ planned_variance_minutes|floatformat:1 }}
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Schedule Utilization</div>
+                <div class="metric-value">{{ schedule_utilization_pct|floatformat:1 }}%</div>
+                <div class="metric-label" style="margin-top:6px;">Used {{ actual_used_minutes_total|floatformat:0 }} / Scheduled {{ scheduled_minutes_total|floatformat:0 }} min</div>
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Overrun Cause: Setup (min)</div>
+                <div class="metric-value" style="font-size:1.7em;color:#7a4f18;">{{ overrun_setup_minutes|floatformat:0 }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Overrun Cause: Unplanned Downtime (min)</div>
+                <div class="metric-value" style="font-size:1.7em;color:#b03a00;">{{ overrun_downtime_minutes|floatformat:0 }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Overrun Cause: Run Performance Gap (min)</div>
+                <div class="metric-value" style="font-size:1.7em;color:#5b0a15;">{{ overrun_run_perf_minutes|floatformat:0 }}</div>
+            </div>
+        </div>
+
         <!-- Dispatch Summary -->
         <div class="metrics-grid">
             <div class="metric-card">
@@ -272,6 +313,19 @@
             <div class="metric-card">
                 <div class="metric-label">Fulfillment (Dispatch/Output)</div>
                 <div class="metric-value">{{ dispatch_fulfillment_pct|floatformat:1 }}%</div>
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Pending Short Close (All Active Jobs)</div>
+                <div class="metric-value" style="color:#7a4200;">{{ pending_short_close_total }}</div>
+                <div class="metric-label" style="margin-top:6px;">Across {{ pending_short_close_jobs }} job cards</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Short Close Closed as Wastage ({{ period_label }})</div>
+                <div class="metric-value" style="color:#7b1c27;">{{ short_close_closed_period_qty }}</div>
+                <div class="metric-label" style="margin-top:6px;">Across {{ short_close_closed_period_jobs }} job cards</div>
             </div>
         </div>
 

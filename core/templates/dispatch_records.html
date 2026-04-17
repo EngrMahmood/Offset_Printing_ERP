@@ -64,6 +64,7 @@
                         <th>Job Card</th>
                         <th>DC No</th>
                         <th>Dispatch Qty</th>
+                        <th>Added By</th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -74,7 +75,9 @@
                         <td>{{ row.job_card.job_card_no }}</td>
                         <td>{{ row.dc_no|default:'-' }}</td>
                         <td>{{ row.dispatch_qty }}</td>
+                        <td>{{ row.created_by.username|default:'-' }}</td>
                         <td class="actions-cell">
+                            <a href="{% url 'dispatch_entry' %}?view={{ row.id }}" class="btn">View</a>
                             {% if edit_lock_cutoff and row.dispatch_date < edit_lock_cutoff and not can_bypass_edit_lock %}
                                 {% if row.id in approved_override_ids %}
                                 <a href="{% url 'dispatch_entry' %}?edit={{ row.id }}" class="btn">Edit (Approved)</a>
@@ -93,7 +96,7 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="5" class="muted">No dispatch records found.</td></tr>
+                    <tr><td colspan="6" class="muted">No dispatch records found.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

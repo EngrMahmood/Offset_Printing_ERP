@@ -6,14 +6,16 @@ from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.db.models import Q, Sum, Min, Max
+from django.db.models.functions import Coalesce
 from django.urls import reverse
 from functools import wraps
 import csv
 import json
+import re
 from datetime import datetime, date, timedelta
 
 from .bulk_upload import process_jobcard_upload, get_template_headers, get_template_example
-from .models import JobCard, Production, Machine, Operator, Department, Material, Dispatch, UserProfile, ChangeLog, EditOverrideRequest
+from .models import JobCard, Production, Machine, Operator, Department, Material, Dispatch, UserProfile, ChangeLog, EditOverrideRequest, ShiftConfig, MachineWorkSchedule
 
 try:
     import openpyxl
@@ -165,6 +167,75 @@ def format_audit_value(value):
     return str(value)
 
 
+def normalize_colour_notation(value):
+    """Convert compact notation like 1+1 into readable front/back text."""
+    raw = (value or '').strip()
+    if not raw:
+        return None
+
+    match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw)
+    if not match:
+        return raw
+
+    front = int(match.group(1))
+    back = int(match.group(2))
+    front_label = 'color' if front == 1 else 'colors'
+    back_label = 'color' if back == 1 else 'colors'
+    return f"{front} {front_label} front and {back} {back_label} back"
+
+
+def extract_total_colors(value):
+    """Extract total color units from supported color formats."""
+    raw = (value or '').strip().lower()
+    if not raw:
+        return 0
+
+    simple_plus = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw)
+    if simple_plus:
+        return int(simple_plus.group(1)) + int(simple_plus.group(2))
+
+    normalized_text = re.fullmatch(r'(\d+)\s*colors?\s*front\s*and\s*(\d+)\s*colors?\s*back', raw)
+    if normalized_text:
+        return int(normalized_text.group(1)) + int(normalized_text.group(2))
+
+    digits_only = re.fullmatch(r'(\d+)', raw)
+    if digits_only:
+        return int(digits_only.group(1))
+
+    return 0
+
+
+def compute_planned_minutes(total_impressions_required, machine, colour_value):
+    """Return (run_minutes, setup_minutes, total_minutes) from machine+impressions+colors."""
+    impressions = int(total_impressions_required or 0)
+    if impressions <= 0 or not machine:
+        return (None, None, None)
+
+    speed = float(machine.standard_impressions_per_hour or 0)
+    if speed <= 0:
+        return (None, None, None)
+
+    run_minutes = (impressions / speed) * 60
+    total_colors = extract_total_colors(colour_value)
+    setup_per_color = float(machine.standard_setup_minutes_per_color or 0)
+    setup_minutes = total_colors * setup_per_color
+    total_minutes = run_minutes + setup_minutes
+    return (round(run_minutes, 2), round(setup_minutes, 2), round(total_minutes, 2))
+
+
+def get_remaining_planned_minutes(job_card, exclude_production_id=None):
+    """Remaining planned minutes for a job card after already allocated production entries."""
+    total_planned = float(job_card.estimated_total_time_minutes or 0)
+    if total_planned <= 0:
+        return 0
+
+    allocated_qs = job_card.productions.filter(is_active=True)
+    if exclude_production_id:
+        allocated_qs = allocated_qs.exclude(pk=exclude_production_id)
+    allocated = float(allocated_qs.aggregate(total=Sum('planned_time'))['total'] or 0)
+    return max(total_planned - allocated, 0)
+
+
 def build_audit_snapshot(entity_type, instance):
     config = AUDIT_CONFIG[entity_type]
     return {
@@ -175,26 +246,37 @@ def build_audit_snapshot(entity_type, instance):
 
 def build_change_summary(entity_type, before_snapshot, after_snapshot):
     config = AUDIT_CONFIG[entity_type]
-    changes = {}
+    summary = {}
 
     for field_name in config['fields']:
-        old_value = before_snapshot.get(field_name, '-')
-        new_value = after_snapshot.get(field_name, '-')
-        if old_value != new_value:
-            changes[field_name] = {
-                'label': config['labels'].get(field_name, field_name.replace('_', ' ').title()),
-                'from': old_value,
-                'to': new_value,
-            }
+        before_value = before_snapshot.get(field_name, '-')
+        after_value = after_snapshot.get(field_name, '-')
+        if before_value == after_value:
+            continue
+        summary[field_name] = {
+            'label': config['labels'].get(field_name, field_name.replace('_', ' ').title()),
+            'from': before_value,
+            'to': after_value,
+        }
 
-    return changes
+    return summary
 
 
-def log_change(entity_type, instance, before_snapshot, changed_by, action, reason=''):
+def log_change(entity_type, instance, before_snapshot, changed_by, action, reason):
+    config = AUDIT_CONFIG[entity_type]
     after_snapshot = build_audit_snapshot(entity_type, instance)
-    summary = build_change_summary(entity_type, before_snapshot, after_snapshot)
 
-    if action == 'delete' and not summary:
+    if action == 'create':
+        summary = {
+            field_name: {
+                'label': config['labels'].get(field_name, field_name.replace('_', ' ').title()),
+                'from': '-',
+                'to': after_value,
+            }
+            for field_name, after_value in after_snapshot.items()
+            if after_value != '-'
+        }
+    elif action == 'delete':
         summary = {
             'record_state': {
                 'label': 'Record State',
@@ -202,7 +284,7 @@ def log_change(entity_type, instance, before_snapshot, changed_by, action, reaso
                 'to': 'Archived',
             }
         }
-    elif action == 'restore' and not summary:
+    elif action == 'restore':
         summary = {
             'record_state': {
                 'label': 'Record State',
@@ -210,6 +292,8 @@ def log_change(entity_type, instance, before_snapshot, changed_by, action, reaso
                 'to': 'Active',
             }
         }
+    else:
+        summary = build_change_summary(entity_type, before_snapshot, after_snapshot)
 
     if action == 'update' and not summary:
         return False
@@ -389,7 +473,7 @@ def bulk_upload_jobcards(request):
             }
             return render(request, "upload.html", context)
 
-        result = process_jobcard_upload(file)
+        result = process_jobcard_upload(file, uploaded_by=request.user)
         context = result
 
         return render(request, "upload.html", context)
@@ -404,20 +488,106 @@ def quick_add_master(request):
     master_type = (request.POST.get('type') or '').strip().lower()
     name = (request.POST.get('name') or '').strip()
 
-    if master_type not in {'material', 'machine', 'department'}:
+    if master_type not in {'material', 'machine', 'department', 'operator'}:
         return JsonResponse({'ok': False, 'error': 'Invalid master type.'}, status=400)
 
     if not name:
         return JsonResponse({'ok': False, 'error': 'Name is required.'}, status=400)
 
+    if master_type == 'operator':
+        employee_code = (request.POST.get('employee_code') or '').strip() or None
+
+        existing = None
+        if employee_code:
+            existing = Operator.objects.filter(employee_code__iexact=employee_code).first()
+        if existing is None:
+            existing = Operator.objects.filter(
+                name__iexact=name,
+                employee_code__iexact=employee_code or ''
+            ).first() if employee_code else Operator.objects.filter(name__iexact=name, employee_code__isnull=True).first()
+
+        if existing:
+            display_name = f"{existing.name} ({existing.employee_code})" if existing.employee_code else existing.name
+            return JsonResponse({
+                'ok': True,
+                'created': False,
+                'id': existing.id,
+                'name': existing.name,
+                'display_name': display_name,
+                'employee_code': existing.employee_code,
+                'type': master_type,
+                'message': 'Already exists. Selected existing value.'
+            })
+
+        obj = Operator.objects.create(name=name, employee_code=employee_code)
+        display_name = f"{obj.name} ({obj.employee_code})" if obj.employee_code else obj.name
+        return JsonResponse({
+            'ok': True,
+            'created': True,
+            'id': obj.id,
+            'name': obj.name,
+            'display_name': display_name,
+            'employee_code': obj.employee_code,
+            'type': master_type,
+            'message': 'Created successfully.'
+        })
+
+    if master_type == 'machine':
+        standard_speed_raw = (request.POST.get('standard_impressions_per_hour') or '').strip()
+        setup_per_color_raw = (request.POST.get('standard_setup_minutes_per_color') or '').strip()
+        standard_speed = 4000
+        setup_per_color = 15
+        if standard_speed_raw:
+            try:
+                standard_speed = float(standard_speed_raw)
+            except ValueError:
+                return JsonResponse({'ok': False, 'error': 'Ideal speed must be a number.'}, status=400)
+            if standard_speed <= 0:
+                return JsonResponse({'ok': False, 'error': 'Ideal speed must be greater than 0.'}, status=400)
+
+        if setup_per_color_raw:
+            try:
+                setup_per_color = float(setup_per_color_raw)
+            except ValueError:
+                return JsonResponse({'ok': False, 'error': 'Setup minutes per color must be a number.'}, status=400)
+            if setup_per_color < 0:
+                return JsonResponse({'ok': False, 'error': 'Setup minutes per color cannot be negative.'}, status=400)
+
+        existing = Machine.objects.filter(name__iexact=name).first()
+        if existing:
+            return JsonResponse({
+                'ok': True,
+                'created': False,
+                'id': existing.id,
+                'name': existing.name,
+                'standard_impressions_per_hour': existing.standard_impressions_per_hour,
+                'standard_setup_minutes_per_color': existing.standard_setup_minutes_per_color,
+                'type': master_type,
+                'message': 'Already exists. Selected existing value.'
+            })
+
+        obj = Machine.objects.create(
+            name=name,
+            standard_impressions_per_hour=standard_speed,
+            standard_setup_minutes_per_color=setup_per_color,
+        )
+        return JsonResponse({
+            'ok': True,
+            'created': True,
+            'id': obj.id,
+            'name': obj.name,
+            'standard_impressions_per_hour': obj.standard_impressions_per_hour,
+            'standard_setup_minutes_per_color': obj.standard_setup_minutes_per_color,
+            'type': master_type,
+            'message': 'Created successfully.'
+        })
+
     model_map = {
         'material': Material,
-        'machine': Machine,
         'department': Department,
     }
     model = model_map[master_type]
 
-    # Case-insensitive duplicate check for better UX.
     existing = model.objects.filter(name__iexact=name).first()
     if existing:
         return JsonResponse({
@@ -444,15 +614,18 @@ def quick_add_master(request):
 @permission_required('can_edit_jobcard')
 def job_card_entry(request):
     """Manual job card entry form"""
-    edit_id = (request.POST.get('edit_id') or request.GET.get('edit') or '').strip()
-    edit_record = get_active_record_or_404(JobCard, edit_id) if edit_id else None
+    view_id = (request.GET.get('view') or '').strip()
+    is_view_mode = bool(view_id)
+    edit_id = '' if is_view_mode else (request.POST.get('edit_id') or request.GET.get('edit') or '').strip()
+    edit_record = get_active_record_or_404(JobCard, view_id) if is_view_mode else (get_active_record_or_404(JobCard, edit_id) if edit_id else None)
 
-    if request.method == "POST":
+    if request.method == "POST" and not is_view_mode:
         try:
             change_reason = (request.POST.get('change_reason') or '').strip()
             job_card_no = (request.POST.get('job_card_no') or '').strip()
             sku = (request.POST.get('sku') or '').strip()
             order_qty = int(request.POST.get('order_qty') or 0)
+            production_tolerance_percent = float(request.POST.get('production_tolerance_percent') or 5)
 
             if edit_record and not change_reason:
                 raise ValueError("Change reason is required when editing a job card")
@@ -462,6 +635,8 @@ def job_card_entry(request):
                 raise ValueError("SKU is required")
             if order_qty <= 0:
                 raise ValueError("Order quantity must be greater than 0")
+            if production_tolerance_percent < 0:
+                raise ValueError("Production tolerance cannot be negative")
 
             duplicate_query = JobCard.objects.filter(job_card_no=job_card_no)
             if edit_record:
@@ -476,6 +651,13 @@ def job_card_entry(request):
             material = Material.objects.filter(id=request.POST.get('material')).first() if request.POST.get('material') else None
             machine = Machine.objects.filter(id=request.POST.get('machine_name')).first() if request.POST.get('machine_name') else None
             department = Department.objects.filter(id=request.POST.get('department')).first() if request.POST.get('department') else None
+            normalized_colour = normalize_colour_notation(request.POST.get('colour'))
+            total_impressions_required = int(request.POST.get('total_impressions_required') or 0) or None
+            estimated_run_minutes, estimated_setup_minutes, estimated_total_minutes = compute_planned_minutes(
+                total_impressions_required,
+                machine,
+                normalized_colour,
+            )
 
             payload = {
                 'job_card_no': job_card_no,
@@ -484,10 +666,14 @@ def job_card_entry(request):
                 'PO_No': (request.POST.get('po_no') or '').strip() or None,
                 'SKU': sku,
                 'material': material,
-                'colour': int(request.POST.get('colour') or 0) or None,
+                'colour': normalized_colour,
                 'application': (request.POST.get('application') or '').strip() or None,
                 'order_qty': order_qty,
-                'total_impressions_required': int(request.POST.get('total_impressions_required') or 0) or None,
+                'production_tolerance_percent': production_tolerance_percent,
+                'total_impressions_required': total_impressions_required,
+                'estimated_run_time_minutes': estimated_run_minutes,
+                'estimated_setup_time_minutes': estimated_setup_minutes,
+                'estimated_total_time_minutes': estimated_total_minutes,
                 'ups': int(request.POST.get('ups') or 0) or None,
                 'print_sheet_size': (request.POST.get('print_sheet_size') or '').strip() or None,
                 'wastage': int(request.POST.get('wastage') or 0),
@@ -499,6 +685,7 @@ def job_card_entry(request):
                 'department': department,
                 'die_cutting': (request.POST.get('die_cutting') or '').strip() or None,
                 'status': (request.POST.get('status') or 'Open').strip() or 'Open',
+                'is_print_job': request.POST.get('is_print_job') == 'true',
             }
 
             if edit_record:
@@ -514,6 +701,8 @@ def job_card_entry(request):
                 return redirect('job_card_records')
 
             job_card = JobCard.objects.create(**payload)
+            job_card.created_by = request.user
+            job_card.save(update_fields=['created_by'])
             log_change('job_card', job_card, {}, request.user, 'create', 'Initial entry created')
 
             messages.success(request, f"Job card {job_card_no} created successfully")
@@ -522,12 +711,22 @@ def job_card_entry(request):
         except Exception as e:
             messages.error(request, f"Error creating job card: {str(e)}")
 
+    machine_options = Machine.objects.filter(is_active=True).order_by('name', 'id')
+
     context = {
         'today': edit_record.po_date if edit_record and edit_record.po_date else timezone.now().date(),
         'materials': Material.objects.all().order_by('name'),
-        'machines': Machine.objects.filter(is_active=True).order_by('name'),
+        'machines': machine_options,
         'departments': Department.objects.all().order_by('name'),
         'edit_record': edit_record,
+        'is_view_mode': is_view_mode,
+        'machine_meta_json': json.dumps({
+            str(m.id): {
+                'speed': float(m.standard_impressions_per_hour or 0),
+                'setup_per_color': float(m.standard_setup_minutes_per_color or 0),
+            }
+            for m in machine_options
+        }),
     }
     return render(request, 'job_card_entry.html', context)
 
@@ -536,10 +735,57 @@ def job_card_entry(request):
 @permission_required('can_edit_jobcard')
 def job_card_records(request):
     """Job card records list page"""
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        if action == 'close_short_close':
+            if not request.user.profile.can_approve_dispatch():
+                add_unique_message(request, messages.ERROR, '❌ Only manager/dispatch roles can close short-close gap.')
+                return redirect('job_card_records')
+
+            job_card_id = (request.POST.get('job_card_id') or '').strip()
+            reason = (request.POST.get('short_close_reason') or '').strip()
+
+            if not job_card_id:
+                add_unique_message(request, messages.ERROR, 'Job card is required for short-close action.')
+                return redirect('job_card_records')
+            if not reason:
+                add_unique_message(request, messages.ERROR, 'Reason is required to close pending short-close.')
+                return redirect('job_card_records')
+
+            row = get_active_record_or_404(JobCard, job_card_id)
+            pending_qty = row.short_close_qty
+            if pending_qty <= 0:
+                add_unique_message(request, messages.INFO, 'No pending short-close quantity to close.')
+                return redirect('job_card_records')
+
+            before_snapshot = build_audit_snapshot('job_card', row)
+            row.short_close_closed_qty = (row.short_close_closed_qty or 0) + pending_qty
+            row.short_close_wastage_qty = (row.short_close_wastage_qty or 0) + pending_qty
+            row.short_close_closed_by = request.user
+            row.short_close_closed_at = timezone.now()
+            row.short_close_close_reason = reason
+            row.save(update_fields=[
+                'short_close_closed_qty',
+                'short_close_wastage_qty',
+                'short_close_closed_by',
+                'short_close_closed_at',
+                'short_close_close_reason',
+            ])
+            log_change(
+                'job_card',
+                row,
+                before_snapshot,
+                request.user,
+                'update',
+                f'Short-close closed: {pending_qty} pcs moved to wastage. Reason: {reason}'
+            )
+            add_unique_message(request, messages.SUCCESS, f'{pending_qty} pcs short-close moved to wastage for {row.job_card_no}.')
+            return redirect('job_card_records')
+
     query = (request.GET.get('q') or '').strip()
     status = (request.GET.get('status') or '').strip()
 
-    jobcards = JobCard.objects.filter(is_active=True).select_related('material', 'machine_name', 'department').order_by('-created_at')
+    jobcards = JobCard.objects.filter(is_active=True).select_related('material', 'machine_name', 'department', 'created_by').order_by('-created_at')
 
     if query:
         jobcards = jobcards.filter(
@@ -563,14 +809,17 @@ def job_card_records(request):
 @permission_required('can_edit_production')
 def production_entry(request):
     """Production data entry form for operators"""
-    edit_id = (request.POST.get('edit_id') or request.GET.get('edit') or '').strip()
-    edit_record = get_active_record_or_404(Production, edit_id) if edit_id else None
-    if edit_record and not ensure_edit_lock_allowed(request, 'production', edit_record):
+    view_id = (request.GET.get('view') or '').strip()
+    is_view_mode = bool(view_id)
+    edit_id = '' if is_view_mode else (request.POST.get('edit_id') or request.GET.get('edit') or '').strip()
+    edit_record = get_active_record_or_404(Production, view_id) if is_view_mode else (get_active_record_or_404(Production, edit_id) if edit_id else None)
+    if edit_record and not is_view_mode and not ensure_edit_lock_allowed(request, 'production', edit_record):
         return redirect('production_records')
 
-    if request.method == "POST":
+    if request.method == "POST" and not is_view_mode:
         job_card_id = request.POST.get('job_card')
         machine_id = request.POST.get('machine')
+        machine_override = request.POST.get('machine_override') == 'on'
         operator_id = request.POST.get('operator')
         shift = request.POST.get('shift')
         date = request.POST.get('date')
@@ -585,6 +834,8 @@ def production_entry(request):
         downtime_category = request.POST.get('downtime_category')
         waste_reason = request.POST.get('waste_reason')
         remarks = request.POST.get('remarks')
+        overrun_reason_select = (request.POST.get('overrun_reason_select') or '').strip()
+        overrun_reason_other = (request.POST.get('overrun_reason_other') or '').strip()
 
         try:
             change_reason = (request.POST.get('change_reason') or '').strip()
@@ -601,24 +852,70 @@ def production_entry(request):
 
             if edit_record and not change_reason:
                 raise ValueError("Change reason is required when editing production data")
-            if planned_time_val <= 0:
-                raise ValueError("Planned time must be greater than 0")
+            if planned_time_val < 0:
+                raise ValueError("Planned time cannot be negative")
             if run_time_val <= 0:
                 raise ValueError("Run time must be greater than 0")
             if downtime_val > 0 and not downtime_category:
                 raise ValueError("Downtime category is required when downtime is greater than 0")
             if waste_sheets_val > 0 and not waste_reason:
                 raise ValueError("Waste reason is required when waste sheets are greater than 0")
-            if (run_time_val + downtime_val + setup_time_val) > planned_time_val:
-                raise ValueError("Run time + downtime + setup time cannot exceed planned time")
             if intermediate_pass and impressions_val <= 0:
                 raise ValueError("Impressions must be greater than 0 for intermediate pass entry")
             if intermediate_pass and waste_sheets_val < 0:
                 raise ValueError("Waste sheets cannot be negative")
 
             job_card = get_active_record_or_404(JobCard, job_card_id)
-            machine = get_object_or_404(Machine, pk=machine_id)
+            if machine_override and machine_id:
+                machine = get_object_or_404(Machine, pk=machine_id)
+            elif job_card.machine_name_id:
+                machine = job_card.machine_name
+            elif machine_id:
+                machine = get_object_or_404(Machine, pk=machine_id)
+            elif edit_record and edit_record.machine_id:
+                machine = edit_record.machine
+            else:
+                raise ValueError("No machine mapped on selected Job Card. Please set machine in Job Card (or choose fallback machine).")
             operator = get_object_or_404(Operator, pk=operator_id)
+
+            remaining_planned = get_remaining_planned_minutes(
+                job_card,
+                exclude_production_id=edit_record.pk if edit_record else None,
+            )
+
+            if job_card.estimated_total_time_minutes and job_card.estimated_total_time_minutes > 0:
+                if edit_record:
+                    # Keep current allocation while editing the existing row.
+                    planned_time_val = float(edit_record.planned_time or 0)
+                else:
+                    # New rows consume remaining planned time. If nothing remains, allow manual overrun allocation.
+                    if remaining_planned > 0:
+                        planned_time_val = remaining_planned
+                    elif planned_time_val <= 0:
+                        planned_time_val = 0
+
+            overrun_reason_map = {
+                'extra_setup': 'Extra Setup / Make Ready',
+                'machine_slowdown': 'Machine Slowdown',
+                'operator_learning': 'Operator Learning / New Team',
+                'material_issue': 'Material-related Delay',
+                'quality_rework': 'Quality Rework',
+                'job_complexity': 'Higher Job Complexity',
+                'other': 'Other',
+            }
+            overrun_reason = ''
+            if overrun_reason_select == 'other':
+                overrun_reason = overrun_reason_other
+            elif overrun_reason_select in overrun_reason_map:
+                overrun_reason = overrun_reason_map[overrun_reason_select]
+
+            if not edit_record and planned_time_val > remaining_planned:
+                if not overrun_reason_select:
+                    raise ValueError(
+                        "Overrun allocation reason is required when planned minutes exceed remaining planned time."
+                    )
+                if overrun_reason_select == 'other' and not overrun_reason_other:
+                    raise ValueError("Please specify overrun reason details for 'Other'.")
 
             payload = {
                 'job_card': job_card,
@@ -650,7 +947,10 @@ def production_entry(request):
                 return redirect('production_records')
 
             record = Production.objects.create(**payload)
-            log_change('production', record, {}, request.user, 'create', 'Initial entry created')
+            record.created_by = request.user
+            record.save(update_fields=['created_by'])
+            create_reason = overrun_reason or 'Initial entry created'
+            log_change('production', record, {}, request.user, 'create', create_reason)
 
             messages.success(request, f'Production data saved successfully for Job Card {job_card.job_card_no}')
             return redirect('production_entry')
@@ -669,10 +969,27 @@ def production_entry(request):
         'job_cards': job_cards,
         'machines': machines,
         'operators': operators,
+        'job_card_plan_json': json.dumps({
+            str(j.id): {
+                'planned_total': float(j.estimated_total_time_minutes or 0),
+                'planned_setup': float(j.estimated_setup_time_minutes or 0),
+                'planned_run': float(j.estimated_run_time_minutes or 0),
+                'remaining_planned': float(get_remaining_planned_minutes(j, exclude_production_id=edit_record.pk if edit_record else None)),
+            }
+            for j in job_cards
+        }),
+        'job_card_machine_json': json.dumps({
+            str(j.id): {
+                'machine_id': j.machine_name_id,
+                'machine_name': j.machine_name.name if j.machine_name else '',
+            }
+            for j in job_cards
+        }),
         'today': edit_record.date if edit_record else timezone.now().date(),
         'edit_record': edit_record,
         'edit_lock_days': get_record_edit_lock_days(),
         'edit_lock_applies': bool(edit_record and record_is_time_locked('production', edit_record)),
+        'is_view_mode': is_view_mode,
     }
 
     return render(request, 'production_entry.html', context)
@@ -685,7 +1002,7 @@ def production_records(request):
     query = (request.GET.get('q') or '').strip()
     shift = (request.GET.get('shift') or '').strip()
 
-    records = Production.objects.filter(is_active=True, job_card__is_active=True).select_related('job_card', 'machine', 'operator').order_by('-date', '-id')
+    records = Production.objects.filter(is_active=True, job_card__is_active=True).select_related('job_card', 'machine', 'operator', 'created_by').order_by('-date', '-id')
 
     if query:
         records = records.filter(
@@ -728,12 +1045,14 @@ def production_records(request):
 @permission_required('can_approve_dispatch')
 def dispatch_entry(request):
     """Dispatch entry form"""
-    edit_id = (request.POST.get('edit_id') or request.GET.get('edit') or '').strip()
-    edit_record = get_active_record_or_404(Dispatch, edit_id) if edit_id else None
-    if edit_record and not ensure_edit_lock_allowed(request, 'dispatch', edit_record):
+    view_id = (request.GET.get('view') or '').strip()
+    is_view_mode = bool(view_id)
+    edit_id = '' if is_view_mode else (request.POST.get('edit_id') or request.GET.get('edit') or '').strip()
+    edit_record = get_active_record_or_404(Dispatch, view_id) if is_view_mode else (get_active_record_or_404(Dispatch, edit_id) if edit_id else None)
+    if edit_record and not is_view_mode and not ensure_edit_lock_allowed(request, 'dispatch', edit_record):
         return redirect('dispatch_records')
 
-    if request.method == 'POST':
+    if request.method == 'POST' and not is_view_mode:
         try:
             change_reason = (request.POST.get('change_reason') or '').strip()
             job_card_id = request.POST.get('job_card')
@@ -771,6 +1090,8 @@ def dispatch_entry(request):
                 return redirect('dispatch_records')
 
             record = Dispatch.objects.create(**payload)
+            record.created_by = request.user
+            record.save(update_fields=['created_by'])
             log_change('dispatch', record, {}, request.user, 'create', 'Initial entry created')
 
             messages.success(request, f'Dispatch saved for {job_card.job_card_no}')
@@ -784,6 +1105,7 @@ def dispatch_entry(request):
         'edit_record': edit_record,
         'edit_lock_days': get_record_edit_lock_days(),
         'edit_lock_applies': bool(edit_record and record_is_time_locked('dispatch', edit_record)),
+        'is_view_mode': is_view_mode,
     }
     return render(request, 'dispatch_entry.html', context)
 
@@ -794,7 +1116,7 @@ def dispatch_records(request):
     """Dispatch records list page"""
     query = (request.GET.get('q') or '').strip()
 
-    records = Dispatch.objects.filter(is_active=True, job_card__is_active=True).select_related('job_card').order_by('-dispatch_date', '-id')
+    records = Dispatch.objects.filter(is_active=True, job_card__is_active=True).select_related('job_card', 'created_by').order_by('-dispatch_date', '-id')
     if query:
         records = records.filter(
             Q(job_card__job_card_no__icontains=query) |
@@ -1132,6 +1454,17 @@ def production_dashboard(request):
     total_downtime = period_productions.aggregate(total=Sum('downtime'))['total'] or 0
     total_output = period_productions.aggregate(total=Sum('output_sheets'))['total'] or 0
     total_waste = period_productions.aggregate(total=Sum('waste_sheets'))['total'] or 0
+    total_planned_minutes = period_productions.aggregate(total=Sum('planned_time'))['total'] or 0
+    total_run_minutes = period_productions.aggregate(total=Sum('run_time'))['total'] or 0
+    total_setup_minutes = period_productions.aggregate(total=Sum('setup_time'))['total'] or 0
+    total_actual_minutes = float(total_run_minutes or 0) + float(total_setup_minutes or 0) + float(total_downtime or 0)
+    planned_variance_minutes = total_actual_minutes - float(total_planned_minutes or 0)
+    overrun_setup_minutes = float(total_setup_minutes or 0)
+    overrun_downtime_minutes = float(sum(
+        p.downtime for p in period_productions
+        if p.downtime_category in {'breakdown', 'operator', 'other'}
+    ))
+    overrun_run_perf_minutes = max(float(planned_variance_minutes) - overrun_setup_minutes - overrun_downtime_minutes, 0)
 
     # Dispatch metrics for same period
     total_dispatch_qty = period_dispatches.aggregate(total=Sum('dispatch_qty'))['total'] or 0
@@ -1140,10 +1473,49 @@ def production_dashboard(request):
     avg_dispatch_qty = (total_dispatch_qty / dispatch_count) if dispatch_count else 0
     dispatch_fulfillment_pct = (total_dispatch_qty / total_output * 100) if total_output > 0 else 0
 
-    # Calculate OEE from aggregated period data.
-    available_time_minutes = period_productions.count() * 480  # Assuming 8 hours per production record
-    actual_run_time = available_time_minutes - total_downtime
+    # Short-close decision tracking KPIs for manager visibility
+    short_close_closed_period_qs = JobCard.objects.filter(
+        is_active=True,
+        short_close_closed_at__date__gte=start_date,
+        short_close_closed_at__date__lte=end_date,
+        short_close_wastage_qty__gt=0,
+    )
+    short_close_closed_period_qty = short_close_closed_period_qs.aggregate(
+        total=Sum('short_close_wastage_qty')
+    )['total'] or 0
+    short_close_closed_period_jobs = short_close_closed_period_qs.count()
 
+    pending_short_close_total = 0
+    pending_short_close_jobs = 0
+    pending_short_close_rows = JobCard.objects.filter(is_active=True).annotate(
+        agg_dispatch=Coalesce(Sum('dispatch__dispatch_qty', filter=Q(dispatch__is_active=True)), 0)
+    ).values('order_qty', 'agg_dispatch', 'short_close_closed_qty')
+    for row in pending_short_close_rows:
+        order_qty = int(row['order_qty'] or 0)
+        dispatch_qty = int(row['agg_dispatch'] or 0)
+        closed_qty = int(row['short_close_closed_qty'] or 0)
+        if order_qty <= 0 or dispatch_qty >= order_qty:
+            continue
+
+        completion_pct = (dispatch_qty / order_qty) * 100
+        if completion_pct < 95:
+            continue
+
+        pending_qty = max((order_qty - dispatch_qty) - closed_qty, 0)
+        if pending_qty > 0:
+            pending_short_close_total += pending_qty
+            pending_short_close_jobs += 1
+
+    # Calculate OEE from aggregated period data.
+    # Use actual planned_time from entries (correct), not a fixed per-entry assumption.
+    available_time_minutes = total_planned_minutes
+    UNPLANNED_CATEGORIES = {'breakdown', 'operator', 'other'}
+    from django.db.models import Case, When, FloatField as DjFloatField
+    unplanned_downtime = sum(
+        p.downtime for p in period_productions
+        if p.downtime_category in UNPLANNED_CATEGORIES
+    )
+    actual_run_time = available_time_minutes - unplanned_downtime
     availability = (actual_run_time / available_time_minutes * 100) if available_time_minutes > 0 else 0
 
     # Convert run-time minutes to expected impressions using each machine's standard speed.
@@ -1158,6 +1530,61 @@ def production_dashboard(request):
     quality = ((total_output / (total_output + total_waste)) * 100) if (total_output + total_waste) > 0 else 0
 
     oee_value = (availability * performance * quality) / 10000
+
+    # Schedule-based utilization (manager-defined weekly shift config)
+    shift_configs = list(ShiftConfig.objects.all().order_by('effective_from', 'id'))
+    machine_schedules = list(MachineWorkSchedule.objects.all().order_by('effective_from', 'id'))
+
+    def resolve_shift_minutes(target_date, day_of_week, shift_code):
+        matched = None
+        for cfg in shift_configs:
+            if cfg.day_of_week != day_of_week or cfg.shift != shift_code:
+                continue
+            if cfg.effective_from and cfg.effective_to:
+                if cfg.effective_from <= target_date <= cfg.effective_to:
+                    matched = cfg
+            elif cfg.effective_from is None and cfg.effective_to is None and matched is None:
+                matched = cfg
+        if matched:
+            return float(matched.net_hours or 0) * 60
+        return default_shift_minutes
+
+    def resolve_machine_working(machine_id, target_date, day_of_week, shift_code):
+        matched = None
+        for cfg in machine_schedules:
+            if cfg.machine_id != machine_id or cfg.day_of_week != day_of_week or cfg.shift != shift_code:
+                continue
+            if cfg.effective_from and cfg.effective_to:
+                if cfg.effective_from <= target_date <= cfg.effective_to:
+                    matched = cfg
+            elif cfg.effective_from is None and cfg.effective_to is None and matched is None:
+                matched = cfg
+        if matched is not None:
+            return bool(matched.is_working)
+        return True
+
+    default_shift_minutes = 11 * 60
+
+    scheduled_minutes_total = 0.0
+    actual_used_minutes_total = 0.0
+    seen_machine_sessions = set()
+    for p in period_productions.select_related('machine'):
+        day_of_week = p.date.weekday() if p.date else None
+        if day_of_week is None or not p.machine_id:
+            continue
+
+        is_working = resolve_machine_working(p.machine_id, p.date, day_of_week, p.shift)
+        if not is_working:
+            continue
+
+        session_key = (p.machine_id, p.date, p.shift)
+        if session_key not in seen_machine_sessions:
+            scheduled_minutes_total += resolve_shift_minutes(p.date, day_of_week, p.shift)
+            seen_machine_sessions.add(session_key)
+
+        actual_used_minutes_total += (p.run_time or 0) + (p.setup_time or 0) + (p.downtime or 0)
+
+    schedule_utilization_pct = (actual_used_minutes_total / scheduled_minutes_total * 100) if scheduled_minutes_total > 0 else 0
 
     # Recent productions (last 10)
     recent_productions = period_productions.select_related('job_card', 'machine', 'operator').order_by('-date', '-id')[:10]
@@ -1509,11 +1936,24 @@ def production_dashboard(request):
         'total_output': total_output,
         'total_waste': total_waste,
         'total_downtime': total_downtime,
+        'total_planned_minutes': round(float(total_planned_minutes or 0), 2),
+        'total_actual_minutes': round(float(total_actual_minutes or 0), 2),
+        'planned_variance_minutes': round(float(planned_variance_minutes or 0), 2),
+        'overrun_setup_minutes': round(float(overrun_setup_minutes or 0), 2),
+        'overrun_downtime_minutes': round(float(overrun_downtime_minutes or 0), 2),
+        'overrun_run_perf_minutes': round(float(overrun_run_perf_minutes or 0), 2),
+        'schedule_utilization_pct': round(float(schedule_utilization_pct or 0), 2),
+        'scheduled_minutes_total': round(float(scheduled_minutes_total or 0), 2),
+        'actual_used_minutes_total': round(float(actual_used_minutes_total or 0), 2),
         'total_dispatch_qty': total_dispatch_qty,
         'dispatch_count': dispatch_count,
         'dispatched_job_cards_count': dispatched_job_cards_count,
         'avg_dispatch_qty': round(avg_dispatch_qty, 2),
         'dispatch_fulfillment_pct': round(dispatch_fulfillment_pct, 2),
+        'short_close_closed_period_qty': int(short_close_closed_period_qty or 0),
+        'short_close_closed_period_jobs': int(short_close_closed_period_jobs or 0),
+        'pending_short_close_total': int(pending_short_close_total or 0),
+        'pending_short_close_jobs': int(pending_short_close_jobs or 0),
         'recent_productions': recent_productions,
         'recent_dispatches': recent_dispatches,
         'production_by_date_json': json.dumps(production_by_date_data),
@@ -1536,6 +1976,238 @@ def production_dashboard(request):
     }
 
     return render(request, 'production_dashboard.html', context)
+
+
+def build_erp_readme_text():
+    return """Offset Printing ERP - Easy User Guide
+
+Last Updated: 2026-04-17
+
+=============================
+1) JOB CARD ENTRY (Planning)
+=============================
+Purpose:
+- This is the planning sheet for one customer order.
+
+Important fields (simple meaning):
+- Job Card No: unique ID of the order.
+- SKU: product code/name.
+- PO Number / PO Date: customer purchase order details.
+- Material: paper/board type.
+- Colours: print colors (example 4 or 1+1).
+- Order Qty (pcs): final quantity customer needs.
+- UPS: how many pieces fit on one sheet.
+- Wastage (sheets): planned extra sheets for setup/loss.
+- Machine: planned machine for this job.
+- Department: process area.
+- Production Tolerance %: allowed extra production beyond plan.
+
+Auto calculations:
+- Required Sheets = Order Qty / UPS
+- Total Planned Sheets = Required Sheets + Wastage
+- Tolerance Sheets = Total Planned Sheets * Tolerance %
+- Allowed Sheets = Planned Sheets + Tolerance Sheets
+
+Time planning (auto):
+- Run Time (min) = (Total Impressions Required / Machine Speed per hour) * 60
+- Setup Time (min) = Total Colors * Machine Setup Minutes per Color
+- Total Planned Time = Run Time + Setup Time
+
+================================
+2) PRODUCTION ENTRY (Execution)
+================================
+Purpose:
+- Operator/supervisor logs actual production done in each shift.
+
+Important fields:
+- Job Card: which planned job is running.
+- Machine: auto from Job Card (override allowed if needed).
+- Operator, Shift, Date: who ran, when, which shift.
+- Impressions: total machine impressions done.
+- Output Sheets: good sheets produced.
+- Waste Sheets + Waste Reason: scrap and reason.
+- Planned Time: auto remaining planned minutes.
+- Run Time, Setup Time, Downtime: actual consumed minutes.
+- Downtime Category: reason bucket for downtime.
+
+Validations:
+- Output + Waste cannot exceed Allowed Sheets.
+- If planned allocation exceeds remaining planned minutes, overrun reason is mandatory.
+- Overrun Minutes = (Run + Setup + Downtime) - Planned Time
+
+================================
+3) DISPATCH ENTRY (Delivery)
+================================
+Purpose:
+- Record quantity sent to customer.
+
+Important fields:
+- Job Card
+- Dispatch Date
+- Dispatch Qty (pcs)
+- DC No (optional)
+
+Completion logic:
+- Job is treated as Completed at 95%+ dispatch ratio.
+- Remaining below 100% is Short Close (not auto waste).
+- Manager/dispatch can close pending short-close with reason.
+- Closed short-close is moved to Closed as Wastage.
+
+================================
+4) SHIFT & MACHINE SCHEDULE
+================================
+Purpose:
+- Define realistic available capacity by shift and machine.
+
+Shift hours fields:
+- Effective From / Effective To: date range for this schedule version.
+- Day + Shift A/B net hours: productive hours after breaks.
+
+Machine work schedule fields:
+- Check box ON = machine runs in that day+shift.
+- Check box OFF = machine is not planned to run.
+
+This is used in dashboard:
+- Schedule Utilization % = Actual used minutes / Scheduled available minutes * 100
+
+=============================
+5) DASHBOARD (What it means)
+=============================
+Top KPIs:
+- OEE: overall productivity quality score.
+- Availability: uptime after unplanned downtime impact.
+- Performance: speed efficiency vs machine standard speed.
+- Quality: good output ratio.
+
+Planning KPIs:
+- Planned Time vs Actual Time
+- Planned Variance
+- Overrun split (setup, downtime, run-performance gap)
+
+Dispatch and closure KPIs:
+- Dispatch qty and fulfillment
+- Pending Short Close
+- Short Close Closed as Wastage
+
+=============================
+6) IF DROPDOWN VALUE IS WRONG
+=============================
+Example: wrong machine, operator, material, or department name added by mistake.
+
+Use "Master Corrections" page:
+1. Open the correction page from home/nav.
+2. Rename wrong text to correct name.
+3. For machine/operator, you can deactivate so it no longer appears in dropdowns.
+4. Existing historical records remain safe and auditable.
+
+=============================
+7) QUICK RULES FOR USERS
+=============================
+- Always select correct Job Card first.
+- Do not use waste to hide dispatch short-close.
+- Give a reason when overriding machine or closing short-close.
+- Keep shift schedule dates current for accurate utilization.
+
+=============================
+8) MAINTENANCE NOTE
+=============================
+- Update this guide whenever fields, formulas, rules, or dashboard KPIs change.
+"""
+
+
+@login_required
+def erp_readme(request):
+    context = {
+        'generated_on': timezone.now(),
+    }
+    return render(request, 'erp_readme.html', context)
+
+
+@login_required
+def download_erp_readme(request):
+    content = build_erp_readme_text()
+    response = HttpResponse(content, content_type='text/plain; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="offset_erp_calculation_guide.txt"'
+    return response
+
+
+@login_required
+@permission_required('can_manage_masters')
+def machine_master_tools(request):
+    """Manager/admin screen to correct dropdown master values across ERP."""
+
+    model_map = {
+        'machine': Machine,
+        'operator': Operator,
+        'material': Material,
+        'department': Department,
+    }
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        entity_type = (request.POST.get('entity_type') or '').strip().lower()
+        machine_id = (request.POST.get('machine_id') or '').strip()
+        model = model_map.get(entity_type)
+        record = get_object_or_404(model, pk=machine_id) if (model and machine_id) else None
+
+        if action == 'rename_machine' and record:
+            new_name = (request.POST.get('new_name') or '').strip()
+            if not new_name:
+                messages.error(request, 'Name is required.')
+            else:
+                duplicate = model.objects.exclude(pk=record.pk).filter(name__iexact=new_name).first()
+                if duplicate:
+                    messages.error(request, f'Name already exists as #{duplicate.id} ({duplicate.name}).')
+                else:
+                    old_name = record.name
+                    record.name = new_name
+                    record.save(update_fields=['name'])
+                    messages.success(request, f'{entity_type.title()} renamed: {old_name} -> {record.name}')
+
+        elif action == 'toggle_machine' and record and hasattr(record, 'is_active'):
+            record.is_active = not record.is_active
+            record.save(update_fields=['is_active'])
+            state = 'active' if record.is_active else 'inactive'
+            messages.success(request, f'{entity_type.title()} {record.name} marked {state}.')
+
+        return redirect('machine_master_tools')
+
+    machine_rows = []
+    for item in Machine.objects.all().order_by('name', 'id'):
+        machine_rows.append({
+            'record': item,
+            'job_card_count': JobCard.objects.filter(machine_name=item, is_active=True).count(),
+            'production_count': Production.objects.filter(machine=item, is_active=True).count(),
+        })
+
+    operator_rows = []
+    for item in Operator.objects.all().order_by('name', 'id'):
+        operator_rows.append({
+            'record': item,
+            'production_count': Production.objects.filter(operator=item, is_active=True).count(),
+        })
+
+    material_rows = []
+    for item in Material.objects.all().order_by('name', 'id'):
+        material_rows.append({
+            'record': item,
+            'job_card_count': JobCard.objects.filter(material=item, is_active=True).count(),
+        })
+
+    department_rows = []
+    for item in Department.objects.all().order_by('name', 'id'):
+        department_rows.append({
+            'record': item,
+            'job_card_count': JobCard.objects.filter(department=item, is_active=True).count(),
+        })
+
+    context = {
+        'machine_rows': machine_rows,
+        'operator_rows': operator_rows,
+        'material_rows': material_rows,
+        'department_rows': department_rows,
+    }
+    return render(request, 'machine_master_tools.html', context)
 
 
 @login_required
@@ -1616,7 +2288,6 @@ def download_template(request):
             response['Content-Disposition'] = 'attachment; filename="jobcard_template.xlsx"'
             workbook.save(response)
             return response
-        
         except Exception as e:
             # Fallback to CSV if Excel generation fails
             print(f"Excel generation failed: {e}")
@@ -1632,3 +2303,137 @@ def download_template(request):
     writer.writerow(example)
     
     return response
+
+
+@login_required
+@require_role('admin', 'manager')
+def shift_config(request):
+    """Manage weekly shift net hours and machine work schedules."""
+    days = ShiftConfig.DAY_CHOICES
+    shifts = ['A', 'B']
+    machines = Machine.objects.filter(
+        Q(is_active=True) |
+        Q(id__in=JobCard.objects.exclude(machine_name__isnull=True).values_list('machine_name_id', flat=True)) |
+        Q(production__isnull=False)
+    ).distinct().order_by('name', 'id')
+
+    active_date_raw = (request.GET.get('effective_date') or '').strip()
+    if active_date_raw:
+        try:
+            active_date = datetime.strptime(active_date_raw, '%Y-%m-%d').date()
+        except ValueError:
+            active_date = timezone.now().date()
+    else:
+        active_date = timezone.now().date()
+
+    def parse_effective_range(post_data):
+        start_raw = (post_data.get('effective_from') or '').strip()
+        end_raw = (post_data.get('effective_to') or '').strip()
+
+        if not start_raw and not end_raw:
+            return (None, None, None)
+        if not start_raw or not end_raw:
+            return (None, None, 'Both Effective From and Effective To are required.')
+
+        try:
+            start_date = datetime.strptime(start_raw, '%Y-%m-%d').date()
+            end_date = datetime.strptime(end_raw, '%Y-%m-%d').date()
+        except ValueError:
+            return (None, None, 'Invalid effective date format.')
+
+        if start_date > end_date:
+            return (None, None, 'Effective From cannot be after Effective To.')
+
+        return (start_date, end_date, None)
+
+    def range_filter_for(target_date):
+        return (
+            Q(effective_from__isnull=True, effective_to__isnull=True) |
+            Q(effective_from__lte=target_date, effective_to__gte=target_date)
+        )
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        effective_from, effective_to, range_error = parse_effective_range(request.POST)
+
+        if range_error:
+            messages.error(request, range_error)
+            return redirect('shift_config')
+
+        if action == 'save_hours':
+            for day_val, _ in days:
+                for shift_val in shifts:
+                    key = f'hours_{day_val}_{shift_val}'
+                    raw = (request.POST.get(key) or '').strip()
+                    if not raw:
+                        continue
+                    try:
+                        net_h = float(raw)
+                    except ValueError:
+                        continue
+                    ShiftConfig.objects.update_or_create(
+                        day_of_week=day_val,
+                        shift=shift_val,
+                        effective_from=effective_from,
+                        effective_to=effective_to,
+                        defaults={'net_hours': net_h},
+                    )
+            messages.success(request, 'Shift hours saved.')
+
+        elif action == 'save_schedule':
+            for machine in machines:
+                for day_val, _ in days:
+                    for shift_val in shifts:
+                        key = f'work_{machine.id}_{day_val}_{shift_val}'
+                        is_working = request.POST.get(key) == 'on'
+                        MachineWorkSchedule.objects.update_or_create(
+                            machine=machine,
+                            day_of_week=day_val,
+                            shift=shift_val,
+                            effective_from=effective_from,
+                            effective_to=effective_to,
+                            defaults={'is_working': is_working},
+                        )
+            messages.success(request, 'Machine schedule saved.')
+
+        return redirect('shift_config')
+
+    raw_hours = {}
+    for sc in ShiftConfig.objects.filter(range_filter_for(active_date)).order_by('day_of_week', 'shift', 'effective_from', 'id'):
+        raw_hours[(sc.day_of_week, sc.shift)] = sc.net_hours
+    shift_hours_rows = []
+    for day_val, day_name in days:
+        shift_hours_rows.append({
+            'day_val': day_val,
+            'day_name': day_name,
+            'A': raw_hours.get((day_val, 'A'), ''),
+            'B': raw_hours.get((day_val, 'B'), ''),
+        })
+
+    working_map = {}
+    for ms in MachineWorkSchedule.objects.filter(range_filter_for(active_date)).order_by('effective_from', 'id'):
+        working_map[f'{ms.machine_id}_{ms.day_of_week}_{ms.shift}'] = bool(ms.is_working)
+
+    machine_rows = []
+    for machine in machines:
+        cells = []
+        for day_val, _ in days:
+            for shift_val in shifts:
+                key = f'{machine.id}_{day_val}_{shift_val}'
+                cells.append({
+                    'name': f'work_{machine.id}_{day_val}_{shift_val}',
+                    'is_working': working_map.get(key, True),
+                })
+        machine_rows.append({'machine': machine, 'cells': cells})
+
+    context = {
+        'days': days,
+        'shifts': shifts,
+        'machines': machines,
+        'shift_hours_rows': shift_hours_rows,
+        'machine_rows': machine_rows,
+        'active_effective_date': active_date.isoformat(),
+        'active_effective_from': '',
+        'active_effective_to': '',
+    }
+    return render(request, 'shift_config.html', context)

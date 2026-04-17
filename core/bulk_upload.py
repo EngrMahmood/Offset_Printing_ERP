@@ -48,6 +48,66 @@ def parse_date(value):
         return None
 
 
+def normalize_colour_value(value):
+    """Convert compact notation like 1+1 into readable front/back text."""
+    raw = (value or '').strip()
+    if not raw:
+        return None
+
+    match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw)
+    if not match:
+        return raw
+
+    front = int(match.group(1))
+    back = int(match.group(2))
+    front_label = 'color' if front == 1 else 'colors'
+    back_label = 'color' if back == 1 else 'colors'
+    return f"{front} {front_label} front and {back} {back_label} back"
+
+
+def extract_total_colors(value):
+    """Extract total color units from supported color formats."""
+    raw = (value or '').strip().lower()
+    if not raw:
+        return 0
+
+    simple_plus = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw)
+    if simple_plus:
+        return int(simple_plus.group(1)) + int(simple_plus.group(2))
+
+    normalized_text = re.fullmatch(r'(\d+)\s*colors?\s*front\s*and\s*(\d+)\s*colors?\s*back', raw)
+    if normalized_text:
+        return int(normalized_text.group(1)) + int(normalized_text.group(2))
+
+    digits_only = re.fullmatch(r'(\d+)', raw)
+    if digits_only:
+        return int(digits_only.group(1))
+
+    return 0
+
+
+def compute_estimated_minutes(total_impressions_required, machine, colour_value):
+    """Return (run_minutes, setup_minutes, total_minutes) from machine+impressions+colors."""
+    impressions = int(total_impressions_required or 0)
+    if impressions <= 0 or not machine:
+        return (None, None, None)
+
+    speed = float(machine.standard_impressions_per_hour or 0)
+    if speed <= 0:
+        return (None, None, None)
+
+    run_minutes = (impressions / speed) * 60
+    total_colors = extract_total_colors(colour_value)
+    setup_per_color = float(machine.standard_setup_minutes_per_color or 0)
+    setup_minutes = total_colors * setup_per_color
+    total_minutes = run_minutes + setup_minutes
+    return (
+        round(run_minutes, 2),
+        round(setup_minutes, 2),
+        round(total_minutes, 2),
+    )
+
+
 # ----------------------------
 # MASTER CACHE BUILDER
 # ----------------------------
@@ -233,7 +293,7 @@ def resolve(value, cache, label, errors, row_no):
 # ----------------------------
 # MAIN IMPORT FUNCTION
 # ----------------------------
-def process_jobcard_upload(file):
+def process_jobcard_upload(file, uploaded_by=None):
     try:
         # Read file (auto-detect CSV/Excel)
         rows = read_upload_file(file)
@@ -265,7 +325,17 @@ def process_jobcard_upload(file):
     
     # Map column names to standard fields
     column_mapping = normalize_headers(rows[0].keys()) if rows else {}
-    required_columns = ['job_card_no', 'machine_name', 'department', 'material', 'order_qty', 'ups']
+    required_columns = [
+        'job_card_no',
+        'sku',
+        'machine_name',
+        'department',
+        'material',
+        'order_qty',
+        'ups',
+        'colour',
+        'total_impressions_required',
+    ]
     missing_columns = [col for col in required_columns if col not in column_mapping.values()]
     if missing_columns:
         return {
@@ -321,8 +391,32 @@ def process_jobcard_upload(file):
             # ----------------------------
             order_qty = parse_int(get_field_value(row, 'order_qty', column_mapping))
             ups = parse_int(get_field_value(row, 'ups', column_mapping))
+            sku_value = get_field_value(row, 'sku', column_mapping)
+            colour_raw = get_field_value(row, 'colour', column_mapping)
+            colour_value = normalize_colour_value(colour_raw)
+            total_impressions_required = parse_int(get_field_value(row, 'total_impressions_required', column_mapping))
             po_date_value = parse_date(get_field_value(row, 'po_date', column_mapping))
             month_value = po_date_value.strftime('%B') if po_date_value else None
+
+            missing_row_fields = []
+            if not sku_value:
+                missing_row_fields.append('SKU')
+            if order_qty <= 0:
+                missing_row_fields.append('Order Qty (>0)')
+            if ups <= 0:
+                missing_row_fields.append('UPS (>0)')
+            if not colour_value:
+                missing_row_fields.append('Colour')
+            if total_impressions_required <= 0:
+                missing_row_fields.append('Total Impressions Required (>0)')
+
+            if missing_row_fields:
+                errors.append({
+                    "row": index,
+                    "errors": f"Missing/invalid mandatory fields: {', '.join(missing_row_fields)}"
+                })
+                error_count += 1
+                continue
 
             if ups <= 0:
                 errors.append({
@@ -331,6 +425,12 @@ def process_jobcard_upload(file):
                 })
                 error_count += 1
                 continue
+
+            estimated_run_minutes, estimated_setup_minutes, estimated_total_minutes = compute_estimated_minutes(
+                total_impressions_required,
+                machine,
+                colour_value,
+            )
 
             # ----------------------------
             # CREATE OBJECT
@@ -341,17 +441,20 @@ def process_jobcard_upload(file):
                 month=month_value,
                 po_date=po_date_value,
                 PO_No=get_field_value(row, 'po_no', column_mapping),
-                SKU=get_field_value(row, 'sku', column_mapping),
+                SKU=sku_value,
 
                 material=material,
-                colour=parse_int(get_field_value(row, 'colour', column_mapping)),
+                colour=colour_value,
                 application=get_field_value(row, 'application', column_mapping),
 
                 order_qty=order_qty,
                 ups=ups,
 
                 print_sheet_size=get_field_value(row, 'print_sheet_size', column_mapping),
-                total_impressions_required=parse_int(get_field_value(row, 'total_impressions_required', column_mapping)),
+                total_impressions_required=total_impressions_required,
+                estimated_run_time_minutes=estimated_run_minutes,
+                estimated_setup_time_minutes=estimated_setup_minutes,
+                estimated_total_time_minutes=estimated_total_minutes,
                 wastage=calculate_wastage_sheets(row, column_mapping, order_qty, ups),
 
                 purchase_sheet_size=get_field_value(row, 'purchase_sheet_size', column_mapping),
@@ -363,7 +466,8 @@ def process_jobcard_upload(file):
                 machine_name=machine,
                 department=department,
 
-                die_cutting=get_field_value(row, 'die_cutting', column_mapping)
+                die_cutting=get_field_value(row, 'die_cutting', column_mapping),
+                created_by=uploaded_by,
             ))
 
             success_count += 1
@@ -405,6 +509,7 @@ def get_template_headers():
         'Order Quantity',
         'Ups',
         'Print Sheet Size',
+        'Total Impressions Required',
         'Wastage (sheets)',
         'Purchase Sheet Size',
         'Purchase Sheet Ups',
@@ -429,6 +534,7 @@ def get_template_example():
         '10000',
         '12',
         '20x30',
+        '24000',
         '50',
         '20x30',
         '6',

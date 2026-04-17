@@ -2,7 +2,7 @@
 <!DOCTYPE html>
 <html>
 <head>
-    <title>{% if edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %} - Offset ERP</title>
+    <title>{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %} - Offset ERP</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -130,6 +130,86 @@
         .nav-btn:hover {
             background: #2f5b73;
         }
+
+        .select-with-add {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .select-with-add select {
+            flex: 1;
+        }
+
+        .plus-btn {
+            display: inline-block;
+            min-width: 36px;
+            text-align: center;
+            text-decoration: none;
+            background: #198754;
+            color: #fff;
+            border-radius: 6px;
+            padding: 10px 0;
+            font-weight: 700;
+            line-height: 1;
+            border: none;
+            cursor: pointer;
+        }
+
+        .plus-btn:hover {
+            background: #136a42;
+        }
+
+        .hint {
+            margin-top: 4px;
+            font-size: 12px;
+            color: #5f6b7a;
+        }
+
+        .search-results {
+            border: 1px solid #dde3ea;
+            border-radius: 6px;
+            background: #fff;
+            max-height: 220px;
+            overflow: auto;
+            margin-top: 6px;
+            display: none;
+        }
+
+        .search-result-item {
+            width: 100%;
+            text-align: left;
+            background: #fff;
+            border: none;
+            border-bottom: 1px solid #eef2f6;
+            padding: 9px 10px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .search-result-item:hover {
+            background: #f5f8fb;
+        }
+
+        .warning-strip {
+            margin-top: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            border: 1px solid #f3d29c;
+            background: #fff8eb;
+            color: #7a4f18;
+            font-size: 12px;
+            display: none;
+        }
+
+        .machine-override-toggle {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            margin-top: 10px;
+            font-weight: 600;
+            color: #7a4200;
+        }
     </style>
     <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
 </head>
@@ -147,12 +227,13 @@
             {% if user.profile.can_approve_dispatch %}
             <a href="{% url 'dispatch_entry' %}" class="nav-btn">Dispatch Entry</a>
             {% endif %}
+            <a href="{% url 'erp_readme' %}" class="nav-btn">Guide</a>
             <div style="margin-left:auto;display:flex;align-items:center;">
                 {% include 'includes/user_identity_chip.html' %}
             </div>
         </div>
 
-        <h1>{% if edit_record %}Edit Production Data{% else %}📊 Production Data Entry{% endif %}</h1>
+        <h1>{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}📊 Production Data Entry{% endif %}</h1>
 
         {% if messages %}
             {% for message in messages %}
@@ -178,7 +259,13 @@
                 <div class="col">
                     <div class="form-group">
                         <label for="job_card">Job Card <span class="required">*</span></label>
-                        <select name="job_card" id="job_card" required>
+                        <input type="text" id="job_card_search" placeholder="Search Job Card by number, SKU, PO..." style="margin-bottom:8px;">
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;">
+                            <div id="job_card_search_meta" class="hint">Type to search and click a result.</div>
+                            <button type="button" id="job_card_clear" style="border:none;background:#eef3f8;color:#355;padding:6px 8px;border-radius:4px;cursor:pointer;font-size:12px;">Clear</button>
+                        </div>
+                        <div id="job_card_results" class="search-results"></div>
+                        <select name="job_card" id="job_card" required style="display:none;">
                             <option value="">Select Job Card</option>
                             {% for job_card in job_cards %}
                                 <option value="{{ job_card.id }}" {% if edit_record.job_card_id == job_card.id %}selected{% endif %}>{{ job_card.job_card_no }} - {{ job_card.SKU }}</option>
@@ -189,13 +276,25 @@
 
                 <div class="col">
                     <div class="form-group">
-                        <label for="machine">Machine <span class="required">*</span></label>
-                        <select name="machine" id="machine" required>
-                            <option value="">Select Machine</option>
-                            {% for machine in machines %}
-                                <option value="{{ machine.id }}" {% if edit_record.machine_id == machine.id %}selected{% endif %}>{{ machine.name }}</option>
-                            {% endfor %}
-                        </select>
+                        <label for="machine_display">Machine (Auto from Job Card) <span class="required">*</span></label>
+                        <input type="text" id="machine_display" value="{% if edit_record.machine %}{{ edit_record.machine.name }}{% endif %}" readonly>
+                        <div id="machine_auto_hint" class="hint">Auto-picked from selected Job Card.</div>
+                        <label class="machine-override-toggle">
+                            <input type="checkbox" id="machine_override" name="machine_override" style="width:auto;">
+                            Use different machine for this production run
+                        </label>
+                        <div id="machine_override_warn" class="warning-strip">
+                            Machine override is active. This run will use selected fallback machine instead of Job Card machine.
+                        </div>
+                        <div id="machine_fallback_group" style="display:none;margin-top:8px;">
+                            <select name="machine" id="machine">
+                                <option value="">Select Fallback Machine</option>
+                                {% for machine in machines %}
+                                    <option value="{{ machine.id }}" {% if edit_record.machine_id == machine.id %}selected{% endif %}>{{ machine.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <div class="hint">No machine is mapped in Job Card. Select fallback machine for this entry.</div>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -204,12 +303,16 @@
                 <div class="col">
                     <div class="form-group">
                         <label for="operator">Operator <span class="required">*</span></label>
-                        <select name="operator" id="operator" required>
-                            <option value="">Select Operator</option>
-                            {% for operator in operators %}
-                                <option value="{{ operator.id }}" {% if edit_record.operator_id == operator.id %}selected{% endif %}>{{ operator.name }}</option>
-                            {% endfor %}
-                        </select>
+                        <div class="select-with-add">
+                            <select name="operator" id="operator" required>
+                                <option value="">Select Operator</option>
+                                {% for operator in operators %}
+                                    <option value="{{ operator.id }}" {% if edit_record.operator_id == operator.id %}selected{% endif %}>{{ operator.name }}{% if operator.employee_code %} ({{ operator.employee_code }}){% endif %}</option>
+                                {% endfor %}
+                            </select>
+                            <button class="plus-btn" type="button" title="Add new operator" onclick="quickAddMaster('operator', 'operator')">+</button>
+                        </div>
+                        <div class="hint">Use + to add new operator instantly.</div>
                     </div>
                 </div>
 
@@ -282,7 +385,8 @@
                 <div class="col">
                     <div class="form-group">
                         <label for="planned_time">Planned Time (minutes) <span class="required">*</span></label>
-                        <input type="number" name="planned_time" id="planned_time" value="{{ edit_record.planned_time|default:'' }}" placeholder="e.g., 480" min="1" required>
+                        <input type="number" name="planned_time" id="planned_time" value="{{ edit_record.planned_time|default:'' }}" placeholder="Auto from Job Card" min="0" required readonly>
+                        <div class="hint" id="planned_time_hint">Auto-synced from Job Card remaining planned time.</div>
                     </div>
                 </div>
 
@@ -297,6 +401,23 @@
             <div class="form-group">
                 <label for="setup_time">Setup Time (minutes)</label>
                 <input type="number" name="setup_time" id="setup_time" value="{{ edit_record.setup_time|default:0 }}" placeholder="e.g., 30" min="0">
+                <div class="hint">Enter actual setup time consumed in this production session.</div>
+            </div>
+
+            <div class="form-group" id="overrun_reason_group" style="display:none;">
+                <label for="overrun_reason_select">Overrun Allocation Reason <span class="required">*</span></label>
+                <select name="overrun_reason_select" id="overrun_reason_select">
+                    <option value="">Select Reason</option>
+                    <option value="extra_setup">Extra Setup / Make Ready</option>
+                    <option value="machine_slowdown">Machine Slowdown</option>
+                    <option value="operator_learning">Operator Learning / New Team</option>
+                    <option value="material_issue">Material-related Delay</option>
+                    <option value="quality_rework">Quality Rework</option>
+                    <option value="job_complexity">Higher Job Complexity</option>
+                    <option value="other">Other</option>
+                </select>
+                <textarea name="overrun_reason_other" id="overrun_reason_other" rows="2" style="display:none;margin-top:8px;" placeholder="Enter custom reason"></textarea>
+                <div class="hint">Required when entered planned minutes exceed remaining planned time. Choose reason or Other.</div>
             </div>
 
             <div class="row">
@@ -343,7 +464,9 @@
             </div>
             {% endif %}
 
+            {% if not is_view_mode %}
             <button type="submit" class="btn">{% if edit_record %}Update Production Data{% else %}💾 Save Production Data{% endif %}</button>
+            {% endif %}
         </form>
 
         <div style="text-align: center; margin-top: 30px;">
@@ -354,6 +477,91 @@
     <script>
         const intermediatePassInput = document.getElementById('intermediate_pass');
         const outputSheetsInput = document.getElementById('output_sheets');
+        const plannedTimeInput = document.getElementById('planned_time');
+        const jobCardSelect = document.getElementById('job_card');
+        const jobCardSearchInput = document.getElementById('job_card_search');
+        const jobCardSearchMeta = document.getElementById('job_card_search_meta');
+        const jobCardResults = document.getElementById('job_card_results');
+        const jobCardClearBtn = document.getElementById('job_card_clear');
+        const jobCardPlanMap = {{ job_card_plan_json|safe }};
+        const jobCardMachineMap = {{ job_card_machine_json|safe }};
+        const machineDisplayInput = document.getElementById('machine_display');
+        const machineFallbackGroup = document.getElementById('machine_fallback_group');
+        const machineSelect = document.getElementById('machine');
+        const machineAutoHint = document.getElementById('machine_auto_hint');
+        const machineOverrideInput = document.getElementById('machine_override');
+        const machineOverrideWarn = document.getElementById('machine_override_warn');
+        const overrunReasonGroup = document.getElementById('overrun_reason_group');
+        const overrunReasonSelect = document.getElementById('overrun_reason_select');
+        const overrunReasonOther = document.getElementById('overrun_reason_other');
+
+        function syncMachineFromJobCard() {
+            const selected = jobCardSelect.value;
+            const machineMeta = jobCardMachineMap[selected] || null;
+            const machineName = machineMeta && machineMeta.machine_name ? machineMeta.machine_name : '';
+            const machineId = machineMeta && machineMeta.machine_id ? String(machineMeta.machine_id) : '';
+
+            const overrideOn = machineOverrideInput.checked;
+
+            if (machineName && !overrideOn) {
+                machineDisplayInput.value = machineName;
+                machineAutoHint.textContent = 'Machine auto-picked from selected Job Card.';
+                machineFallbackGroup.style.display = 'none';
+                machineSelect.required = false;
+                machineSelect.value = machineId;
+                machineOverrideWarn.style.display = 'none';
+            } else {
+                machineDisplayInput.value = machineName || 'No machine mapped in Job Card';
+                machineAutoHint.textContent = overrideOn
+                    ? 'Override enabled. Fallback machine will be used for this run.'
+                    : 'Please map machine in Job Card. You can still use fallback machine below.';
+                machineFallbackGroup.style.display = '';
+                machineSelect.required = true;
+                machineOverrideWarn.style.display = overrideOn ? '' : 'none';
+            }
+        }
+
+        function renderJobCardResults() {
+            const q = (jobCardSearchInput.value || '').trim().toLowerCase();
+            const options = Array.from(jobCardSelect.options).filter((opt, idx) => idx > 0);
+            const filtered = options.filter(opt => {
+                if (!q) return true;
+                return (opt.text || '').toLowerCase().includes(q);
+            }).slice(0, 25);
+
+            jobCardResults.innerHTML = '';
+            if (!filtered.length) {
+                jobCardResults.style.display = q ? 'block' : 'none';
+                jobCardSearchMeta.textContent = q ? 'No matching job cards found.' : 'Type to search and click a result.';
+                if (q) {
+                    const noRow = document.createElement('div');
+                    noRow.className = 'search-result-item';
+                    noRow.textContent = 'No results';
+                    noRow.style.cursor = 'default';
+                    jobCardResults.appendChild(noRow);
+                }
+                return;
+            }
+
+            filtered.forEach(opt => {
+                const row = document.createElement('button');
+                row.type = 'button';
+                row.className = 'search-result-item';
+                row.textContent = opt.text;
+                row.addEventListener('click', () => {
+                    jobCardSelect.value = opt.value;
+                    jobCardSearchInput.value = opt.text;
+                    jobCardResults.style.display = 'none';
+                    jobCardSearchMeta.textContent = 'Selected: ' + opt.text;
+                    syncPlannedTimeFromJobCard();
+                    syncMachineFromJobCard();
+                });
+                jobCardResults.appendChild(row);
+            });
+
+            jobCardResults.style.display = 'block';
+            jobCardSearchMeta.textContent = `Showing ${filtered.length} result(s).`;
+        }
 
         function syncIntermediateMode() {
             if (intermediatePassInput.checked) {
@@ -366,6 +574,162 @@
 
         intermediatePassInput.addEventListener('change', syncIntermediateMode);
         syncIntermediateMode();
+
+        function syncPlannedTimeFromJobCard() {
+            const selected = jobCardSelect.value;
+            const plan = jobCardPlanMap[selected] || null;
+            const plannedTimeHint = document.getElementById('planned_time_hint');
+            if (!plan || !plan.planned_total || Number(plan.planned_total) <= 0) {
+                if (!{{ is_view_mode|yesno:'true,false' }}) {
+                    plannedTimeInput.removeAttribute('readonly');
+                }
+                plannedTimeHint.textContent = 'No Job Card estimate found. Enter planned minutes manually.';
+                syncOverrunReasonVisibility();
+                return;
+            }
+
+            const remaining = Number(plan.remaining_planned || 0);
+            if (remaining > 0) {
+                plannedTimeInput.value = remaining.toFixed(2);
+                plannedTimeInput.setAttribute('readonly', 'readonly');
+                plannedTimeHint.textContent = `Remaining planned time for this job: ${remaining.toFixed(2)} minutes.`;
+            } else {
+                if (!{{ is_view_mode|yesno:'true,false' }}) {
+                    plannedTimeInput.removeAttribute('readonly');
+                }
+                if (!plannedTimeInput.value) {
+                    plannedTimeInput.value = '0';
+                }
+                plannedTimeHint.textContent = 'Planned time is fully consumed. Enter additional planned minutes only if this is an overrun allocation.';
+            }
+            syncOverrunReasonVisibility();
+        }
+
+        function syncOverrunReasonVisibility() {
+            const selected = jobCardSelect.value;
+            const plan = jobCardPlanMap[selected] || null;
+            const remaining = Number(plan && plan.remaining_planned ? plan.remaining_planned : 0);
+            const planned = Number(plannedTimeInput.value || 0);
+            const isOverrunAllocation = planned > remaining;
+
+            if (isOverrunAllocation && !{{ is_view_mode|yesno:'true,false' }}) {
+                overrunReasonGroup.style.display = '';
+                overrunReasonSelect.required = true;
+            } else {
+                overrunReasonGroup.style.display = 'none';
+                overrunReasonSelect.required = false;
+                overrunReasonOther.required = false;
+                overrunReasonOther.style.display = 'none';
+            }
+        }
+
+        function syncOverrunOtherInput() {
+            const isOther = overrunReasonSelect.value === 'other';
+            overrunReasonOther.style.display = isOther ? '' : 'none';
+            overrunReasonOther.required = isOther && !overrunReasonGroup.style.display;
+        }
+
+        jobCardSelect.addEventListener('change', syncPlannedTimeFromJobCard);
+        jobCardSelect.addEventListener('change', syncMachineFromJobCard);
+        jobCardSelect.addEventListener('change', () => {
+            const selectedOpt = jobCardSelect.options[jobCardSelect.selectedIndex];
+            if (selectedOpt && selectedOpt.value) {
+                jobCardSearchInput.value = selectedOpt.text;
+                jobCardSearchMeta.textContent = 'Selected: ' + selectedOpt.text;
+            }
+        });
+        machineOverrideInput.addEventListener('change', syncMachineFromJobCard);
+        plannedTimeInput.addEventListener('input', syncOverrunReasonVisibility);
+        overrunReasonSelect.addEventListener('change', syncOverrunOtherInput);
+
+        jobCardSearchInput.addEventListener('input', renderJobCardResults);
+        jobCardSearchInput.addEventListener('focus', renderJobCardResults);
+        document.addEventListener('click', function (event) {
+            if (!jobCardResults.contains(event.target) && event.target !== jobCardSearchInput) {
+                jobCardResults.style.display = 'none';
+            }
+        });
+        jobCardClearBtn.addEventListener('click', function () {
+            jobCardSearchInput.value = '';
+            jobCardSelect.value = '';
+            jobCardResults.style.display = 'none';
+            jobCardSearchMeta.textContent = 'Type to search and click a result.';
+            syncPlannedTimeFromJobCard();
+            syncMachineFromJobCard();
+        });
+
+        syncPlannedTimeFromJobCard();
+        syncMachineFromJobCard();
+        syncOverrunOtherInput();
+
+        if (jobCardSelect.value) {
+            const selectedOpt = jobCardSelect.options[jobCardSelect.selectedIndex];
+            if (selectedOpt) {
+                jobCardSearchInput.value = selectedOpt.text;
+                jobCardSearchMeta.textContent = 'Selected: ' + selectedOpt.text;
+            }
+        }
+
+        async function quickAddMaster(type, selectId) {
+            const name = window.prompt(`Enter new ${type} name:`);
+            if (!name || !name.trim()) {
+                return;
+            }
+
+            let employeeCode = '';
+            if (type === 'operator') {
+                employeeCode = window.prompt('Enter Operator ID / Employee Code (optional):') || '';
+            }
+
+            const csrf = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
+            const payload = new URLSearchParams();
+            payload.append('type', type);
+            payload.append('name', name.trim());
+            if (type === 'operator' && employeeCode.trim()) {
+                payload.append('employee_code', employeeCode.trim());
+            }
+
+            try {
+                const response = await fetch('{% url "quick_add_master" %}', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'X-CSRFToken': csrf,
+                    },
+                    body: payload.toString(),
+                });
+
+                const data = await response.json();
+                if (!response.ok || !data.ok) {
+                    throw new Error(data.error || 'Unable to create value.');
+                }
+
+                const select = document.getElementById(selectId);
+                let option = Array.from(select.options).find(opt => String(opt.value) === String(data.id));
+                const optionText = data.display_name || data.name;
+
+                if (!option) {
+                    option = new Option(optionText, data.id);
+                    select.add(option);
+                } else {
+                    option.text = optionText;
+                }
+
+                select.value = String(data.id);
+                window.alert(data.message || 'Added successfully.');
+            } catch (error) {
+                window.alert(error.message || 'Something went wrong.');
+            }
+        }
+
+        {% if is_view_mode %}
+        document.querySelectorAll('form input, form select, form textarea, form button').forEach((el) => {
+            if (el.type === 'hidden') {
+                return;
+            }
+            el.disabled = true;
+        });
+        {% endif %}
     </script>
 </body>
 </html>
