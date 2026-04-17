@@ -521,7 +521,11 @@ def run_bulk_permanent_delete(request, entity_type, record_ids):
             record.delete()
             deleted_count += 1
         except Exception as exc:
-            failures.append(f'#{rid}: {str(exc)}')
+            message = str(exc)
+            message = message.replace('archived', 'deleted').replace('Archive', 'Delete')
+            if entity_type == 'job_card' and 'production or dispatch records exist' in message:
+                message += ' Delete related production/dispatch records first, then retry job card delete.'
+            failures.append(f'#{rid}: {message}')
 
     return (deleted_count, failures)
 
