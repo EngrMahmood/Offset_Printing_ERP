@@ -1,0 +1,133 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SKU Recipe Master</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
+        .btn { display: inline-block; padding: 7px 11px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .btn.danger { background: #fff; color: #b5282a; border-color: #b5282a; }
+        .btn.danger:hover { background: #b5282a; color: #fff; }
+        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 10px; }
+        .search-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; }
+        .search-row input { flex: 1; border: 1px solid #bfd0e2; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+        .table-shell { overflow: auto; max-height: calc(100vh - 220px); border: 1px solid #d6e0ea; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1100px; }
+        th, td { border-bottom: 1px solid #e7eef5; padding: 7px 9px; text-align: left; vertical-align: middle; }
+        th { position: sticky; top: 0; background: #f6f9fc; z-index: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+        tr:hover td { background: #f7fafd; }
+        .muted { color: #5f6f82; font-size: 11px; }
+        .empty-state { padding: 32px; text-align: center; color: #7a8fa6; }
+        .pagination { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; }
+        .pagination a, .pagination span { padding: 4px 10px; border-radius: 5px; border: 1px solid #d0dcea; text-decoration: none; color: #32465d; }
+        .pagination .current { background: #445366; color: #fff; border-color: #445366; }
+        .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 12px; border: 1px solid #c8d7e7; background: #f5f9ff; color: #2e3f53; }
+        .msg.error { background: #fff5f5; border-color: #f5c6c6; color: #7a1a1a; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+
+    <div class="top">
+        <div>
+            <h1 style="margin:0;font-size:20px;">SKU Recipe Master</h1>
+            <div class="muted">All saved SKU recipes used when importing POs into planning jobs.</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
+            <a class="btn" href="{% url 'planning:sku_recipe_add' %}">+ Add New SKU Recipe</a>
+        </div>
+    </div>
+
+    {% for msg in messages %}
+        <div class="msg {% if 'error' in msg.tags %}error{% endif %}">{{ msg }}</div>
+    {% endfor %}
+
+    <section class="panel">
+        <form method="get" class="search-row">
+            <input type="text" name="q" placeholder="Search by SKU, job name, material, machine, department…" value="{{ q }}">
+            <button class="btn" type="submit">Search</button>
+            {% if q %}<a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Clear</a>{% endif %}
+        </form>
+
+        <div class="muted" style="margin-bottom:8px;">
+            {{ recipes.paginator.count }} recipe{{ recipes.paginator.count|pluralize }} total
+            {% if q %} — filtered by "{{ q }}"{% endif %}
+        </div>
+
+        <div class="table-shell">
+            <table>
+                <thead>
+                    <tr>
+                        <th>SKU</th>
+                        <th>Job Name</th>
+                        <th>Material</th>
+                        <th>Color</th>
+                        <th>Application</th>
+                        <th>Size (mm)</th>
+                        <th>Ups</th>
+                        <th>Print Sheet</th>
+                        <th>Machine</th>
+                        <th>Department</th>
+                        <th>Unit Cost</th>
+                        <th>Updated</th>
+                        <th style="width:110px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for recipe in recipes %}
+                    <tr>
+                        <td style="font-weight:600;color:#1f3048;">{{ recipe.sku }}</td>
+                        <td>{{ recipe.job_name|default:"-" }}</td>
+                        <td>{{ recipe.material|default:"-" }}</td>
+                        <td>{{ recipe.color_spec|default:"-" }}</td>
+                        <td>{{ recipe.application|default:"-" }}</td>
+                        <td>
+                            {% if recipe.size_w_mm and recipe.size_h_mm %}
+                                {{ recipe.size_w_mm }} × {{ recipe.size_h_mm }}
+                            {% else %}-{% endif %}
+                        </td>
+                        <td>{{ recipe.ups|default:"-" }}</td>
+                        <td>{{ recipe.print_sheet_size|default:"-" }}</td>
+                        <td>{{ recipe.machine_name|default:"-" }}</td>
+                        <td>{{ recipe.department|default:"-" }}</td>
+                        <td>{% if recipe.default_unit_cost %}{{ recipe.default_unit_cost }}{% else %}-{% endif %}</td>
+                        <td class="muted">{{ recipe.updated_at|date:"d M Y" }}</td>
+                        <td>
+                            <a class="btn secondary" style="padding:4px 8px;font-size:11px;" href="{% url 'planning:sku_recipe_edit' recipe.id %}">Edit</a>
+                            <form method="post" style="display:inline;" onsubmit="return confirm('Delete SKU Recipe: {{ recipe.sku }}?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete">
+                                <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
+                                <button type="submit" class="btn danger" style="padding:4px 8px;font-size:11px;">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="13" class="empty-state">No SKU recipes found{% if q %} matching "{{ q }}"{% endif %}. <a href="{% url 'planning:sku_recipe_add' %}">Add one now.</a></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if recipes.has_other_pages %}
+        <div class="pagination">
+            <span>Page {{ recipes.number }} of {{ recipes.paginator.num_pages }}</span>
+            {% if recipes.has_previous %}
+                <a href="?page={{ recipes.previous_page_number }}{% if q %}&q={{ q }}{% endif %}">‹ Prev</a>
+            {% endif %}
+            {% if recipes.has_next %}
+                <a href="?page={{ recipes.next_page_number }}{% if q %}&q={{ q }}{% endif %}">Next ›</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+
+</main>
+</body>
+</html>

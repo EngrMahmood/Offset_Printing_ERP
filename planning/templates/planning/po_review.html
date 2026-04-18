@@ -40,11 +40,15 @@
             <h1 style="margin:0;font-size:20px;">Review PO: {{ payload.po_number|default:"?" }}</h1>
             <div class="muted">Verify extracted data before creating Planning Job records.</div>
         </div>
-        <a href="{% url 'planning:home' %}" class="btn secondary">Back to Planning</a>
+        <a href="{% url 'planning:po_inbox' %}" class="btn secondary">Back to PO Intake Queue</a>
     </div>
 
     {% for msg in messages %}
+    {% if 'Partial extraction' in msg.message or msg.level_tag == 'warning' %}
+    <div class="alert" style="background:#fffbe6;border:1px solid #f0c050;color:#7a5600;">⚠ {{ msg }}</div>
+    {% else %}
     <div class="alert alert-success">{{ msg }}</div>
+    {% endif %}
     {% endfor %}
 
     <div class="warn-box">
@@ -59,6 +63,9 @@
             <span class="badge repeat">Repeat SKUs: {{ repeat_count }}</span>
             <span class="badge new">New SKUs: {{ new_count }}</span>
             <div class="muted" style="margin-top:4px;">New SKUs must be configured in SKU Recipe Master before planning jobs can be created for them.</div>
+            {% if configured_new_count %}
+            <div class="muted" style="margin-top:4px;color:#8a3f00;">Configured from this PO as NEW for production: {{ configured_new_count }}</div>
+            {% endif %}
         </div>
         <a href="{% url 'planning:po_new_skus' po_doc.id %}" class="btn {% if new_count == 0 %}secondary{% endif %}">Configure New SKUs</a>
     </div>
@@ -89,6 +96,7 @@
                 <button type="button" onclick="toggleAll(true)" class="btn secondary" style="font-size:11px;">Skip All</button>
             </div>
         </div>
+        <div class="muted" style="margin-bottom:8px;">If an item already exists as a planning job, use Edit in the Existing Job column before forwarding to production.</div>
 
         <form method="post" id="review_form">
             {% csrf_token %}
@@ -103,6 +111,8 @@
                             <th>Job Name</th>
                             <th>SKU</th>
                             <th>Recipe</th>
+                            <th>Forward</th>
+                            <th>Existing Job</th>
                             <th>Delivery Date</th>
                             <th>Qty</th>
                             <th>Unit</th>
@@ -122,6 +132,15 @@
                             <td style="max-width:340px;word-break:break-word;">{{ item.job_name|default:item.sku }}</td>
                             <td style="max-width:320px;word-break:break-all;">{{ item.sku }}</td>
                             <td><span class="badge {% if item.is_repeat %}repeat{% else %}new{% endif %}">{{ item.recipe_status }}</span></td>
+                            <td><span class="badge {% if item.forward_flag == 'New' %}new{% else %}repeat{% endif %}">{{ item.forward_flag }}</span></td>
+                            <td>
+                                {% if item.existing_job_id %}
+                                    <div><strong>{{ item.existing_jc_number }}</strong></div>
+                                    <a href="{% url 'planning:job_edit' item.existing_job_id %}" class="btn secondary" style="font-size:10px;padding:3px 7px;" target="_blank" rel="noopener">Edit</a>
+                                {% else %}
+                                    <span class="muted">New create</span>
+                                {% endif %}
+                            </td>
                             <td>{{ item.delivery_date|default:"-" }}</td>
                             <td>{{ item.quantity|floatformat:0 }}</td>
                             <td>{{ item.unit }}</td>
@@ -133,7 +152,7 @@
                     </tbody>
                     <tfoot>
                         <tr class="total-row">
-                            <td colspan="6">Total</td>
+                            <td colspan="8">Total</td>
                             <td id="total_qty">-</td>
                             <td colspan="2">Grand Total</td>
                             <td>Rs {{ payload.grand_total|default:"-" }}</td>
@@ -145,7 +164,7 @@
 
             <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
                 <button type="submit" class="btn">Create Planning Jobs</button>
-                <a href="{% url 'planning:home' %}" class="btn secondary">Cancel</a>
+                <a href="{% url 'planning:po_inbox' %}" class="btn secondary">Cancel</a>
             </div>
         </form>
     </div>

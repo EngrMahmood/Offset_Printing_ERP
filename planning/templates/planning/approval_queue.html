@@ -1,0 +1,107 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Approval Queue</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+        .btn { display:inline-block; padding:6px 10px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
+        .btn.secondary { background:#fff; color:#445366; }
+        .btn.good { background:#206a3c; border-color:#206a3c; }
+        .btn.warn { background:#8a6c1f; border-color:#8a6c1f; }
+        .panel { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:10px; margin-bottom:10px; }
+        table { width:100%; border-collapse:collapse; font-size:12px; }
+        th, td { border-bottom:1px solid #e7eef5; padding:7px; text-align:left; }
+        th { background:#f6f9fc; }
+        .muted { color:#5f6f82; font-size:11px; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div class="top">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Approval Queue</h1>
+            <div class="muted">Check jobs and forward first to QC approval, then Production Manager approval.</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <a class="btn secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
+            <a class="btn secondary" href="{% url 'planning:jobs' %}">All Planning Jobs</a>
+        </div>
+    </div>
+
+    <section class="panel">
+        <h3 style="margin:0 0 8px 0;">Pending QC Approval (Draft)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>JC</th>
+                    <th>PO</th>
+                    <th>SKU</th>
+                    <th>Job Name</th>
+                    <th>Flag</th>
+                    <th>Updated</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for job in draft_jobs %}
+                <tr>
+                    <td><strong>{{ job.jc_number }}</strong></td>
+                    <td>{{ job.po_number|default:'-' }}</td>
+                    <td>{{ job.sku|default:'-' }}</td>
+                    <td>{{ job.job_name|default:'-' }}</td>
+                    <td>{{ job.repeat_flag|default:'-' }}</td>
+                    <td class="muted">{{ job.updated_at|date:'d M Y H:i' }}</td>
+                    <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <a href="{% url 'planning:job_edit' job.id %}" class="btn secondary">Edit</a>
+                        <form method="post" action="{% url 'planning:job_status_update' job.id %}" style="margin:0;">{% csrf_token %}<input type="hidden" name="transition" value="submit_review"><button type="submit" class="btn warn">Forward To QC</button></form>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">No draft jobs waiting for QC.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="panel">
+        <h3 style="margin:0 0 8px 0;">Pending Production Manager Approval (QC Approved)</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>JC</th>
+                    <th>PO</th>
+                    <th>SKU</th>
+                    <th>Job Name</th>
+                    <th>Flag</th>
+                    <th>Updated</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for job in reviewed_jobs %}
+                <tr>
+                    <td><strong>{{ job.jc_number }}</strong></td>
+                    <td>{{ job.po_number|default:'-' }}</td>
+                    <td>{{ job.sku|default:'-' }}</td>
+                    <td>{{ job.job_name|default:'-' }}</td>
+                    <td>{{ job.repeat_flag|default:'-' }}</td>
+                    <td class="muted">{{ job.updated_at|date:'d M Y H:i' }}</td>
+                    <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <a href="{% url 'planning:job_detail' job.id %}" class="btn secondary">View</a>
+                        <form method="post" action="{% url 'planning:job_status_update' job.id %}" style="margin:0;">{% csrf_token %}<input type="hidden" name="transition" value="approve"><button type="submit" class="btn good">Approve By Production Manager</button></form>
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">No QC-approved jobs waiting for production manager approval.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>

@@ -41,7 +41,11 @@
             <div class="muted">Upload planning sheet, manage jobs, and issue A4 job cards for production.</div>
         </div>
         <div>
+            <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
             <a class="btn secondary" href="{% url 'home' %}">Back Home</a>
+            <a class="btn secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
+            <a class="btn secondary" href="{% url 'planning:approval_queue' %}">Approval Queue</a>
+            <a class="btn secondary" href="{% url 'planning:pending_skus' %}">Pending SKUs</a>
             <a class="btn secondary" href="{% url 'planning:scan' %}">Scan QR</a>
             <a class="btn secondary" href="{% url 'planning:report' %}">Planning Report</a>
             <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
@@ -50,6 +54,10 @@
     </div>
 
     <section class="panel">
+        {% for msg in messages %}
+            <div style="margin-bottom:8px;padding:8px 10px;border-radius:6px;border:1px solid #c8d7e7;background:#f5f9ff;color:#2e3f53;font-size:12px;">{{ msg }}</div>
+        {% endfor %}
+
         <form method="get" class="filters">
             <input type="text" name="q" placeholder="Search JC/PO/SKU/Job" value="{{ filters.q }}">
             <select name="status">
@@ -64,7 +72,7 @@
             <input type="date" name="to_date" value="{{ filters.to_date }}">
             <div style="grid-column: 1 / -1; display:flex; gap:8px;">
                 <button class="btn" type="submit">Apply Filters</button>
-                <a class="btn secondary" href="{% url 'planning:home' %}">Reset</a>
+                <a class="btn secondary" href="{% url 'planning:jobs' %}">Reset</a>
             </div>
         </form>
 
@@ -101,6 +109,7 @@
                         <th>SKU</th>
                         <th>Job Name</th>
                         <th>Order Qty</th>
+                        <th>Flag</th>
                         <th>Print Sheets</th>
                         <th>Machine</th>
                         <th>Department</th>
@@ -119,6 +128,7 @@
                         <td>{{ job.sku|default:"-" }}</td>
                         <td>{{ job.job_name|default:"-" }}</td>
                         <td>{{ job.order_qty|default:"-" }}</td>
+                        <td><span class="badge {% if job.repeat_flag|lower == 'new' %}reviewed{% else %}draft{% endif %}">{{ job.repeat_flag|default:"-" }}</span></td>
                         <td>{{ job.print_sheets|default:"-" }}</td>
                         <td>{{ job.machine_name|default:"-" }}</td>
                         <td>{{ job.department|default:"-" }}</td>
@@ -132,7 +142,7 @@
                         </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="13">No planning jobs yet. Import the planning sheet first.</td></tr>
+                    <tr><td colspan="14">No planning jobs yet. Import the planning sheet first.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

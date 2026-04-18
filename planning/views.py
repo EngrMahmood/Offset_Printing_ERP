@@ -22,11 +22,12 @@ from .po_extractor import extract_po_from_pdf
 
 PLANNING_STATUSES = [
     ('draft', 'Draft'),
-    ('reviewed', 'Reviewed'),
-    ('approved', 'Approved'),
+    ('reviewed', 'QC Approved'),
+    ('approved', 'Production Manager Approved'),
     ('closed', 'Closed'),
 ]
 PLANNING_STATUS_SET = {value for value, _ in PLANNING_STATUSES}
+NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
 
 
 def _clean_number(raw_value):
@@ -122,6 +123,16 @@ def _sku_key(sku):
     return (sku or '').strip().upper()
 
 
+def _sync_new_sku_requirement(existing_requirement, is_new):
+    """Ensure NEW SKU requirement note exists only for New jobs."""
+    lines = [line.strip() for line in str(existing_requirement or '').splitlines() if line.strip()]
+    filtered_lines = [line for line in lines if line != NEW_SKU_REQUIREMENT_NOTE]
+
+    if is_new:
+        return '\n'.join([NEW_SKU_REQUIREMENT_NOTE] + filtered_lines)
+    return '\n'.join(filtered_lines)
+
+
 def _build_recipe_map(items):
     sku_values = sorted({_sku_key(item.get('sku')) for item in items if item.get('sku')})
     if not sku_values:
@@ -161,6 +172,11 @@ def _annotate_items_with_recipe(items, recipe_map):
 
 
 @login_required
+def planning_welcome(request):
+    return render(request, 'planning/planning_welcome.html')
+
+
+@login_required
 @permission_required('can_edit_jobcard')
 def planning_home(request):
     queryset = PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs').all()
@@ -176,11 +192,11 @@ def planning_home(request):
         target_status = _normalize_status(request.POST.get('target_status'), default='')
         if target_status not in PLANNING_STATUS_SET:
             messages.error(request, 'Please select a valid target status for bulk update.')
-            return redirect('planning:home')
+            return redirect('planning:jobs')
 
         if not selected_ids:
             messages.error(request, 'Select at least one planning row for bulk update.')
-            return redirect('planning:home')
+            return redirect('planning:jobs')
 
         updated = 0
         skipped_locked = 0
@@ -204,7 +220,7 @@ def planning_home(request):
             request,
             f'Bulk status update complete. Updated {updated}, locked-skip {skipped_locked}.',
         )
-        return redirect('planning:home')
+        return redirect('planning:jobs')
 
     q = (request.GET.get('q') or '').strip()
     status_filter = _normalize_status(request.GET.get('status'), default='')
@@ -413,7 +429,7 @@ def import_planning_sheet(request):
             request,
             f'Import completed. New jobs: {imported_count}, updated jobs: {updated_count}.',
         )
-        return redirect('planning:home')
+        return redirect('planning:jobs')
 
     return render(request, 'planning/planning_import.html')
 
@@ -606,6 +622,276 @@ def planning_scan_open(request, jc_number):
 
 
 @login_required
+def po_debug_extract(request):
+    """Debug view: upload PDF and see raw text + table rows + per-strategy parse results."""
+    import json as _json
+    context = {}
+    if request.method == 'POST':
+        pdf_file = request.FILES.get('po_pdf')
+        if pdf_file:
+            try:
+                import pdfplumber
+                full_text = ''
+                table_blobs = []
+                table_rows = []
+                pdf_file.seek(0)
+                with pdfplumber.open(pdf_file) as pdf:
+                    for page in pdf.pages:
+                        page_text = page.extract_text(x_tolerance=3, y_tolerance=3) or ''
+                        full_text += page_text + '\n'
+                        for table in (page.extract_tables() or []):
+                            for row in table or []:
+                                parts = [str(col).strip() for col in (row or []) if str(col).strip()]
+                                if parts:
+                                    table_blobs.append(' '.join(parts))
+                                    table_rows.append(parts)
+
+                from .po_extractor import (
+                    _build_sku_jobname_map,
+                    _detect_expected_line_count,
+                    _extract_items_flexible,
+                    _extract_items_from_table_blobs,
+                    _extract_items_from_table_rows,
+                    _extract_items_from_text_windows,
+                    _extract_items_strict,
+                )
+                sku_map = _build_sku_jobname_map(full_text, table_blobs)
+                expected = _detect_expected_line_count(full_text, table_rows)
+                strict = _extract_items_strict(full_text, sku_map)
+                flexible = _extract_items_flexible(full_text, sku_map)
+                from_rows = _extract_items_from_table_rows(table_rows, sku_map)
+                from_blobs = _extract_items_from_table_blobs(table_blobs, sku_map)
+                from_windows = _extract_items_from_text_windows(full_text, sku_map)
+
+                context = {
+                    'full_text': full_text,
+                    'table_rows': _json.dumps(table_rows, indent=2),
+                    'table_blobs': _json.dumps(table_blobs, indent=2),
+                    'expected': expected,
+                    'strict': _json.dumps(strict, indent=2),
+                    'flexible': _json.dumps(flexible, indent=2),
+                    'from_rows': _json.dumps(from_rows, indent=2),
+                    'from_blobs': _json.dumps(from_blobs, indent=2),
+                    'from_windows': _json.dumps(from_windows, indent=2),
+                    'strict_count': len(strict),
+                    'flexible_count': len(flexible),
+                    'from_rows_count': len(from_rows),
+                    'from_blobs_count': len(from_blobs),
+                    'from_windows_count': len(from_windows),
+                }
+            except Exception as exc:
+                context = {'error': str(exc)}
+    return render(request, 'planning/po_debug.html', context)
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def sku_recipes_list(request):
+    """List all SKU recipes with search; handles delete via POST."""
+    if request.method == 'POST' and request.POST.get('action') == 'delete':
+        recipe_id = request.POST.get('recipe_id')
+        try:
+            SkuRecipe.objects.filter(id=int(recipe_id)).delete()
+            messages.success(request, 'SKU Recipe deleted.')
+        except (TypeError, ValueError):
+            messages.error(request, 'Invalid recipe ID.')
+        return redirect('planning:sku_recipes')
+
+    q = (request.GET.get('q') or '').strip()
+    qs = SkuRecipe.objects.all()
+    if q:
+        qs = qs.filter(
+            Q(sku__icontains=q)
+            | Q(job_name__icontains=q)
+            | Q(material__icontains=q)
+            | Q(machine_name__icontains=q)
+            | Q(department__icontains=q)
+        )
+    paginator = Paginator(qs, 50)
+    recipes = paginator.get_page(request.GET.get('page'))
+    return render(request, 'planning/sku_recipes.html', {'recipes': recipes, 'q': q})
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def sku_recipe_edit(request, recipe_id=None):
+    """Create or edit a single SKU recipe."""
+    if recipe_id:
+        recipe = get_object_or_404(SkuRecipe, id=recipe_id)
+        page_title = f'Edit SKU Recipe — {recipe.sku}'
+    else:
+        recipe = None
+        page_title = 'Add New SKU Recipe'
+
+    if request.method == 'POST':
+        form = SkuRecipeForm(request.POST, instance=recipe)
+        if form.is_valid():
+            obj = form.save(commit=False)
+            if not recipe_id:
+                obj.created_by = request.user
+            obj.save()
+            messages.success(request, f'SKU Recipe "{obj.sku}" saved.')
+            return redirect('planning:sku_recipes')
+    else:
+        form = SkuRecipeForm(instance=recipe)
+
+    return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': recipe, 'page_title': page_title})
+
+
+def _collect_pending_sku_rows(po_docs):
+    """Build pending SKU rows from PO documents where SKU recipe is missing."""
+    rows = []
+    for po_doc in po_docs:
+        payload = po_doc.extracted_payload or {}
+        items = payload.get('items', [])
+        if not items:
+            continue
+
+        recipe_map = _build_recipe_map(items)
+        _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map)
+        if not missing_skus:
+            continue
+
+        item_map = {}
+        for item in items:
+            key = _sku_key(item.get('sku'))
+            if key and key not in item_map:
+                item_map[key] = item
+
+        po_number = payload.get('po_number') or '-'
+        for sku in missing_skus:
+            item = item_map.get(_sku_key(sku), {})
+            rows.append(
+                {
+                    'po_doc_id': po_doc.id,
+                    'po_number': po_number,
+                    'sku': sku,
+                    'job_name': (item.get('job_name') or '').strip() or sku,
+                    'qty': item.get('quantity'),
+                    'delivery_date': item.get('delivery_date') or '-',
+                }
+            )
+
+    return rows
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+@transaction.atomic
+def pending_skus(request):
+    """Central queue of SKUs that are still missing in SKU Recipe master data."""
+    if request.method == 'POST':
+        sku = (request.POST.get('sku') or '').strip()
+        po_doc_id = request.POST.get('po_doc_id')
+
+        if not sku:
+            messages.error(request, 'SKU is required.')
+            return redirect('planning:pending_skus')
+
+        job_name = (request.POST.get('job_name') or '').strip()
+        material = (request.POST.get('material') or '').strip()
+        color_spec = (request.POST.get('color_spec') or '').strip()
+        application = (request.POST.get('application') or '').strip()
+        machine_name = (request.POST.get('machine_name') or '').strip()
+        department = (request.POST.get('department') or '').strip()
+        print_sheet_size = (request.POST.get('print_sheet_size') or '').strip()
+        purchase_material = (request.POST.get('purchase_material') or '').strip()
+
+        unit_cost_raw = (request.POST.get('default_unit_cost') or '').strip()
+        unit_cost = None
+        if unit_cost_raw:
+            try:
+                unit_cost = Decimal(unit_cost_raw)
+            except InvalidOperation:
+                unit_cost = None
+
+        if not job_name and not material and not machine_name:
+            messages.error(request, 'Please enter at least Job Name, Material, or Machine before saving.')
+            return redirect('planning:pending_skus')
+
+        SkuRecipe.objects.update_or_create(
+            sku=sku,
+            defaults={
+                'job_name': job_name,
+                'material': material,
+                'color_spec': color_spec,
+                'application': application,
+                'machine_name': machine_name,
+                'department': department,
+                'print_sheet_size': print_sheet_size,
+                'purchase_material': purchase_material,
+                'default_unit_cost': unit_cost,
+                'created_by': request.user,
+            },
+        )
+
+        if po_doc_id:
+            try:
+                po_doc = PoDocument.objects.filter(id=int(po_doc_id)).first()
+            except (TypeError, ValueError):
+                po_doc = None
+            if po_doc:
+                payload = po_doc.extracted_payload or {}
+                configured = set(payload.get('new_skus_configured') or [])
+                configured.add(sku)
+                payload['new_skus_configured'] = sorted(configured)
+                po_doc.extracted_payload = payload
+                po_doc.save(update_fields=['extracted_payload'])
+
+        messages.success(request, f'SKU recipe saved for {sku}.')
+        return redirect('planning:pending_skus')
+
+    po_docs = PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('-created_at')[:200]
+    pending_rows = _collect_pending_sku_rows(po_docs)
+    pending_rows.sort(key=lambda row: (row['po_number'], row['sku']))
+
+    context = {
+        'pending_rows': pending_rows,
+        'pending_count': len(pending_rows),
+    }
+    return render(request, 'planning/pending_skus.html', context)
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def po_inbox(request):
+    """PO intake queue after upload: split-ready documents with repeat/new counts."""
+    docs = PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('-created_at')[:200]
+    rows = []
+    for doc in docs:
+        payload = doc.extracted_payload or {}
+        items = payload.get('items', [])
+        recipe_map = _build_recipe_map(items)
+        _, repeat_count, new_count, missing_skus = _annotate_items_with_recipe(items, recipe_map)
+        rows.append(
+            {
+                'doc': doc,
+                'po_number': payload.get('po_number') or '-',
+                'supplier': payload.get('supplier_name') or '-',
+                'item_count': len(items),
+                'repeat_count': repeat_count,
+                'new_count': new_count,
+                'missing_count': len(missing_skus),
+            }
+        )
+
+    return render(request, 'planning/po_inbox.html', {'rows': rows})
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def approval_queue(request):
+    """Queue page to forward planning jobs to QC then Production Manager."""
+    draft_jobs = PlanningJob.objects.filter(status__iexact='draft').order_by('-updated_at', '-id')[:300]
+    reviewed_jobs = PlanningJob.objects.filter(status__iexact='reviewed').order_by('-updated_at', '-id')[:300]
+    context = {
+        'draft_jobs': draft_jobs,
+        'reviewed_jobs': reviewed_jobs,
+    }
+    return render(request, 'planning/approval_queue.html', context)
+
+
+@login_required
 @permission_required('can_edit_jobcard')
 def upload_po(request):
     """Upload a PO PDF, extract its content, store it, and redirect to review."""
@@ -628,6 +914,10 @@ def upload_po(request):
             messages.error(request, f'Unexpected error reading PDF: {exc}')
             return redirect('planning:upload_po')
 
+        # Surface partial-extraction warning before saving so user sees it on review page.
+        extraction_warning = extracted.pop('extraction_warning', None)
+        expected_count = extracted.pop('expected_line_count', None)
+
         # Reset file pointer so Django can save it
         pdf_file.seek(0)
 
@@ -637,12 +927,20 @@ def upload_po(request):
             extraction_status='processed',
             uploaded_by=request.user,
         )
-        messages.success(
-            request,
-            f"PO {extracted.get('po_number', '?')} extracted with "
-            f"{len(extracted.get('items', []))} line items. Review and confirm below.",
-        )
-        return redirect('planning:po_review', doc_id=po_doc.id)
+
+        item_count = len(extracted.get('items', []))
+        if extraction_warning:
+            messages.warning(
+                request,
+                f"Partial extraction: {extraction_warning}",
+            )
+        else:
+            messages.success(
+                request,
+                f"PO {extracted.get('po_number', '?')} extracted with "
+                f"{item_count} of {expected_count or item_count} line items. Sent to PO Intake queue.",
+            )
+        return redirect('planning:po_inbox')
 
     return render(request, 'planning/po_upload.html')
 
@@ -654,8 +952,26 @@ def po_review(request, doc_id):
     po_doc = get_object_or_404(PoDocument, id=doc_id)
     payload = po_doc.extracted_payload or {}
     items = payload.get('items', [])
+    po_number = payload.get('po_number', '')
+    configured_new_skus = {_sku_key(sku) for sku in (payload.get('new_skus_configured') or []) if sku}
     recipe_map = _build_recipe_map(items)
     annotated_items, repeat_count, new_count, missing_skus = _annotate_items_with_recipe(items, recipe_map)
+
+    item_sku_keys = {_sku_key(item.get('sku')) for item in annotated_items if item.get('sku')}
+    existing_jobs_by_sku = {}
+    if po_number and item_sku_keys:
+        existing_jobs = PlanningJob.objects.filter(po_number=po_number).order_by('-updated_at', '-id')
+        for job in existing_jobs:
+            key = _sku_key(job.sku)
+            if key in item_sku_keys and key not in existing_jobs_by_sku:
+                existing_jobs_by_sku[key] = job
+
+    for item in annotated_items:
+        sku_key = _sku_key(item.get('sku'))
+        item['forward_flag'] = 'New' if sku_key in configured_new_skus else 'Repeat'
+        existing_job = existing_jobs_by_sku.get(sku_key)
+        item['existing_job_id'] = existing_job.id if existing_job else None
+        item['existing_jc_number'] = existing_job.jc_number if existing_job else ''
 
     if request.method == 'POST':
         action = request.POST.get('action', '')
@@ -666,7 +982,6 @@ def po_review(request, doc_id):
                 skipped_count = 0
                 locked_count = 0
                 missing_recipe_count = 0
-                po_number = payload.get('po_number', '')
                 po_date_raw = payload.get('po_date')
                 po_date = _parse_iso_date(po_date_raw)
                 delivery_location = payload.get('delivery_location', '')
@@ -679,11 +994,6 @@ def po_review(request, doc_id):
                         skipped_count += 1
                         continue
 
-                    recipe = recipe_map.get(_sku_key(sku))
-                    if not recipe:
-                        missing_recipe_count += 1
-                        continue
-
                     field_prefix = f"item_{item['line_no']}_"
                     skip_flag = request.POST.get(f"{field_prefix}skip") == '1'
 
@@ -691,14 +1001,19 @@ def po_review(request, doc_id):
                         skipped_count += 1
                         continue
 
+                    recipe = recipe_map.get(_sku_key(sku))
+                    if not recipe:
+                        missing_recipe_count += 1
+                        continue
+
+                    sku_key = _sku_key(sku)
+                    forward_as_new = sku_key in configured_new_skus
+
                     delivery_date = _parse_iso_date(item.get('delivery_date'))
                     plan_date = delivery_date or po_date
 
                     # Re-use existing PO+SKU job to avoid duplicates; otherwise allocate a new serial.
-                    existing_job = PlanningJob.objects.filter(
-                        po_number=po_number,
-                        sku=sku,
-                    ).order_by('-updated_at', '-id').first()
+                    existing_job = existing_jobs_by_sku.get(sku_key)
 
                     if existing_job:
                         if _normalize_status(existing_job.status) == 'approved':
@@ -707,6 +1022,8 @@ def po_review(request, doc_id):
                         jc_number = existing_job.jc_number
                     else:
                         jc_number = allocate_next_jc_number(plan_date)
+
+                    current_requirement = existing_job.requirement if existing_job else ''
 
                     qty = item.get('quantity')
                     order_qty = int(qty) if qty is not None else None
@@ -723,7 +1040,8 @@ def po_review(request, doc_id):
                         'destination': delivery_location,
                         'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
                         'status': 'draft',
-                        'repeat_flag': 'Repeat',
+                        'repeat_flag': 'New' if forward_as_new else 'Repeat',
+                        'requirement': _sync_new_sku_requirement(current_requirement, forward_as_new),
                         'material': recipe.material,
                         'color_spec': recipe.color_spec,
                         'application': recipe.application,
@@ -738,7 +1056,7 @@ def po_review(request, doc_id):
                     if plan_date:
                         defaults['plan_date'] = plan_date
 
-                    _, created = PlanningJob.objects.update_or_create(
+                    job_obj, created = PlanningJob.objects.update_or_create(
                         jc_number=jc_number,
                         defaults=defaults,
                     )
@@ -746,15 +1064,28 @@ def po_review(request, doc_id):
                         created_count += 1
                     else:
                         updated_count += 1
+                    existing_jobs_by_sku[sku_key] = job_obj
 
             po_doc.extraction_status = 'processed'
             po_doc.save(update_fields=['extraction_status'])
+
+            if created_count == 0 and updated_count == 0:
+                messages.warning(
+                    request,
+                    f'No jobs created. Skipped {skipped_count}, missing-recipe {missing_recipe_count}, locked-skip {locked_count}. Add missing SKU master data from Pending SKUs and run create again.',
+                )
+                return redirect('planning:pending_skus')
 
             messages.success(
                 request,
                 f'Done. Created {created_count}, updated {updated_count}, skipped {skipped_count}, missing-recipe {missing_recipe_count}, locked-skip {locked_count} planning job(s).',
             )
-            return redirect('planning:home')
+            if missing_recipe_count > 0:
+                messages.warning(
+                    request,
+                    f'{missing_recipe_count} SKU(s) are still pending master data. Open Pending SKUs tab to configure them.',
+                )
+            return redirect('planning:approval_queue')
 
     context = {
         'po_doc': po_doc,
@@ -763,6 +1094,7 @@ def po_review(request, doc_id):
         'items_json': json.dumps(annotated_items),
         'repeat_count': repeat_count,
         'new_count': new_count,
+        'configured_new_count': len(configured_new_skus),
         'missing_skus': missing_skus,
     }
     return render(request, 'planning/po_review.html', context)
@@ -781,6 +1113,7 @@ def po_new_skus(request, doc_id):
 
     if request.method == 'POST':
         created_count = 0
+        saved_skus = []
         for sku in missing_skus:
             prefix = f"sku_{sku}"
             job_name = (request.POST.get(f"{prefix}_job_name") or '').strip()
@@ -820,8 +1153,19 @@ def po_new_skus(request, doc_id):
                 },
             )
             created_count += 1
+            saved_skus.append(sku)
 
-        messages.success(request, f'SKU recipes saved: {created_count}. You can continue PO review now.')
+        if saved_skus:
+            configured = set(payload.get('new_skus_configured') or [])
+            configured.update(saved_skus)
+            payload['new_skus_configured'] = sorted(configured)
+            po_doc.extracted_payload = payload
+            po_doc.save(update_fields=['extracted_payload'])
+
+        messages.success(
+            request,
+            f'SKU recipes saved: {created_count}. These SKU jobs will be forwarded as NEW for production shade/setup checks.',
+        )
         return redirect('planning:po_review', doc_id=po_doc.id)
 
     return render(

@@ -13,7 +13,28 @@ from datetime import datetime
 
 MONTH_REGEX = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
 LINE_DATE_REGEX = r'(?:' + MONTH_REGEX + r'\s+\d{1,2},\s+\d{4}|\d{4}-\d{2}-\d{2})'
-_SKU_TOKEN_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]{3,}$')
+# Unit pattern — extend here to support new units across all parsers
+UNIT_PATTERN = r'(?:PIECE|PCS|UNIT|SET|BOX|ROLL|PACK|KG|METER|YARD|NOS|EA|EACH|RL|MTR)\.?'
+_SKU_TOKEN_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]{2,}$')
+_SKU_BLOCK_WORDS = {
+    'DATED',
+    'GENERATED',
+    'QUOTATION',
+    'APPROVAL',
+    'PURCHASE',
+    'ORDER',
+    'DEPARTMENT',
+    'BROKER',
+    'DELIVERY',
+    'LOCATION',
+    'SUPPLIER',
+    'BUYER',
+    'DETAILS',
+    'REFERENCE',
+    'INCOTERM',
+    'NAME',
+    'THIS',
+}
 
 
 def _looks_like_date_token(value):
@@ -35,10 +56,12 @@ def _looks_like_date_token(value):
 
 
 def _parse_date(text):
-    """Parse 'Apr 10, 2026' or 'Apr 10, 2026 01:37 AM' -> ISO date string."""
+    """Parse 'Apr 10, 2026' or 'Apr 10, 2026 01:37 AM' or '2026-04-10' -> ISO date string."""
     if not text:
         return None
-    text = text.strip()
+    text = str(text).strip()
+    # Strip watermark chars like "D\n" prefix from PDF page-border text
+    text = re.sub(r'^[A-Z]\n', '', text).strip()
     for fmt in ('%b %d, %Y %I:%M %p', '%b %d, %Y'):
         try:
             return datetime.strptime(text, fmt).strftime('%Y-%m-%d')
@@ -52,10 +75,19 @@ def _parse_date(text):
 
 
 def _clean_amount(text):
-    """'Rs 2,400.00' or '2,400.00' -> float."""
+    """Convert amount strings to float. Handles Rs/€ and both European and US formats."""
     if not text:
         return None
-    cleaned = re.sub(r'[Rs,\s]', '', text)
+    # Strip currency symbols and whitespace
+    cleaned = re.sub(r'[Rs€\$\s]', '', str(text)).strip()
+    if not cleaned:
+        return None
+    # European format: dot as thousands separator, comma as decimal  e.g. "3.000,00"
+    if re.search(r',\d{2}$', cleaned):
+        cleaned = cleaned.replace('.', '').replace(',', '.')
+    else:
+        # Standard format: comma as thousands separator  e.g. "3,000.00"
+        cleaned = cleaned.replace(',', '')
     try:
         return float(cleaned)
     except ValueError:
@@ -77,14 +109,52 @@ def _looks_like_sku_token(value):
     token = str(value).strip()
     if _looks_like_date_token(token):
         return False
+    # Allow alphabet-only operational SKUs (some Utopia SKUs are pure letters).
+    # Keep short words blocked through length/block-word checks below.
+    if token.isalpha() and len(token) < 6:
+        return False
     if not _SKU_TOKEN_RE.match(token):
         return False
     upper = token.upper()
+    if upper in _SKU_BLOCK_WORDS:
+        return False
     if upper.startswith(('PO-', 'PR-', 'SITE-', 'NTN', 'STRN', 'RS')):
         return False
     if upper in {'PIECE', 'PCS', 'UNIT', 'SET', 'BOX', 'ROLL', 'PACK', 'KG', 'METER', 'YARD'}:
         return False
     return True
+
+
+def _extract_best_sku_token(raw_value):
+    """Extract a single token that looks like a real SKU from noisy text."""
+    text = str(raw_value or '').strip()
+    if not text:
+        return None
+
+    # If already a clean token, use directly.
+    if _looks_like_sku_token(text):
+        return text
+
+    tokens = re.findall(r'[A-Za-z0-9._/-]+', text)
+    candidates = [tok for tok in tokens if _looks_like_sku_token(tok)]
+    if not candidates:
+        return None
+
+    # Avoid dimension fragments like 95x45 when a real SKU token exists.
+    non_dimension = [tok for tok in candidates if not re.fullmatch(r'\d{2,4}x\d{2,4}', tok, re.IGNORECASE)]
+    pool = non_dimension or candidates
+
+    # Prefer richer tokens (longer, non-numeric-leading) over short numeric fragments.
+    pool = sorted(
+        pool,
+        key=lambda tok: (
+            tok[0].isalpha(),
+            len(tok),
+            any(ch.isdigit() for ch in tok),
+        ),
+        reverse=True,
+    )
+    return pool[0]
 
 
 def _build_sku_jobname_map(text, table_blobs=None):
@@ -141,6 +211,7 @@ def extract_po_from_pdf(file_obj):
     # Read all pages as combined text and table rows
     full_text = ''
     table_blobs = []
+    table_rows = []
     with pdfplumber.open(file_obj) as pdf:
         for page in pdf.pages:
             page_text = page.extract_text(x_tolerance=3, y_tolerance=3) or ''
@@ -152,15 +223,16 @@ def extract_po_from_pdf(file_obj):
                     parts = [str(col).strip() for col in (row or []) if str(col).strip()]
                     if parts:
                         table_blobs.append(' '.join(parts))
+                        table_rows.append(parts)
 
     if not full_text.strip():
         raise ValueError("Could not extract any text from the PDF. Please check the file.")
 
-    result = _parse_po_text(full_text, table_blobs)
+    result = _parse_po_text(full_text, table_blobs, table_rows)
     return result
 
 
-def _parse_po_text(text, table_blobs=None):
+def _parse_po_text(text, table_blobs=None, table_rows=None):
     """Parse raw extracted text into structured PO dict."""
 
     # ── PO Number ──────────────────────────────────────────────────────────────
@@ -239,21 +311,55 @@ def _parse_po_text(text, table_blobs=None):
         grand_total = _clean_amount(m.group(1))
 
     # ── Line Items ─────────────────────────────────────────────────────────────
-    # Try strict layout first, then flexible regex, then extracted table rows.
+    # Prioritize table_rows extraction (most reliable for Utopia 2-row layout),
+    # then text-based fallbacks.
     sku_jobname_map = _build_sku_jobname_map(text, table_blobs)
 
-    items = _extract_items_strict(text, sku_jobname_map)
-    if not items:
-        items = _extract_items_flexible(text, sku_jobname_map)
-    if not items and table_blobs:
-        items = _extract_items_from_table_blobs(table_blobs, sku_jobname_map)
-    if not items:
-        items = _extract_items_from_text_windows(text, sku_jobname_map)
+    expected_line_count = _detect_expected_line_count(text, table_rows)
+
+    def _best_of(current, candidate):
+        """Return the list with more valid items."""
+        return candidate if len(candidate) > len(current) else current
+
+    # Try table_rows first (most reliable for structured PDFs)
+    items = []
+    if table_rows:
+        items = _extract_items_from_table_rows(table_rows, sku_jobname_map)
+    
+    # Fallback to text-based parsers if table extraction insufficient
+    if not items or (expected_line_count and len(items) < expected_line_count):
+        items = _best_of(items, _extract_items_strict(text, sku_jobname_map))
+    if not items or (expected_line_count and len(items) < expected_line_count):
+        items = _best_of(items, _extract_items_flexible(text, sku_jobname_map))
+    if not items or (expected_line_count and len(items) < expected_line_count):
+        if table_blobs:
+            items = _best_of(items, _extract_items_from_table_blobs(table_blobs, sku_jobname_map))
+    if not items or (expected_line_count and len(items) < expected_line_count):
+        items = _best_of(items, _extract_items_from_text_windows(text, sku_jobname_map))
 
     if not items:
         raise ValueError(
             f"Could not detect any line items in the PO PDF. "
             f"Extracted text preview: {text[:400]!r}"
+        )
+
+    extraction_warning = None
+    if expected_line_count and len(items) < expected_line_count:
+        # Dump raw parse data to a temp file for debugging.
+        import json as _json, tempfile, os as _os
+        _dump = {
+            'expected': expected_line_count,
+            'items_found': len(items),
+            'table_rows': table_rows,
+            'full_text_lines': str(text).splitlines(),
+        }
+        _dump_path = _os.path.join(tempfile.gettempdir(), 'po_extractor_debug.json')
+        with open(_dump_path, 'w', encoding='utf-8') as _f:
+            _json.dump(_dump, _f, indent=2, default=str)
+        extraction_warning = (
+            f"PDF has {expected_line_count} line item(s) in # column, "
+            f"but only {len(items)} could be parsed. "
+            f"Please review the items below and add any missing ones manually."
         )
 
     return {
@@ -266,21 +372,54 @@ def _parse_po_text(text, table_blobs=None):
         'buyer_name': buyer_name,
         'grand_total': grand_total,
         'items': items,
+        'extraction_warning': extraction_warning,
+        'expected_line_count': expected_line_count,
     }
 
 
+def _detect_expected_line_count(text, table_rows=None):
+    serials = set()
+
+    for row in table_rows or []:
+        if not row:
+            continue
+        first = str(row[0]).strip()
+        if re.fullmatch(r'\d{1,3}', first):
+            serials.add(int(first))
+
+    if serials:
+        return len(serials)
+
+    # Text fallback: lines that start with serial number and contain a date.
+    for line in str(text).splitlines():
+        compact = ' '.join(line.split())
+        m = re.match(r'^(\d{1,3})\s+', compact)
+        if not m:
+            continue
+        if re.search(LINE_DATE_REGEX, compact, re.IGNORECASE):
+            serials.add(int(m.group(1)))
+
+    return len(serials)
+
+
 def _append_item(items, sku, delivery_date_raw, qty_raw, unit_raw, unit_cost_raw, subtotal_raw, gst_raw, net_total_raw, sku_jobname_map=None):
-    sku_value = (sku or '').strip()
+    sku_value = _extract_best_sku_token(sku)
     if not sku_value:
         return
     if _looks_like_date_token(sku_value):
+        return
+    if sku_value.upper() in _SKU_BLOCK_WORDS:
         return
     if sku_value.upper().startswith(('SUBTOTAL', 'GRAND', 'TOTAL', 'DESCRIPTION')):
         return
 
     try:
-        quantity = float(str(qty_raw).replace(',', '').strip())
-    except ValueError:
+        # Handle European qty format: "20,0" -> 20.0 (comma as decimal)
+        qty_str = str(qty_raw).replace(',', '.').strip()
+        # If multiple dots remain (e.g. "3.000.00"), take first numeric part
+        m = re.match(r'^([\d.]+)', qty_str)
+        quantity = float(m.group(1)) if m else None
+    except (ValueError, AttributeError):
         quantity = None
 
     item = {
@@ -304,11 +443,11 @@ def _append_item(items, sku, delivery_date_raw, qty_raw, unit_raw, unit_cost_raw
 
 
 def _extract_items_strict(text, sku_jobname_map=None):
-    amount = r'(?:Rs\s*)?[\d,]+\.?\d*'
+    amount = r'(?:Rs\s*|€\s*)?[\d,.]+'
     item_pattern = re.compile(
         r'^([A-Za-z0-9][\w\-./]+)\s+'
         r'(' + LINE_DATE_REGEX + r')\s+'
-        r'([\d,]+\.?\d*)\s+(PIECE\.?|PCS\.?|UNIT\.?|SET\.?|BOX\.?|ROLL\.?|PACK\.?|KG\.?|METER\.?|YARD\.?)\s+'
+        r'([\d,.]+)\s+(' + UNIT_PATTERN + r')\s+'
         r'(' + amount + r')\s+'
         r'(' + amount + r')\s+'
         r'(' + amount + r')\s+'
@@ -336,12 +475,12 @@ def _extract_items_strict(text, sku_jobname_map=None):
 def _extract_items_flexible(text, sku_jobname_map=None):
     # Handles wrapped or slightly shifted lines and optional currency prefixes.
     normalized = '\n'.join(' '.join(line.split()) for line in text.splitlines() if line.strip())
-    amount = r'(?:Rs\s*)?[\d,]+\.?\d*'
+    amount = r'(?:Rs\s*|€\s*)?[\d,.]+'
     pattern = re.compile(
         r'(.+?)\s+'
         r'(' + LINE_DATE_REGEX + r')\s+'
-        r'([\d,]+\.?\d*)\s+'
-        r'(PIECE\.?|PCS\.?|UNIT\.?|SET\.?|BOX\.?|ROLL\.?|PACK\.?|KG\.?|METER\.?|YARD\.?)\s+'
+        r'([\d,.]+)\s+'
+        r'(' + UNIT_PATTERN + r')\s+'
         r'(' + amount + r')\s+'
         r'(' + amount + r')\s+'
         r'(' + amount + r')\s+'
@@ -371,12 +510,12 @@ def _extract_items_flexible(text, sku_jobname_map=None):
 
 def _extract_items_from_table_blobs(table_blobs, sku_jobname_map=None):
     items = []
-    amount = r'(?:Rs\s*)?[\d,]+\.?\d*'
+    amount = r'(?:Rs\s*|€\s*)?[\d,.]+'
     pattern = re.compile(
         r'(.+?)\s+'
         r'(' + LINE_DATE_REGEX + r')\s+'
-        r'([\d,]+\.?\d*)\s+'
-        r'(PIECE\.?|PCS\.?|UNIT\.?|SET\.?|BOX\.?|ROLL\.?|PACK\.?|KG\.?|METER\.?|YARD\.?)\s+'
+        r'([\d,.]+)\s+'
+        r'(' + UNIT_PATTERN + r')\s+'
         r'(' + amount + r')\s+'
         r'(' + amount + r')\s+'
         r'(' + amount + r')\s+'
@@ -405,6 +544,167 @@ def _extract_items_from_table_blobs(table_blobs, sku_jobname_map=None):
     return items
 
 
+def _extract_items_from_table_rows(table_rows, sku_jobname_map=None):
+    """
+    Handles both single-row and two-row-per-item layouts.
+
+    Two-row layout (as seen in Utopia PO system):
+      Row A: ["1", "Job Name / Description", None, None, ...]
+      Row B: ["None", "SKUTOKEN", "May 12, 2026", "20.0 PIECE", "40,00 €", ...]
+    """
+    rows = list(table_rows or [])
+    items = []
+    seen = set()
+    i = 0
+
+    def _clean_cell(c):
+        """Strip 'None' sentinel and leading watermark chars like 'D\n'."""
+        s = str(c).strip()
+        if s.lower() == 'none':
+            return ''
+        # Remove single-letter watermark prefix on its own line  e.g. "D\nMay 12"
+        s = re.sub(r'^[A-Z]\n', '', s).strip()
+        return s
+
+    while i < len(rows):
+        row = rows[i]
+        if not row:
+            i += 1
+            continue
+
+        first = _clean_cell(row[0])
+
+        # ── Two-row layout: serial number row followed by data row ──────────
+        if re.fullmatch(r'\d{1,3}', first) and i + 1 < len(rows):
+            serial = first
+            job_name_raw = _clean_cell(row[1]) if len(row) > 1 else ''
+            # Strip watermark prefix from job name
+            job_name_raw = re.sub(r'^[A-Z]\n', '', job_name_raw).strip()
+            # Take only the part before " / " if present (description / specs)
+            job_name_raw = job_name_raw.split(' / ')[0].strip()
+
+            next_row = rows[i + 1]
+            next_first = _clean_cell(next_row[0]) if next_row else 'x'
+
+            if next_first == '' or next_first.lower() == 'none':
+                # Data row
+                data_cells = [_clean_cell(c) for c in next_row]
+                data_cells = [c for c in data_cells if c]  # drop empty/None
+
+                if len(data_cells) >= 2:
+                    sku_raw = data_cells[0]
+
+                    # Find delivery date cell
+                    date_idx = None
+                    for idx, cell in enumerate(data_cells):
+                        if _parse_date(cell):
+                            date_idx = idx
+                            break
+
+                    if date_idx is not None:
+                        delivery_date_raw = data_cells[date_idx]
+                        after = data_cells[date_idx + 1:]
+
+                        qty_raw = None
+                        unit_raw = ''
+                        qty_cell_idx = None
+                        for cell_idx, cell in enumerate(after):
+                            m = re.search(
+                                r'([\d,.]+)\s*(' + UNIT_PATTERN + r')',
+                                cell, re.IGNORECASE,
+                            )
+                            if m:
+                                qty_raw = m.group(1)
+                                unit_raw = m.group(2)
+                                qty_cell_idx = cell_idx
+                                break
+
+                        if qty_raw is None:
+                            for cell_idx, cell in enumerate(after):
+                                m = re.match(r'^([\d,.]+)$', cell)
+                                if m:
+                                    qty_raw = m.group(1)
+                                    qty_cell_idx = cell_idx
+                                    break
+
+                        if qty_raw is not None:
+                            # Amount fields — skip the qty+unit cell by index
+                            amount_cells = [
+                                c for idx, c in enumerate(after)
+                                if idx != qty_cell_idx
+                                and re.search(r'[\d,.]', c)
+                                and not re.fullmatch(UNIT_PATTERN, c, re.IGNORECASE)
+                            ]
+                            unit_cost_raw = amount_cells[0] if len(amount_cells) > 0 else None
+                            subtotal_raw = amount_cells[1] if len(amount_cells) > 1 else None
+                            gst_raw = amount_cells[2] if len(amount_cells) > 2 else None
+                            net_total_raw = amount_cells[3] if len(amount_cells) > 3 else None
+
+                            key = (serial, sku_raw.upper(), delivery_date_raw, str(qty_raw))
+                            if key not in seen:
+                                before = len(items)
+                                # Use job_name from serial row if sku_jobname_map doesn't have it
+                                effective_map = dict(sku_jobname_map or {})
+                                if job_name_raw and sku_raw.upper() not in effective_map:
+                                    effective_map[sku_raw.upper()] = job_name_raw
+                                _append_item(
+                                    items, sku_raw, delivery_date_raw, qty_raw, unit_raw,
+                                    unit_cost_raw, subtotal_raw, gst_raw, net_total_raw,
+                                    effective_map,
+                                )
+                                if len(items) > before:
+                                    seen.add(key)
+                i += 2
+                continue
+
+        # ── Single-row layout fallback ──────────────────────────────────────
+        if re.fullmatch(r'\d{1,3}', first):
+            cells = [_clean_cell(c) for c in row]
+            cells = [c for c in cells if c]
+            if len(cells) >= 3:
+                date_idx = None
+                for idx, cell in enumerate(cells):
+                    if _parse_date(cell):
+                        date_idx = idx
+                        break
+                if date_idx is not None:
+                    sku_candidate = ' '.join(cells[1:date_idx]).strip() if date_idx > 1 else (cells[1] if len(cells) > 1 else '')
+                    delivery_date_raw = cells[date_idx]
+                    after = cells[date_idx + 1:]
+                    qty_raw = None
+                    unit_raw = ''
+                    qty_cell_idx = None
+                    for cell_idx, cell in enumerate(after):
+                        m = re.search(r'([\d,.]+)\s*(' + UNIT_PATTERN + r')', cell, re.IGNORECASE)
+                        if m:
+                            qty_raw, unit_raw = m.group(1), m.group(2)
+                            qty_cell_idx = cell_idx
+                            break
+                    if qty_raw is None:
+                        for cell_idx, cell in enumerate(after):
+                            m = re.match(r'^([\d,.]+)$', cell)
+                            if m:
+                                qty_raw = m.group(1)
+                                qty_cell_idx = cell_idx
+                                break
+                    if qty_raw is not None:
+                        amount_cells = [
+                            c for idx, c in enumerate(after)
+                            if idx != qty_cell_idx and re.search(r'[\d,.]', c)
+                        ]
+                        _append_item(
+                            items, sku_candidate, delivery_date_raw, qty_raw, unit_raw,
+                            amount_cells[0] if amount_cells else None,
+                            amount_cells[1] if len(amount_cells) > 1 else None,
+                            amount_cells[2] if len(amount_cells) > 2 else None,
+                            amount_cells[3] if len(amount_cells) > 3 else None,
+                            sku_jobname_map,
+                        )
+        i += 1
+
+    return items
+
+
 def _extract_items_from_text_windows(text, sku_jobname_map=None):
     """
     Last-resort parser for PDFs where item rows are split across nearby lines.
@@ -418,7 +718,7 @@ def _extract_items_from_text_windows(text, sku_jobname_map=None):
     unit_re = re.compile(r'\b(PIECE\.?|PCS\.?|UNIT\.?|SET\.?|BOX\.?|ROLL\.?|PACK\.?|KG\.?|METER\.?|YARD\.?)\b', re.IGNORECASE)
     amount_re = re.compile(r'(?:Rs\s*)?([\d,]+\.?\d*)', re.IGNORECASE)
     qty_unit_re = re.compile(
-        r'([\d,]+\.?\d*)\s*(PIECE\.?|PCS\.?|UNIT\.?|SET\.?|BOX\.?|ROLL\.?|PACK\.?|KG\.?|METER\.?|YARD\.?)',
+        r'([\d,.]+)\s*(' + UNIT_PATTERN + r')',
         re.IGNORECASE,
     )
 

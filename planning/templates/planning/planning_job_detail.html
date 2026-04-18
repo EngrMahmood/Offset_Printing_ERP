@@ -23,6 +23,10 @@
         .workflow { display:flex; gap:8px; flex-wrap:wrap; margin-top: 8px; }
         .workflow form { margin: 0; }
         .note { background:#fff9e8; border:1px solid #f0d38b; color:#6b4b00; border-radius:6px; padding:8px 10px; font-size:12px; }
+        .badge { display:inline-block; padding:3px 7px; border-radius:999px; font-size:11px; border:1px solid #d3deea; background:#f3f7fb; }
+        .badge.new { background:#fff1e5; border-color:#f3c79d; color:#8a3f00; font-weight:700; }
+        .badge.repeat { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; font-weight:700; }
+        .alert-new { margin-top:10px; border:1px solid #b15a00; background:#fff1e5; color:#7a2f00; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:700; }
         @media (max-width: 900px){ .grid { grid-template-columns: 1fr; } }
     </style>
 </head>
@@ -32,6 +36,9 @@
         <div>
             <h1 style="margin:0;font-size:20px;">{{ job.jc_number }}</h1>
             <div class="muted">PO: {{ job.po_number|default:"-" }} | SKU: {{ job.sku|default:"-" }} | Status: {{ status_now }}</div>
+            <div style="margin-top:6px;">
+                <span class="badge {% if job.repeat_flag|lower == 'new' %}new{% else %}repeat{% endif %}">Flag: {{ job.repeat_flag|default:'Repeat' }}</span>
+            </div>
         </div>
         <div>
             <a class="btn secondary" href="{% url 'planning:home' %}">Back</a>
@@ -41,16 +48,24 @@
         </div>
     </div>
 
+    {% if job.repeat_flag|lower == 'new' %}
+    <div class="alert-new">NEW SKU ALERT: Shade matching and setup verification required before production run.</div>
+    {% endif %}
+
+    {% if job.requirement %}
+    <div class="note" style="margin-top:10px;"><strong>Requirement:</strong> {{ job.requirement|linebreaksbr }}</div>
+    {% endif %}
+
     {% if status_now == 'approved' %}
     <div class="note" style="margin-top:10px;">This record is approved and locked. Use Unlock to Reviewed before editing values.</div>
     {% endif %}
 
     <div class="workflow">
         {% if status_now == 'draft' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="submit_review"><button class="btn warn" type="submit">Submit For Review</button></form>
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="submit_review"><button class="btn warn" type="submit">Forward To QC Approval</button></form>
         {% endif %}
         {% if status_now == 'reviewed' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="approve"><button class="btn good" type="submit">Approve</button></form>
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="approve"><button class="btn good" type="submit">Approve By Production Manager</button></form>
         {% endif %}
         {% if status_now == 'approved' %}
         <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="unlock"><button class="btn warn" type="submit">Unlock To Reviewed</button></form>

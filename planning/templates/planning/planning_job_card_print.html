@@ -50,6 +50,11 @@
     </div>
 
     <div class="section-title">Order Information</div>
+    {% if job.repeat_flag|lower == 'new' %}
+    <div style="border:1px solid #b15a00;background:#fff1e5;color:#7a2f00;padding:8px 10px;margin-bottom:8px;font-weight:700;">
+        NEW SKU ALERT: Shade matching and setup verification required before production run.
+    </div>
+    {% endif %}
     <table>
         <tr>
             <th>SKU</th><td>{{ job.sku|default:'-' }}</td>

@@ -1,0 +1,187 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }}</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 760px; margin: 0 auto; padding: 20px 14px 32px; }
+        .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 8px; flex-wrap: wrap; }
+        .btn { display: inline-block; padding: 7px 14px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 13px; cursor: pointer; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 20px; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+        .form-grid .full-width { grid-column: 1 / -1; }
+        .field { display: flex; flex-direction: column; gap: 4px; }
+        .field label { font-size: 12px; font-weight: 600; color: #32465d; }
+        .field input, .field textarea, .field select {
+            border: 1px solid #bfd0e2;
+            border-radius: 6px;
+            padding: 7px 10px;
+            font-size: 13px;
+            font-family: inherit;
+            color: #1f3048;
+            background: #fafcff;
+            transition: border-color 0.15s;
+        }
+        .field input:focus, .field textarea:focus {
+            outline: none;
+            border-color: #5f8ab8;
+            background: #fff;
+        }
+        .field .help { font-size: 11px; color: #7a8fa6; }
+        .field .error { font-size: 11px; color: #b5282a; }
+        .muted { color: #5f6f82; font-size: 11px; }
+        .section-sep { grid-column: 1 / -1; border: none; border-top: 1px solid #e6eef5; margin: 4px 0; }
+        .section-label { grid-column: 1 / -1; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #8fa8be; margin-bottom: -6px; }
+        .actions { margin-top: 18px; display: flex; gap: 8px; }
+        .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 12px; border: 1px solid #c8d7e7; background: #f5f9ff; color: #2e3f53; }
+        @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } .form-grid .full-width { grid-column: 1; } }
+    </style>
+</head>
+<body>
+<main class="wrap">
+
+    <div class="top">
+        <div>
+            <h1 style="margin:0;font-size:20px;">{{ page_title }}</h1>
+            <div class="muted">SKU recipe defines how a SKU should be set up when creating planning jobs from a PO.</div>
+        </div>
+        <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">← Back to SKU Recipes</a>
+    </div>
+
+    {% for msg in messages %}
+        <div class="msg">{{ msg }}</div>
+    {% endfor %}
+
+    <section class="panel">
+        <form method="post" novalidate>
+            {% csrf_token %}
+            <div class="form-grid">
+
+                <!-- Identity -->
+                <div class="section-label">Identity</div>
+
+                <div class="field full-width">
+                    <label for="{{ form.sku.id_for_label }}">SKU <span style="color:#b5282a;">*</span></label>
+                    {{ form.sku }}
+                    {% if form.sku.errors %}<div class="error">{{ form.sku.errors.0 }}</div>{% endif %}
+                    <div class="help">Exact SKU code as it appears in the PO PDF (case-sensitive).</div>
+                </div>
+
+                <div class="field full-width">
+                    <label for="{{ form.job_name.id_for_label }}">Job Name</label>
+                    {{ form.job_name }}
+                    {% if form.job_name.errors %}<div class="error">{{ form.job_name.errors.0 }}</div>{% endif %}
+                </div>
+
+                <hr class="section-sep">
+
+                <!-- Material & Spec -->
+                <div class="section-label">Material &amp; Specification</div>
+
+                <div class="field">
+                    <label for="{{ form.material.id_for_label }}">Material</label>
+                    {{ form.material }}
+                    {% if form.material.errors %}<div class="error">{{ form.material.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.purchase_material.id_for_label }}">Purchase Material</label>
+                    {{ form.purchase_material }}
+                    {% if form.purchase_material.errors %}<div class="error">{{ form.purchase_material.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.color_spec.id_for_label }}">Color Spec</label>
+                    {{ form.color_spec }}
+                    {% if form.color_spec.errors %}<div class="error">{{ form.color_spec.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.application.id_for_label }}">Application</label>
+                    {{ form.application }}
+                    {% if form.application.errors %}<div class="error">{{ form.application.errors.0 }}</div>{% endif %}
+                </div>
+
+                <hr class="section-sep">
+
+                <!-- Dimensions -->
+                <div class="section-label">Dimensions &amp; Layout</div>
+
+                <div class="field">
+                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm)</label>
+                    {{ form.size_w_mm }}
+                    {% if form.size_w_mm.errors %}<div class="error">{{ form.size_w_mm.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm)</label>
+                    {{ form.size_h_mm }}
+                    {% if form.size_h_mm.errors %}<div class="error">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.ups.id_for_label }}">Ups</label>
+                    {{ form.ups }}
+                    {% if form.ups.errors %}<div class="error">{{ form.ups.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet Size</label>
+                    {{ form.print_sheet_size }}
+                    {% if form.print_sheet_size.errors %}<div class="error">{{ form.print_sheet_size.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field full-width">
+                    <label for="{{ form.purchase_sheet_size.id_for_label }}">Purchase Sheet Size</label>
+                    {{ form.purchase_sheet_size }}
+                    {% if form.purchase_sheet_size.errors %}<div class="error">{{ form.purchase_sheet_size.errors.0 }}</div>{% endif %}
+                </div>
+
+                <hr class="section-sep">
+
+                <!-- Routing -->
+                <div class="section-label">Routing &amp; Cost</div>
+
+                <div class="field">
+                    <label for="{{ form.machine_name.id_for_label }}">Machine Name</label>
+                    {{ form.machine_name }}
+                    {% if form.machine_name.errors %}<div class="error">{{ form.machine_name.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.department.id_for_label }}">Department</label>
+                    {{ form.department }}
+                    {% if form.department.errors %}<div class="error">{{ form.department.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.default_unit_cost.id_for_label }}">Default Unit Cost</label>
+                    {{ form.default_unit_cost }}
+                    {% if form.default_unit_cost.errors %}<div class="error">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
+                </div>
+
+                <hr class="section-sep">
+
+                <!-- Notes -->
+                <div class="field full-width">
+                    <label for="{{ form.notes.id_for_label }}">Notes</label>
+                    {{ form.notes }}
+                    {% if form.notes.errors %}<div class="error">{{ form.notes.errors.0 }}</div>{% endif %}
+                </div>
+
+            </div><!-- /form-grid -->
+
+            <div class="actions">
+                <button type="submit" class="btn">Save Recipe</button>
+                <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Cancel</a>
+            </div>
+        </form>
+    </section>
+
+</main>
+</body>
+</html>

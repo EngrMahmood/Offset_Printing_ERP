@@ -1,0 +1,82 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PO Intake Queue</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+        .btn { display:inline-block; padding:7px 11px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; }
+        .btn.secondary { background:#fff; color:#445366; }
+        .panel { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:10px; }
+        table { width:100%; border-collapse:collapse; font-size:12px; }
+        th, td { border-bottom:1px solid #e7eef5; padding:7px; text-align:left; }
+        th { background:#f6f9fc; }
+        .badge { display:inline-block; padding:3px 7px; border-radius:999px; font-size:10px; border:1px solid #d3deea; background:#f3f7fb; }
+        .badge.repeat { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; }
+        .badge.new { background:#fff1e5; border-color:#f3c79d; color:#8a3f00; }
+        .muted { color:#5f6f82; font-size:11px; }
+        .msg { padding:8px 10px; border-radius:6px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; margin-bottom:8px; font-size:12px; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div class="top">
+        <div>
+            <h1 style="margin:0;font-size:20px;">PO Intake Queue</h1>
+            <div class="muted">Uploaded POs are split into Repeat and New here, outside the upload phase.</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
+            <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO</a>
+            <a class="btn" href="{% url 'planning:approval_queue' %}">Approval Queue</a>
+        </div>
+    </div>
+
+    {% for msg in messages %}
+        <div class="msg">{{ msg }}</div>
+    {% endfor %}
+
+    <section class="panel">
+        <table>
+            <thead>
+                <tr>
+                    <th>PO</th>
+                    <th>Supplier</th>
+                    <th>Items</th>
+                    <th>Repeat</th>
+                    <th>New</th>
+                    <th>Pending Master</th>
+                    <th>Uploaded</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in rows %}
+                <tr>
+                    <td>{{ row.po_number }}</td>
+                    <td>{{ row.supplier }}</td>
+                    <td>{{ row.item_count }}</td>
+                    <td><span class="badge repeat">{{ row.repeat_count }}</span></td>
+                    <td><span class="badge new">{{ row.new_count }}</span></td>
+                    <td>{{ row.missing_count }}</td>
+                    <td class="muted">{{ row.doc.created_at|date:'d M Y H:i' }}</td>
+                    <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                        <a href="{% url 'planning:po_review' row.doc.id %}" class="btn secondary">Split / Check</a>
+                        {% if row.missing_count > 0 %}
+                        <a href="{% url 'planning:pending_skus' %}" class="btn secondary">Pending SKUs</a>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8">No uploaded PO documents yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>

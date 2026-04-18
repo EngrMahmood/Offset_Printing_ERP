@@ -1,0 +1,106 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pending SKUs | Planning</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+        .btn { display:inline-block; padding:7px 11px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
+        .btn.secondary { background:#fff; color:#445366; }
+        .panel { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:10px; }
+        .table-shell { overflow:auto; max-height:calc(100vh - 220px); border:1px solid #d6e0ea; border-radius:8px; }
+        table { width:100%; border-collapse:collapse; font-size:12px; min-width:1400px; }
+        th, td { border-bottom:1px solid #e7eef5; padding:7px; text-align:left; vertical-align:top; }
+        th { position:sticky; top:0; background:#f6f9fc; z-index:1; font-size:11px; text-transform:uppercase; }
+        input { width:100%; border:1px solid #bfd0e2; border-radius:5px; padding:5px 7px; font-size:12px; }
+        .muted { color:#5f6f82; font-size:11px; }
+        .badge { display:inline-block; padding:3px 7px; border-radius:999px; font-size:10px; border:1px solid #f1c58b; background:#fff4e6; color:#8a3f00; }
+        .msg { padding:8px 10px; border-radius:6px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; margin-bottom:8px; font-size:12px; }
+        .msg.warning { background:#fff7e8; border-color:#f0d79a; color:#7a5600; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div class="top">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Pending SKUs</h1>
+            <div class="muted">SKUs found in PO uploads but missing in SKU Recipe master data.</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
+            <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">SKU Recipe Master</a>
+        </div>
+    </div>
+
+    {% for msg in messages %}
+        <div class="msg {% if 'warning' in msg.tags %}warning{% endif %}">{{ msg }}</div>
+    {% endfor %}
+
+    <section class="panel">
+        <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+            <div><span class="badge">Pending: {{ pending_count }}</span></div>
+            <div class="muted">Save row-wise master data. Planning can continue for SKUs that already have master data.</div>
+        </div>
+
+        <div class="table-shell">
+            <table>
+                <thead>
+                    <tr>
+                        <th>PO</th>
+                        <th>SKU</th>
+                        <th>Suggested Job Name</th>
+                        <th>Qty</th>
+                        <th>Delivery</th>
+                        <th>Job Name</th>
+                        <th>Material</th>
+                        <th>Color</th>
+                        <th>Application</th>
+                        <th>Machine</th>
+                        <th>Department</th>
+                        <th>Print Sheet</th>
+                        <th>Purchase Material</th>
+                        <th>Unit Cost</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in pending_rows %}
+                    <tr>
+                        <form method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="sku" value="{{ row.sku }}">
+                            <input type="hidden" name="po_doc_id" value="{{ row.po_doc_id }}">
+                            <td>
+                                <div>{{ row.po_number }}</div>
+                                <div class="muted"><a href="{% url 'planning:po_review' row.po_doc_id %}">Open PO</a></div>
+                            </td>
+                            <td style="font-weight:700;color:#1f3048;">{{ row.sku }}</td>
+                            <td>{{ row.job_name|default:'-' }}</td>
+                            <td>{{ row.qty|default:'-' }}</td>
+                            <td>{{ row.delivery_date|default:'-' }}</td>
+                            <td><input type="text" name="job_name" value="{{ row.job_name|default:'' }}"></td>
+                            <td><input type="text" name="material"></td>
+                            <td><input type="text" name="color_spec"></td>
+                            <td><input type="text" name="application"></td>
+                            <td><input type="text" name="machine_name"></td>
+                            <td><input type="text" name="department"></td>
+                            <td><input type="text" name="print_sheet_size"></td>
+                            <td><input type="text" name="purchase_material"></td>
+                            <td><input type="text" name="default_unit_cost" placeholder="e.g. 12.50"></td>
+                            <td><button type="submit" class="btn">Save</button></td>
+                        </form>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="15">No pending SKUs. All uploaded PO SKUs have master data.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+</body>
+</html>
