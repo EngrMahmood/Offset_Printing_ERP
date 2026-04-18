@@ -20,6 +20,10 @@
 </head>
 <body>
 <main class="wrap page-container">
+    {% with current_step='planning' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
     <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <div>
             <h1 style="margin:0;font-size:20px;">Edit {{ job.jc_number }}</h1>

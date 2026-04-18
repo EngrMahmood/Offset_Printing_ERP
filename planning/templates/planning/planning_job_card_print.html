@@ -55,6 +55,13 @@
         NEW SKU ALERT: Shade matching and setup verification required before production run.
     </div>
     {% endif %}
+    {% if is_repeat_with_changes %}
+    <div style="border:2px solid #d97706;background:#fef3c7;color:#78350f;padding:8px 10px;margin-bottom:8px;font-weight:700;">
+        <div style="margin-bottom:4px;">⚠ CHANGES DETECTED IN REPEAT JOB</div>
+        <div style="font-size:10px;margin-bottom:4px;">Modified Fields: {% for field in changed_fields %}{{ field }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+        {% if last_edited_by %}<div style="font-size:10px;">Edited by {{ last_edited_by.username }} on {{ last_edited_at|date:'d M Y H:i' }}</div>{% endif %}
+    </div>
+    {% endif %}
     <table>
         <tr>
             <th>SKU</th><td>{{ job.sku|default:'-' }}</td>

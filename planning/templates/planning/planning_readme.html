@@ -1,0 +1,95 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning README - Offset ERP</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; color: #223; }
+        .container { max-width: 980px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; display: inline-block; }
+        .btn:hover { background: #2f5b73; }
+        .btn-green { background: #198754; }
+        .btn-green:hover { background: #136a42; }
+        h1 { margin: 0 0 8px; color: #1f2d3d; }
+        h2 { margin: 22px 0 8px; color: #355; font-size: 1.05rem; }
+        p, li { line-height: 1.6; }
+        code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
+        .meta { color: #667085; font-size: 13px; margin-bottom: 12px; }
+        .note { background: #fff8e1; border: 1px solid #f3de9a; color: #7a5d1a; padding: 10px 12px; border-radius: 8px; margin-top: 14px; }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+</head>
+<body>
+<div class="container">
+    <div class="top-actions">
+        <a href="{% url 'planning:home' %}" class="btn">Planning Home</a>
+        <a href="javascript:history.back()" class="btn">Back</a>
+        <a href="{% url 'planning:download_planning_readme' %}" class="btn btn-green">Download Guide</a>
+    </div>
+
+    <h1>Planning Module - Full Easy Guide</h1>
+    <div class="meta">Generated on: {{ generated_on|date:'Y-m-d H:i' }}</div>
+
+    <p>
+        This guide explains the planning workflow in simple language.
+        Follow the sequence exactly so repeat and new SKU jobs are routed correctly.
+    </p>
+
+    <h2>1. Master SKU (Step 1)</h2>
+    <ul>
+        <li>Create or bulk upload SKU master records.</li>
+        <li>Use workflow: Draft -> Reviewed -> Approved.</li>
+        <li>Only approved master records should be used downstream.</li>
+    </ul>
+
+    <h2>2. PO Intake (Step 2)</h2>
+    <ul>
+        <li>Upload PO PDF and review extracted lines in intake queue.</li>
+        <li>Repeat lines go directly to Planning Jobs.</li>
+        <li>New lines go to Pending SKU master completion first.</li>
+    </ul>
+
+    <h2>3. Pending New SKU (Step 3)</h2>
+    <ul>
+        <li>Complete missing master fields for new SKUs.</li>
+        <li>Job name is PO-derived; do not enter manually.</li>
+        <li>Application values allowed: UV, Lamination Gloss, Lamination Matt, NO.</li>
+        <li>Purchase Material Origin allowed: Local, Imported.</li>
+        <li>After approval, new SKU lines auto-sync to Planning Jobs.</li>
+    </ul>
+
+    <h2>4. Planning Jobs (Step 4)</h2>
+    <ul>
+        <li>Review, filter, edit, and manage planning jobs.</li>
+        <li>Use bulk status update only when appropriate.</li>
+        <li>Prepare jobs for QC and Production Manager approvals.</li>
+    </ul>
+
+    <h2>5. Approval Queue (Step 5)</h2>
+    <ul>
+        <li>Draft -> QC Approved -> Production Manager Approved.</li>
+        <li>Only approved jobs should be released to execution.</li>
+    </ul>
+
+    <h2>6. Job Card and Scan (Step 6)</h2>
+    <ul>
+        <li>Print A4 Job Card for shop floor.</li>
+        <li>Use QR scan to open and track jobs quickly.</li>
+    </ul>
+
+    <h2>7. Cost / Department Mismatch Alerts</h2>
+    <ul>
+        <li>Repeat jobs highlight cost mismatch against PO as COST ALERT.</li>
+        <li>Repeat jobs highlight department mismatch against PO as DEPARTMENT ALERT.</li>
+        <li>These alerts help planners review variances before production.</li>
+    </ul>
+
+    <div class="note">
+        Keep this planning guide updated whenever workflow rules, mandatory fields, or routing behavior changes.
+    </div>
+</div>
+</body>
+</html>

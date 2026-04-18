@@ -32,6 +32,10 @@
 </head>
 <body>
 <main class="wrap page-container">
+    {% with current_step='planning' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
         <div>
             <h1 style="margin:0;font-size:20px;">{{ job.jc_number }}</h1>
@@ -50,6 +54,22 @@
 
     {% if job.repeat_flag|lower == 'new' %}
     <div class="alert-new">NEW SKU ALERT: Shade matching and setup verification required before production run.</div>
+    {% endif %}
+
+    {% if is_repeat_with_changes %}
+    <div style="margin-top:10px; border:2px solid #d97706; background:#fef3c7; color:#78350f; border-radius:6px; padding:10px; font-weight:700;">
+        <div style="font-size:13px; margin-bottom:6px;">⚠ CHANGES DETECTED IN REPEAT JOB</div>
+        <div style="font-size:11px; margin-bottom:6px;">This repeat job has been modified from original. Production team must review changes before proceeding.</div>
+        <div style="font-size:11px; margin-bottom:6px;">
+            <strong>Modified Fields:</strong>
+            {% for field in changed_fields %}
+                <span style="display:inline-block; background:#fed7aa; padding:2px 6px; margin:2px 2px 2px 0; border-radius:3px;">{{ field }}</span>
+            {% endfor %}
+        </div>
+        {% if last_edited_by %}
+        <div style="font-size:10px; color:#92400e;">Edited by {{ last_edited_by.username }} on {{ last_edited_at|date:'d M Y H:i' }}</div>
+        {% endif %}
+    </div>
     {% endif %}
 
     {% if job.requirement %}

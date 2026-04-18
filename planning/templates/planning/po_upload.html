@@ -23,8 +23,12 @@
 </head>
 <body>
 <main class="wrap page-container">
+    {% with current_step='po' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
     <h1 style="margin:0 0 4px;font-size:20px;">Upload Purchase Order (PDF)</h1>
-    <p class="muted" style="margin-top:0;">System-generated PO PDFs from Utopia Industries are parsed automatically.</p>
+    <p class="muted" style="margin-top:0;">After upload, route Repeat vs New in PO Intake. New SKUs must pass Master approval before Planning sync.</p>
 
     {% for msg in messages %}
     <div class="alert alert-error">{{ msg }}</div>
@@ -53,7 +57,7 @@
             <li>All line items: SKU, Delivery Date, Quantity, Unit Cost, Net Total</li>
             <li>Variable number of SKUs (1 to 20+) — all detected automatically</li>
         </ul>
-        After extraction you can review each line and create planning jobs. Job Card numbers are auto-assigned.
+        After extraction, use PO Intake Queue to route repeat/new lines. Job Card numbers are auto-assigned.
     </div>
 </main>
 </body>

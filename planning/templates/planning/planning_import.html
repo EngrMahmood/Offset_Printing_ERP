@@ -17,6 +17,10 @@
 </head>
 <body>
 <main class="wrap page-container">
+    {% with current_step='planning' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
     <h1 style="margin:0 0 4px;font-size:20px;">Import Planning Sheet (CSV)</h1>
     <p class="muted" style="margin-top:0;">This importer supports repeated print and dispatch columns per job row.</p>
 

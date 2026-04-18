@@ -103,6 +103,49 @@ def _clean_location(text):
     return cleaned or None
 
 
+def _clean_party_name(text):
+    if not text:
+        return None
+    cleaned = str(text).strip().strip(':').strip()
+    # Stop when structured labels start bleeding into the captured name.
+    cleaned = re.split(
+        r'\b(?:NTN|STRN|Address|Phone|Contact|Email|SUPPLIER\s+DETAILS|BUYER\s+DETAILS|Delivery\s+Date|Description|GRAND\s+TOTAL)\b',
+        cleaned,
+        maxsplit=1,
+        flags=re.IGNORECASE,
+    )[0].strip()
+    return cleaned or None
+
+
+def _extract_party_name_from_section(text, section_label, end_markers):
+    start_match = re.search(section_label, text, flags=re.IGNORECASE)
+    if not start_match:
+        return None
+
+    start_idx = start_match.end()
+    end_idx = len(text)
+    tail = text[start_idx:]
+    for marker in end_markers:
+        marker_match = re.search(marker, tail, flags=re.IGNORECASE)
+        if marker_match:
+            end_idx = min(end_idx, start_idx + marker_match.start())
+
+    block = text[start_idx:end_idx]
+    if not block.strip():
+        return None
+
+    name_match = re.search(r'\bName\b\s*[:\-]?\s*([^\n]+)', block, flags=re.IGNORECASE)
+    if name_match:
+        return _clean_party_name(name_match.group(1))
+
+    # Fallback: use the first meaningful line in the section.
+    for line in (ln.strip() for ln in block.splitlines() if ln and ln.strip()):
+        candidate = _clean_party_name(line)
+        if candidate:
+            return candidate
+    return None
+
+
 def _looks_like_sku_token(value):
     if not value:
         return False
@@ -296,13 +339,40 @@ def _parse_po_text(text, table_blobs=None, table_rows=None):
     # ── Supplier / Buyer ───────────────────────────────────────────────────────
     supplier_name = None
     buyer_name = None
-    # Supplier block: "Name UTOPIA PRINTING & PACKAGING"  (appears before NTN/STRN)
-    m = re.search(r'SUPPLIER DETAILS.*?Name\s+([^\n]+)', text, re.DOTALL)
-    if m:
-        supplier_name = m.group(1).strip()
-    m = re.search(r'BUYER DETAILS.*?Name\s+([^\n]+)', text, re.DOTALL)
-    if m:
-        buyer_name = m.group(1).strip()
+
+    # Side-by-side layout in flattened PDF text:
+    # "SUPPLIER DETAILS BUYER DETAILS Name <supplier> Name <buyer> NTN..."
+    paired_name_match = re.search(
+        r'SUPPLIER\s+DETAILS\s+BUYER\s+DETAILS\s+Name\s+(.+?)\s+Name\s+(.+?)\s+(?:NTN|Contact\s+Person|Address|#\s*SKU)',
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    if paired_name_match:
+        supplier_name = _clean_party_name(paired_name_match.group(1))
+        buyer_name = _clean_party_name(paired_name_match.group(2))
+
+    if not supplier_name:
+        supplier_name = _extract_party_name_from_section(
+            text,
+            r'SUPPLIER\s+DETAILS',
+            [r'BUYER\s+DETAILS', r'GRAND\s+TOTAL', r'Delivery\s+Date', r'\n\s*#\s*\n'],
+        )
+    if not buyer_name:
+        buyer_name = _extract_party_name_from_section(
+            text,
+            r'BUYER\s+DETAILS',
+            [r'Delivery\s+Date', r'GRAND\s+TOTAL', r'\n\s*#\s*\n'],
+        )
+
+    # Last-resort narrow fallback if section parsing fails.
+    if not supplier_name:
+        m = re.search(r'SUPPLIER\s+DETAILS\s+Name\s+([^\n]+)', text, flags=re.IGNORECASE)
+        if m:
+            supplier_name = _clean_party_name(m.group(1))
+    if not buyer_name:
+        m = re.search(r'BUYER\s+DETAILS\s+Name\s+([^\n]+)', text, flags=re.IGNORECASE)
+        if m:
+            buyer_name = _clean_party_name(m.group(1))
 
     # ── Grand Total ────────────────────────────────────────────────────────────
     grand_total = None
@@ -318,8 +388,22 @@ def _parse_po_text(text, table_blobs=None, table_rows=None):
     expected_line_count = _detect_expected_line_count(text, table_rows)
 
     def _best_of(current, candidate):
-        """Return the list with more valid items."""
+        """Pick the better candidate, preferring count closest to expected # lines."""
+        if expected_line_count:
+            current_gap = abs(len(current) - expected_line_count)
+            candidate_gap = abs(len(candidate) - expected_line_count)
+            if candidate_gap < current_gap:
+                return candidate
+            if candidate_gap > current_gap:
+                return current
         return candidate if len(candidate) > len(current) else current
+
+    def _needs_fallback(current_items):
+        if not current_items:
+            return True
+        if expected_line_count:
+            return len(current_items) != expected_line_count
+        return False
 
     # Try table_rows first (most reliable for structured PDFs)
     items = []
@@ -327,15 +411,19 @@ def _parse_po_text(text, table_blobs=None, table_rows=None):
         items = _extract_items_from_table_rows(table_rows, sku_jobname_map)
     
     # Fallback to text-based parsers if table extraction insufficient
-    if not items or (expected_line_count and len(items) < expected_line_count):
+    if _needs_fallback(items):
         items = _best_of(items, _extract_items_strict(text, sku_jobname_map))
-    if not items or (expected_line_count and len(items) < expected_line_count):
+    if _needs_fallback(items):
         items = _best_of(items, _extract_items_flexible(text, sku_jobname_map))
-    if not items or (expected_line_count and len(items) < expected_line_count):
+    if _needs_fallback(items):
         if table_blobs:
             items = _best_of(items, _extract_items_from_table_blobs(table_blobs, sku_jobname_map))
-    if not items or (expected_line_count and len(items) < expected_line_count):
+    if _needs_fallback(items):
         items = _best_of(items, _extract_items_from_text_windows(text, sku_jobname_map))
+
+    if expected_line_count and len(items) > expected_line_count:
+        # Keep deterministic top rows only when parser over-detects noisy lines.
+        items = items[:expected_line_count]
 
     if not items:
         raise ValueError(
@@ -360,6 +448,11 @@ def _parse_po_text(text, table_blobs=None, table_rows=None):
             f"PDF has {expected_line_count} line item(s) in # column, "
             f"but only {len(items)} could be parsed. "
             f"Please review the items below and add any missing ones manually."
+        )
+    elif expected_line_count and len(items) > expected_line_count:
+        extraction_warning = (
+            f"PDF has {expected_line_count} line item(s) in # column. "
+            f"Extra noisy row(s) were ignored and only {expected_line_count} item(s) were kept."
         )
 
     return {

@@ -74,6 +74,8 @@ class PlanningJob(models.Model):
 
     issued_to_production = models.BooleanField(default=False)
     job_card_version = models.PositiveIntegerField(default=1)
+    has_edits_since_creation = models.BooleanField(default=False)
+    edited_fields_list = models.JSONField(default=list, blank=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
@@ -84,6 +86,14 @@ class PlanningJob(models.Model):
     )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    last_edited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planning_jobs_edited',
+    )
+    last_edited_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-plan_date', '-id']
@@ -147,6 +157,12 @@ class PoDocument(models.Model):
 
 
 class SkuRecipe(models.Model):
+    MASTER_DATA_STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('reviewed', 'Reviewed'),
+        ('approved', 'Approved'),
+    ]
+
     sku = models.CharField(max_length=255, unique=True)
     job_name = models.CharField(max_length=255, blank=True)
 
@@ -160,12 +176,38 @@ class SkuRecipe(models.Model):
 
     print_sheet_size = models.CharField(max_length=80, blank=True)
     purchase_sheet_size = models.CharField(max_length=80, blank=True)
+    purchase_sheet_ups = models.PositiveIntegerField(null=True, blank=True)
     purchase_material = models.CharField(max_length=120, blank=True)
 
     machine_name = models.CharField(max_length=120, blank=True)
     department = models.CharField(max_length=120, blank=True)
     default_unit_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    daily_demand = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    awc_no = models.CharField(max_length=120, blank=True)
+    plate_set_no = models.CharField(max_length=120, blank=True)
+    die_cutting = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
+    master_data_status = models.CharField(
+        max_length=20,
+        choices=MASTER_DATA_STATUS_CHOICES,
+        default='approved',
+    )
+    reviewed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sku_recipes_reviewed',
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sku_recipes_approved',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

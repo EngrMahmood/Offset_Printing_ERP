@@ -1,0 +1,61 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Upload SKU Recipes</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 980px; margin: 0 auto; }
+        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 14px; }
+        .btn { display: inline-block; padding: 7px 11px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .muted { color: #5f6f82; font-size: 12px; }
+        .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 12px; border: 1px solid #c8d7e7; background: #f5f9ff; color: #2e3f53; }
+        .msg.error { background: #fff5f5; border-color: #f5c6c6; color: #7a1a1a; }
+        .guide { background: #f7fbff; border: 1px dashed #b8cce2; border-radius: 8px; padding: 10px; margin-top: 12px; }
+        .mono { font-family: Consolas, monospace; font-size: 12px; background: #f4f7fb; padding: 8px; border-radius: 6px; border: 1px solid #dbe5f0; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+
+    {% with current_step='master' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Bulk Upload SKU Recipes</h1>
+            <div class="muted">Upload master SKU data in bulk. All rows are saved as Draft and must be approved before PO sync to planning.</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Back to SKU Master</a>
+        </div>
+    </div>
+
+    {% for msg in messages %}
+        <div class="msg {% if 'error' in msg.tags %}error{% endif %}">{{ msg }}</div>
+    {% endfor %}
+
+    <section class="panel">
+        <form method="post" enctype="multipart/form-data" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+            {% csrf_token %}
+            <input type="file" name="upload_file" accept=".csv,.xlsx" required>
+            <button class="btn" type="submit">Upload</button>
+        </form>
+
+        <div class="guide">
+            <div style="font-weight:600;margin-bottom:6px;">Accepted columns (header names)</div>
+            <div class="mono">sku, job_name, material, color_spec, application, size_w_mm, size_h_mm, ups, print_sheet_size, purchase_sheet_size, purchase_sheet_ups, purchase_material, machine_name, department, default_unit_cost, daily_demand, awc_no, plate_set_no, die_cutting, notes</div>
+            <div class="muted" style="margin-top:8px;">
+                You can also use friendly headers like Job Name, Color, Unit Cost, Department, Machine.
+                For Application use exact values: UV, Lamination Gloss, Lamination Matt, NO.
+                For Purchase Material Origin use: Local or Imported.
+            </div>
+        </div>
+    </section>
+</main>
+</body>
+</html>

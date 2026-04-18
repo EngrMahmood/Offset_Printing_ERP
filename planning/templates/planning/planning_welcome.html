@@ -7,30 +7,63 @@
     <title>Planning Workspace</title>
     <style>
         :root {
-            --bg: #edf2f7;
+            --bg: #f1f3f6;
             --surface: #ffffff;
-            --text: #223246;
-            --muted: #5f6f84;
-            --line: #d6e0ea;
-            --primary: #32465d;
-            --accent: #5f6f82;
-            --primary-soft: #eef3f8;
-            --shadow: 0 4px 12px rgba(22, 37, 57, 0.08);
+            --text: #1f2d3a;
+            --muted: #5d6a79;
+            --line: #d5dbe3;
+            --topbar: #1c2b3f;
+            --tab: #e9edf2;
+            --tab-active: #ffffff;
+            --tab-border: #c8d0da;
+            --accent: #1f4f8a;
+            --ok: #0f6d4d;
+            --warn: #8a5a00;
+            --danger: #8a2a3b;
+            --shadow: 0 6px 18px rgba(17, 31, 49, 0.08);
         }
 
         * { box-sizing: border-box; }
 
         body {
             margin: 0;
-            font-family: "Segoe UI", "Tahoma", sans-serif;
+            font-family: "Segoe UI", Tahoma, sans-serif;
             background: var(--bg);
             color: var(--text);
         }
 
-        .page {
-            max-width: 100%;
+        .top-nav {
+            background: var(--topbar);
+            color: #dfe7f1;
+            border-bottom: 1px solid #162336;
+            padding: 10px 14px;
+        }
+
+        .top-nav-wrap {
+            max-width: 1440px;
             margin: 0 auto;
-            padding: 20px 14px 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .module-title {
+            font-size: 15px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .module-subtitle {
+            font-size: 12px;
+            color: #aebacc;
+        }
+
+        .page {
+            max-width: 1440px;
+            margin: 0 auto;
+            padding: 14px;
         }
 
         .utility-bar {
@@ -40,180 +73,232 @@
             margin-bottom: 12px;
         }
 
-        .header {
+        .hero {
             background: var(--surface);
             border: 1px solid var(--line);
-            border-radius: 12px;
+            border-radius: 10px;
             box-shadow: var(--shadow);
-            overflow: hidden;
+            padding: 14px;
             margin-bottom: 14px;
         }
 
-        .header-grid {
+        .hero-grid {
             display: grid;
-            grid-template-columns: 1.2fr 1fr;
+            grid-template-columns: 2fr 1fr;
+            gap: 12px;
+            align-items: stretch;
         }
 
-        .header-copy {
-            padding: 22px;
-        }
-
-        .brand-row {
+        .hero-title-row {
             display: flex;
             align-items: center;
-            gap: 10px;
+            gap: 8px;
+            margin-bottom: 6px;
+        }
+
+        .chip {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 999px;
+            font-size: 11px;
+            border: 1px solid var(--tab-border);
+            background: #f6f8fb;
+            color: #3a4d63;
+        }
+
+        .chip.ok { background: #e9f8f1; border-color: #b8e4cf; color: #0d5d43; }
+        .chip.warn { background: #fff3dc; border-color: #f0d5a1; color: #805206; }
+
+        h1 {
+            margin: 0;
+            font-size: 28px;
+            line-height: 1.2;
+            color: #172434;
+        }
+
+        .hero p {
+            margin: 8px 0 0;
+            color: var(--muted);
+            max-width: 70ch;
+        }
+
+        .hero-panel {
+            border: 1px solid var(--line);
+            border-radius: 8px;
+            background: #f7fafc;
+            padding: 10px;
+        }
+
+        .hero-panel h3 {
+            margin: 0 0 6px;
+            font-size: 14px;
+        }
+
+        .hero-panel ul {
+            margin: 0;
+            padding-left: 16px;
+            color: #39506a;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+
+        .workflow-shell {
+            background: var(--surface);
+            border: 1px solid var(--line);
+            border-radius: 10px;
+            box-shadow: var(--shadow);
+        }
+
+        .phase-tabs {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            padding: 8px;
+            border-bottom: 1px solid var(--line);
+            background: #f5f7fa;
+            border-top-left-radius: 10px;
+            border-top-right-radius: 10px;
+        }
+
+        .phase-tab {
+            border: 1px solid var(--tab-border);
+            background: var(--tab);
+            color: #2f435a;
+            border-radius: 7px;
+            padding: 8px 10px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+
+        .phase-tab.active {
+            background: var(--tab-active);
+            border-color: #7a94b4;
+            color: #15385e;
+        }
+
+        .phase-panel {
+            display: none;
+            padding: 14px;
+        }
+
+        .phase-panel.active { display: block; }
+
+        .phase-head {
             margin-bottom: 12px;
         }
 
-        .brand-logo {
-            width: 42px;
-            height: 42px;
-            border-radius: 10px;
-            border: 1px solid #d9cccc;
-            object-fit: contain;
-            background: #ffffff;
-            padding: 4px;
+        .phase-head h2 {
+            margin: 0 0 4px;
+            font-size: 19px;
+            color: #1a2f46;
         }
 
-        .eyebrow {
+        .phase-head p {
+            margin: 0;
+            color: var(--muted);
+            font-size: 13px;
+        }
+
+        .step-strip {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 7px;
+            margin-bottom: 12px;
+        }
+
+        .step-pill {
+            border: 1px solid #cfd8e2;
+            background: #f7f9fc;
+            border-radius: 999px;
+            padding: 4px 10px;
+            font-size: 11px;
+            color: #3a4c62;
+        }
+
+        .cards {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+            gap: 10px;
+        }
+
+        .tool-card {
+            background: #ffffff;
+            border: 1px solid var(--line);
+            border-left: 4px solid #9bb1ca;
+            border-radius: 8px;
+            padding: 11px;
+        }
+
+        .tool-card h3 {
+            margin: 0 0 5px;
+            font-size: 15px;
+            color: #20364e;
+        }
+
+        .tool-card p {
+            margin: 0 0 9px;
+            font-size: 12px;
+            color: var(--muted);
+            line-height: 1.45;
+        }
+
+        .card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        .role-tag {
+            font-size: 11px;
+            border: 1px solid #d4dce6;
+            background: #f5f8fb;
+            color: #46607b;
+            border-radius: 999px;
+            padding: 3px 8px;
+        }
+
+        .go-btn {
+            text-decoration: none;
+            border: 1px solid #2d5f9b;
+            background: #2d5f9b;
+            color: #ffffff;
+            border-radius: 6px;
+            padding: 5px 9px;
             font-size: 11px;
             font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--primary);
         }
 
-        h1 {
-            font-size: clamp(1.45rem, 2.5vw, 2rem);
-            margin: 0 0 6px;
-            font-weight: 700;
-            line-height: 1.2;
-        }
+        .go-btn:hover { background: #234f82; }
 
-        .header-copy p {
-            margin: 0;
-            color: var(--muted);
+        .tool-card.po { border-left-color: #2966ab; }
+        .tool-card.master { border-left-color: #9a6b00; }
+        .tool-card.plan { border-left-color: #2c7a4b; }
+        .tool-card.approval { border-left-color: #7a2d5a; }
+        .tool-card.shop { border-left-color: #55667c; }
+
+        .access-locked {
+            border: 1px solid #f0d8a8;
+            background: #fff7e8;
+            color: #7a5310;
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+            font-size: 13px;
             line-height: 1.5;
-            max-width: 54ch;
-            font-size: 0.95rem;
         }
-
-        .header-image {
-            min-height: 200px;
-            background: linear-gradient(135deg, #2c3e55 0%, #4a6080 50%, #6b8299 100%);
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            overflow: hidden;
-        }
-
-        .header-image-inner {
-            text-align: center;
-            color: rgba(255,255,255,0.88);
-            padding: 16px;
-            position: relative;
-            z-index: 1;
-        }
-
-        .header-image-inner .big-icon {
-            font-size: 3rem;
-            line-height: 1;
-            margin-bottom: 6px;
-        }
-
-        .header-image-inner .caption {
-            font-size: 0.78rem;
-            letter-spacing: 0.06em;
-            text-transform: uppercase;
-            font-weight: 600;
-        }
-
-        .header-image::before {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: repeating-linear-gradient(
-                45deg,
-                rgba(255,255,255,0.03) 0px,
-                rgba(255,255,255,0.03) 1px,
-                transparent 1px,
-                transparent 14px
-            );
-        }
-
-        .section-title {
-            margin: 0 0 6px;
-            font-size: 1.02rem;
-            font-weight: 700;
-            color: var(--primary);
-        }
-
-        .section-subtitle {
-            margin: 0 0 12px;
-            color: var(--muted);
-            font-size: 0.88rem;
-        }
-
-        .nav-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-            gap: 10px;
-            margin-bottom: 18px;
-        }
-
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-left: 3px solid #b8c7d8;
-            border-radius: 9px;
-            padding: 13px;
-            text-decoration: none;
-            color: inherit;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-            transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-            display: block;
-        }
-
-        .card:hover {
-            border-left-color: var(--accent);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 18px rgba(52, 73, 102, 0.12);
-        }
-
-        .card h3 {
-            margin: 0 0 4px;
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: var(--primary);
-        }
-
-        .card p {
-            margin: 0;
-            font-size: 0.84rem;
-            color: var(--muted);
-            line-height: 1.4;
-        }
-
-        .card .card-icon {
-            font-size: 1.3rem;
-            margin-bottom: 6px;
-            display: block;
-        }
-
-        .card.accent-green { border-left-color: #6abf8a; }
-        .card.accent-blue  { border-left-color: #6a9fd8; }
-        .card.accent-amber { border-left-color: #d4a843; }
-        .card.accent-slate { border-left-color: #8fa8be; }
 
         .footer-note {
-            margin-top: 16px;
+            margin-top: 14px;
             padding: 10px;
             border-radius: 8px;
-            background: var(--primary-soft);
-            color: #42566e;
-            font-size: 0.83rem;
-            border: 1px solid #cedbe8;
+            background: #e9eef5;
+            color: #3d556d;
+            font-size: 12px;
+            border: 1px solid #cfd9e5;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -222,137 +307,286 @@
         }
 
         .footer-note a {
-            color: var(--primary);
+            color: #1d416b;
             font-weight: 600;
             text-decoration: none;
         }
 
         .footer-note a:hover { text-decoration: underline; }
 
-        @media (max-width: 860px) {
+        @media (max-width: 980px) {
             .utility-bar { justify-content: center; }
-            .header-grid { grid-template-columns: 1fr; }
-            .header-image { min-height: 140px; }
+            .hero-grid { grid-template-columns: 1fr; }
+            .top-nav-wrap { justify-content: center; }
         }
     </style>
     <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
-<main class="page">
+<header class="top-nav">
+    <div class="top-nav-wrap">
+        <div>
+            <div class="module-title">Planning And Scheduling Module</div>
+            <div class="module-subtitle">Clear sequence workflow by role and stage</div>
+        </div>
+        <div class="chip">Role: {{ user_role|default:'unassigned'|upper }}</div>
+    </div>
+</header>
 
+<main class="page">
     <div class="utility-bar">
         {% include 'includes/user_identity_chip.html' %}
     </div>
 
-    <!-- Header banner -->
-    <section class="header">
-        <div class="header-grid">
-            <div class="header-copy">
-                <div class="brand-row">
-                    <img
-                        class="brand-logo"
-                        src="{% static 'core/image/logo.jpg' %}"
-                        alt="Company logo"
-                        onerror="this.style.display='none';"
-                    >
-                    <div class="eyebrow">Offset Printing ERP</div>
+    {% with current_step='start' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
+    <section class="hero">
+        <div class="hero-grid">
+            <div>
+                <div class="hero-title-row">
+                    <span class="chip ok">Process Driven</span>
+                    <span class="chip">Sequence View</span>
                 </div>
                 <h1>Planning Workspace</h1>
                 <p>
-                    Manage PO uploads, planning sheets, job scheduling, dispatch tracking,
-                    and SKU recipes — all from one place.
+                    Follow the steps from left to right. Start at Step 1 and continue until job card release.
+                    Each section is grouped by workflow stage to avoid confusion.
                 </p>
             </div>
-            <div class="header-image">
-                <div class="header-image-inner">
-                    <div class="big-icon">📋</div>
-                    <div class="caption">Planning &amp; Scheduling</div>
-                </div>
+            <div class="hero-panel">
+                <h3>How To Use This Screen</h3>
+                <ul>
+                    <li>Step 1: Maintain Master SKU data (manual or bulk) and approve.</li>
+                    <li>Step 2: Upload PO and route Repeat vs New.</li>
+                    <li>Step 3: New SKUs complete pending master approval.</li>
+                    <li>Step 4: Create/update Planning jobs.</li>
+                    <li>Step 5: Planning approval, card print, and shop floor scan.</li>
+                </ul>
             </div>
         </div>
     </section>
 
-    <!-- PO Management -->
-    <section>
-        <h2 class="section-title">Purchase Order Management</h2>
-        <p class="section-subtitle">Upload PO PDFs, send to intake queue, split repeat/new, and forward for approvals.</p>
-        <div class="nav-grid">
-            <a href="{% url 'planning:upload_po' %}" class="card accent-blue">
-                <span class="card-icon">📤</span>
-                <h3>Upload PO PDF</h3>
-                <p>Upload a customer PO PDF. It lands in PO Intake Queue for next-phase processing.</p>
-            </a>
-            <a href="{% url 'planning:po_inbox' %}" class="card accent-blue">
-                <span class="card-icon">📥</span>
-                <h3>PO Intake Queue</h3>
-                <p>Split uploaded PO into Repeat/New, check data, and push to approval workflow.</p>
-            </a>
-            <a href="{% url 'planning:po_debug' %}" class="card accent-slate">
-                <span class="card-icon">🔍</span>
-                <h3>PO Debug / Test Extract</h3>
-                <p>Test PDF extraction on any PO file and inspect parser output before committing to the system.</p>
-            </a>
+    {% if can_edit_jobcard %}
+    <section class="workflow-shell">
+        <div class="phase-tabs" role="tablist" aria-label="Planning workflow stages">
+            <button class="phase-tab active" data-phase="start" type="button">Start Here</button>
+            <button class="phase-tab" data-phase="master" type="button">Step 1 - Master SKU</button>
+            <button class="phase-tab" data-phase="po" type="button">Step 2 - PO Intake</button>
+            <button class="phase-tab" data-phase="planning" type="button">Step 3 - Planning Jobs</button>
+            <button class="phase-tab" data-phase="approval" type="button">Step 4 - Approval Flow</button>
+            <button class="phase-tab" data-phase="shop" type="button">Step 5 - Job Card And Scan</button>
         </div>
-    </section>
 
-    <!-- Planning Jobs -->
-    <section>
-        <h2 class="section-title">Planning Jobs</h2>
-        <p class="section-subtitle">Import planning sheets, browse all jobs, and run QC/Production Manager approvals.</p>
-        <div class="nav-grid">
-            <a href="{% url 'planning:jobs' %}" class="card accent-green">
-                <span class="card-icon">📊</span>
-                <h3>Planning Jobs List</h3>
-                <p>Browse all planning jobs, filter by status, machine, or department, and bulk-update job status.</p>
-            </a>
-            <a href="{% url 'planning:approval_queue' %}" class="card accent-green">
-                <span class="card-icon">✅</span>
-                <h3>Approval Queue</h3>
-                <p>Forward draft jobs to QC, then QC-approved jobs to Production Manager approval.</p>
-            </a>
-            <a href="{% url 'planning:import_sheet' %}" class="card accent-green">
-                <span class="card-icon">📥</span>
-                <h3>Import Planning Sheet</h3>
-                <p>Upload a CSV planning sheet to create or update jobs in bulk from the master plan.</p>
-            </a>
-            <a href="{% url 'planning:report' %}" class="card accent-amber">
-                <span class="card-icon">📈</span>
-                <h3>Planning Report</h3>
-                <p>View summary report of all planning jobs grouped by machine, department, or status.</p>
-            </a>
-        </div>
-    </section>
+        <section class="phase-panel active" data-phase="start">
+            <div class="phase-head">
+                <h2>Start Point And Overall Sequence</h2>
+                <p>Use this route for each PO with strict master-first governance for new SKU data.</p>
+            </div>
+            <div class="step-strip">
+                <span class="step-pill">1. Master SKU setup and approval</span>
+                <span class="step-pill">2. Upload PO and split Repeat/New</span>
+                <span class="step-pill">3. New SKU pending approval</span>
+                <span class="step-pill">4. Generate or update planning jobs</span>
+                <span class="step-pill">5. QC and PM approval</span>
+                <span class="step-pill">6. Print card and execute</span>
+            </div>
+            <div class="cards">
+                <article class="tool-card master">
+                    <h3>Go To Master SKU</h3>
+                    <p>Create or bulk-upload SKU master data, then move Draft -> Reviewed -> Approved.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Planner / Manager / Admin</span>
+                        <a class="go-btn" href="{% url 'planning:sku_recipes' %}">Open Step 1</a>
+                    </div>
+                </article>
+                <article class="tool-card po">
+                    <h3>Go To PO Intake</h3>
+                    <p>Upload PO and route Repeat directly to Planning and New to pending master data.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Planner / Manager / Admin</span>
+                        <a class="go-btn" href="{% url 'planning:po_inbox' %}">Open Step 2</a>
+                    </div>
+                </article>
+                <article class="tool-card plan">
+                    <h3>Go To Planning Jobs</h3>
+                    <p>Create and manage planning jobs after approved SKU master data and PO routing are complete.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Planner / Manager / Admin</span>
+                        <a class="go-btn" href="{% url 'planning:jobs' %}">Open Step 3</a>
+                    </div>
+                </article>
+                <article class="tool-card approval">
+                    <h3>Go To Approval Queue</h3>
+                    <p>Move jobs from draft to reviewed, then approved for production release.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Planner / Manager / Admin</span>
+                        <a class="go-btn" href="{% url 'planning:approval_queue' %}">Open Step 4</a>
+                    </div>
+                </article>
+                <article class="tool-card shop">
+                    <h3>Planning README / Guide</h3>
+                    <p>Open the complete planning process guide and download a text copy for team training.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Reference Guide</span>
+                        <a class="go-btn" href="{% url 'planning:planning_readme' %}">Open Guide</a>
+                    </div>
+                </article>
+            </div>
+        </section>
 
-    <!-- Master Data -->
-    <section>
-        <h2 class="section-title">Master Data</h2>
-        <p class="section-subtitle">Manage SKU recipes used to auto-fill planning job details when importing POs.</p>
-        <div class="nav-grid">
-            <a href="{% url 'planning:sku_recipes' %}" class="card accent-amber">
-                <span class="card-icon">🗂️</span>
-                <h3>SKU Recipe Master</h3>
-                <p>View, add, and edit SKU recipes — the template data applied when creating jobs from PO line items.</p>
-            </a>
-            <a href="{% url 'planning:pending_skus' %}" class="card accent-amber">
-                <span class="card-icon">⏳</span>
-                <h3>Pending SKUs</h3>
-                <p>See SKUs pending master data and fill required recipe details without blocking other planning jobs.</p>
-            </a>
-        </div>
-    </section>
+        <section class="phase-panel" data-phase="po">
+            <div class="phase-head">
+                <h2>Step 2 - Purchase Order Intake</h2>
+                <p>Collect incoming PO data and classify SKU lines as Repeat or New.</p>
+            </div>
+            <div class="cards">
+                <article class="tool-card po">
+                    <h3>Upload PO PDF</h3>
+                    <p>Upload customer PO PDF and send it to the intake queue for extraction review.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Intake Start</span>
+                        <a class="go-btn" href="{% url 'planning:upload_po' %}">Open</a>
+                    </div>
+                </article>
+                <article class="tool-card po">
+                    <h3>PO Intake Queue</h3>
+                    <p>Review parsed items, check repeat/new split, then continue to next workflow step.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Mandatory Review</span>
+                        <a class="go-btn" href="{% url 'planning:po_inbox' %}">Open</a>
+                    </div>
+                </article>
+                <article class="tool-card shop">
+                    <h3>PO Debug Extract</h3>
+                    <p>Use only when parser output needs troubleshooting before final intake.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Optional Utility</span>
+                        <a class="go-btn" href="{% url 'planning:po_debug' %}">Open</a>
+                    </div>
+                </article>
+            </div>
+        </section>
 
-    <!-- Utilities -->
-    <section>
-        <h2 class="section-title">Tools &amp; Utilities</h2>
-        <p class="section-subtitle">Quick access to scanning and shop-floor tools.</p>
-        <div class="nav-grid">
-            <a href="{% url 'planning:scan' %}" class="card accent-slate">
-                <span class="card-icon">📷</span>
-                <h3>QR Code Scanner</h3>
-                <p>Scan a job card QR code to jump directly to a planning job from the shop floor.</p>
-            </a>
+        <section class="phase-panel" data-phase="master">
+            <div class="phase-head">
+                <h2>Step 1 - Master SKU Governance</h2>
+                <p>Create/edit in draft, review, and approve master data. New SKUs from PO cannot bypass this step.</p>
+            </div>
+            <div class="cards">
+                <article class="tool-card master">
+                    <h3>Pending SKUs</h3>
+                    <p>Fill missing recipe details and move SKU data through draft, reviewed, approved stages.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Primary Screen</span>
+                        <a class="go-btn" href="{% url 'planning:pending_skus' %}">Open</a>
+                    </div>
+                </article>
+                <article class="tool-card master">
+                    <h3>SKU Recipe Master</h3>
+                    <p>View or maintain approved recipes used to auto-populate repeat planning jobs.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">{% if can_manage_masters %}Manager/Admin{% else %}Planner Access{% endif %}</span>
+                        <a class="go-btn" href="{% url 'planning:sku_recipes' %}">Open</a>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="phase-panel" data-phase="planning">
+            <div class="phase-head">
+                <h2>Step 3 - Planning Job Creation And Control</h2>
+                <p>Create jobs from approved data, validate details, and prepare for approval routing.</p>
+            </div>
+            <div class="cards">
+                <article class="tool-card plan">
+                    <h3>Planning Jobs List</h3>
+                    <p>Main operational screen for filtering, editing, and status handling of planning jobs.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Daily Operations</span>
+                        <a class="go-btn" href="{% url 'planning:jobs' %}">Open</a>
+                    </div>
+                </article>
+                <article class="tool-card plan">
+                    <h3>Import Planning Sheet</h3>
+                    <p>Bulk create or update jobs from CSV planning sheet with mapped columns.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Bulk Mode</span>
+                        <a class="go-btn" href="{% url 'planning:import_sheet' %}">Open</a>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <section class="phase-panel" data-phase="approval">
+            <div class="phase-head">
+                <h2>Step 4 - Approval And Release</h2>
+                <p>Move records from Draft to QC approved and finally Production Manager approved.</p>
+            </div>
+            <div class="cards">
+                <article class="tool-card approval">
+                    <h3>Approval Queue</h3>
+                    <p>Single checkpoint for review transitions and final release authorization.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">QC / Production Review</span>
+                        <a class="go-btn" href="{% url 'planning:approval_queue' %}">Open</a>
+                    </div>
+                </article>
+                {% if can_view_reports %}
+                <article class="tool-card approval">
+                    <h3>Planning Report</h3>
+                    <p>Summary visibility by machine, department, and status for management tracking.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Report Access</span>
+                        <a class="go-btn" href="{% url 'planning:report' %}">Open</a>
+                    </div>
+                </article>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="phase-panel" data-phase="shop">
+            <div class="phase-head">
+                <h2>Step 5 - Job Card Execution And Traceability</h2>
+                <p>Use QR scan and printable card at shop floor to continue execution without confusion.</p>
+            </div>
+            <div class="cards">
+                <article class="tool-card shop">
+                    <h3>QR Code Scanner</h3>
+                    <p>Open a planning card directly by scanning printed job card QR code from shop floor.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Production Support</span>
+                        <a class="go-btn" href="{% url 'planning:scan' %}">Open</a>
+                    </div>
+                </article>
+                {% if can_view_reports %}
+                <article class="tool-card shop">
+                    <h3>Operational Report</h3>
+                    <p>Track completion progress and pending queue after card execution starts.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Monitoring</span>
+                        <a class="go-btn" href="{% url 'planning:report' %}">Open</a>
+                    </div>
+                </article>
+                {% endif %}
+            </div>
+        </section>
+    </section>
+    {% else %}
+    <section class="workflow-shell">
+        <div class="phase-panel active">
+            <div class="phase-head">
+                <h2>Planning Workflow Access Required</h2>
+                <p>This module is role-protected to keep planning actions secure and sequence controlled.</p>
+            </div>
+            <div class="access-locked">
+                Your current role does not have planning edit permission. Ask admin to assign Planner,
+                Manager, or Admin role for full workflow access.
+            </div>
         </div>
     </section>
+    {% endif %}
 
     <div class="footer-note">
         <span>Planning Workspace — part of Offset Printing ERP</span>
@@ -360,5 +594,30 @@
     </div>
 
 </main>
+
+<script>
+    (function () {
+        const tabs = Array.from(document.querySelectorAll('.phase-tab'));
+        const panels = Array.from(document.querySelectorAll('.phase-panel'));
+        if (!tabs.length || !panels.length) {
+            return;
+        }
+
+        function activatePhase(phaseId) {
+            tabs.forEach((tab) => {
+                tab.classList.toggle('active', tab.dataset.phase === phaseId);
+            });
+            panels.forEach((panel) => {
+                panel.classList.toggle('active', panel.dataset.phase === phaseId);
+            });
+        }
+
+        tabs.forEach((tab) => {
+            tab.addEventListener('click', function () {
+                activatePhase(this.dataset.phase);
+            });
+        });
+    })();
+</script>
 </body>
 </html>

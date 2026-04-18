@@ -12,23 +12,42 @@
         .btn { display:inline-block; padding:7px 11px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
         .btn.secondary { background:#fff; color:#445366; }
         .panel { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:10px; }
-        .table-shell { overflow:auto; max-height:calc(100vh - 220px); border:1px solid #d6e0ea; border-radius:8px; }
-        table { width:100%; border-collapse:collapse; font-size:12px; min-width:1400px; }
+        .table-shell { overflow:auto; max-height:calc(100vh - 230px); border:1px solid #d6e0ea; border-radius:8px; }
+        table { width:100%; border-collapse:collapse; font-size:12px; min-width:980px; }
         th, td { border-bottom:1px solid #e7eef5; padding:7px; text-align:left; vertical-align:top; }
         th { position:sticky; top:0; background:#f6f9fc; z-index:1; font-size:11px; text-transform:uppercase; }
-        input { width:100%; border:1px solid #bfd0e2; border-radius:5px; padding:5px 7px; font-size:12px; }
         .muted { color:#5f6f82; font-size:11px; }
         .badge { display:inline-block; padding:3px 7px; border-radius:999px; font-size:10px; border:1px solid #f1c58b; background:#fff4e6; color:#8a3f00; }
+        .route-band { margin-bottom:10px; padding:10px; border-radius:10px; border:1px solid #d8e4f1; background:#f5f9ff; display:grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap:8px; }
+        .route-step { border:1px solid #cbdaea; border-radius:8px; background:#fff; padding:8px; }
+        .route-step .k { font-size:10px; text-transform:uppercase; color:#58718b; font-weight:700; }
+        .route-step .v { font-size:12px; color:#223d59; font-weight:700; margin-top:2px; }
+        .status { display:inline-block; padding:3px 8px; border-radius:999px; font-size:10px; border:1px solid #d3deea; background:#f3f7fb; text-transform:uppercase; }
+        .status.draft { background:#fff4e6; border-color:#f1c58b; color:#8a3f00; }
+        .status.reviewed { background:#fffbe8; border-color:#eed789; color:#6b4c00; }
+        .status.approved { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; }
         .msg { padding:8px 10px; border-radius:6px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; margin-bottom:8px; font-size:12px; }
         .msg.warning { background:#fff7e8; border-color:#f0d79a; color:#7a5600; }
+        .filters { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 10px; }
+        .filters select, .filters input { border:1px solid #bfd0e2; border-radius:6px; padding:6px 8px; font-size:12px; min-width:180px; }
+        .po-chip-wrap { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px; }
+        .po-chip { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid #d3deea; background:#f3f7fb; color:#1f3048; font-size:11px; text-decoration:none; }
+        .po-chip.active { background:#445366; border-color:#445366; color:#fff; }
+        @media (max-width: 860px) {
+            .route-band { grid-template-columns: 1fr; }
+        }
     </style>
 </head>
 <body>
 <main class="wrap page-container">
+    {% with current_step='master' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
     <div class="top">
         <div>
             <h1 style="margin:0;font-size:20px;">Pending SKUs</h1>
-            <div class="muted">SKUs found in PO uploads but missing in SKU Recipe master data.</div>
+            <div class="muted">New SKUs from PO intake that must complete Master Data and Approval before entering Planning.</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
@@ -41,9 +60,42 @@
     {% endfor %}
 
     <section class="panel">
+        <div class="route-band">
+            <div class="route-step">
+                <div class="k">Step A</div>
+                <div class="v">Open Master Form</div>
+            </div>
+            <div class="route-step">
+                <div class="k">Step B</div>
+                <div class="v">Send For Review / Approval</div>
+            </div>
+            <div class="route-step">
+                <div class="k">Step C</div>
+                <div class="v">Approved SKU Auto-Sync To Planning</div>
+            </div>
+        </div>
         <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
             <div><span class="badge">Pending: {{ pending_count }}</span></div>
-            <div class="muted">Save row-wise master data. Planning can continue for SKUs that already have master data.</div>
+            <div class="muted">Select a SKU, open the form, complete master data, then send it for approval review.</div>
+        </div>
+
+        <form method="get" class="filters">
+            <select name="po">
+                <option value="">All POs</option>
+                {% for po in po_summary %}
+                    <option value="{{ po.po_number }}" {% if po_filter == po.po_number %}selected{% endif %}>{{ po.po_number }} ({{ po.count }})</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name">
+            <button type="submit" class="btn secondary">Apply</button>
+            <a href="{% url 'planning:pending_skus' %}" class="btn secondary">Reset</a>
+        </form>
+
+        <div class="po-chip-wrap">
+            <a class="po-chip {% if not po_filter %}active{% endif %}" href="{% url 'planning:pending_skus' %}{% if q %}?q={{ q|urlencode }}{% endif %}">All POs</a>
+            {% for po in po_summary %}
+                <a class="po-chip {% if po_filter == po.po_number %}active{% endif %}" href="{% url 'planning:pending_skus' %}?po={{ po.po_number|urlencode }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ po.po_number }} ({{ po.count }})</a>
+            {% endfor %}
         </div>
 
         <div class="table-shell">
@@ -52,50 +104,51 @@
                     <tr>
                         <th>PO</th>
                         <th>SKU</th>
-                        <th>Suggested Job Name</th>
+                        <th>Job Name</th>
                         <th>Qty</th>
                         <th>Delivery</th>
-                        <th>Job Name</th>
-                        <th>Material</th>
-                        <th>Color</th>
-                        <th>Application</th>
-                        <th>Machine</th>
-                        <th>Department</th>
-                        <th>Print Sheet</th>
-                        <th>Purchase Material</th>
-                        <th>Unit Cost</th>
+                        <th>Master Data Stage</th>
+                        <th>Missing Required</th>
                         <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                 {% for row in pending_rows %}
                     <tr>
-                        <form method="post">
-                            {% csrf_token %}
-                            <input type="hidden" name="sku" value="{{ row.sku }}">
-                            <input type="hidden" name="po_doc_id" value="{{ row.po_doc_id }}">
-                            <td>
-                                <div>{{ row.po_number }}</div>
-                                <div class="muted"><a href="{% url 'planning:po_review' row.po_doc_id %}">Open PO</a></div>
-                            </td>
-                            <td style="font-weight:700;color:#1f3048;">{{ row.sku }}</td>
-                            <td>{{ row.job_name|default:'-' }}</td>
-                            <td>{{ row.qty|default:'-' }}</td>
-                            <td>{{ row.delivery_date|default:'-' }}</td>
-                            <td><input type="text" name="job_name" value="{{ row.job_name|default:'' }}"></td>
-                            <td><input type="text" name="material"></td>
-                            <td><input type="text" name="color_spec"></td>
-                            <td><input type="text" name="application"></td>
-                            <td><input type="text" name="machine_name"></td>
-                            <td><input type="text" name="department"></td>
-                            <td><input type="text" name="print_sheet_size"></td>
-                            <td><input type="text" name="purchase_material"></td>
-                            <td><input type="text" name="default_unit_cost" placeholder="e.g. 12.50"></td>
-                            <td><button type="submit" class="btn">Save</button></td>
-                        </form>
+                        <td>
+                            <div>{{ row.po_number }}</div>
+                            <div class="muted"><a href="{% url 'planning:po_review' row.po_doc_id %}">Open PO</a></div>
+                        </td>
+                        <td style="font-weight:700;color:#1f3048;">{{ row.sku }}</td>
+                        <td>{{ row.job_name|default:'-' }}</td>
+                        <td>{{ row.qty|default:'-' }}</td>
+                        <td>{{ row.delivery_date|default:'-' }}</td>
+                        <td>
+                            {% if row.recipe %}
+                                <div class="status {{ row.recipe_status }}">{{ row.recipe_status }}</div>
+                                <div class="muted" style="margin-top:4px;">
+                                    {% if row.recipe.reviewed_by %}R: {{ row.recipe.reviewed_by.username }}{% endif %}
+                                    {% if row.recipe.approved_by %} | A: {{ row.recipe.approved_by.username }}{% endif %}
+                                </div>
+                            {% else %}
+                                <span class="status draft">draft</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.missing_required_fields and row.recipe_status != 'approved' %}
+                                <span class="muted" style="color:#8a3f00;">{{ row.missing_required_fields|join:", " }}</span>
+                            {% else %}
+                                <span class="muted">-</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a class="btn" href="{% url 'planning:pending_sku_master_entry' %}?po_doc_id={{ row.po_doc_id }}&sku={{ row.sku|urlencode }}{% if po_filter %}&return_po={{ po_filter|urlencode }}{% endif %}{% if q %}&return_q={{ q|urlencode }}{% endif %}">
+                                {% if row.recipe %}Open Master Form{% else %}Enter Master Data{% endif %}
+                            </a>
+                        </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="15">No pending SKUs. All uploaded PO SKUs have master data.</td></tr>
+                    <tr><td colspan="8">No pending SKUs for the selected filter.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

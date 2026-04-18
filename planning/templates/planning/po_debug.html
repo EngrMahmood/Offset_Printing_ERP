@@ -18,6 +18,10 @@
 </style>
 </head>
 <body>
+{% with current_step='po' %}
+  {% include 'planning/includes/workflow_sequence_bar.html' %}
+{% endwith %}
+
 <h1 style="font-size:18px;">PO Extraction Debug</h1>
 <p style="color:#666;">Upload your PDF to see exactly what each parser strategy extracts. Share the output below with the developer.</p>
 

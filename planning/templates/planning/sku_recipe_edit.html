@@ -44,6 +44,10 @@
 <body>
 <main class="wrap">
 
+    {% with current_step='master' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
     <div class="top">
         <div>
             <h1 style="margin:0;font-size:20px;">{{ page_title }}</h1>
@@ -89,19 +93,19 @@
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.purchase_material.id_for_label }}">Purchase Material</label>
+                    <label for="{{ form.purchase_material.id_for_label }}">Purchase Material Origin (Local/Imported)</label>
                     {{ form.purchase_material }}
                     {% if form.purchase_material.errors %}<div class="error">{{ form.purchase_material.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.color_spec.id_for_label }}">Color Spec</label>
+                    <label for="{{ form.color_spec.id_for_label }}">Color (e.g. 4 color or 1+1)</label>
                     {{ form.color_spec }}
                     {% if form.color_spec.errors %}<div class="error">{{ form.color_spec.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.application.id_for_label }}">Application</label>
+                    <label for="{{ form.application.id_for_label }}">Application (UV / Lamination Gloss / Lamination Matt / NO)</label>
                     {{ form.application }}
                     {% if form.application.errors %}<div class="error">{{ form.application.errors.0 }}</div>{% endif %}
                 </div>
@@ -141,6 +145,12 @@
                     {% if form.purchase_sheet_size.errors %}<div class="error">{{ form.purchase_sheet_size.errors.0 }}</div>{% endif %}
                 </div>
 
+                <div class="field">
+                    <label for="{{ form.purchase_sheet_ups.id_for_label }}">Purchase Sheet Ups</label>
+                    {{ form.purchase_sheet_ups }}
+                    {% if form.purchase_sheet_ups.errors %}<div class="error">{{ form.purchase_sheet_ups.errors.0 }}</div>{% endif %}
+                </div>
+
                 <hr class="section-sep">
 
                 <!-- Routing -->
@@ -162,6 +172,30 @@
                     <label for="{{ form.default_unit_cost.id_for_label }}">Default Unit Cost</label>
                     {{ form.default_unit_cost }}
                     {% if form.default_unit_cost.errors %}<div class="error">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.daily_demand.id_for_label }}">Daily Demand</label>
+                    {{ form.daily_demand }}
+                    {% if form.daily_demand.errors %}<div class="error">{{ form.daily_demand.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.awc_no.id_for_label }}">AWC No.</label>
+                    {{ form.awc_no }}
+                    {% if form.awc_no.errors %}<div class="error">{{ form.awc_no.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.plate_set_no.id_for_label }}">Plate Set No</label>
+                    {{ form.plate_set_no }}
+                    {% if form.plate_set_no.errors %}<div class="error">{{ form.plate_set_no.errors.0 }}</div>{% endif %}
+                </div>
+
+                <div class="field">
+                    <label for="{{ form.die_cutting.id_for_label }}">Die</label>
+                    {{ form.die_cutting }}
+                    {% if form.die_cutting.errors %}<div class="error">{{ form.die_cutting.errors.0 }}</div>{% endif %}
                 </div>
 
                 <hr class="section-sep">
