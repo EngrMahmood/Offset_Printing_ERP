@@ -18,7 +18,7 @@
         .meta { color: #667085; font-size: 13px; margin-bottom: 12px; }
         .note { background: #fff8e1; border: 1px solid #f3de9a; color: #7a5d1a; padding: 10px 12px; border-radius: 8px; margin-top: 14px; }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
 <div class="container">
@@ -82,7 +82,7 @@
         <li>Output Sheets: good sheets produced.</li>
         <li>Waste Sheets + Waste Reason: reject sheets and reason.</li>
         <li>Run, Setup, Downtime minutes: actual consumed time.</li>
-        <li>Downtime Category: reason bucket for downtime.</li>
+        <li>Downtime Breakdown: add multiple downtime categories with minutes for one production entry.</li>
     </ul>
 
     <h2>5. Repeated Production Entries (Same Job Card)</h2>
@@ -102,7 +102,7 @@
 
     <h2>7. OEE Rules</h2>
     <ul>
-        <li>Availability uses unplanned downtime categories only: breakdown, operator, other.</li>
+        <li>Availability uses unplanned downtime categories only: breakdown, operator, other (summed across all downtime rows).</li>
         <li>Setup and planned/external losses are tracked, but treated differently from unplanned losses.</li>
         <li>Performance compares actual impressions against machine expected impressions from run time.</li>
         <li>Quality compares good sheets against quality-impact total sheets.</li>
@@ -156,3 +156,4 @@
 </div>
 </body>
 </html>
+

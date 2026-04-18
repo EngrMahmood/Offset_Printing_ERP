@@ -44,6 +44,17 @@ class Operator(models.Model):
     def __str__(self):
         return self.name
 
+
+class SequenceCounter(models.Model):
+    """Generic counters for business document serials (e.g., JC numbers)."""
+
+    key = models.CharField(max_length=50, unique=True)
+    last_value = models.PositiveIntegerField(default=0)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.key}: {self.last_value}"
+
 # =========================
 # JOB CARD
 # =========================
@@ -392,11 +403,35 @@ class Production(models.Model):
     def availability(self):
         if self.planned_time == 0:
             return 0
-        # OEE Availability excludes planned downtime
-        # Include only unplanned downtime categories
-        unplanned_categories = ['breakdown', 'operator', 'other']
-        unplanned_downtime = self.downtime if self.downtime_category in unplanned_categories else 0
+        unplanned_downtime = self.unplanned_downtime_minutes
         return (self.planned_time - unplanned_downtime) / self.planned_time
+
+    @property
+    def unplanned_downtime_minutes(self):
+        """Unplanned downtime minutes used in OEE availability logic."""
+        unplanned_categories = {'breakdown', 'operator', 'other'}
+        detail_rows = list(self.downtime_entries.all())
+        if detail_rows:
+            return float(sum(
+                row.minutes for row in detail_rows
+                if row.category in unplanned_categories
+            ))
+        return float(self.downtime or 0) if self.downtime_category in unplanned_categories else 0.0
+
+    @property
+    def downtime_breakdown_text(self):
+        """Readable downtime split for UI/reporting, with fallback for legacy rows."""
+        detail_rows = list(self.downtime_entries.all())
+        if detail_rows:
+            labels = dict(self.DOWNTIME_CHOICES)
+            return ', '.join(
+                f"{labels.get(row.category, row.category)}: {row.minutes:g}m"
+                for row in detail_rows
+            )
+        if self.downtime and self.downtime_category:
+            labels = dict(self.DOWNTIME_CHOICES)
+            return f"{labels.get(self.downtime_category, self.downtime_category)}: {float(self.downtime):g}m"
+        return '-'
 
     @property
     def performance(self):
@@ -461,6 +496,25 @@ class Production(models.Model):
 
     def __str__(self):
         return f"{self.job_card.job_card_no} - {self.date}"
+
+
+class ProductionDowntime(models.Model):
+    """Detailed downtime rows to capture multiple reasons per production entry."""
+
+    production = models.ForeignKey(
+        Production,
+        on_delete=models.CASCADE,
+        related_name='downtime_entries'
+    )
+    category = models.CharField(max_length=20, choices=Production.DOWNTIME_CHOICES)
+    minutes = models.FloatField(help_text="Downtime minutes for this category")
+    note = models.CharField(max_length=200, null=True, blank=True)
+
+    class Meta:
+        ordering = ['id']
+
+    def __str__(self):
+        return f"{self.production} - {self.get_category_display()} ({self.minutes:g}m)"
 
 # ========================= 
 # DISPATCH 

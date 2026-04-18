@@ -1,0 +1,40 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Import Planning Sheet</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .box { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 14px; }
+        .btn { display: inline-block; padding: 8px 12px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .muted { color: #5f6f82; font-size: 12px; }
+        .help { background: #f6f9fc; border: 1px solid #d6e0ea; padding: 8px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <h1 style="margin:0 0 4px;font-size:20px;">Import Planning Sheet (CSV)</h1>
+    <p class="muted" style="margin-top:0;">This importer supports repeated print and dispatch columns per job row.</p>
+
+    <section class="box" style="margin-bottom:10px;">
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <label for="sheet_file"><strong>Planning CSV File</strong></label><br>
+            <input id="sheet_file" type="file" name="sheet_file" accept=".csv" required style="margin:8px 0 12px;">
+            <div>
+                <button class="btn" type="submit">Import Now</button>
+                <a class="btn secondary" href="{% url 'planning:home' %}">Back to Planning</a>
+            </div>
+        </form>
+    </section>
+
+    <section class="help">
+        <div><strong>Expected columns:</strong> JC, Month, Date, Po, SKU, Job Name, Material, Color, Size, Order Qty, Print Sheet Size, Print Sheets, Machine Name, Department, Print Date 1..5 / Print Qty 1..5 / Wastage 1..5, Date Delivery 01..06 / DC 01..06 / Delivered Quantity 01..06.</div>
+    </section>
+</main>
+</body>
+</html>

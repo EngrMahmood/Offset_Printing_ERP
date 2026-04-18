@@ -1,0 +1,46 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Scan Job Card QR</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 680px; margin: 0 auto; }
+        .card { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:14px; }
+        .btn { display:inline-block; padding:8px 12px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
+        .btn.secondary { background:#fff; color:#445366; }
+        input { width:100%; border:1px solid #bfd0e2; border-radius:6px; padding:8px 10px; font-size:13px; }
+        .muted { color:#5f6f82; font-size:12px; }
+        .alert { border-radius:6px; padding:8px 10px; margin-bottom:10px; font-size:12px; background:#fce8e6; border:1px solid #f2c3c3; color:#8a1f1f; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Scan Job Card QR</h1>
+            <div class="muted">Use scanner input or paste QR value/URL to open planning record.</div>
+        </div>
+        <a class="btn secondary" href="{% url 'planning:home' %}">Back To Planning</a>
+    </div>
+
+    {% for msg in messages %}
+    <div class="alert" style="margin-top:10px;">{{ msg }}</div>
+    {% endfor %}
+
+    <section class="card" style="margin-top:10px;">
+        <form method="post">
+            {% csrf_token %}
+            <label for="scan_code" style="display:block;font-size:11px;text-transform:uppercase;font-weight:700;color:#4f6072;margin-bottom:4px;">Scanned Code</label>
+            <input id="scan_code" name="scan_code" autocomplete="off" autofocus placeholder="Example: JC-04-26-0123 or full QR URL">
+            <div style="display:flex;gap:8px;margin-top:10px;">
+                <button class="btn" type="submit">Open Job</button>
+                <a class="btn secondary" href="{% url 'planning:home' %}">Cancel</a>
+            </div>
+        </form>
+    </section>
+</main>
+</body>
+</html>

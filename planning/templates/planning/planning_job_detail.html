@@ -1,0 +1,124 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning Job {{ job.jc_number }}</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .card { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 10px; }
+        .table-shell { overflow: auto; border: 1px solid #d6e0ea; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border-bottom: 1px solid #e7eef5; padding: 7px; text-align: left; }
+        th { background: #f6f9fc; }
+        .muted { color: #5f6f82; font-size: 11px; }
+        .btn { display: inline-block; padding: 7px 11px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .btn.warn { background: #8a6c1f; border-color: #8a6c1f; }
+        .btn.good { background: #206a3c; border-color: #206a3c; }
+        .btn.danger { background: #8c3244; border-color: #8c3244; }
+        .workflow { display:flex; gap:8px; flex-wrap:wrap; margin-top: 8px; }
+        .workflow form { margin: 0; }
+        .note { background:#fff9e8; border:1px solid #f0d38b; color:#6b4b00; border-radius:6px; padding:8px 10px; font-size:12px; }
+        @media (max-width: 900px){ .grid { grid-template-columns: 1fr; } }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
+        <div>
+            <h1 style="margin:0;font-size:20px;">{{ job.jc_number }}</h1>
+            <div class="muted">PO: {{ job.po_number|default:"-" }} | SKU: {{ job.sku|default:"-" }} | Status: {{ status_now }}</div>
+        </div>
+        <div>
+            <a class="btn secondary" href="{% url 'planning:home' %}">Back</a>
+            <a class="btn secondary" href="{% url 'planning:report' %}">Report</a>
+            <a class="btn secondary" href="{% url 'planning:job_edit' job.id %}">Edit</a>
+            <a class="btn" target="_blank" rel="noopener" href="{% url 'planning:job_card_print' job.id %}">A4 Print</a>
+        </div>
+    </div>
+
+    {% if status_now == 'approved' %}
+    <div class="note" style="margin-top:10px;">This record is approved and locked. Use Unlock to Reviewed before editing values.</div>
+    {% endif %}
+
+    <div class="workflow">
+        {% if status_now == 'draft' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="submit_review"><button class="btn warn" type="submit">Submit For Review</button></form>
+        {% endif %}
+        {% if status_now == 'reviewed' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="approve"><button class="btn good" type="submit">Approve</button></form>
+        {% endif %}
+        {% if status_now == 'approved' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="unlock"><button class="btn warn" type="submit">Unlock To Reviewed</button></form>
+        {% endif %}
+        {% if status_now != 'closed' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="mark_closed"><button class="btn danger" type="submit">Mark Closed</button></form>
+        {% else %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="reopen"><button class="btn warn" type="submit">Reopen</button></form>
+        {% endif %}
+    </div>
+
+    <section class="grid" style="margin-top:10px;">
+        <div class="card">
+            <h3 style="margin-top:0;">Header</h3>
+            <div><strong>Job Name:</strong> {{ job.job_name|default:"-" }}</div>
+            <div><strong>Material:</strong> {{ job.material|default:"-" }}</div>
+            <div><strong>Color:</strong> {{ job.color_spec|default:"-" }}</div>
+            <div><strong>Size:</strong> {{ job.size_w_mm|default:"-" }} x {{ job.size_h_mm|default:"-" }} mm</div>
+            <div><strong>Order Qty:</strong> {{ job.order_qty|default:"-" }}</div>
+            <div><strong>Print Sheets:</strong> {{ job.print_sheets|default:"-" }}</div>
+            <div><strong>Machine:</strong> {{ job.machine_name|default:"-" }}</div>
+            <div><strong>Department:</strong> {{ job.department|default:"-" }}</div>
+            <div><strong>Aging:</strong> {{ job.aging_days|default:"-" }}</div>
+            <div><strong>Die cutting:</strong> {{ job.die_cutting|default:"-" }}</div>
+        </div>
+
+        <div class="card">
+            <h3 style="margin-top:0;">Progress Snapshot</h3>
+            <div><strong>Print Logs:</strong> {{ job.print_runs.count }}</div>
+            <div><strong>Dispatch Logs:</strong> {{ job.dispatch_runs.count }}</div>
+            <div><strong>Remaining Sheet:</strong> {{ job.remaining_sheet|default:"-" }}</div>
+            <div><strong>Rejected Qty:</strong> {{ job.rejected_qty|default:"-" }}</div>
+            <div><strong>Balance Qty:</strong> {{ job.balance_qty|default:"-" }}</div>
+            <div><strong>Daily Demand:</strong> {{ job.daily_demand|default:"-" }}</div>
+        </div>
+    </section>
+
+    <section class="card" style="margin-top:10px;">
+        <h3 style="margin-top:0;">Printing Events</h3>
+        <div class="table-shell">
+            <table>
+                <thead><tr><th>#</th><th>Date</th><th>Print Qty</th><th>Wastage</th></tr></thead>
+                <tbody>
+                {% for row in job.print_runs.all %}
+                    <tr><td>{{ row.run_index }}</td><td>{{ row.print_date|default:"-" }}</td><td>{{ row.print_qty|default:"-" }}</td><td>{{ row.wastage_qty|default:"-" }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="4">No print events imported yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="card" style="margin-top:10px;">
+        <h3 style="margin-top:0;">Dispatch Events</h3>
+        <div class="table-shell">
+            <table>
+                <thead><tr><th>#</th><th>Date</th><th>DC</th><th>Delivered Qty</th></tr></thead>
+                <tbody>
+                {% for row in job.dispatch_runs.all %}
+                    <tr><td>{{ row.dispatch_index }}</td><td>{{ row.delivery_date|default:"-" }}</td><td>{{ row.dc_no|default:"-" }}</td><td>{{ row.delivered_qty|default:"-" }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="4">No dispatch events imported yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</main>
+</body>
+</html>

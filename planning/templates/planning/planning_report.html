@@ -1,0 +1,109 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning Report</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .card { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:10px; margin-bottom:10px; }
+        .kpi { display:grid; grid-template-columns:repeat(4, minmax(170px, 1fr)); gap:8px; }
+        .kpi-item { border:1px solid #dce7f2; background:#f6fafd; border-radius:8px; padding:10px; }
+        .kpi-label { font-size:10px; text-transform:uppercase; color:#607080; font-weight:700; }
+        .kpi-value { font-size:20px; font-weight:700; color:#1f3146; }
+        .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+        table { width:100%; border-collapse:collapse; font-size:12px; }
+        th, td { border-bottom:1px solid #e7eef5; padding:7px; text-align:left; }
+        th { background:#f6f9fc; }
+        .btn { display:inline-block; padding:7px 11px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; }
+        .btn.secondary { background:#fff; color:#445366; }
+        .filters { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+        .filters input { border:1px solid #bfd0e2; border-radius:6px; padding:6px 8px; font-size:12px; }
+        .muted { color:#5f6f82; font-size:11px; }
+        @media (max-width: 1000px){ .grid { grid-template-columns:1fr; } .kpi { grid-template-columns:repeat(2, minmax(140px, 1fr)); } }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Planning Report</h1>
+            <div class="muted">Operational planning summary by status, department, and machine.</div>
+        </div>
+        <div>
+            <a class="btn secondary" href="{% url 'planning:home' %}">Back To Planning</a>
+        </div>
+    </div>
+
+    <section class="card" style="margin-top:10px;">
+        <form method="get" class="filters">
+            <div>
+                <label style="font-size:11px;color:#607080;">From Date</label>
+                <input type="date" name="from_date" value="{{ filters.from_date }}">
+            </div>
+            <div>
+                <label style="font-size:11px;color:#607080;">To Date</label>
+                <input type="date" name="to_date" value="{{ filters.to_date }}">
+            </div>
+            <button class="btn" type="submit">Apply</button>
+            <a class="btn secondary" href="{% url 'planning:report' %}">Reset</a>
+        </form>
+    </section>
+
+    <section class="card">
+        <div class="kpi">
+            <div class="kpi-item"><div class="kpi-label">Total Jobs</div><div class="kpi-value">{{ totals.total_jobs|default:0 }}</div></div>
+            <div class="kpi-item"><div class="kpi-label">Total Order Qty</div><div class="kpi-value">{{ totals.total_order_qty|default:0 }}</div></div>
+            <div class="kpi-item"><div class="kpi-label">Approved Jobs</div><div class="kpi-value">{{ totals.approved_jobs|default:0 }}</div></div>
+            <div class="kpi-item"><div class="kpi-label">Closed Jobs</div><div class="kpi-value">{{ totals.closed_jobs|default:0 }}</div></div>
+        </div>
+    </section>
+
+    <section class="grid">
+        <div class="card">
+            <h3 style="margin:0 0 8px;">Status Summary</h3>
+            <table>
+                <thead><tr><th>Status</th><th>Jobs</th><th>Order Qty</th></tr></thead>
+                <tbody>
+                {% for row in by_status %}
+                    <tr><td>{{ row.status|default:'draft' }}</td><td>{{ row.total }}</td><td>{{ row.order_qty|default:0 }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="3">No data for selected range.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="card">
+            <h3 style="margin:0 0 8px;">Department Summary</h3>
+            <table>
+                <thead><tr><th>Department</th><th>Jobs</th><th>Order Qty</th></tr></thead>
+                <tbody>
+                {% for row in by_department %}
+                    <tr><td>{{ row.department|default:'-' }}</td><td>{{ row.total }}</td><td>{{ row.order_qty|default:0 }}</td></tr>
+                {% empty %}
+                    <tr><td colspan="3">No data for selected range.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="card">
+        <h3 style="margin:0 0 8px;">Machine Summary</h3>
+        <table>
+            <thead><tr><th>Machine</th><th>Jobs</th><th>Order Qty</th></tr></thead>
+            <tbody>
+            {% for row in by_machine %}
+                <tr><td>{{ row.machine_name|default:'-' }}</td><td>{{ row.total }}</td><td>{{ row.order_qty|default:0 }}</td></tr>
+            {% empty %}
+                <tr><td colspan="3">No machine data for selected range.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</main>
+</body>
+</html>

@@ -1,0 +1,181 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review PO {{ payload.po_number }}</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .card { background: #fff; border: 1px solid #d6e0ea; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+        .btn { display: inline-block; padding: 7px 11px; border-radius: 5px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .btn.danger { background: #8d3040; border-color: #8d3040; }
+        .muted { color: #5f6f82; font-size: 11px; }
+        .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-bottom: 10px; }
+        .info-item { background: #f4f8fc; border: 1px solid #d4e1ee; border-radius: 6px; padding: 8px; }
+        .info-item .label { font-size: 10px; color: #607080; font-weight: 700; text-transform: uppercase; }
+        .info-item .value { font-size: 13px; color: #1f2f43; font-weight: 600; }
+        .table-shell { overflow-x: auto; border: 1px solid #d6e0ea; border-radius: 6px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1000px; }
+        th, td { border-bottom: 1px solid #e7eef5; padding: 7px 8px; text-align: left; vertical-align: middle; }
+        th { position: sticky; top: 0; background: #f0f5fa; color: #2f4257; font-size: 10px; text-transform: uppercase; letter-spacing: 0.02em; }
+        input[type="text"] { padding: 4px 7px; border: 1px solid #b0c4d8; border-radius: 4px; font-size: 12px; width: 160px; }
+        input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; background: #e8f3fd; color: #2a5f90; border: 1px solid #b8d5ef; }
+        .badge.repeat { background: #e6f4ea; border-color: #bee2c5; color: #1f6c37; }
+        .badge.new { background: #fff0ef; border-color: #f1c2bd; color: #8a2f23; }
+        .row-new { background: #fff9f9; }
+        .total-row { background: #f7fbff; font-weight: 700; }
+        .alert { border-radius: 6px; padding: 9px 12px; margin-bottom: 10px; font-size: 13px; }
+        .alert-success { background: #e6f4ea; color: #1e6d33; border: 1px solid #bee3c7; }
+        .warn-box { background: #fffbeb; border: 1px solid #f0d88a; border-radius: 6px; padding: 9px 12px; margin-bottom: 10px; font-size: 12px; color: #6b4c00; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Review PO: {{ payload.po_number|default:"?" }}</h1>
+            <div class="muted">Verify extracted data before creating Planning Job records.</div>
+        </div>
+        <a href="{% url 'planning:home' %}" class="btn secondary">Back to Planning</a>
+    </div>
+
+    {% for msg in messages %}
+    <div class="alert alert-success">{{ msg }}</div>
+    {% endfor %}
+
+    <div class="warn-box">
+        Default JC numbering now uses your serial format: <strong>JC-MM-YY-####</strong>.
+        JC numbers are assigned automatically by the system, and manual override is disabled.
+        Use "Skip" to exclude a line.
+        If the same PO + SKU is uploaded again, the existing planning job is updated instead of creating duplicates.
+    </div>
+
+    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div>
+            <span class="badge repeat">Repeat SKUs: {{ repeat_count }}</span>
+            <span class="badge new">New SKUs: {{ new_count }}</span>
+            <div class="muted" style="margin-top:4px;">New SKUs must be configured in SKU Recipe Master before planning jobs can be created for them.</div>
+        </div>
+        <a href="{% url 'planning:po_new_skus' po_doc.id %}" class="btn {% if new_count == 0 %}secondary{% endif %}">Configure New SKUs</a>
+    </div>
+
+    <!-- PO Header Summary -->
+    <div class="card">
+        <div style="font-size:13px;font-weight:700;color:#1f2f43;margin-bottom:8px;">PO Header</div>
+        <div class="info-grid">
+            <div class="info-item"><div class="label">PO Number</div><div class="value">{{ payload.po_number|default:"-" }}</div></div>
+            <div class="info-item"><div class="label">PO Date</div><div class="value">{{ payload.po_date|default:"-" }}</div></div>
+            <div class="info-item"><div class="label">Approval Date</div><div class="value">{{ payload.approval_date|default:"-" }}</div></div>
+            <div class="info-item"><div class="label">Department</div><div class="value">{{ payload.department|default:"-" }}</div></div>
+            <div class="info-item"><div class="label">Delivery Location</div><div class="value">{{ payload.delivery_location|default:"-" }}</div></div>
+            <div class="info-item"><div class="label">Grand Total</div><div class="value">Rs {{ payload.grand_total|default:"-" }}</div></div>
+            <div class="info-item"><div class="label">Supplier</div><div class="value">{{ payload.supplier_name|default:"-" }}</div></div>
+            <div class="info-item"><div class="label">Buyer</div><div class="value">{{ payload.buyer_name|default:"-" }}</div></div>
+        </div>
+    </div>
+
+    <!-- Line Items Review -->
+    <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+            <div style="font-size:13px;font-weight:700;color:#1f2f43;">
+                Line Items <span class="badge">{{ items|length }} SKU{{ items|length|pluralize }}</span>
+            </div>
+            <div style="display:flex;gap:6px;">
+                <button type="button" onclick="toggleAll(false)" class="btn secondary" style="font-size:11px;">Select All</button>
+                <button type="button" onclick="toggleAll(true)" class="btn secondary" style="font-size:11px;">Skip All</button>
+            </div>
+        </div>
+
+        <form method="post" id="review_form">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="create_jobs">
+
+            <div class="table-shell">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Skip</th>
+                            <th>#</th>
+                            <th>Job Name</th>
+                            <th>SKU</th>
+                            <th>Recipe</th>
+                            <th>Delivery Date</th>
+                            <th>Qty</th>
+                            <th>Unit</th>
+                            <th>Unit Cost</th>
+                            <th>Net Total</th>
+                            <th>Job Card Number</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr id="row_{{ item.line_no }}" class="{% if not item.is_repeat %}row-new{% endif %}">
+                            <td>
+                                <input type="checkbox" name="item_{{ item.line_no }}_skip" value="1"
+                                       onchange="toggleRowStyle({{ item.line_no }}, this.checked)">
+                            </td>
+                            <td>{{ item.line_no }}</td>
+                            <td style="max-width:340px;word-break:break-word;">{{ item.job_name|default:item.sku }}</td>
+                            <td style="max-width:320px;word-break:break-all;">{{ item.sku }}</td>
+                            <td><span class="badge {% if item.is_repeat %}repeat{% else %}new{% endif %}">{{ item.recipe_status }}</span></td>
+                            <td>{{ item.delivery_date|default:"-" }}</td>
+                            <td>{{ item.quantity|floatformat:0 }}</td>
+                            <td>{{ item.unit }}</td>
+                            <td>{{ item.unit_cost }}</td>
+                            <td>{{ item.net_total }}</td>
+                            <td><span class="muted">Auto-assigned on create</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="total-row">
+                            <td colspan="6">Total</td>
+                            <td id="total_qty">-</td>
+                            <td colspan="2">Grand Total</td>
+                            <td>Rs {{ payload.grand_total|default:"-" }}</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+                <button type="submit" class="btn">Create Planning Jobs</button>
+                <a href="{% url 'planning:home' %}" class="btn secondary">Cancel</a>
+            </div>
+        </form>
+    </div>
+</main>
+
+<script>
+const itemsData = {{ items_json|safe }};
+
+// Calculate total quantity on load
+document.addEventListener('DOMContentLoaded', function () {
+    const total = itemsData.reduce((s, i) => s + (parseFloat(i.quantity) || 0), 0);
+    document.getElementById('total_qty').textContent = total.toLocaleString();
+});
+
+function toggleAll(skipState) {
+    const checkboxes = document.querySelectorAll('input[type="checkbox"][name$="_skip"]');
+    checkboxes.forEach(cb => {
+        cb.checked = skipState;
+        const lineNo = cb.name.replace('item_', '').replace('_skip', '');
+        toggleRowStyle(lineNo, skipState);
+    });
+}
+
+function toggleRowStyle(lineNo, isSkipped) {
+    const row = document.getElementById('row_' + lineNo);
+    if (row) {
+        row.style.opacity = isSkipped ? '0.35' : '1';
+        row.style.textDecoration = isSkipped ? 'line-through' : 'none';
+    }
+}
+</script>
+</body>
+</html>

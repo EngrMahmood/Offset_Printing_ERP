@@ -4,28 +4,47 @@
 <head>
     <title>Master Corrections - Offset ERP</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
-        .container { max-width: 1100px; margin: 0 auto; }
-        .card { background: #fff; border-radius: 10px; padding: 22px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
-        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; }
-        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 12px; background: #edf1f5; overflow-x: hidden; color: #233042; }
+        .container { max-width: 100%; margin: 0 auto; }
+        .card { background: #fff; border-radius: 6px; padding: 14px; border: 1px solid #d9e1ea; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        .btn { background: #445366; color: #fff; text-decoration: none; padding: 8px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; }
         .btn:hover { background: #2f5b73; }
         .btn-green { background: #1f8f4c; }
         .btn-green:hover { background: #16733d; }
         .btn-amber { background: #8a6116; }
         .btn-amber:hover { background: #704e12; }
-        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-        th, td { border-bottom: 1px solid #e7ebef; padding: 10px; text-align: left; vertical-align: top; }
-        th { background: #f7f9fb; }
-        input[type="text"] { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #cfd6de; border-radius: 6px; }
+        .section-header { margin-top: 20px; margin-bottom: 6px; }
+        .table-shell {
+            width: 100%;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: calc(100vh - 260px);
+            border: 1px solid #e5eaf0;
+            border-radius: 4px;
+            background: #fff;
+        }
+        table { width: 100%; min-width: 900px; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
+        th, td { border-bottom: 1px solid #e1e8f0; padding: 7px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
+        th { position: sticky; top: 0; z-index: 2; background: #eef2f7; color: #304256; font-size: 10px; letter-spacing: 0.02em; text-transform: uppercase; }
+        input[type="text"], input[type="number"] { width: 100%; min-width: 160px; box-sizing: border-box; padding: 6px 8px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 12px; }
+        .edit-grid { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 6px; align-items: center; }
+        .edit-grid.operator { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+        .compact-note { font-size: 10px; color: #5f6f84; }
         .muted { color: #6b7280; font-size: 12px; }
         .badge-on { background: #e6f4ea; color: #1e6d33; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
         .badge-off { background: #fff3cd; color: #7a4200; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
         .alert { border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
         .alert-success { background: #e6f4ea; color: #1e6d33; border: 1px solid #bee3c7; }
         .alert-error { background: #fce8e6; color: #8a1c1c; border: 1px solid #f5c2c7; }
+        .action-group { display: flex; gap: 6px; align-items: center; }
+        .btn-danger { background: #8d3040; }
+        .btn-danger:hover { background: #742836; }
+        @media (max-width: 980px) {
+            .table-shell { max-height: none; }
+        }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
 <div class="container">
@@ -45,13 +64,16 @@
             {% endfor %}
         {% endif %}
 
-        <h2 style="margin-top:18px;">Machines</h2>
+        <h2 class="section-header">Machines</h2>
+        <div class="table-shell">
         <table>
             <thead>
                 <tr>
                     <th>ID</th>
-                    <th>Machine Name</th>
+                    <th>Machine Name / Settings</th>
                     <th>Status</th>
+                    <th>Speed (imp/hr)</th>
+                    <th>Setup Min/Color</th>
                     <th>Active Job Cards</th>
                     <th>Active Production Entries</th>
                     <th>Actions</th>
@@ -62,14 +84,23 @@
                 <tr>
                     <td>{{ row.record.id }}</td>
                     <td>
+                        {% if is_admin_user %}
                         <form method="POST" style="display:flex;gap:8px;align-items:center;">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="machine">
-                            <input type="hidden" name="action" value="rename_machine">
-                            <input type="hidden" name="machine_id" value="{{ row.record.id }}">
-                            <input type="text" name="new_name" value="{{ row.record.name }}" required>
-                            <button type="submit" class="btn btn-green">Rename</button>
+                            <input type="hidden" name="action" value="edit_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <div class="edit-grid">
+                                <input type="text" name="new_name" value="{{ row.record.name }}" required placeholder="Machine name">
+                                <input type="number" name="standard_impressions_per_hour" value="{{ row.record.standard_impressions_per_hour }}" min="0.01" step="0.01" required placeholder="Speed (imp/hr)">
+                                <input type="number" name="standard_setup_minutes_per_color" value="{{ row.record.standard_setup_minutes_per_color }}" min="0.01" step="0.01" required placeholder="Setup min/color">
+                            </div>
+                            <button type="submit" class="btn btn-green">Edit</button>
                         </form>
+                        <div class="compact-note">Name, Speed, Setup Min/Color (all in one form).</div>
+                        {% else %}
+                        <div>{{ row.record.name }}</div>
+                        {% endif %}
                     </td>
                     <td>
                         {% if row.record.is_active %}
@@ -78,16 +109,29 @@
                         <span class="badge-off">Inactive</span>
                         {% endif %}
                     </td>
+                    <td>{{ row.record.standard_impressions_per_hour }}</td>
+                    <td>{{ row.record.standard_setup_minutes_per_color }}</td>
                     <td>{{ row.job_card_count }}</td>
                     <td>{{ row.production_count }}</td>
                     <td>
-                        <form method="POST" style="display:inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="entity_type" value="machine">
-                            <input type="hidden" name="action" value="toggle_machine">
-                            <input type="hidden" name="machine_id" value="{{ row.record.id }}">
-                            <button type="submit" class="btn btn-amber">{% if row.record.is_active %}Deactivate{% else %}Activate{% endif %}</button>
-                        </form>
+                        <div class="action-group">
+                            <form method="POST" style="display:inline;">
+                                {% csrf_token %}
+                                <input type="hidden" name="entity_type" value="machine">
+                                <input type="hidden" name="action" value="toggle_machine">
+                                <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                                <button type="submit" class="btn btn-amber">{% if row.record.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+                            </form>
+                            {% if is_admin_user %}
+                            <form method="POST" style="display:inline;" onsubmit="return confirm('Delete machine {{ row.record.name|escapejs }} permanently?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="entity_type" value="machine">
+                                <input type="hidden" name="action" value="delete_master">
+                                <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                                <button type="submit" class="btn btn-danger">Delete</button>
+                            </form>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% empty %}
@@ -95,8 +139,10 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
 
-        <h2 style="margin-top:26px;">Operators</h2>
+        <h2 class="section-header">Operators</h2>
+        <div class="table-shell">
         <table>
             <thead>
                 <tr>
@@ -113,14 +159,22 @@
                 <tr>
                     <td>{{ row.record.id }}</td>
                     <td>
+                        {% if is_admin_user %}
                         <form method="POST" style="display:flex;gap:8px;align-items:center;">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="operator">
-                            <input type="hidden" name="action" value="rename_machine">
-                            <input type="hidden" name="machine_id" value="{{ row.record.id }}">
-                            <input type="text" name="new_name" value="{{ row.record.name }}" required>
-                            <button type="submit" class="btn btn-green">Rename</button>
+                            <input type="hidden" name="action" value="edit_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <div class="edit-grid operator">
+                                <input type="text" name="new_name" value="{{ row.record.name }}" required placeholder="Operator name">
+                                <input type="text" name="employee_code" value="{{ row.record.employee_code|default:'' }}" placeholder="Employee code">
+                            </div>
+                            <button type="submit" class="btn btn-green">Edit</button>
                         </form>
+                        <div class="compact-note">Edit Name and Employee Code.</div>
+                        {% else %}
+                        {{ row.record.name }}
+                        {% endif %}
                     </td>
                     <td>
                         {% if row.record.is_active %}
@@ -132,13 +186,24 @@
                     <td>{{ row.record.employee_code|default:'-' }}</td>
                     <td>{{ row.production_count }}</td>
                     <td>
-                        <form method="POST" style="display:inline;">
-                            {% csrf_token %}
-                            <input type="hidden" name="entity_type" value="operator">
-                            <input type="hidden" name="action" value="toggle_machine">
-                            <input type="hidden" name="machine_id" value="{{ row.record.id }}">
-                            <button type="submit" class="btn btn-amber">{% if row.record.is_active %}Deactivate{% else %}Activate{% endif %}</button>
-                        </form>
+                        <div class="action-group">
+                            <form method="POST" style="display:inline;">
+                                {% csrf_token %}
+                                <input type="hidden" name="entity_type" value="operator">
+                                <input type="hidden" name="action" value="toggle_machine">
+                                <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                                <button type="submit" class="btn btn-amber">{% if row.record.is_active %}Deactivate{% else %}Activate{% endif %}</button>
+                            </form>
+                            {% if is_admin_user %}
+                            <form method="POST" style="display:inline;" onsubmit="return confirm('Delete operator {{ row.record.name|escapejs }} permanently?');">
+                                {% csrf_token %}
+                                <input type="hidden" name="entity_type" value="operator">
+                                <input type="hidden" name="action" value="delete_master">
+                                <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                                <button type="submit" class="btn btn-danger">Delete</button>
+                            </form>
+                            {% endif %}
+                        </div>
                     </td>
                 </tr>
                 {% empty %}
@@ -146,8 +211,10 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
 
-        <h2 style="margin-top:26px;">Materials</h2>
+        <h2 class="section-header">Materials</h2>
+        <div class="table-shell">
         <table>
             <thead>
                 <tr>
@@ -162,25 +229,43 @@
                 <tr>
                     <td>{{ row.record.id }}</td>
                     <td>
+                        {% if is_admin_user %}
                         <form method="POST" style="display:flex;gap:8px;align-items:center;">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="material">
-                            <input type="hidden" name="action" value="rename_machine">
-                            <input type="hidden" name="machine_id" value="{{ row.record.id }}">
+                            <input type="hidden" name="action" value="edit_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
                             <input type="text" name="new_name" value="{{ row.record.name }}" required>
-                            <button type="submit" class="btn btn-green">Rename</button>
+                            <button type="submit" class="btn btn-green">Edit</button>
                         </form>
+                        {% else %}
+                        {{ row.record.name }}
+                        {% endif %}
                     </td>
                     <td>{{ row.job_card_count }}</td>
-                    <td>-</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete material {{ row.record.name|escapejs }} permanently?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="material">
+                            <input type="hidden" name="action" value="delete_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
                 </tr>
                 {% empty %}
                 <tr><td colspan="4">No materials found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
+        </div>
 
-        <h2 style="margin-top:26px;">Departments</h2>
+        <h2 class="section-header">Departments</h2>
+        <div class="table-shell">
         <table>
             <thead>
                 <tr>
@@ -195,24 +280,42 @@
                 <tr>
                     <td>{{ row.record.id }}</td>
                     <td>
+                        {% if is_admin_user %}
                         <form method="POST" style="display:flex;gap:8px;align-items:center;">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="department">
-                            <input type="hidden" name="action" value="rename_machine">
-                            <input type="hidden" name="machine_id" value="{{ row.record.id }}">
+                            <input type="hidden" name="action" value="edit_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
                             <input type="text" name="new_name" value="{{ row.record.name }}" required>
-                            <button type="submit" class="btn btn-green">Rename</button>
+                            <button type="submit" class="btn btn-green">Edit</button>
                         </form>
+                        {% else %}
+                        {{ row.record.name }}
+                        {% endif %}
                     </td>
                     <td>{{ row.job_card_count }}</td>
-                    <td>-</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete department {{ row.record.name|escapejs }} permanently?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="department">
+                            <input type="hidden" name="action" value="delete_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
                 </tr>
                 {% empty %}
                 <tr><td colspan="4">No departments found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
+        </div>
     </div>
 </div>
 </body>
 </html>
+

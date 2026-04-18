@@ -7,7 +7,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 
-from .models import JobCard, Production, Dispatch, Machine, Department, Material, Operator, UserProfile, ChangeLog, EditOverrideRequest
+from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, Material, Operator, UserProfile, ChangeLog, EditOverrideRequest
 
 User = get_user_model()
 
@@ -23,6 +23,11 @@ class ProductionInline(admin.TabularInline):
 
 class DispatchInline(admin.TabularInline):
     model = Dispatch
+    extra = 1
+
+
+class ProductionDowntimeInline(admin.TabularInline):
+    model = ProductionDowntime
     extra = 1
 
 
@@ -201,6 +206,8 @@ class JobCardAdmin(admin.ModelAdmin):
 
 @admin.register(Production)
 class ProductionAdmin(admin.ModelAdmin):
+
+    inlines = [ProductionDowntimeInline]
 
     list_display = (
     'job_card',

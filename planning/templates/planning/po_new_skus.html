@@ -1,0 +1,84 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New SKU Setup | {{ payload.po_number }}</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .card { background: #fff; border: 1px solid #d6e0ea; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+        .btn { display: inline-block; padding: 7px 11px; border-radius: 5px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .muted { color: #5f6f82; font-size: 11px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border-bottom: 1px solid #e7eef5; padding: 7px; text-align: left; vertical-align: top; }
+        th { background: #f0f5fa; font-size: 10px; text-transform: uppercase; letter-spacing: 0.02em; }
+        input, textarea { width: 100%; border: 1px solid #bfd0e2; border-radius: 4px; padding: 5px 7px; font-size: 12px; }
+        textarea { min-height: 56px; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div>
+            <h1 style="margin:0;font-size:20px;">New SKU Recipe Setup</h1>
+            <div class="muted">PO {{ payload.po_number|default:'-' }} | Configure missing SKUs to move them into planning flow.</div>
+        </div>
+        <a href="{% url 'planning:po_review' po_doc.id %}" class="btn secondary">Back To PO Review</a>
+    </div>
+
+    {% if not missing_skus %}
+    <div class="card" style="margin-top:10px;">
+        <div style="font-size:13px;font-weight:700;color:#1f2f43;">No new SKUs found</div>
+        <div class="muted" style="margin-top:4px;">All extracted SKUs already exist in SKU Recipe Master.</div>
+    </div>
+    {% else %}
+    <form method="post" class="card" style="margin-top:10px;">
+        {% csrf_token %}
+        <div style="font-size:13px;font-weight:700;color:#1f2f43;margin-bottom:8px;">Missing SKU Recipes ({{ missing_skus|length }})</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>Job Name</th>
+                    <th>Material</th>
+                    <th>Color</th>
+                    <th>Application</th>
+                    <th>Machine</th>
+                    <th>Department</th>
+                    <th>Print Sheet Size</th>
+                    <th>Purchase Material</th>
+                    <th>Default Unit Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for sku in missing_skus %}
+                <tr>
+                    <td>
+                        <input type="text" value="{{ sku }}" readonly>
+                    </td>
+                    <td><input type="text" name="sku_{{ sku }}_job_name" placeholder="Required in practice"></td>
+                    <td><input type="text" name="sku_{{ sku }}_material"></td>
+                    <td><input type="text" name="sku_{{ sku }}_color_spec"></td>
+                    <td><input type="text" name="sku_{{ sku }}_application"></td>
+                    <td><input type="text" name="sku_{{ sku }}_machine_name"></td>
+                    <td><input type="text" name="sku_{{ sku }}_department"></td>
+                    <td><input type="text" name="sku_{{ sku }}_print_sheet_size"></td>
+                    <td><input type="text" name="sku_{{ sku }}_purchase_material"></td>
+                    <td><input type="text" name="sku_{{ sku }}_default_unit_cost" placeholder="0.00"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+            <button type="submit" class="btn">Save SKU Recipes</button>
+            <a href="{% url 'planning:po_review' po_doc.id %}" class="btn secondary">Back Without Saving</a>
+        </div>
+        <div class="muted" style="margin-top:8px;">Tip: save at least Job Name + Material + Machine for each SKU so planning jobs are meaningful.</div>
+    </form>
+    {% endif %}
+</main>
+</body>
+</html>

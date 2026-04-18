@@ -7,12 +7,14 @@
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 12px;
             background-color: #f5f5f5;
+            overflow-x: hidden;
         }
 
         .container {
-            max-width: 800px;
+            max-width: 100%;
+            width: 100%;
             margin: 0 auto;
             background: white;
             padding: 30px;
@@ -54,6 +56,7 @@
         .row {
             display: flex;
             gap: 20px;
+            flex-wrap: wrap;
         }
 
         .col {
@@ -116,6 +119,7 @@
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
 
         .nav-btn {
@@ -210,8 +214,15 @@
             font-weight: 600;
             color: #7a4200;
         }
+
+        @media (max-width: 760px) {
+            .row {
+                flex-direction: column;
+                gap: 12px;
+            }
+        }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
     <div class="container">
@@ -375,10 +386,18 @@
 
                 <div class="col">
                     <div class="form-group">
-                        <label for="downtime_minutes">Downtime (minutes)</label>
-                        <input type="number" name="downtime_minutes" id="downtime_minutes" placeholder="e.g., 30" value="{{ edit_record.downtime|default:0 }}">
+                        <label for="downtime_minutes">Total Downtime (minutes)</label>
+                        <input type="number" name="downtime_minutes" id="downtime_minutes" placeholder="Auto total" value="{{ edit_record.downtime|default:0 }}" readonly>
+                        <div class="hint">Auto-calculated from downtime rows below.</div>
                     </div>
                 </div>
+            </div>
+
+            <div class="form-group">
+                <label>Downtime Breakdown (Multiple Reasons)</label>
+                <div id="downtime_rows"></div>
+                <button type="button" id="add_downtime_row" class="nav-btn" style="margin-top:8px;border:none;cursor:pointer;">+ Add Downtime Reason</button>
+                <div class="hint">Add one row per downtime reason with minutes for this production entry.</div>
             </div>
 
             <div class="row">
@@ -423,21 +442,6 @@
             <div class="row">
                 <div class="col">
                     <div class="form-group">
-                        <label for="downtime_category">Downtime Category</label>
-                        <select name="downtime_category" id="downtime_category">
-                            <option value="">Select Category</option>
-                            <option value="setup" {% if edit_record.downtime_category == 'setup' %}selected{% endif %}>Setup Time</option>
-                            <option value="maintenance" {% if edit_record.downtime_category == 'maintenance' %}selected{% endif %}>Maintenance</option>
-                            <option value="breakdown" {% if edit_record.downtime_category == 'breakdown' %}selected{% endif %}>Machine Breakdown</option>
-                            <option value="material" {% if edit_record.downtime_category == 'material' %}selected{% endif %}>Material Issue</option>
-                            <option value="operator" {% if edit_record.downtime_category == 'operator' %}selected{% endif %}>Operator Issue</option>
-                            <option value="other" {% if edit_record.downtime_category == 'other' %}selected{% endif %}>Other</option>
-                        </select>
-                    </div>
-                </div>
-
-                <div class="col">
-                    <div class="form-group">
                         <label for="waste_reason">Waste Reason</label>
                         <select name="waste_reason" id="waste_reason">
                             <option value="">Select Reason</option>
@@ -449,6 +453,10 @@
                             <option value="other" {% if edit_record.waste_reason == 'other' %}selected{% endif %}>Other</option>
                         </select>
                     </div>
+                </div>
+
+                <div class="col">
+                    <div class="form-group"></div>
                 </div>
             </div>
 
@@ -494,6 +502,76 @@
         const overrunReasonGroup = document.getElementById('overrun_reason_group');
         const overrunReasonSelect = document.getElementById('overrun_reason_select');
         const overrunReasonOther = document.getElementById('overrun_reason_other');
+        const downtimeRowsContainer = document.getElementById('downtime_rows');
+        const addDowntimeRowBtn = document.getElementById('add_downtime_row');
+        const downtimeTotalInput = document.getElementById('downtime_minutes');
+        const editDowntimeRows = {{ edit_downtime_rows_json|safe }};
+
+        function recalcDowntimeTotal() {
+            const minuteInputs = downtimeRowsContainer.querySelectorAll('input[name="downtime_minutes_detail[]"]');
+            let total = 0;
+            minuteInputs.forEach((input) => {
+                const value = Number(input.value || 0);
+                if (!Number.isNaN(value) && value > 0) {
+                    total += value;
+                }
+            });
+            downtimeTotalInput.value = total.toFixed(2);
+        }
+
+        function createDowntimeRow(seed = {}) {
+            const wrapper = document.createElement('div');
+            wrapper.style.display = 'grid';
+            wrapper.style.gridTemplateColumns = '1.5fr 0.8fr 1.2fr auto';
+            wrapper.style.gap = '8px';
+            wrapper.style.marginBottom = '8px';
+
+            const category = document.createElement('select');
+            category.name = 'downtime_category[]';
+            category.innerHTML = `
+                <option value="">Select Category</option>
+                <option value="setup">Setup Time</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="breakdown">Machine Breakdown</option>
+                <option value="material">Material Issue</option>
+                <option value="operator">Operator Issue</option>
+                <option value="other">Other</option>
+            `;
+            category.value = seed.category || '';
+
+            const minutes = document.createElement('input');
+            minutes.type = 'number';
+            minutes.name = 'downtime_minutes_detail[]';
+            minutes.min = '0';
+            minutes.step = '0.01';
+            minutes.placeholder = 'Minutes';
+            minutes.value = seed.minutes || '';
+
+            const note = document.createElement('input');
+            note.type = 'text';
+            note.name = 'downtime_note[]';
+            note.placeholder = 'Optional note';
+            note.value = seed.note || '';
+
+            const removeBtn = document.createElement('button');
+            removeBtn.type = 'button';
+            removeBtn.className = 'plus-btn';
+            removeBtn.style.background = '#b02a37';
+            removeBtn.textContent = 'x';
+            removeBtn.title = 'Remove row';
+            removeBtn.addEventListener('click', () => {
+                wrapper.remove();
+                recalcDowntimeTotal();
+            });
+
+            minutes.addEventListener('input', recalcDowntimeTotal);
+
+            wrapper.appendChild(category);
+            wrapper.appendChild(minutes);
+            wrapper.appendChild(note);
+            wrapper.appendChild(removeBtn);
+            downtimeRowsContainer.appendChild(wrapper);
+        }
 
         function syncMachineFromJobCard() {
             const selected = jobCardSelect.value;
@@ -641,6 +719,7 @@
         machineOverrideInput.addEventListener('change', syncMachineFromJobCard);
         plannedTimeInput.addEventListener('input', syncOverrunReasonVisibility);
         overrunReasonSelect.addEventListener('change', syncOverrunOtherInput);
+        addDowntimeRowBtn.addEventListener('click', () => createDowntimeRow());
 
         jobCardSearchInput.addEventListener('input', renderJobCardResults);
         jobCardSearchInput.addEventListener('focus', renderJobCardResults);
@@ -661,6 +740,19 @@
         syncPlannedTimeFromJobCard();
         syncMachineFromJobCard();
         syncOverrunOtherInput();
+
+        if (editDowntimeRows && editDowntimeRows.length) {
+            editDowntimeRows.forEach((row) => createDowntimeRow(row));
+        } else if ('{{ edit_record.downtime|default:0 }}' !== '0' && '{{ edit_record.downtime_category|default:"" }}') {
+            createDowntimeRow({
+                category: '{{ edit_record.downtime_category|default:"" }}',
+                minutes: '{{ edit_record.downtime|default:0 }}',
+                note: '',
+            });
+        } else {
+            createDowntimeRow();
+        }
+        recalcDowntimeTotal();
 
         if (jobCardSelect.value) {
             const selectedOpt = jobCardSelect.options[jobCardSelect.selectedIndex];

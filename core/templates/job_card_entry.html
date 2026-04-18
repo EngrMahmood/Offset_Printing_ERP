@@ -7,12 +7,14 @@
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 12px;
             background-color: #f3f6f9;
+            overflow-x: hidden;
         }
 
         .container {
-            max-width: 980px;
+            max-width: 100%;
+            width: 100%;
             margin: 0 auto;
             background: white;
             padding: 28px;
@@ -29,6 +31,7 @@
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
 
         .nav-btn {
@@ -152,7 +155,7 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
     <div class="container">
@@ -205,7 +208,13 @@
             <div class="grid">
                 <div>
                     <label for="job_card_no">Job Card No <span class="required">*</span></label>
-                    <input id="job_card_no" name="job_card_no" value="{{ edit_record.job_card_no|default:'' }}" required>
+                    {% if edit_record %}
+                    <input id="job_card_no" value="{{ edit_record.job_card_no }}" readonly>
+                    <div class="hint">System assigned JC number (immutable).</div>
+                    {% else %}
+                    <input id="job_card_no" value="Auto: JC-MM-YY-####" readonly>
+                    <div class="hint">JC number will be generated automatically on save.</div>
+                    {% endif %}
                 </div>
 
                 <div>

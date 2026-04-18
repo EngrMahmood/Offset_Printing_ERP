@@ -1,0 +1,160 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Planning Workspace</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
+        .btn { display: inline-block; padding: 7px 11px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 10px; }
+        .filters { display:grid; grid-template-columns: repeat(6, minmax(140px, 1fr)); gap: 8px; margin-bottom: 8px; }
+        .filters input, .filters select { width: 100%; border: 1px solid #bfd0e2; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+        .stats { display:flex; gap:6px; flex-wrap: wrap; margin-bottom: 8px; }
+        .table-shell { overflow: auto; max-height: calc(100vh - 230px); border: 1px solid #d6e0ea; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1380px; }
+        th, td { border-bottom: 1px solid #e7eef5; padding: 7px; text-align: left; vertical-align: top; }
+        th { position: sticky; top: 0; background: #f6f9fc; z-index: 1; }
+        .muted { color: #5f6f82; font-size: 11px; }
+        .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; font-size: 10px; border: 1px solid #d3deea; background: #f3f7fb; }
+        .badge.draft { background:#eef5ff; border-color:#c8daf7; }
+        .badge.reviewed { background:#fff7e6; border-color:#f0d79a; }
+        .badge.approved { background:#e6f6ea; border-color:#bde4c7; }
+        .badge.closed { background:#f3f4f6; border-color:#d2d6dc; }
+        .row-approved { background: #f8fffb; }
+        .bulk-row { display:flex; gap:8px; align-items:center; margin-bottom: 8px; flex-wrap:wrap; }
+        .bulk-row select { border: 1px solid #bfd0e2; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
+        @media (max-width: 1080px) {
+            .filters { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
+        }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div class="top">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Planning Workspace</h1>
+            <div class="muted">Upload planning sheet, manage jobs, and issue A4 job cards for production.</div>
+        </div>
+        <div>
+            <a class="btn secondary" href="{% url 'home' %}">Back Home</a>
+            <a class="btn secondary" href="{% url 'planning:scan' %}">Scan QR</a>
+            <a class="btn secondary" href="{% url 'planning:report' %}">Planning Report</a>
+            <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
+            <a class="btn" href="{% url 'planning:import_sheet' %}">Import Planning Sheet</a>
+        </div>
+    </div>
+
+    <section class="panel">
+        <form method="get" class="filters">
+            <input type="text" name="q" placeholder="Search JC/PO/SKU/Job" value="{{ filters.q }}">
+            <select name="status">
+                <option value="">All status</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <input type="text" name="department" placeholder="Department" value="{{ filters.department }}">
+            <input type="text" name="machine" placeholder="Machine" value="{{ filters.machine }}">
+            <input type="date" name="from_date" value="{{ filters.from_date }}">
+            <input type="date" name="to_date" value="{{ filters.to_date }}">
+            <div style="grid-column: 1 / -1; display:flex; gap:8px;">
+                <button class="btn" type="submit">Apply Filters</button>
+                <a class="btn secondary" href="{% url 'planning:home' %}">Reset</a>
+            </div>
+        </form>
+
+        <div class="stats">
+            <span class="badge">Total: {{ jobs.paginator.count }}</span>
+            <span class="badge draft">Draft: {{ status_counts.draft|default:0 }}</span>
+            <span class="badge reviewed">Reviewed: {{ status_counts.reviewed|default:0 }}</span>
+            <span class="badge approved">Approved: {{ status_counts.approved|default:0 }}</span>
+            <span class="badge closed">Closed: {{ status_counts.closed|default:0 }}</span>
+        </div>
+
+        <form method="post">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="bulk_update_status">
+            <div class="bulk-row">
+                <span class="muted">Bulk status for selected rows:</span>
+                <select name="target_status" required>
+                    <option value="">Choose status</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+                <button class="btn" type="submit">Update Selected</button>
+                <span class="muted">Approved rows are locked for direct edits and most bulk transitions.</span>
+            </div>
+
+        <div class="table-shell">
+            <table>
+                <thead>
+                    <tr>
+                        <th><input type="checkbox" id="check_all"></th>
+                        <th>JC</th>
+                        <th>PO</th>
+                        <th>SKU</th>
+                        <th>Job Name</th>
+                        <th>Order Qty</th>
+                        <th>Print Sheets</th>
+                        <th>Machine</th>
+                        <th>Department</th>
+                        <th>Status</th>
+                        <th>Print Logs</th>
+                        <th>Dispatch Logs</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in jobs %}
+                    <tr class="{% if job.status|lower == 'approved' %}row-approved{% endif %}">
+                        <td><input type="checkbox" name="selected_ids" value="{{ job.id }}"></td>
+                        <td><strong>{{ job.jc_number }}</strong><div class="muted">{{ job.plan_date|default:"" }}</div></td>
+                        <td>{{ job.po_number|default:"-" }}</td>
+                        <td>{{ job.sku|default:"-" }}</td>
+                        <td>{{ job.job_name|default:"-" }}</td>
+                        <td>{{ job.order_qty|default:"-" }}</td>
+                        <td>{{ job.print_sheets|default:"-" }}</td>
+                        <td>{{ job.machine_name|default:"-" }}</td>
+                        <td>{{ job.department|default:"-" }}</td>
+                        <td><span class="badge {{ job.status|default:'draft'|lower }}">{{ job.status|default:"draft" }}</span></td>
+                        <td>{{ job.print_runs.count }}</td>
+                        <td>{{ job.dispatch_runs.count }}</td>
+                        <td>
+                            <a class="btn secondary" href="{% url 'planning:job_detail' job.id %}">View</a>
+                            <a class="btn secondary" href="{% url 'planning:job_edit' job.id %}">Edit</a>
+                            <a class="btn" href="{% url 'planning:job_card_print' job.id %}" target="_blank" rel="noopener">A4 Print</a>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="13">No planning jobs yet. Import the planning sheet first.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        </form>
+
+        {% if jobs.has_other_pages %}
+            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                {% if jobs.has_previous %}<a class="btn secondary" href="?page={{ jobs.previous_page_number }}">Previous</a>{% endif %}
+                <span class="muted" style="align-self:center;">Page {{ jobs.number }} / {{ jobs.paginator.num_pages }}</span>
+                {% if jobs.has_next %}<a class="btn secondary" href="?page={{ jobs.next_page_number }}">Next</a>{% endif %}
+            </div>
+        {% endif %}
+    </section>
+</main>
+<script>
+document.getElementById('check_all')?.addEventListener('change', function (event) {
+    const checked = event.target.checked;
+    document.querySelectorAll('input[name="selected_ids"]').forEach(function (box) {
+        box.checked = checked;
+    });
+});
+</script>
+</body>
+</html>

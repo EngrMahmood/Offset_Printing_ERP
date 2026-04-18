@@ -6,6 +6,8 @@ from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.views.decorators.http import require_POST
 from django.db.models import Q, Sum, Min, Max
+from django.db import transaction
+from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator
 from django.urls import reverse
@@ -16,7 +18,8 @@ import re
 from datetime import datetime, date, timedelta
 
 from .bulk_upload import process_jobcard_upload, get_template_headers, get_template_example
-from .models import JobCard, Production, Machine, Operator, Department, Material, Dispatch, UserProfile, ChangeLog, EditOverrideRequest, ShiftConfig, MachineWorkSchedule
+from .jc_numbering import allocate_next_jc_number
+from .models import JobCard, Production, ProductionDowntime, Machine, Operator, Department, Material, Dispatch, UserProfile, ChangeLog, EditOverrideRequest, ShiftConfig, MachineWorkSchedule
 
 try:
     import openpyxl
@@ -124,6 +127,7 @@ AUDIT_CONFIG = {
         'fields': [
             'job_card', 'machine', 'operator', 'shift', 'date', 'impressions', 'output_sheets',
             'waste_sheets', 'planned_time', 'run_time', 'setup_time', 'downtime', 'downtime_category',
+            'downtime_breakdown_text',
             'waste_reason',
         ],
         'labels': {
@@ -140,6 +144,7 @@ AUDIT_CONFIG = {
             'setup_time': 'Setup Time',
             'downtime': 'Downtime',
             'downtime_category': 'Downtime Category',
+            'downtime_breakdown_text': 'Downtime Breakdown',
             'waste_reason': 'Waste Reason',
         },
     },
@@ -700,10 +705,21 @@ def job_card_entry(request):
     if request.method == "POST" and not is_view_mode:
         try:
             change_reason = (request.POST.get('change_reason') or '').strip()
-            job_card_no = (request.POST.get('job_card_no') or '').strip()
             sku = (request.POST.get('sku') or '').strip()
             order_qty = int(request.POST.get('order_qty') or 0)
             production_tolerance_percent = float(request.POST.get('production_tolerance_percent') or 5)
+
+            po_date_raw = (request.POST.get('po_date') or '').strip()
+            if not po_date_raw:
+                raise ValueError("PO Date is required")
+            po_date = datetime.strptime(po_date_raw, "%Y-%m-%d").date()
+            month_value = po_date.strftime("%B")
+
+            # Enforce system-generated immutable JC numbering.
+            if edit_record:
+                job_card_no = edit_record.job_card_no
+            else:
+                job_card_no = allocate_next_jc_number(po_date)
 
             if edit_record and not change_reason:
                 raise ValueError("Change reason is required when editing a job card")
@@ -721,12 +737,6 @@ def job_card_entry(request):
                 duplicate_query = duplicate_query.exclude(pk=edit_record.pk)
             if duplicate_query.exists():
                 raise ValueError(f"Job card number {job_card_no} already exists")
-
-            po_date_raw = (request.POST.get('po_date') or '').strip()
-            if not po_date_raw:
-                raise ValueError("PO Date is required")
-            po_date = datetime.strptime(po_date_raw, "%Y-%m-%d").date() if po_date_raw else None
-            month_value = po_date.strftime("%B") if po_date else ((request.POST.get('month') or '').strip() or None)
 
             material = Material.objects.filter(id=request.POST.get('material')).first() if request.POST.get('material') else None
             machine = Machine.objects.filter(id=request.POST.get('machine_name')).first() if request.POST.get('machine_name') else None
@@ -879,6 +889,8 @@ def job_card_records(request):
 
     query = (request.GET.get('q') or '').strip()
     status = (request.GET.get('status') or '').strip()
+    date_from_raw = (request.GET.get('date_from') or '').strip()
+    date_to_raw = (request.GET.get('date_to') or '').strip()
     sort = (request.GET.get('sort') or 'created_at').strip()
     direction = (request.GET.get('dir') or 'desc').strip().lower()
     per_page = request.GET.get('per_page') or '50'
@@ -903,6 +915,27 @@ def job_card_records(request):
 
     if status:
         jobcards = jobcards.filter(status=status)
+
+    date_from = None
+    date_to = None
+    if date_from_raw:
+        try:
+            date_from = datetime.strptime(date_from_raw, '%Y-%m-%d').date()
+            jobcards = jobcards.filter(po_date__gte=date_from)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid From date format. Use YYYY-MM-DD.')
+            date_from_raw = ''
+    if date_to_raw:
+        try:
+            date_to = datetime.strptime(date_to_raw, '%Y-%m-%d').date()
+            jobcards = jobcards.filter(po_date__lte=date_to)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid To date format. Use YYYY-MM-DD.')
+            date_to_raw = ''
+
+    if date_from and date_to and date_from > date_to:
+        add_unique_message(request, messages.ERROR, 'From date cannot be later than To date.')
+        jobcards = jobcards.none()
 
     sortable_fields = {
         'job_card_no': 'job_card_no',
@@ -955,6 +988,8 @@ def job_card_records(request):
         'total_count': total_count,
         'q': query,
         'status': status,
+        'date_from': date_from_raw,
+        'date_to': date_to_raw,
         'sort': sort,
         'dir': direction,
         'per_page': per_page,
@@ -989,6 +1024,9 @@ def production_entry(request):
         run_time = request.POST.get('run_time')
         setup_time = request.POST.get('setup_time')
         downtime_category = request.POST.get('downtime_category')
+        downtime_categories = request.POST.getlist('downtime_category[]')
+        downtime_minutes_rows = request.POST.getlist('downtime_minutes_detail[]')
+        downtime_notes = request.POST.getlist('downtime_note[]')
         waste_reason = request.POST.get('waste_reason')
         remarks = request.POST.get('remarks')
         overrun_reason_select = (request.POST.get('overrun_reason_select') or '').strip()
@@ -998,11 +1036,41 @@ def production_entry(request):
             change_reason = (request.POST.get('change_reason') or '').strip()
             output_sheets_val = int(output_sheets) if output_sheets else 0
             waste_sheets_val = int(waste_sheets) if waste_sheets else 0
-            downtime_val = float(downtime_minutes) if downtime_minutes else 0
+            legacy_downtime_val = float(downtime_minutes) if downtime_minutes else 0
             planned_time_val = float(planned_time) if planned_time else 0
             run_time_val = float(run_time) if run_time else 0
             setup_time_val = float(setup_time) if setup_time else 0
             impressions_val = int(impressions) if impressions else 0
+
+            downtime_entries = []
+            max_rows = max(len(downtime_categories), len(downtime_minutes_rows), len(downtime_notes))
+            for idx in range(max_rows):
+                category = (downtime_categories[idx] if idx < len(downtime_categories) else '').strip()
+                minute_raw = (downtime_minutes_rows[idx] if idx < len(downtime_minutes_rows) else '').strip()
+                note = (downtime_notes[idx] if idx < len(downtime_notes) else '').strip()
+
+                if not category and not minute_raw and not note:
+                    continue
+
+                if not category:
+                    raise ValueError("Downtime category is required for each downtime row")
+
+                try:
+                    minutes = float(minute_raw or 0)
+                except ValueError:
+                    raise ValueError("Downtime minutes must be numeric")
+
+                if minutes <= 0:
+                    raise ValueError("Downtime minutes must be greater than 0 for each downtime row")
+
+                downtime_entries.append({
+                    'category': category,
+                    'minutes': minutes,
+                    'note': note or None,
+                })
+
+            downtime_val = float(sum(item['minutes'] for item in downtime_entries)) if downtime_entries else legacy_downtime_val
+            primary_downtime_category = downtime_entries[0]['category'] if downtime_entries else downtime_category
 
             if intermediate_pass:
                 output_sheets_val = 0
@@ -1013,7 +1081,7 @@ def production_entry(request):
                 raise ValueError("Planned time cannot be negative")
             if run_time_val <= 0:
                 raise ValueError("Run time must be greater than 0")
-            if downtime_val > 0 and not downtime_category:
+            if downtime_val > 0 and not primary_downtime_category:
                 raise ValueError("Downtime category is required when downtime is greater than 0")
             if waste_sheets_val > 0 and not waste_reason:
                 raise ValueError("Waste reason is required when waste sheets are greater than 0")
@@ -1087,15 +1155,27 @@ def production_entry(request):
                 'run_time': run_time_val,
                 'setup_time': setup_time_val,
                 'downtime': downtime_val,
-                'downtime_category': downtime_category,
+                'downtime_category': primary_downtime_category,
                 'waste_reason': waste_reason,
             }
 
             if edit_record:
                 before_snapshot = build_audit_snapshot('production', edit_record)
-                for field_name, value in payload.items():
-                    setattr(edit_record, field_name, value)
-                edit_record.save()
+                with transaction.atomic():
+                    for field_name, value in payload.items():
+                        setattr(edit_record, field_name, value)
+                    edit_record.save()
+                    edit_record.downtime_entries.all().delete()
+                    if downtime_entries:
+                        ProductionDowntime.objects.bulk_create([
+                            ProductionDowntime(
+                                production=edit_record,
+                                category=item['category'],
+                                minutes=item['minutes'],
+                                note=item['note'],
+                            )
+                            for item in downtime_entries
+                        ])
 
                 if log_change('production', edit_record, before_snapshot, request.user, 'update', change_reason):
                     messages.success(request, f'Production record updated for Job Card {job_card.job_card_no}')
@@ -1103,9 +1183,20 @@ def production_entry(request):
                     messages.success(request, f'No changes detected for Job Card {job_card.job_card_no}')
                 return redirect('production_records')
 
-            record = Production.objects.create(**payload)
-            record.created_by = request.user
-            record.save(update_fields=['created_by'])
+            with transaction.atomic():
+                record = Production.objects.create(**payload)
+                if downtime_entries:
+                    ProductionDowntime.objects.bulk_create([
+                        ProductionDowntime(
+                            production=record,
+                            category=item['category'],
+                            minutes=item['minutes'],
+                            note=item['note'],
+                        )
+                        for item in downtime_entries
+                    ])
+                record.created_by = request.user
+                record.save(update_fields=['created_by'])
             create_reason = overrun_reason or 'Initial entry created'
             log_change('production', record, {}, request.user, 'create', create_reason)
 
@@ -1144,6 +1235,14 @@ def production_entry(request):
         }),
         'today': edit_record.date if edit_record else timezone.now().date(),
         'edit_record': edit_record,
+        'edit_downtime_rows_json': json.dumps([
+            {
+                'category': row.category,
+                'minutes': float(row.minutes or 0),
+                'note': row.note or '',
+            }
+            for row in (edit_record.downtime_entries.all() if edit_record else [])
+        ]),
         'edit_lock_days': get_record_edit_lock_days(),
         'edit_lock_applies': bool(edit_record and record_is_time_locked('production', edit_record)),
         'is_view_mode': is_view_mode,
@@ -1176,6 +1275,8 @@ def production_records(request):
 
     query = (request.GET.get('q') or '').strip()
     shift = (request.GET.get('shift') or '').strip()
+    date_from_raw = (request.GET.get('date_from') or '').strip()
+    date_to_raw = (request.GET.get('date_to') or '').strip()
     sort = (request.GET.get('sort') or 'date').strip()
     direction = (request.GET.get('dir') or 'desc').strip().lower()
     per_page = request.GET.get('per_page') or '50'
@@ -1197,6 +1298,27 @@ def production_records(request):
 
     if shift:
         records = records.filter(shift=shift)
+
+    date_from = None
+    date_to = None
+    if date_from_raw:
+        try:
+            date_from = datetime.strptime(date_from_raw, '%Y-%m-%d').date()
+            records = records.filter(date__gte=date_from)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid From date format. Use YYYY-MM-DD.')
+            date_from_raw = ''
+    if date_to_raw:
+        try:
+            date_to = datetime.strptime(date_to_raw, '%Y-%m-%d').date()
+            records = records.filter(date__lte=date_to)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid To date format. Use YYYY-MM-DD.')
+            date_to_raw = ''
+
+    if date_from and date_to and date_from > date_to:
+        add_unique_message(request, messages.ERROR, 'From date cannot be later than To date.')
+        records = records.none()
 
     sortable_fields = {
         'date': 'date',
@@ -1255,6 +1377,8 @@ def production_records(request):
         'total_count': total_count,
         'q': query,
         'shift': shift,
+        'date_from': date_from_raw,
+        'date_to': date_to_raw,
         'sort': sort,
         'dir': direction,
         'per_page': per_page,
@@ -1359,6 +1483,8 @@ def dispatch_records(request):
             return redirect('dispatch_records')
 
     query = (request.GET.get('q') or '').strip()
+    date_from_raw = (request.GET.get('date_from') or '').strip()
+    date_to_raw = (request.GET.get('date_to') or '').strip()
     sort = (request.GET.get('sort') or 'dispatch_date').strip()
     direction = (request.GET.get('dir') or 'desc').strip().lower()
     per_page = request.GET.get('per_page') or '50'
@@ -1375,6 +1501,27 @@ def dispatch_records(request):
             Q(job_card__job_card_no__icontains=query) |
             Q(dc_no__icontains=query)
         )
+
+    date_from = None
+    date_to = None
+    if date_from_raw:
+        try:
+            date_from = datetime.strptime(date_from_raw, '%Y-%m-%d').date()
+            records = records.filter(dispatch_date__gte=date_from)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid From date format. Use YYYY-MM-DD.')
+            date_from_raw = ''
+    if date_to_raw:
+        try:
+            date_to = datetime.strptime(date_to_raw, '%Y-%m-%d').date()
+            records = records.filter(dispatch_date__lte=date_to)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid To date format. Use YYYY-MM-DD.')
+            date_to_raw = ''
+
+    if date_from and date_to and date_from > date_to:
+        add_unique_message(request, messages.ERROR, 'From date cannot be later than To date.')
+        records = records.none()
 
     sortable_fields = {
         'date': 'dispatch_date',
@@ -1414,6 +1561,8 @@ def dispatch_records(request):
         'page_obj': page_obj,
         'total_count': total_count,
         'q': query,
+        'date_from': date_from_raw,
+        'date_to': date_to_raw,
         'sort': sort,
         'dir': direction,
         'per_page': per_page,
@@ -1738,8 +1887,7 @@ def production_dashboard(request):
     planned_variance_minutes = total_actual_minutes - float(total_planned_minutes or 0)
     overrun_setup_minutes = float(total_setup_minutes or 0)
     overrun_downtime_minutes = float(sum(
-        p.downtime for p in period_productions
-        if p.downtime_category in {'breakdown', 'operator', 'other'}
+        p.unplanned_downtime_minutes for p in period_productions
     ))
     overrun_run_perf_minutes = max(float(planned_variance_minutes) - overrun_setup_minutes - overrun_downtime_minutes, 0)
 
@@ -1789,8 +1937,7 @@ def production_dashboard(request):
     UNPLANNED_CATEGORIES = {'breakdown', 'operator', 'other'}
     from django.db.models import Case, When, FloatField as DjFloatField
     unplanned_downtime = sum(
-        p.downtime for p in period_productions
-        if p.downtime_category in UNPLANNED_CATEGORIES
+        p.unplanned_downtime_minutes for p in period_productions
     )
     actual_run_time = available_time_minutes - unplanned_downtime
     availability = (actual_run_time / available_time_minutes * 100) if available_time_minutes > 0 else 0
@@ -1889,16 +2036,32 @@ def production_dashboard(request):
         )\
         .order_by('-total_impressions')[:5]
 
-    # Downtime analysis
-    downtime_by_category = period_productions\
-        .exclude(downtime_category__isnull=True)\
-        .exclude(downtime_category='')\
-        .values('downtime_category')\
-        .annotate(
-            total_minutes=Sum('downtime'),
-            count=Count('id')
-        )\
-        .order_by('-total_minutes')[:5]
+    # Downtime analysis (multi-row details with fallback for legacy records)
+    downtime_totals = {}
+    downtime_counts = {}
+    for production in period_productions.prefetch_related('downtime_entries'):
+        entries = list(production.downtime_entries.all())
+        if entries:
+            for row in entries:
+                key = row.category
+                downtime_totals[key] = downtime_totals.get(key, 0.0) + float(row.minutes or 0)
+                downtime_counts[key] = downtime_counts.get(key, 0) + 1
+            continue
+
+        if production.downtime_category and float(production.downtime or 0) > 0:
+            key = production.downtime_category
+            downtime_totals[key] = downtime_totals.get(key, 0.0) + float(production.downtime or 0)
+            downtime_counts[key] = downtime_counts.get(key, 0) + 1
+
+    downtime_by_category_data = [
+        {
+            'downtime_category': category,
+            'downtime_label': dict(Production.DOWNTIME_CHOICES).get(category, category),
+            'total_minutes': round(float(minutes or 0), 2),
+            'count': int(downtime_counts.get(category, 0)),
+        }
+        for category, minutes in sorted(downtime_totals.items(), key=lambda item: item[1], reverse=True)[:5]
+    ]
 
     # Dispatch trends and top dispatched job cards
     dispatch_by_date = period_dispatches\
@@ -2169,15 +2332,6 @@ def production_dashboard(request):
         for item in machine_utilization
     ]
 
-    downtime_by_category_data = [
-        {
-            'downtime_category': item['downtime_category'],
-            'total_minutes': float(item['total_minutes'] or 0),
-            'count': int(item['count'] or 0),
-        }
-        for item in downtime_by_category
-    ]
-
     dispatch_by_date_data = [
         {
             'date_only': item['dispatch_date'].isoformat() if item['dispatch_date'] else None,
@@ -2423,11 +2577,16 @@ def machine_master_tools(request):
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         entity_type = (request.POST.get('entity_type') or '').strip().lower()
-        machine_id = (request.POST.get('machine_id') or '').strip()
+        machine_id = (request.POST.get('machine_id') or request.POST.get('record_id') or '').strip()
         model = model_map.get(entity_type)
         record = get_object_or_404(model, pk=machine_id) if (model and machine_id) else None
+        is_admin_user = bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin')
 
-        if action == 'rename_machine' and record:
+        if action in {'rename_machine', 'edit_master', 'delete_master'} and not is_admin_user:
+            messages.error(request, 'Only admin can edit or delete master values.')
+            return redirect('machine_master_tools')
+
+        if action in {'rename_machine', 'edit_master'} and record:
             new_name = (request.POST.get('new_name') or '').strip()
             if not new_name:
                 messages.error(request, 'Name is required.')
@@ -2436,16 +2595,101 @@ def machine_master_tools(request):
                 if duplicate:
                     messages.error(request, f'Name already exists as #{duplicate.id} ({duplicate.name}).')
                 else:
+                    changed_fields = []
                     old_name = record.name
-                    record.name = new_name
-                    record.save(update_fields=['name'])
-                    messages.success(request, f'{entity_type.title()} renamed: {old_name} -> {record.name}')
+
+                    if record.name != new_name:
+                        record.name = new_name
+                        changed_fields.append('name')
+
+                    if entity_type == 'operator':
+                        new_employee_code = (request.POST.get('employee_code') or '').strip() or None
+                        if record.employee_code != new_employee_code:
+                            record.employee_code = new_employee_code
+                            changed_fields.append('employee_code')
+
+                    if entity_type == 'machine':
+                        speed_raw = (request.POST.get('standard_impressions_per_hour') or '').strip()
+                        setup_raw = (request.POST.get('standard_setup_minutes_per_color') or '').strip()
+
+                        try:
+                            new_speed = float(speed_raw) if speed_raw else float(record.standard_impressions_per_hour or 0)
+                            new_setup = float(setup_raw) if setup_raw else float(record.standard_setup_minutes_per_color or 0)
+                        except ValueError:
+                            messages.error(request, 'Machine speed and setup minutes per color must be numeric values.')
+                            return redirect('machine_master_tools')
+
+                        if new_speed <= 0 or new_setup <= 0:
+                            messages.error(request, 'Machine speed and setup minutes per color must be greater than 0.')
+                            return redirect('machine_master_tools')
+
+                        if float(record.standard_impressions_per_hour) != float(new_speed):
+                            record.standard_impressions_per_hour = new_speed
+                            changed_fields.append('standard_impressions_per_hour')
+                        if float(record.standard_setup_minutes_per_color) != float(new_setup):
+                            record.standard_setup_minutes_per_color = new_setup
+                            changed_fields.append('standard_setup_minutes_per_color')
+
+                    if changed_fields:
+                        record.save(update_fields=changed_fields)
+                        if old_name != record.name:
+                            messages.success(request, f'{entity_type.title()} updated: {old_name} -> {record.name}')
+                        else:
+                            messages.success(request, f'{entity_type.title()} details updated successfully.')
+                    else:
+                        messages.success(request, f'No changes detected for {entity_type.title()} {record.name}.')
 
         elif action == 'toggle_machine' and record and hasattr(record, 'is_active'):
             record.is_active = not record.is_active
             record.save(update_fields=['is_active'])
             state = 'active' if record.is_active else 'inactive'
             messages.success(request, f'{entity_type.title()} {record.name} marked {state}.')
+
+        elif action == 'delete_master' and record:
+            record_name = record.name
+
+            if entity_type == 'machine':
+                linked_jobcards = JobCard.objects.filter(machine_name=record).count()
+                linked_productions = Production.objects.filter(machine=record).count()
+                if linked_jobcards or linked_productions:
+                    messages.error(
+                        request,
+                        f'Cannot delete Machine {record_name}. Linked records found (Job Cards: {linked_jobcards}, Production: {linked_productions}).'
+                    )
+                    return redirect('machine_master_tools')
+
+            elif entity_type == 'operator':
+                linked_productions = Production.objects.filter(operator=record).count()
+                if linked_productions:
+                    messages.error(
+                        request,
+                        f'Cannot delete Operator {record_name}. Linked production records: {linked_productions}.'
+                    )
+                    return redirect('machine_master_tools')
+
+            elif entity_type == 'material':
+                linked_jobcards = JobCard.objects.filter(material=record).count()
+                if linked_jobcards:
+                    messages.error(
+                        request,
+                        f'Cannot delete Material {record_name}. Linked job cards: {linked_jobcards}.'
+                    )
+                    return redirect('machine_master_tools')
+
+            elif entity_type == 'department':
+                linked_jobcards = JobCard.objects.filter(department=record).count()
+                if linked_jobcards:
+                    messages.error(
+                        request,
+                        f'Cannot delete Department {record_name}. Linked job cards: {linked_jobcards}.'
+                    )
+                    return redirect('machine_master_tools')
+
+            try:
+                record.delete()
+                messages.success(request, f'{entity_type.title()} {record_name} deleted successfully.')
+            except ProtectedError:
+                messages.error(request, f'Cannot delete {entity_type.title()} {record_name} because it is referenced by other records.')
 
         return redirect('machine_master_tools')
 
@@ -2483,6 +2727,7 @@ def machine_master_tools(request):
         'operator_rows': operator_rows,
         'material_rows': material_rows,
         'department_rows': department_rows,
+        'is_admin_user': bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin'),
     }
     return render(request, 'machine_master_tools.html', context)
 

@@ -4,24 +4,55 @@
 <head>
     <title>Dispatch Records - Offset ERP</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
-        .container { max-width: 1100px; margin: 0 auto; }
-        .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
-        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; }
-        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 12px; background: #edf1f5; overflow-x: hidden; color: #233042; }
+        .container { max-width: 100%; margin: 0 auto; }
+        .card { background: #fff; border-radius: 6px; padding: 14px; border: 1px solid #d9e1ea; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        .btn { background: #445366; color: #fff; text-decoration: none; padding: 8px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; }
         .btn:hover { background: #2f5b73; }
         .btn-green { background: #198754; }
         .btn-green:hover { background: #136a42; }
-        h1 { margin-top: 0; }
-        .filters { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; margin-bottom: 14px; }
-        input { padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px; border-bottom: 1px solid #e7ebef; text-align: left; }
-        th { background: #f7f9fb; }
+        h1 { margin: 0; font-size: 22px; color: #1f2f43; }
+        .records-layout { display: grid; grid-template-columns: 240px 1fr; gap: 12px; }
+        .filter-panel { background: #f1f4f8; border: 1px solid #d4dce6; border-radius: 4px; padding: 10px; height: fit-content; }
+        .filter-panel h3 { margin: 0 0 10px; color: #1f2f43; font-size: 16px; }
+        .filter-form { display: grid; gap: 10px; }
+        .filter-form label { font-size: 11px; color: #3c4b5c; font-weight: 700; }
+        .filter-actions { display: grid; gap: 8px; }
+        input { padding: 6px 8px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 12px; background: #fff; }
+        select { padding: 6px 8px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 12px; background: #fff; }
+        .records-layout > div { min-width: 0; }
+        .table-meta { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 10px; }
+        .table-shell {
+            width: 100%;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: calc(100vh - 260px);
+            border: 1px solid #e5eaf0;
+            border-radius: 4px;
+            background: #fff;
+        }
+        table { width: 100%; min-width: 900px; border-collapse: collapse; font-size: 11px; }
+        th, td { padding: 7px 8px; border-bottom: 1px solid #e1e8f0; text-align: left; white-space: nowrap; vertical-align: top; }
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #eef2f7;
+            color: #304256;
+            font-size: 10px;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+        tbody tr:hover { background: #f8fbff; }
         .muted { color: #697586; }
         .actions-cell { white-space: nowrap; }
+        @media (max-width: 980px) {
+            .records-layout { grid-template-columns: 1fr; }
+            .table-shell { max-height: none; }
+        }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
     <div class="container">
@@ -57,35 +88,56 @@
             </p>
             {% endif %}
 
-            <form method="GET" class="filters">
-                <input name="q" value="{{ q }}" placeholder="Search by Job Card or DC No">
-                <select name="per_page">
-                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50 / page</option>
-                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100 / page</option>
-                </select>
-                <button type="submit" class="btn">Filter</button>
-            </form>
+            <div class="records-layout">
+                <aside class="filter-panel">
+                    <h3>Filters</h3>
+                    <form method="GET" class="filter-form">
+                        <label for="q">Search</label>
+                        <input id="q" name="q" value="{{ q }}" placeholder="Job Card or DC No">
 
-            <p class="muted" style="margin:6px 0 12px;">Total entries: {{ total_count }}</p>
+                        <label for="date_from">Dispatch Date From</label>
+                        <input id="date_from" type="date" name="date_from" value="{{ date_from }}">
 
-            {% if user.profile.role == 'admin' %}
-            <form id="bulk_archive_form_dispatch" method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="bulk_delete">
-                <button type="submit" class="btn" onclick="return confirm('Permanently delete selected dispatch records? This cannot be undone.');">Bulk Delete Selected</button>
-                <span class="muted" style="font-size:12px;">Admin only</span>
-            </form>
-            {% endif %}
+                        <label for="date_to">Dispatch Date To</label>
+                        <input id="date_to" type="date" name="date_to" value="{{ date_to }}">
 
-            <table>
+                        <label for="per_page">Rows Per Page</label>
+                        <select id="per_page" name="per_page">
+                            <option value="50" {% if per_page == 50 %}selected{% endif %}>50 / page</option>
+                            <option value="100" {% if per_page == 100 %}selected{% endif %}>100 / page</option>
+                        </select>
+
+                        <div class="filter-actions">
+                            <button type="submit" class="btn">Apply Filters</button>
+                            <a href="{% url 'dispatch_records' %}" class="btn">Clear</a>
+                        </div>
+                    </form>
+                </aside>
+
+                <div>
+                    <div class="table-meta">
+                        <p class="muted" style="margin:0;">Total entries: {{ total_count }}</p>
+                    </div>
+
+                    {% if user.profile.role == 'admin' %}
+                    <form id="bulk_archive_form_dispatch" method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="bulk_delete">
+                        <button type="submit" class="btn" onclick="return confirm('Permanently delete selected dispatch records? This cannot be undone.');">Bulk Delete Selected</button>
+                        <span class="muted" style="font-size:12px;">Admin only</span>
+                    </form>
+                    {% endif %}
+
+                    <div class="table-shell">
+                    <table>
                 <thead>
                     <tr>
                         {% if user.profile.role == 'admin' %}<th><input type="checkbox" id="select_all_dispatch"></th>{% endif %}
-                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}">Date</a></th>
-                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}">Job Card</a></th>
-                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=dc_no&dir={% if sort == 'dc_no' and dir == 'asc' %}desc{% else %}asc{% endif %}">DC No</a></th>
-                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=qty&dir={% if sort == 'qty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Dispatch Qty</a></th>
-                        <th><a href="?q={{ q }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}">Added By</a></th>
+                        <th><a href="?q={{ q }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}">Date</a></th>
+                        <th><a href="?q={{ q }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}">Job Card</a></th>
+                        <th><a href="?q={{ q }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=dc_no&dir={% if sort == 'dc_no' and dir == 'asc' %}desc{% else %}asc{% endif %}">DC No</a></th>
+                        <th><a href="?q={{ q }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=qty&dir={% if sort == 'qty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Dispatch Qty</a></th>
+                        <th><a href="?q={{ q }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}">Added By</a></th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -123,19 +175,22 @@
                     <tr><td colspan="7" class="muted">No dispatch records found.</td></tr>
                     {% endfor %}
                 </tbody>
-            </table>
+                    </table>
+                    </div>
 
-            {% if page_obj and page_obj.paginator.num_pages > 1 %}
-            <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;">
-                {% if page_obj.has_previous %}
-                <a class="btn" href="?q={{ q }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
-                {% endif %}
-                <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-                {% if page_obj.has_next %}
-                <a class="btn" href="?q={{ q }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
-                {% endif %}
+                    {% if page_obj and page_obj.paginator.num_pages > 1 %}
+                    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;">
+                        {% if page_obj.has_previous %}
+                        <a class="btn" href="?q={{ q }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
+                        {% endif %}
+                        <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                        {% if page_obj.has_next %}
+                        <a class="btn" href="?q={{ q }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
             </div>
-            {% endif %}
         </div>
     </div>
 

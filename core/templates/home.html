@@ -1,4 +1,4 @@
-{% load static %}
+﻿{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,15 +7,15 @@
     <title>Offset Printing ERP</title>
     <style>
         :root {
-            --bg: #f8f6f4;
+            --bg: #edf2f7;
             --surface: #ffffff;
-            --text: #2b1b1d;
-            --muted: #6f6265;
-            --line: #e6dedd;
-            --primary: #5b0a15;
-            --accent: #a78a2f;
-            --primary-soft: #f7f1e1;
-            --shadow: 0 6px 20px rgba(57, 27, 31, 0.08);
+            --text: #223246;
+            --muted: #5f6f84;
+            --line: #d6e0ea;
+            --primary: #32465d;
+            --accent: #5f6f82;
+            --primary-soft: #eef3f8;
+            --shadow: 0 4px 12px rgba(22, 37, 57, 0.08);
         }
 
         * {
@@ -30,7 +30,7 @@
         }
 
         .page {
-            max-width: 1060px;
+            max-width: 100%;
             margin: 0 auto;
             padding: 20px 14px 32px;
         }
@@ -117,7 +117,7 @@
 
         .header-image {
             min-height: 205px;
-            background: #f2e9ea;
+            background: #e6edf5;
             position: relative;
         }
 
@@ -132,7 +132,7 @@
             content: "";
             position: absolute;
             inset: 0;
-            background: linear-gradient(120deg, rgba(91, 10, 21, 0.2), rgba(167, 138, 47, 0.12));
+            background: linear-gradient(120deg, rgba(52, 73, 102, 0.18), rgba(95, 111, 130, 0.14));
             pointer-events: none;
         }
 
@@ -158,7 +158,7 @@
         .card {
             background: var(--surface);
             border: 1px solid var(--line);
-            border-left: 3px solid #d5c48a;
+            border-left: 3px solid #b8c7d8;
             border-radius: 9px;
             padding: 13px;
             text-decoration: none;
@@ -170,7 +170,7 @@
         .card:hover {
             border-left-color: var(--accent);
             transform: translateY(-2px);
-            box-shadow: 0 8px 18px rgba(91, 10, 21, 0.12);
+            box-shadow: 0 8px 18px rgba(52, 73, 102, 0.12);
         }
 
         .card h3 {
@@ -192,9 +192,9 @@
             padding: 10px;
             border-radius: 8px;
             background: var(--primary-soft);
-            color: #5a4a23;
+            color: #42566e;
             font-size: 0.83rem;
-            border: 1px solid #eadfbf;
+            border: 1px solid #cedbe8;
         }
 
         @media (max-width: 860px) {
@@ -211,7 +211,7 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
     <main class="page">
@@ -257,6 +257,11 @@
                 <a href="{% url 'job_card_records' %}" class="card">
                     <h3>Job Card Records</h3>
                     <p>View all job cards and track produced and dispatched balance.</p>
+                </a>
+
+                <a href="{% url 'planning:home' %}" class="card">
+                    <h3>Planning Workspace</h3>
+                    <p>Import planning sheet, manage repeat print and dispatch logs, and issue A4 job cards.</p>
                 </a>
                 {% endif %}
 
@@ -314,15 +319,15 @@
             <p class="section-subtitle">System administration and configuration tools.</p>
             <div class="nav-grid">
                 <a href="{% url 'manage_user_roles' %}" class="card">
-                    <h3>👥 Manage User Roles</h3>
+                    <h3>ðŸ‘¥ Manage User Roles</h3>
                     <p>Assign roles and permissions to team members (Admin only).</p>
                 </a>
                 <a href="{% url 'machine_master_tools' %}" class="card">
-                    <h3>🛠 Master Corrections</h3>
+                    <h3>ðŸ›  Master Corrections</h3>
                     <p>Rename or deactivate wrong dropdown values (machine, operator, material, department).</p>
                 </a>
                 <a href="/admin/" class="card">
-                    <h3>⚙️ Django Admin</h3>
+                    <h3>âš™ï¸ Django Admin</h3>
                     <p>Master data management: Machines, operators, materials, departments.</p>
                 </a>
             </div>
@@ -335,3 +340,4 @@
     </main>
 </body>
 </html>
+

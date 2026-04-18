@@ -1,20 +1,20 @@
 :root {
-    --brand-bg: #f8f6f4;
+    --brand-bg: #edf2f7;
     --brand-surface: #ffffff;
-    --brand-text: #2b1b1d;
-    --brand-muted: #6f6265;
-    --brand-line: #e6dedd;
-    --brand-primary: #5b0a15;
-    --brand-primary-dark: #440811;
-    --brand-accent: #a78a2f;
-    --brand-accent-soft: #f7f1e1;
-    --brand-shadow: 0 8px 24px rgba(57, 27, 31, 0.08);
-    --brand-success-bg: #f1f8f1;
-    --brand-success-text: #1f5e2c;
-    --brand-success-line: #c8decf;
-    --brand-error-bg: #fceff0;
-    --brand-error-text: #7b1c27;
-    --brand-error-line: #edc8cd;
+    --brand-text: #223246;
+    --brand-muted: #5f6f84;
+    --brand-line: #d6e0ea;
+    --brand-primary: #445366;
+    --brand-primary-dark: #2f3d50;
+    --brand-accent: #5f6f82;
+    --brand-accent-soft: #eef3f8;
+    --brand-shadow: 0 4px 12px rgba(22, 37, 57, 0.08);
+    --brand-success-bg: #ecf7f0;
+    --brand-success-text: #1f6241;
+    --brand-success-line: #c2e1ce;
+    --brand-error-bg: #fbeef0;
+    --brand-error-text: #8d3040;
+    --brand-error-line: #f1ced5;
     --erp-control-height: 32px;
     --erp-control-padding-x: 11px;
     --erp-font-size-sm: 12px;
@@ -27,6 +27,16 @@ body {
     color: var(--brand-text);
     font-size: var(--erp-font-size-md);
     line-height: 1.35;
+    padding: 12px !important;
+    overflow-x: hidden;
+}
+
+.container,
+.page {
+    max-width: 100% !important;
+    width: 100% !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
 }
 
 h1, h2, h3, h4 {
@@ -156,8 +166,8 @@ button[type="submit"] {
 .upload-btn,
 .dashboard-link {
     background: var(--brand-accent) !important;
-    color: #2f2508 !important;
-    border: 1px solid #8c7428 !important;
+    color: #fff !important;
+    border: 1px solid #4f6074 !important;
 }
 
 .btn-green:hover,
@@ -165,7 +175,7 @@ button[type="submit"] {
 .plus-btn:hover,
 .upload-btn:hover,
 .dashboard-link:hover {
-    background: #8f7529 !important;
+    background: #4d5d71 !important;
     color: #fff !important;
 }
 
@@ -201,7 +211,7 @@ button[type="submit"] {
 }
 
 th {
-    background: #f5efdf !important;
+    background: #edf2f7 !important;
     color: var(--brand-primary) !important;
 }
 
@@ -298,7 +308,7 @@ th {
 
 .footer-note {
     background: var(--brand-accent-soft) !important;
-    border-color: #e5d5a8 !important;
-    color: #5f4b19 !important;
+    border-color: #cedbe8 !important;
+    color: #42566e !important;
     font-size: 12px !important;
 }
