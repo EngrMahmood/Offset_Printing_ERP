@@ -82,6 +82,19 @@ def parse_date(value, month_hint=None):
 
     hinted_month = parse_month_hint(month_hint)
 
+    # Handle ISO datetime values commonly exported by Excel/CSV (e.g. 2025-12-08 00:00:00).
+    iso_datetime_match = re.fullmatch(
+        r'\d{4}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?',
+        raw,
+    )
+    if iso_datetime_match:
+        parsed = datetime.fromisoformat(raw.replace(' ', 'T')).date()
+        if hinted_month and parsed.month != hinted_month:
+            raise ValueError(
+                f"PO Date '{raw}' does not match Month column '{month_hint}'."
+            )
+        return parsed
+
     # Preferred safe format (no ambiguity)
     if re.fullmatch(r'\d{4}-\d{2}-\d{2}', raw):
         parsed = datetime.strptime(raw, '%Y-%m-%d').date()
