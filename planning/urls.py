@@ -29,6 +29,7 @@ urlpatterns = [
     path('pending-skus/master-entry/', views.pending_sku_master_entry, name='pending_sku_master_entry'),
     path('sku-recipes/', views.sku_recipes_list, name='sku_recipes'),
     path('sku-recipes/bulk-upload/', views.sku_recipe_bulk_upload, name='sku_recipe_bulk_upload'),
+    path('sku-recipes/template/', views.sku_recipe_template_download, name='sku_recipe_template_download'),
     path('sku-recipes/add/', views.sku_recipe_edit, name='sku_recipe_add'),
     path('sku-recipes/<int:recipe_id>/edit/', views.sku_recipe_edit, name='sku_recipe_edit'),
 ]

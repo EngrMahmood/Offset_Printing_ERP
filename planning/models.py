@@ -157,6 +157,7 @@ class PoDocument(models.Model):
 
 
 class SkuRecipe(models.Model):
+    lamination_front_and_back = models.BooleanField(default=False, help_text='Lamination is applied on both front and back')
     MASTER_DATA_STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('reviewed', 'Reviewed'),
@@ -208,6 +209,16 @@ class SkuRecipe(models.Model):
         related_name='sku_recipes_approved',
     )
     approved_at = models.DateTimeField(null=True, blank=True)
+
+    rejection_comment = models.TextField(blank=True)
+    last_rejected_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sku_recipes_rejected',
+    )
+    last_rejected_at = models.DateTimeField(null=True, blank=True)
 
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,

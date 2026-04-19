@@ -60,6 +60,35 @@
         <div class="msg">{{ msg }}</div>
     {% endfor %}
 
+    {% if recipe %}
+    <div style="margin-bottom:12px;padding:10px 14px;border-radius:8px;border:1px solid #d0dcea;background:#f8fafc;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+        <div>
+            <span style="font-size:11px;text-transform:uppercase;color:#55708a;font-weight:700;">Current Status</span><br>
+            {% if recipe.master_data_status == 'approved' %}
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#e7f6ec;color:#1b7f45;font-weight:700;font-size:12px;">● Approved</span>
+            {% elif recipe.master_data_status == 'reviewed' %}
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fff7e0;color:#8a5e00;font-weight:700;font-size:12px;">● Reviewed</span>
+            {% else %}
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#eef2f7;color:#42556e;font-weight:700;font-size:12px;">● Draft</span>
+            {% endif %}
+        </div>
+        {% if recipe.master_data_status != 'draft' %}
+        <div style="font-size:11px;color:#7a8fa6;">
+            Saving this form will reset status to <strong>Draft</strong> and require re-approval.
+        </div>
+        {% endif %}
+        {% if recipe.rejection_comment %}
+        <div style="flex:1;background:#fff8ec;border:1px solid #f0d890;border-radius:6px;padding:7px 10px;font-size:12px;color:#7a5700;">
+            <strong>↩ Rejection note:</strong> {{ recipe.rejection_comment }}
+            {% if recipe.last_rejected_by %}
+                — <em>{{ recipe.last_rejected_by.get_full_name|default:recipe.last_rejected_by.username }}
+                {% if recipe.last_rejected_at %}on {{ recipe.last_rejected_at|date:"d M Y H:i" }}{% endif %}</em>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <section class="panel">
         <form method="post" novalidate>
             {% csrf_token %}
@@ -210,7 +239,7 @@
             </div><!-- /form-grid -->
 
             <div class="actions">
-                <button type="submit" class="btn">Save Recipe</button>
+                <button type="submit" class="btn">{% if recipe %}Save Changes (resets to Draft){% else %}Save as Draft{% endif %}</button>
                 <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Cancel</a>
             </div>
         </form>

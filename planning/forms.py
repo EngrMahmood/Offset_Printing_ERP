@@ -1,8 +1,76 @@
 import re
+from decimal import Decimal
 
 from django import forms
 
 from .models import PlanningJob, SkuRecipe
+
+
+_COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
+_COLOR_SINGLE_RE = re.compile(r'^(\d+)\s*(?:colou?r(?:s)?)?$', re.IGNORECASE)
+
+
+def _normalize_color_spec_value(raw_value):
+    raw_text = str(raw_value or '').strip()
+    if not raw_text:
+        return ''
+
+    lowered = raw_text.lower()
+    if re.search(r'color|colour|colours|colors', lowered):
+        usable = True
+    elif re.search(r'\d+\s*c\b', lowered) or ('c' in lowered and re.search(r'\d', lowered)):
+        usable = True
+    elif any(sep in lowered for sep in ['+', '/', '-']):
+        usable = True
+    elif raw_text.isdigit() or re.fullmatch(r'\d+\.\d+', raw_text):
+        usable = True
+    else:
+        usable = False
+
+    if not usable:
+        return raw_text
+
+    normalized = lowered.replace('colours', 'color').replace('colour', 'color').replace('colors', 'color')
+    normalized = normalized.replace('c/', '+').replace('c+', '+').replace('/', '+').replace('-', '+')
+    normalized = re.sub(r'[^0-9\+\s]+', '', normalized).strip()
+    normalized = re.sub(r'\s+', '+', normalized)
+    normalized = re.sub(r'\++', '+', normalized)
+
+    plus_match = _COLOR_PLUS_RE.fullmatch(normalized)
+    if plus_match:
+        return f"{int(plus_match.group(1))}+{int(plus_match.group(2))}"
+
+    single_match = _COLOR_SINGLE_RE.fullmatch(normalized)
+    if single_match:
+        return f"{int(single_match.group(1))} color"
+
+    numbers = re.findall(r'[0-9]+', normalized)
+    if len(numbers) == 1:
+        return f"{int(numbers[0])} color"
+    if len(numbers) == 2:
+        return f"{int(numbers[0])}+{int(numbers[1])}"
+
+    return value
+
+
+def _normalize_application_value(raw_value):
+    value = str(raw_value or '').strip()
+    if not value:
+        return ''
+    lowered = value.lower()
+    if lowered in {'no', 'none', 'n/a', 'na', 'nil', 'not applicable'}:
+        return 'NO'
+    if 'uv' in lowered or 'u.v' in lowered:
+        return 'UV'
+    if 'matt' in lowered or 'matte' in lowered:
+        return 'Lamination Matt'
+    if 'lamination' in lowered or 'lam' in lowered or 'lamin' in lowered:
+        return 'Lamination Gloss'
+    if 'gloss' in lowered or 'shine' in lowered:
+        return 'Lamination Gloss'
+    if 'varnish' in lowered or 'op' in lowered:
+        return 'NO'
+    return value
 
 
 PURCHASE_MATERIAL_ORIGIN_CHOICES = [
@@ -18,9 +86,6 @@ APPLICATION_CHOICES = [
     ('Lamination Matt', 'Lamination Matt'),
     ('NO', 'NO'),
 ]
-
-_COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
-_COLOR_SINGLE_RE = re.compile(r'^(\d+)\s*(?:colou?r(?:s)?)?$', re.IGNORECASE)
 
 
 class PlanningJobEditForm(forms.ModelForm):
@@ -106,7 +171,7 @@ class SkuRecipeForm(forms.ModelForm):
         raise forms.ValidationError('Select Purchase Material Origin as Local or Imported.')
 
     def clean_color_spec(self):
-        value = (self.cleaned_data.get('color_spec') or '').strip()
+        value = _normalize_color_spec_value(self.cleaned_data.get('color_spec'))
         if not value:
             return ''
 
@@ -121,7 +186,7 @@ class SkuRecipeForm(forms.ModelForm):
         raise forms.ValidationError('Use color format like 4 color or 1+1.')
 
     def clean_application(self):
-        value = (self.cleaned_data.get('application') or '').strip()
+        value = _normalize_application_value(self.cleaned_data.get('application'))
         if not value:
             return ''
 
@@ -129,3 +194,16 @@ class SkuRecipeForm(forms.ModelForm):
         if value in allowed:
             return value
         raise forms.ValidationError('Select Application as UV, Lamination Gloss, Lamination Matt, or NO.')
+
+    def _normalize_decimal_field(self, value):
+        if value is None:
+            return None
+        if isinstance(value, Decimal) and value == value.to_integral_value():
+            return value.quantize(Decimal('1'))
+        return value
+
+    def clean_size_w_mm(self):
+        return self._normalize_decimal_field(self.cleaned_data.get('size_w_mm'))
+
+    def clean_size_h_mm(self):
+        return self._normalize_decimal_field(self.cleaned_data.get('size_h_mm'))

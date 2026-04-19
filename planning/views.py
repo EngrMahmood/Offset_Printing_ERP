@@ -223,35 +223,68 @@ def _format_display_qty(raw_value):
 
 
 def _normalize_color_spec_input(raw_value):
-    value = (raw_value or '').strip()
-    if not value:
+    raw_text = str(raw_value or '').strip()
+    if not raw_text:
         return ''
 
-    plus_match = _COLOR_PLUS_RE.fullmatch(value)
+    lowered = raw_text.lower()
+    if lowered in {'no', 'none', 'n/a', 'na', 'nil'}:
+        return ''
+
+    usable = False
+    if re.search(r'color|colour|colours|colors', lowered):
+        usable = True
+    elif re.search(r'\d+\s*c\b', lowered) or ('c' in lowered and re.search(r'\d', lowered)):
+        usable = True
+    elif any(sep in lowered for sep in ['+', '/', '-']):
+        usable = True
+    elif raw_text.isdigit() or re.fullmatch(r'\d+\.\d+', raw_text):
+        usable = True
+
+    if not usable:
+        return raw_text
+
+    normalized = lowered.replace('colours', 'color').replace('colour', 'color').replace('colors', 'color')
+    normalized = normalized.replace('c/', '+').replace('c+', '+').replace('/', '+').replace('-', '+')
+    normalized = re.sub(r'[^0-9\+\s]+', '', normalized).strip()
+    normalized = re.sub(r'\s+', '+', normalized)
+    normalized = re.sub(r'\++', '+', normalized)
+
+    plus_match = _COLOR_PLUS_RE.fullmatch(normalized)
     if plus_match:
         return f"{int(plus_match.group(1))}+{int(plus_match.group(2))}"
 
-    single_match = _COLOR_SINGLE_RE.fullmatch(value)
+    single_match = _COLOR_SINGLE_RE.fullmatch(normalized)
     if single_match:
         return f"{int(single_match.group(1))} color"
+
+    numbers = re.findall(r'[0-9]+', normalized)
+    if len(numbers) == 1:
+        return f"{int(numbers[0])} color"
+    if len(numbers) == 2:
+        return f"{int(numbers[0])}+{int(numbers[1])}"
 
     return value
 
 
 def _normalize_application_input(raw_value):
-    value = (raw_value or '').strip()
+    value = str(raw_value or '').strip()
     if not value:
         return ''
     lowered = value.lower()
-    if lowered in {'uv', 'uv coating'}:
-        return 'UV'
-    if lowered in {'lamination gloss', 'gloss lamination', 'gloss'}:
-        return 'Lamination Gloss'
-    if lowered in {'lamination matt', 'matt lamination', 'matte lamination', 'matt', 'matte'}:
-        return 'Lamination Matt'
-    if lowered in {'no', 'none', 'n/a', 'na', 'nil'}:
+    if lowered in {'no', 'none', 'n/a', 'na', 'nil', 'not applicable'}:
         return 'NO'
-    return value
+    if 'uv' in lowered or 'u.v' in lowered:
+        return 'UV'
+    if 'matt' in lowered or 'matte' in lowered:
+        return 'Lamination Matt'
+    if 'lamination' in lowered or 'lam' in lowered or 'lamin' in lowered:
+        return 'Lamination Gloss'
+    if 'gloss' in lowered or 'shine' in lowered:
+        return 'Lamination Gloss'
+    if 'varnish' in lowered or 'op' in lowered:
+        return 'NO'
+    return 'NO'
 
 
 def _append_unique_note_line(base_text, line):
@@ -1473,16 +1506,28 @@ def sku_recipes_list(request):
                 if current_status == 'draft':
                     messages.info(request, f'SKU {recipe.sku} is already in Draft.')
                     return redirect('planning:sku_recipes')
+                comment = (request.POST.get('rejection_comment') or '').strip()
                 recipe.master_data_status = 'draft'
                 recipe.reviewed_by = None
                 recipe.reviewed_at = None
                 recipe.approved_by = None
                 recipe.approved_at = None
-                recipe.save(update_fields=['master_data_status', 'reviewed_by', 'reviewed_at', 'approved_by', 'approved_at', 'updated_at'])
-                messages.success(request, f'SKU {recipe.sku} moved back to Draft.')
+                recipe.rejection_comment = comment
+                recipe.last_rejected_by = request.user
+                recipe.last_rejected_at = timezone.now()
+                recipe.save(update_fields=[
+                    'master_data_status', 'reviewed_by', 'reviewed_at',
+                    'approved_by', 'approved_at', 'rejection_comment',
+                    'last_rejected_by', 'last_rejected_at', 'updated_at',
+                ])
+                if comment:
+                    messages.warning(request, f'SKU {recipe.sku} sent back to Draft. Reason: {comment}')
+                else:
+                    messages.success(request, f'SKU {recipe.sku} moved back to Draft.')
                 return redirect('planning:sku_recipes')
 
     q = (request.GET.get('q') or '').strip()
+    status_filter = (request.GET.get('status') or '').strip()
     qs = SkuRecipe.objects.all()
     if q:
         qs = qs.filter(
@@ -1492,9 +1537,22 @@ def sku_recipes_list(request):
             | Q(machine_name__icontains=q)
             | Q(department__icontains=q)
         )
+    if status_filter in ('draft', 'reviewed', 'approved'):
+        qs = qs.filter(master_data_status=status_filter)
     paginator = Paginator(qs, 50)
     recipes = paginator.get_page(request.GET.get('page'))
-    return render(request, 'planning/sku_recipes.html', {'recipes': recipes, 'q': q})
+
+    bulk_highlights = request.session.pop('sku_recipe_bulk_highlights', {})
+    for recipe in recipes:
+        meta = bulk_highlights.get(str(recipe.id), {})
+        recipe.bulk_highlight_type = meta.get('type', '')
+        recipe.bulk_highlight_fields = meta.get('fields', [])
+
+    return render(request, 'planning/sku_recipes.html', {
+        'recipes': recipes,
+        'q': q,
+        'status_filter': status_filter,
+    })
 
 
 @login_required
@@ -1539,14 +1597,52 @@ def sku_recipe_bulk_upload(request):
             messages.error(request, 'Please choose a CSV or XLSX file to upload.')
             return redirect('planning:sku_recipe_bulk_upload')
 
+
         name = (upload_file.name or '').lower()
         rows = []
-
+        # Map Google Sheet headers to model fields (robust, case-insensitive, and with all required fields)
+        header_to_field = {
+            'SKU': 'sku',
+            'JOB NAME': 'job_name',
+            'Material': 'material',
+            'Color': 'color_spec',
+            'Application': 'application',
+            'Size W mm': 'size_w_mm',
+            'Size H mm': 'size_h_mm',
+            'Size W Inch': 'size_w_inch',
+            'Size H Inch': 'size_h_inch',
+            'Ups': 'ups',
+            'Print Sheet Size': 'print_sheet_size',
+            'Purchase Sheet Size': 'purchase_sheet_size',
+            'Purchase Sheet ups': 'purchase_sheet_ups',
+            'Purchase Material': 'purchase_material',
+            'Machine Name': 'machine_name',
+            'Machine': 'machine_name',
+            'Department': 'department',
+            'Cost': 'default_unit_cost',
+            'Default Unit Cost': 'default_unit_cost',
+            'Daily Demand': 'daily_demand',
+            'AWC No.': 'awc_no',
+            'AWC No': 'awc_no',
+            'Plate Set No': 'plate_set_no',
+            'Die': 'die_cutting',
+            'Notes': 'notes',
+        }
+        int_clean_fields = {'size_w_mm', 'size_h_mm', 'size_w_inch', 'size_h_inch', 'ups', 'purchase_sheet_ups', 'daily_demand'}
+        def clean_intlike(val):
+            try:
+                if val is None or str(val).strip() == '':
+                    return ''
+                ival = int(float(val))
+                return str(ival)
+            except:
+                return str(val) if val is not None else ''
         try:
             if name.endswith('.csv'):
                 decoded = upload_file.read().decode('utf-8-sig')
                 reader = csv.DictReader(io.StringIO(decoded))
-                rows = list(reader)
+                for row in reader:
+                    rows.append(row)
             elif name.endswith('.xlsx'):
                 try:
                     import openpyxl
@@ -1555,8 +1651,18 @@ def sku_recipe_bulk_upload(request):
                     return redirect('planning:sku_recipe_bulk_upload')
                 wb = openpyxl.load_workbook(upload_file, data_only=True)
                 ws = wb.active
-                header = [str(c).strip() if c is not None else '' for c in next(ws.iter_rows(min_row=1, max_row=1, values_only=True), [])]
-                for values in ws.iter_rows(min_row=2, values_only=True):
+                # Find header row: look for row with 'SKU' and 'JOB NAME'
+                header_row_idx = None
+                for i, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=True), 1):
+                    values = [str(c).strip() if c is not None else '' for c in row]
+                    if 'SKU' in values and 'JOB NAME' in values:
+                        header_row_idx = i
+                        header = values
+                        break
+                if not header_row_idx:
+                    messages.error(request, 'Could not find header row in Excel file. Make sure it matches the template.')
+                    return redirect('planning:sku_recipe_bulk_upload')
+                for values in ws.iter_rows(min_row=header_row_idx+1, values_only=True):
                     row = {}
                     for idx, key in enumerate(header):
                         if key:
@@ -1573,49 +1679,47 @@ def sku_recipe_bulk_upload(request):
             messages.error(request, 'No rows found in upload file.')
             return redirect('planning:sku_recipe_bulk_upload')
 
-        field_map = {
-            'sku': ['sku', 'SKU'],
-            'job_name': ['job_name', 'Job Name'],
-            'material': ['material', 'Material'],
-            'color_spec': ['color_spec', 'Color', 'Colour'],
-            'application': ['application', 'Application'],
-            'size_w_mm': ['size_w_mm', 'Size W (mm)'],
-            'size_h_mm': ['size_h_mm', 'Size H (mm)'],
-            'ups': ['ups', 'UPS'],
-            'print_sheet_size': ['print_sheet_size', 'Print Sheet'],
-            'purchase_sheet_size': ['purchase_sheet_size', 'Purchase Sheet'],
-            'purchase_sheet_ups': ['purchase_sheet_ups', 'Purchase Sheet Ups'],
-            'purchase_material': ['purchase_material', 'Purchase Material Origin'],
-            'machine_name': ['machine_name', 'Machine'],
-            'department': ['department', 'Department'],
-            'default_unit_cost': ['default_unit_cost', 'Unit Cost'],
-            'daily_demand': ['daily_demand', 'Daily Demand'],
-            'awc_no': ['awc_no', 'AWC No'],
-            'plate_set_no': ['plate_set_no', 'Plate Set No'],
-            'die_cutting': ['die_cutting', 'Die'],
-            'notes': ['notes', 'Notes'],
-        }
-
-        def pick_value(source, aliases):
-            for key in aliases:
-                if key in source and source.get(key) not in (None, ''):
-                    return source.get(key)
-            return ''
-
         created = 0
         updated = 0
         failed = 0
         sample_errors = []
+        bulk_highlights = {}
+        highlight_fields = {
+            'sku', 'job_name', 'material', 'color_spec', 'application',
+            'size_w_mm', 'size_h_mm', 'ups', 'print_sheet_size',
+            'purchase_sheet_size', 'purchase_sheet_ups', 'purchase_material',
+            'machine_name', 'department', 'default_unit_cost', 'daily_demand',
+            'awc_no', 'plate_set_no', 'die_cutting', 'notes',
+        }
 
         for idx, source in enumerate(rows, start=2):
             payload = {}
-            for field_name, aliases in field_map.items():
-                value = pick_value(source, aliases)
-                payload[field_name] = '' if value is None else str(value).strip()
-
-            if not payload['sku']:
+            lam_fnb = False
+            for header, field in header_to_field.items():
+                value = source.get(header, '')
+                # Robust normalization for application
+                if field == 'application':
+                    if 'f+b' in (str(value or '').lower()):
+                        lam_fnb = True
+                    payload[field] = _normalize_application_input(value)
+                elif field == 'color_spec':
+                    payload[field] = _normalize_color_spec_input(value)
+                # Remove decimals for mm columns
+                elif field in {'size_w_mm', 'size_h_mm'}:
+                    try:
+                        if value is None or str(value).strip() == '':
+                            payload[field] = ''
+                        else:
+                            payload[field] = str(int(float(value)))
+                    except:
+                        payload[field] = str(value) if value is not None else ''
+                elif field in int_clean_fields:
+                    payload[field] = clean_intlike(value)
+                else:
+                    payload[field] = '' if value is None else str(value).strip()
+            payload['lamination_front_and_back'] = lam_fnb
+            if not payload.get('sku'):
                 continue
-
             existing = SkuRecipe.objects.filter(sku__iexact=payload['sku']).first()
             form = SkuRecipeForm(payload, instance=existing)
             if not form.is_valid():
@@ -1627,7 +1731,6 @@ def sku_recipe_bulk_upload(request):
                     )
                     sample_errors.append(f'Row {idx} ({payload["sku"]}): {error_text}')
                 continue
-
             obj = form.save(commit=False)
             if not existing:
                 obj.created_by = request.user
@@ -1639,9 +1742,32 @@ def sku_recipe_bulk_upload(request):
             obj.save()
 
             if existing:
+                changed = [field for field in form.changed_data if field in highlight_fields]
+                if not changed:
+                    changed = [
+                        field for field in highlight_fields
+                        if str(getattr(existing, field, '') or '').strip() != str(form.cleaned_data.get(field, '') or '').strip()
+                    ]
+                if not changed:
+                    changed = ['sku']
+                bulk_highlights[str(obj.id)] = {
+                    'type': 'updated',
+                    'fields': changed,
+                }
                 updated += 1
             else:
+                created_fields = [
+                    field for field in form.cleaned_data
+                    if field in highlight_fields and form.cleaned_data.get(field) not in (None, '')
+                ]
+                bulk_highlights[str(obj.id)] = {
+                    'type': 'created',
+                    'fields': created_fields,
+                }
                 created += 1
+
+        if bulk_highlights:
+            request.session['sku_recipe_bulk_highlights'] = bulk_highlights
 
         if created or updated:
             messages.success(
@@ -1656,7 +1782,31 @@ def sku_recipe_bulk_upload(request):
     return render(request, 'planning/sku_recipe_bulk_upload.html')
 
 
-def _collect_pending_sku_rows(po_docs):
+@login_required
+@permission_required('can_edit_jobcard')
+def sku_recipe_template_download(request):
+    """Return a CSV template for bulk SKU recipe upload."""
+    headers = [
+        'Sno.', 'SKU', 'JOB NAME', 'Order Status', 'Material', 'Color', 'Application',
+        'Size W mm', 'Size H mm', 'Size W Inch', 'Size H Inch', 'Ups', 'Print Sheet Size',
+        'Purchase Sheet Size', 'Purchase Sheet ups', 'Purchase Material', 'Machine',
+        'Department', 'Default Unit Cost', 'Daily Demand', 'AWC No', 'Plate Set No', 'Die', 'Notes'
+    ]
+    sample_row = [
+        '1', 'SKU-001', 'Sample Job Name', 'Repeat', 'Art Card 300gsm', '4 color', 'UV',
+        '100', '150', '3.94', '5.91', '4', '720x1020', '720x1020', '2', 'Local',
+        'Heidelberg SM52', 'Printing', '5.00', '500', 'AWC-001', 'PLT-001', 'YES', 'Sample notes'
+    ]
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(headers)
+    writer.writerow(sample_row)
+    response = HttpResponse(output.getvalue(), content_type='text/csv; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="sku_recipe_upload_template.csv"'
+    return response
+
+
+
     """Build pending SKU rows from PO documents where SKU recipe is missing."""
     rows = []
     for po_doc in po_docs:
