@@ -81,18 +81,22 @@
         <div>
             <span style="font-size:11px;text-transform:uppercase;color:#55708a;font-weight:700;">Current Status</span><br>
             {% if recipe.master_data_status == 'approved' %}
-                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#e7f6ec;color:#1b7f45;font-weight:700;font-size:12px;">● Approved</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#e7f6ec;color:#1b7f45;font-weight:700;font-size:12px;">● Approved (Manager)</span>
             {% elif recipe.master_data_status == 'reviewed' %}
-                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fff7e0;color:#8a5e00;font-weight:700;font-size:12px;">● Reviewed and submitted for approval</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fff7e0;color:#8a5e00;font-weight:700;font-size:12px;">● Pending Approval (Manager)</span>
             {% elif recipe.master_data_status == 'pending_review' %}
-                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#ffe6e6;color:#b5282a;font-weight:700;font-size:12px;">● Pending Review</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fff4e9;color:#c76f1e;font-weight:700;font-size:12px;">● Pending Review (QC)</span>
             {% else %}
-                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#eef2f7;color:#42556e;font-weight:700;font-size:12px;">● Draft</span>
+                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#eef2f7;color:#42556e;font-weight:700;font-size:12px;">● Draft (Planner)</span>
             {% endif %}
         </div>
-        {% if recipe.master_data_status != 'draft' %}
+        <div style="font-size:12px;color:#32465d;">
+            <span style="font-weight:700;">Created by:</span>
+            {% if recipe.created_by %}{{ recipe.created_by.get_full_name|default:recipe.created_by.username }}{% else %}Unknown{% endif %}
+        </div>
+        {% if recipe and recipe.master_data_status == 'draft' %}
         <div style="font-size:11px;color:#7a8fa6;">
-            Saving this form will reset status to <strong>Draft</strong> and require re-approval.
+            Saving this form keeps the record in Draft status.
         </div>
         {% endif %}
         {% if recipe.rejection_comment %}
@@ -261,8 +265,25 @@
 
             </div><!-- /form-grid -->
 
+            {% if recipe %}
+                {% if recipe.master_data_status == 'pending_review' or recipe.master_data_status == 'reviewed' or recipe.master_data_status == 'approved' %}
+                <div class="field full-width">
+                    <label for="rejection_comment">Rejection comment</label>
+                    <textarea name="rejection_comment" id="rejection_comment" placeholder="Enter the reason for returning this SKU to Draft. This helps the planner correct the issue."></textarea>
+                    <div class="muted">Required when sending the SKU back to Draft.</div>
+                </div>
+                {% endif %}
+            {% endif %}
+
             <div class="actions">
-                <button type="submit" class="btn">{% if recipe %}Save Changes (resets to Draft){% else %}Save as Draft{% endif %}</button>
+                {% if recipe and recipe.master_data_status == 'approved' and not can_edit_approved %}
+                <div class="note" style="margin-bottom:10px;color:#b5282a;">
+                    Approved master records can only be changed by admin users.
+                </div>
+                {% endif %}
+                {% if not recipe or recipe.master_data_status == 'draft' %}
+                    <button type="submit" class="btn">{% if recipe %}Save Changes{% else %}Save as Draft{% endif %}</button>
+                {% endif %}
                 {% if recipe %}
                     {% if recipe.master_data_status == 'draft' %}
                         <button type="submit" class="btn secondary" name="action" value="submit_review">Submit for Review</button>
@@ -272,7 +293,7 @@
                     {% elif recipe.master_data_status == 'reviewed' %}
                         <button type="submit" class="btn secondary" name="action" value="approve">Approve</button>
                         <button type="submit" class="btn secondary" name="action" value="back_to_draft">Back to Draft</button>
-                    {% elif recipe.master_data_status == 'approved' %}
+                    {% elif recipe.master_data_status == 'approved' and can_edit_approved %}
                         <button type="submit" class="btn secondary" name="action" value="back_to_draft">Back to Draft</button>
                     {% endif %}
                 {% endif %}

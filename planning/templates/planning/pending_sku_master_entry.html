@@ -26,8 +26,10 @@
         .status.draft { background:#fff4e6; border-color:#f1c58b; color:#8a3f00; }
         .status.reviewed { background:#fffbe8; border-color:#eed789; color:#6b4c00; }
         .status.approved { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; }
+        .warning-box { display:flex; align-items:flex-start; gap:8px; padding:12px 14px; border-radius:10px; background:#ffe9e9; border:1px solid #f5c6c6; color:#9a1c1c; font-size:13px; margin-bottom:12px; }
+        .warning-box .icon { font-size:18px; line-height:1; margin-top:2px; }
         .hint { color:#5f6f82; font-size:11px; margin-bottom:8px; }
-        .warn { color:#8a3f00; font-size:11px; }
+        .warn { display:block; padding:10px 12px; border-radius:8px; background:#ffe9e9; border:1px solid #f5c6c6; color:#9a1c1c; font-size:12px; margin-bottom:8px; }
         .form-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; }
         .field { display:flex; flex-direction:column; gap:4px; }
         .field label { font-size:11px; color:#33485f; font-weight:700; }
@@ -53,7 +55,7 @@
     <div class="top">
         <div>
             <h1 style="margin:0;font-size:20px;">Pending SKU Master Data</h1>
-            <div class="hint">Complete required master fields, then send for approval. Only approved SKU data moves to Planning.</div>
+            <div class="warning-box"><span class="icon">⚠</span><span>Complete required master fields, then send for approval. Only approved SKU data moves to Planning.</span></div>
         </div>
         <a class="btn secondary" href="{% url 'planning:pending_skus' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To Pending SKUs</a>
     </div>
@@ -210,7 +212,7 @@
 
             <div class="actions">
                 <button type="submit" class="btn secondary" name="action" value="save_draft">Save Draft (Master)</button>
-                <button type="submit" class="btn" name="action" value="submit_review">Send For Approval Review</button>
+                <button type="submit" class="btn" name="action" value="submit_review">Send to QC Review</button>
             </div>
         </form>
     </section>

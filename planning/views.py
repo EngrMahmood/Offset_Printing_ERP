@@ -13,7 +13,7 @@ from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Q, Sum
-from django.http import HttpResponse
+from django.http import Http404, HttpResponse
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -25,9 +25,14 @@ from .models import PlanningDispatchRun, PlanningJob, PlanningPrintRun, PoDocume
 from .po_extractor import extract_po_from_pdf
 
 
+def _user_is_admin(user):
+    profile = getattr(user, 'profile', None)
+    return getattr(user, 'is_superuser', False) or (profile is not None and getattr(profile, 'role', None) == 'admin')
+
+
 PLANNING_STATUSES = [
     ('draft', 'Draft'),
-    ('reviewed', 'QC Approved'),
+    ('reviewed', 'Pending Approval (Manager)'),
     ('approved', 'Production Manager Approved'),
     ('closed', 'Closed'),
 ]
@@ -124,8 +129,8 @@ Purpose:
 - Release jobs through QC and Production Manager checkpoints.
 
 Status transitions:
-- Draft -> QC Approved
-- QC Approved -> Production Manager Approved
+- Draft -> Pending Review
+- Pending Review -> Pending Approval (Manager)
 
 After approval:
 - Print job card and run shop-floor execution flow.
@@ -1450,31 +1455,110 @@ def po_debug_extract(request):
 @permission_required('can_edit_jobcard')
 def sku_recipes_list(request):
     """List all SKU recipes with search; handles delete via POST."""
+    is_admin_user = _user_is_admin(request.user)
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         recipe_id = request.POST.get('recipe_id')
+        redirect_url = request.path
+        if request.GET:
+            redirect_url += '?' + request.GET.urlencode()
 
         if action == 'delete':
             try:
-                SkuRecipe.objects.filter(id=int(recipe_id)).delete()
+                recipe_obj = SkuRecipe.objects.get(id=int(recipe_id))
+                if recipe_obj.master_data_status == 'approved' and not is_admin_user:
+                    messages.error(request, 'Approved records can only be deleted by admin users.')
+                    return redirect(redirect_url)
+                recipe_obj.delete()
                 messages.success(request, 'SKU Recipe deleted.')
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, SkuRecipe.DoesNotExist):
                 messages.error(request, 'Invalid recipe ID.')
-            return redirect('planning:sku_recipes')
+            return redirect(redirect_url)
 
-        if action in {'submit_review', 'approve', 'back_to_draft'}:
+        if action == 'archive':
+            try:
+                recipe_obj = SkuRecipe.objects.get(id=int(recipe_id))
+                if recipe_obj.master_data_status == 'approved' and not is_admin_user:
+                    messages.error(request, 'Approved records can only be archived by admin users.')
+                    return redirect(redirect_url)
+                recipe_obj.is_active = False
+                recipe_obj.archived_by = request.user
+                recipe_obj.archived_at = timezone.now()
+                recipe_obj.archive_reason = (request.POST.get('archive_reason') or '').strip()
+                recipe_obj.save(update_fields=['is_active', 'archived_by', 'archived_at', 'archive_reason', 'updated_at'])
+                messages.success(request, 'SKU Recipe archived.')
+            except (TypeError, ValueError, SkuRecipe.DoesNotExist):
+                messages.error(request, 'Invalid recipe ID.')
+            return redirect(redirect_url)
+
+        if action in {'bulk_archive', 'bulk_delete'}:
+            selected_ids = []
+            for raw_id in request.POST.getlist('selected_ids'):
+                try:
+                    selected_ids.append(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+
+            if not selected_ids:
+                messages.error(request, 'Select at least one SKU recipe first.')
+                return redirect(redirect_url)
+
+            processed = 0
+            skipped_locked = 0
+            failures = []
+            for recipe_obj in SkuRecipe.objects.filter(id__in=selected_ids, is_active=True):
+                if recipe_obj.master_data_status == 'approved' and not is_admin_user:
+                    skipped_locked += 1
+                    continue
+
+                if action == 'bulk_archive':
+                    recipe_obj.is_active = False
+                    recipe_obj.archived_by = request.user
+                    recipe_obj.archived_at = timezone.now()
+                    recipe_obj.archive_reason = ''
+                    recipe_obj.save(update_fields=['is_active', 'archived_by', 'archived_at', 'archive_reason', 'updated_at'])
+                    processed += 1
+                else:
+                    try:
+                        recipe_obj.delete()
+                        processed += 1
+                    except Exception as exc:
+                        failures.append(f'{recipe_obj.sku}: {str(exc)}')
+
+            if action == 'bulk_archive':
+                messages.success(request, f'Bulk archive complete. Archived {processed}, skipped {skipped_locked}.')
+            else:
+                messages.success(request, f'Bulk delete complete. Deleted {processed}, skipped {skipped_locked}.')
+            if failures:
+                messages.error(request, 'Some items could not be processed: ' + '; '.join(failures))
+            return redirect(redirect_url)
+
+        if action in {'submit_review', 'review', 'approve', 'back_to_draft'}:
             try:
                 recipe = SkuRecipe.objects.get(id=int(recipe_id))
             except (TypeError, ValueError, SkuRecipe.DoesNotExist):
                 messages.error(request, 'Invalid recipe ID.')
-                return redirect('planning:sku_recipes')
+                return redirect(redirect_url)
 
             current_status = (recipe.master_data_status or 'draft').lower()
 
             if action == 'submit_review':
                 if current_status != 'draft':
-                    messages.error(request, f'SKU {recipe.sku} can only move to Reviewed from Draft.')
-                    return redirect('planning:sku_recipes')
+                    messages.error(request, f'SKU {recipe.sku} can only be submitted for review from Draft.')
+                    return redirect(redirect_url)
+                recipe.master_data_status = 'pending_review'
+                recipe.reviewed_by = None
+                recipe.reviewed_at = None
+                recipe.approved_by = None
+                recipe.approved_at = None
+                recipe.save(update_fields=['master_data_status', 'reviewed_by', 'reviewed_at', 'approved_by', 'approved_at', 'updated_at'])
+                messages.success(request, f'SKU {recipe.sku} submitted for review.')
+                return redirect(redirect_url)
+
+            if action == 'review':
+                if current_status != 'pending_review':
+                    messages.error(request, f'SKU {recipe.sku} can only move to Reviewed from Pending Review.')
+                    return redirect(redirect_url)
                 recipe.master_data_status = 'reviewed'
                 recipe.reviewed_by = request.user
                 recipe.reviewed_at = timezone.now()
@@ -1482,31 +1566,37 @@ def sku_recipes_list(request):
                 recipe.approved_at = None
                 recipe.save(update_fields=['master_data_status', 'reviewed_by', 'reviewed_at', 'approved_by', 'approved_at', 'updated_at'])
                 messages.success(request, f'SKU {recipe.sku} moved to Reviewed.')
-                return redirect('planning:sku_recipes')
+                return redirect(redirect_url)
 
             if action == 'approve':
                 if current_status != 'reviewed':
                     messages.error(request, f'SKU {recipe.sku} can only be Approved from Reviewed status.')
-                    return redirect('planning:sku_recipes')
+                    return redirect(redirect_url)
                 missing_required = _missing_required_master_fields(recipe, recipe.job_name)
                 if missing_required:
                     messages.error(
                         request,
                         f'SKU {recipe.sku} cannot be approved. Missing required master data: {", ".join(missing_required)}.',
                     )
-                    return redirect('planning:sku_recipes')
+                    return redirect(redirect_url)
                 recipe.master_data_status = 'approved'
                 recipe.approved_by = request.user
                 recipe.approved_at = timezone.now()
                 recipe.save(update_fields=['master_data_status', 'approved_by', 'approved_at', 'updated_at'])
                 messages.success(request, f'SKU {recipe.sku} approved.')
-                return redirect('planning:sku_recipes')
+                return redirect(redirect_url)
 
             if action == 'back_to_draft':
                 if current_status == 'draft':
                     messages.info(request, f'SKU {recipe.sku} is already in Draft.')
-                    return redirect('planning:sku_recipes')
+                    return redirect(redirect_url)
+                if current_status == 'approved' and not is_admin_user:
+                    messages.error(request, 'Approved records can only be reverted by admin users.')
+                    return redirect(redirect_url)
                 comment = (request.POST.get('rejection_comment') or '').strip()
+                if not comment:
+                    messages.error(request, 'Please provide a reason when sending a record back to Draft.')
+                    return redirect(redirect_url)
                 recipe.master_data_status = 'draft'
                 recipe.reviewed_by = None
                 recipe.reviewed_at = None
@@ -1524,11 +1614,11 @@ def sku_recipes_list(request):
                     messages.warning(request, f'SKU {recipe.sku} sent back to Draft. Reason: {comment}')
                 else:
                     messages.success(request, f'SKU {recipe.sku} moved back to Draft.')
-                return redirect('planning:sku_recipes')
+                return redirect(redirect_url)
 
     q = (request.GET.get('q') or '').strip()
     status_filter = (request.GET.get('status') or '').strip()
-    qs = SkuRecipe.objects.all()
+    qs = SkuRecipe.objects.filter(is_active=True)
     if q:
         qs = qs.filter(
             Q(sku__icontains=q)
@@ -1537,7 +1627,7 @@ def sku_recipes_list(request):
             | Q(machine_name__icontains=q)
             | Q(department__icontains=q)
         )
-    if status_filter in ('draft', 'reviewed', 'approved'):
+    if status_filter in ('draft', 'pending_review', 'reviewed', 'approved'):
         qs = qs.filter(master_data_status=status_filter)
     paginator = Paginator(qs, 50)
     recipes = paginator.get_page(request.GET.get('page'))
@@ -1552,6 +1642,90 @@ def sku_recipes_list(request):
         'recipes': recipes,
         'q': q,
         'status_filter': status_filter,
+        'can_edit_approved': is_admin_user,
+    })
+
+
+@login_required
+def sku_recipes_status(request, status=None):
+    """List SKU recipes filtered by a fixed status for role-specific views."""
+    if status not in {'draft', 'pending_review', 'reviewed', 'approved'}:
+        raise Http404('Unknown SKU recipe status view.')
+    request.GET = request.GET.copy()
+    request.GET['status'] = status
+    return sku_recipes_list(request)
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def sku_recipes_archived(request):
+    """List archived SKU recipes."""
+    is_admin_user = _user_is_admin(request.user)
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        redirect_url = request.path
+        if request.GET:
+            redirect_url += '?' + request.GET.urlencode()
+
+        if action == 'restore':
+            recipe_id = request.POST.get('recipe_id')
+            try:
+                recipe_obj = SkuRecipe.objects.get(id=int(recipe_id), is_active=False)
+                if recipe_obj.master_data_status == 'approved' and not is_admin_user:
+                    messages.error(request, 'Approved recipes can only be restored by admin users.')
+                    return redirect(redirect_url)
+                recipe_obj.is_active = True
+                recipe_obj.save(update_fields=['is_active', 'updated_at'])
+                messages.success(request, 'SKU Recipe restored to active master list.')
+            except (TypeError, ValueError, SkuRecipe.DoesNotExist):
+                messages.error(request, 'Invalid recipe ID.')
+            return redirect(redirect_url)
+
+        if action == 'bulk_restore':
+            selected_ids = []
+            for raw_id in request.POST.getlist('selected_ids'):
+                try:
+                    selected_ids.append(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+
+            if not selected_ids:
+                messages.error(request, 'Select at least one archived SKU recipe first.')
+                return redirect(redirect_url)
+
+            restored = 0
+            skipped_locked = 0
+            for recipe_obj in SkuRecipe.objects.filter(id__in=selected_ids, is_active=False):
+                if recipe_obj.master_data_status == 'approved' and not is_admin_user:
+                    skipped_locked += 1
+                    continue
+                recipe_obj.is_active = True
+                recipe_obj.save(update_fields=['is_active', 'updated_at'])
+                restored += 1
+
+            messages.success(request, f'Bulk restore complete. Restored {restored}, skipped {skipped_locked}.')
+            return redirect(redirect_url)
+
+    q = (request.GET.get('q') or '').strip()
+    status_filter = (request.GET.get('status') or '').strip()
+    qs = SkuRecipe.objects.filter(is_active=False)
+    if q:
+        qs = qs.filter(
+            Q(sku__icontains=q)
+            | Q(job_name__icontains=q)
+            | Q(material__icontains=q)
+            | Q(machine_name__icontains=q)
+            | Q(department__icontains=q)
+        )
+    if status_filter in ('draft', 'pending_review', 'reviewed', 'approved'):
+        qs = qs.filter(master_data_status=status_filter)
+    paginator = Paginator(qs, 50)
+    recipes = paginator.get_page(request.GET.get('page'))
+    return render(request, 'planning/sku_recipes_archived.html', {
+        'recipes': recipes,
+        'q': q,
+        'status_filter': status_filter,
+        'can_restore_approved': is_admin_user,
     })
 
 
@@ -1560,58 +1734,88 @@ def sku_recipes_list(request):
 def sku_recipe_edit(request, recipe_id=None):
     """Create or edit a single SKU recipe."""
     if recipe_id:
-        recipe = get_object_or_404(SkuRecipe, id=recipe_id)
+        recipe = get_object_or_404(SkuRecipe, id=recipe_id, is_active=True)
         page_title = f'Edit SKU Recipe — {recipe.sku}'
     else:
         recipe = None
         page_title = 'Add New SKU Recipe'
 
+    is_admin_user = _user_is_admin(request.user)
+    can_edit_approved = True
+    if recipe and recipe.master_data_status == 'approved' and not is_admin_user:
+        can_edit_approved = False
+
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
+        if recipe and recipe.master_data_status == 'approved' and not is_admin_user:
+            messages.error(request, 'Approved master records can only be changed by admin users.')
+            return render(request, 'planning/sku_recipe_edit.html', {'form': SkuRecipeForm(instance=recipe), 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
         form = SkuRecipeForm(request.POST, instance=recipe)
         if form.is_valid():
             obj = form.save(commit=False)
             if not recipe_id:
                 obj.created_by = request.user
-            # Default: always save as draft unless workflow action below
-            obj.master_data_status = 'draft'
-            obj.reviewed_by = None
-            obj.reviewed_at = None
-            obj.approved_by = None
-            obj.approved_at = None
 
-            # Handle workflow actions for existing recipes
+            current_status = (recipe.master_data_status if recipe else 'draft')
+            obj.master_data_status = current_status
+            obj.reviewed_by = recipe.reviewed_by if recipe else None
+            obj.reviewed_at = recipe.reviewed_at if recipe else None
+            obj.approved_by = recipe.approved_by if recipe else None
+            obj.approved_at = recipe.approved_at if recipe else None
+
             if recipe_id and action:
-                if action == 'submit_review' and obj.master_data_status == 'draft':
+                if action == 'submit_review' and current_status == 'draft':
                     obj.master_data_status = 'pending_review'
+                    obj.reviewed_by = None
+                    obj.reviewed_at = None
+                    obj.approved_by = None
+                    obj.approved_at = None
                     messages.success(request, f'SKU Recipe "{obj.sku}" submitted for review. Status: Pending Review.')
-                elif action == 'review' and obj.master_data_status == 'pending_review':
+                elif action == 'review' and current_status == 'pending_review':
                     obj.master_data_status = 'reviewed'
                     obj.reviewed_by = request.user
                     from django.utils import timezone
                     obj.reviewed_at = timezone.now()
+                    obj.approved_by = None
+                    obj.approved_at = None
                     messages.success(request, f'SKU Recipe "{obj.sku}" reviewed and submitted for approval.')
-                elif action == 'approve' and obj.master_data_status == 'reviewed':
-                    # Check required fields before approving
+                elif action == 'approve' and current_status == 'reviewed':
                     from .views import _missing_required_master_fields
                     missing = _missing_required_master_fields(obj)
                     if missing:
                         messages.error(request, f'Cannot approve. Missing required fields: {", ".join(missing)}.')
-                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title})
+                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
                     obj.master_data_status = 'approved'
                     obj.approved_by = request.user
                     from django.utils import timezone
                     obj.approved_at = timezone.now()
                     messages.success(request, f'SKU Recipe "{obj.sku}" approved for master data usage.')
-                elif action == 'back_to_draft' and obj.master_data_status in ('pending_review', 'reviewed', 'approved'):
+                elif action == 'back_to_draft' and current_status in ('pending_review', 'reviewed', 'approved'):
+                    comment = (request.POST.get('rejection_comment') or '').strip()
+                    if not comment:
+                        messages.error(request, 'Please provide a reason when sending a record back to Draft.')
+                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
                     obj.master_data_status = 'draft'
                     obj.reviewed_by = None
                     obj.reviewed_at = None
                     obj.approved_by = None
                     obj.approved_at = None
+                    obj.rejection_comment = comment
+                    obj.last_rejected_by = request.user
+                    obj.last_rejected_at = timezone.now()
                     messages.success(request, f'SKU Recipe "{obj.sku}" moved back to Draft.')
+                else:
+                    messages.info(request, f'SKU Recipe "{obj.sku}" saved without changing workflow status.')
             else:
-                messages.success(request, f'SKU Recipe "{obj.sku}" saved as Draft. Submit for approval from SKU Recipe Master.')
+                if recipe_id:
+                    messages.success(request, f'SKU Recipe "{obj.sku}" saved.')
+                else:
+                    obj.master_data_status = 'draft'
+                    obj.reviewed_by = None
+                    obj.reviewed_at = None
+                    obj.approved_by = None
+                    obj.approved_at = None
+                    messages.success(request, f'SKU Recipe "{obj.sku}" saved as Draft. Submit for approval from SKU Recipe Master.')
 
             obj.save()
             return redirect('planning:sku_recipes')
@@ -1621,7 +1825,7 @@ def sku_recipe_edit(request, recipe_id=None):
     else:
         form = SkuRecipeForm(instance=recipe)
 
-    return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': recipe, 'page_title': page_title})
+    return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
 
 
 @login_required
@@ -1916,15 +2120,15 @@ def pending_skus(request):
 
             if action == 'submit_review':
                 if current_status != 'draft':
-                    messages.error(request, f'SKU {sku} can only move to Reviewed from Draft.')
+                    messages.error(request, f'SKU {sku} can only move to Pending Review from Draft.')
                     return _redirect_pending()
-                recipe.master_data_status = 'reviewed'
-                recipe.reviewed_by = request.user
-                recipe.reviewed_at = timezone.now()
+                recipe.master_data_status = 'pending_review'
+                recipe.reviewed_by = None
+                recipe.reviewed_at = None
                 recipe.approved_by = None
                 recipe.approved_at = None
                 recipe.save(update_fields=['master_data_status', 'reviewed_by', 'reviewed_at', 'approved_by', 'approved_at', 'updated_at'])
-                messages.success(request, f'SKU {sku} moved to Reviewed.')
+                messages.success(request, f'SKU {sku} moved to Pending Review.')
                 return _redirect_pending()
 
             if action == 'approve':
@@ -2185,12 +2389,12 @@ def pending_sku_master_entry(request):
                 if missing_required:
                     messages.error(
                         request,
-                        f'SKU {sku} cannot be sent for approval. Missing required data: {", ".join(missing_required)}.',
+                        f'SKU {sku} cannot be sent for QC review. Missing required data: {", ".join(missing_required)}.',
                     )
                 else:
-                    obj.master_data_status = 'reviewed'
-                    obj.reviewed_by = request.user
-                    obj.reviewed_at = timezone.now()
+                    obj.master_data_status = 'pending_review'
+                    obj.reviewed_by = None
+                    obj.reviewed_at = None
                     obj.approved_by = None
                     obj.approved_at = None
                     obj.save()
@@ -2201,7 +2405,7 @@ def pending_sku_master_entry(request):
                     po_doc.extracted_payload = payload
                     po_doc.save(update_fields=['extracted_payload'])
 
-                    messages.success(request, f'SKU {sku} submitted for approval review.')
+                    messages.success(request, f'SKU {sku} submitted for QC review.')
                     return _redirect_pending()
             else:
                 obj.master_data_status = 'draft'

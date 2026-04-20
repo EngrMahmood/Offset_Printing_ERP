@@ -27,7 +27,9 @@
         .status.reviewed { background:#fffbe8; border-color:#eed789; color:#6b4c00; }
         .status.approved { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; }
         .msg { padding:8px 10px; border-radius:6px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; margin-bottom:8px; font-size:12px; }
-        .msg.warning { background:#fff7e8; border-color:#f0d79a; color:#7a5600; }
+        .msg.warning { background:#ffe9e9; border-color:#f5c6c6; color:#9a1c1c; font-weight:700; }
+        .warning-box { display:flex; align-items:flex-start; gap:8px; padding:12px 14px; border-radius:10px; background:#ffe9e9; border:1px solid #f5c6c6; color:#9a1c1c; font-size:13px; margin-bottom:12px; }
+        .warning-box .icon { font-size:18px; line-height:1; margin-top:2px; }
         .filters { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 10px; }
         .filters select, .filters input { border:1px solid #bfd0e2; border-radius:6px; padding:6px 8px; font-size:12px; min-width:180px; }
         .po-chip-wrap { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px; }
@@ -47,6 +49,7 @@
     <div class="top">
         <div>
             <h1 style="margin:0;font-size:20px;">Pending SKUs</h1>
+            <div class="warning-box"><span class="icon">⚠</span><span>Complete required master fields, then send for approval. Only approved SKU data moves to Planning.</span></div>
             <div class="muted">New SKUs from PO intake that must complete Master Data and Approval before entering Planning.</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">

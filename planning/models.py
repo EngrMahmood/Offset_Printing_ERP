@@ -161,7 +161,7 @@ class SkuRecipe(models.Model):
     MASTER_DATA_STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('pending_review', 'Pending Review'),
-        ('reviewed', 'Reviewed'),
+        ('reviewed', 'Pending Approval (Manager)'),
         ('approved', 'Approved'),
     ]
 
@@ -189,6 +189,16 @@ class SkuRecipe(models.Model):
     plate_set_no = models.CharField(max_length=120, blank=True)
     die_cutting = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    archive_reason = models.TextField(blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sku_recipes_archived',
+    )
+    archived_at = models.DateTimeField(null=True, blank=True)
     master_data_status = models.CharField(
         max_length=20,
         choices=MASTER_DATA_STATUS_CHOICES,

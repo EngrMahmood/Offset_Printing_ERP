@@ -1,0 +1,158 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Archived SKU Recipes</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
+        .btn { display: inline-block; padding: 7px 12px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 14px; }
+        .search-row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; align-items: center; }
+        .search-row input[type="text"] { flex: 1; min-width: 180px; border: 1px solid #bfd0e2; border-radius: 6px; padding: 7px 10px; font-size: 13px; }
+        .stats-strip { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+        .stat-chip { padding: 6px 12px; border-radius: 20px; font-size: 12px; border: 1px solid #d0dcea; background: #fff; color: #445366; text-decoration: none; }
+        .stat-chip.active { background: #445366; color: #fff; border-color: #445366; }
+        .table-shell { overflow: auto; max-height: calc(100vh - 240px); border: 1px solid #d6e0ea; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1100px; }
+        th, td { border-bottom: 1px solid #e7eef5; padding: 8px 10px; text-align: left; vertical-align: top; }
+        th { position: sticky; top: 0; background: #f6f9fc; z-index: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
+        .muted { color: #5f6f82; font-size: 11px; }
+        .badge { display: inline-flex; align-items: center; padding: 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; }
+        .badge.draft { background: #eef2f7; color: #42556e; }
+        .badge.pending_review { background: #fff4e9; color: #c76f1e; }
+        .badge.reviewed { background: #fff7e0; color: #8a5e00; }
+        .badge.approved { background: #e7f6ec; color: #1b7f45; }
+        .empty-state { padding: 32px; text-align: center; color: #7a8fa6; }
+        .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; border: 1px solid #c8d7e7; background: #f5f9ff; color: #2e3f53; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    {% with current_step='master' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
+    <div class="top">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Archived SKU Recipes</h1>
+            <div class="muted">View SKU master records that were archived from the active master list.</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Active Recipes</a>
+            <a class="btn" href="{% url 'planning:home' %}">Planning Home</a>
+        </div>
+    </div>
+
+    {% for msg in messages %}
+        <div class="msg">{{ msg }}</div>
+    {% endfor %}
+
+    <form method="get" class="search-row">
+        <input type="text" name="q" placeholder="Search SKU, job name, material, machine, department…" value="{{ q }}">
+        <button class="btn" type="submit">Search</button>
+        {% if q or status_filter %}<a class="btn secondary" href="{% url 'planning:sku_recipes_archived' %}">Clear</a>{% endif %}
+    </form>
+
+    <form method="post" id="archived_bulk_actions_form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
+        {% csrf_token %}
+        <button class="btn" type="submit" name="action" value="bulk_restore" onclick="return confirm('Restore selected archived SKU recipes?');">Restore selected</button>
+        <span class="muted">Use checkboxes to restore archived recipes. Approved archived recipes can only be restored by admin users.</span>
+    </form>
+
+    <div class="stats-strip">
+        <a class="stat-chip {% if not status_filter %}active{% endif %}" href="{% url 'planning:sku_recipes_archived' %}{% if q %}?q={{ q }}{% endif %}">All</a>
+        <a class="stat-chip {% if status_filter == 'draft' %}active{% endif %}" href="?status=draft{% if q %}&q={{ q }}{% endif %}">Draft</a>
+        <a class="stat-chip {% if status_filter == 'pending_review' %}active{% endif %}" href="?status=pending_review{% if q %}&q={{ q }}{% endif %}">Pending Review</a>
+        <a class="stat-chip {% if status_filter == 'reviewed' %}active{% endif %}" href="?status=reviewed{% if q %}&q={{ q }}{% endif %}">Pending Approval</a>
+        <a class="stat-chip {% if status_filter == 'approved' %}active{% endif %}" href="?status=approved{% if q %}&q={{ q }}{% endif %}">Approved</a>
+    </div>
+
+    <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width:1%;"><input type="checkbox" id="check_all_archived" form="archived_bulk_actions_form"></th>
+                    <th>SKU</th>
+                    <th>Job Name</th>
+                    <th>Machine</th>
+                    <th>Department</th>
+                    <th>Created By</th>
+                    <th>Status</th>
+                    <th>Archived By</th>
+                    <th>Archived At</th>
+                    <th>Reason</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for recipe in recipes %}
+                <tr>
+                    <td><input type="checkbox" name="selected_ids" value="{{ recipe.id }}" form="archived_bulk_actions_form"></td>
+                    <td style="font-weight:700;">{{ recipe.sku }}</td>
+                    <td>{{ recipe.job_name|default:'-' }}</td>
+                    <td>{{ recipe.machine_name|default:'-' }}</td>
+                    <td>{{ recipe.department|default:'-' }}</td>
+                    <td>{% if recipe.created_by %}{{ recipe.created_by.get_full_name|default:recipe.created_by.username }}{% else %}-{% endif %}</td>
+                    <td>
+                        <span class="badge {{ recipe.master_data_status }}">
+                            {% if recipe.master_data_status == 'pending_review' %}
+                                Pending Review
+                            {% elif recipe.master_data_status == 'reviewed' %}
+                                Pending Approval
+                            {% else %}
+                                {{ recipe.master_data_status|title }}
+                            {% endif %}
+                        </span>
+                    </td>
+                    <td>{% if recipe.archived_by %}{{ recipe.archived_by.get_full_name|default:recipe.archived_by.username }}{% else %}-{% endif %}</td>
+                    <td>{% if recipe.archived_at %}{{ recipe.archived_at|date:'d M Y H:i' }}{% else %}-{% endif %}</td>
+                    <td>{{ recipe.archive_reason|default:'-' }}</td>
+                    <td>
+                        {% if recipe.master_data_status == 'approved' and not can_restore_approved %}
+                        <button class="btn secondary" type="button" disabled style="opacity:0.6;cursor:not-allowed;">Restore (admin only)</button>
+                        {% else %}
+                        <form method="post" action="" style="display:inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="restore">
+                            <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
+                            <button class="btn secondary" type="submit" onclick="return confirm('Restore this archived SKU recipe?');">Restore</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr>
+                    <td colspan="11" class="empty-state">No archived SKU recipes found{% if q %} matching "{{ q }}"{% endif %}{% if status_filter %} with status "{{ status_filter }}"{% endif %}.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    {% if recipes.has_other_pages %}
+    <div style="margin-top:12px; display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+        {% if recipes.has_previous %}
+            <a class="btn secondary" href="?page={{ recipes.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">Previous</a>
+        {% endif %}
+        <span class="muted">Page {{ recipes.number }} of {{ recipes.paginator.num_pages }}</span>
+        {% if recipes.has_next %}
+            <a class="btn secondary" href="?page={{ recipes.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">Next</a>
+        {% endif %}
+    </div>
+    {% endif %}
+</main>
+<script>
+document.getElementById('check_all_archived')?.addEventListener('change', function (event) {
+    const checked = event.target.checked;
+    document.querySelectorAll('input[name="selected_ids"][form="archived_bulk_actions_form"]').forEach(function (box) {
+        box.checked = checked;
+    });
+});
+</script>
+</body>
+</html>

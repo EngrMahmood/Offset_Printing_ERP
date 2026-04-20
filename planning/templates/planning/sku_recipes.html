@@ -45,6 +45,7 @@
         /* Status badges */
         .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; }
         .badge.draft { background: #eef2f7; color: #42556e; }
+        .badge.pending_review { background: #fff4e9; color: #c76f1e; }
         .badge.reviewed { background: #fff7e0; color: #8a5e00; }
         .badge.approved { background: #e7f6ec; color: #1b7f45; }
         .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
@@ -86,6 +87,7 @@
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
+            <a class="btn secondary" href="{% url 'planning:sku_recipes_archived' %}">Archived Recipes</a>
             <a class="btn secondary" href="{% url 'planning:sku_recipe_bulk_upload' %}">⬆ Bulk Upload</a>
             <a class="btn" href="{% url 'planning:sku_recipe_add' %}">+ Add SKU Recipe</a>
         </div>
@@ -98,19 +100,24 @@
     <!-- End-to-end workflow guide -->
     <div class="workflow-bar">
         <div class="wf-step">
-            <div class="k">Step 1 — Create</div>
+            <div class="k">Step 1 — Planner</div>
             <div class="v">Draft</div>
-            <div class="sub">Add manually or bulk upload CSV/XLSX. Every new or edited record starts here.</div>
+            <div class="sub">Planner creates or updates SKU master data as a Draft.</div>
         </div>
         <div class="wf-step">
-            <div class="k" style="color:#8a5e00;">Step 2 — Review</div>
-            <div class="v" style="color:#8a5e00;">Reviewed</div>
-            <div class="sub">QC verifies material, size, machine, and spec correctness.</div>
+            <div class="k" style="color:#8a5e00;">Step 2 — QC Review</div>
+            <div class="v" style="color:#8a5e00;">Pending Review</div>
+            <div class="sub">Planner submits the record for QC review and validation.</div>
         </div>
         <div class="wf-step">
-            <div class="k" style="color:#1b7f45;">Step 3 — Approve</div>
+            <div class="k" style="color:#d48b15;">Step 3 — QC Approval</div>
+            <div class="v" style="color:#d48b15;">Pending Approval</div>
+            <div class="sub">QC approves the SKU and forwards it to the manager.</div>
+        </div>
+        <div class="wf-step">
+            <div class="k" style="color:#1b7f45;">Step 4 — Manager Approval</div>
             <div class="v" style="color:#1b7f45;">Approved</div>
-            <div class="sub">Production Manager sign-off. Record is now live for PO sync.</div>
+            <div class="sub">Manager approves the reviewed SKU as final master data.</div>
         </div>
         <div class="wf-step">
             <div class="k" style="color:#b5282a;">Rejection Path</div>
@@ -126,11 +133,13 @@
             <a class="stat-chip {% if not status_filter %}active{% endif %}"
                href="{% url 'planning:sku_recipes' %}{% if q %}?q={{ q }}{% endif %}">All</a>
             <a class="stat-chip {% if status_filter == 'draft' %}active{% endif %}"
-               href="?status=draft{% if q %}&q={{ q }}{% endif %}">● Draft</a>
+               href="?status=draft{% if q %}&q={{ q }}{% endif %}">● Draft (Planner)</a>
+            <a class="stat-chip {% if status_filter == 'pending_review' %}active{% endif %}"
+               href="?status=pending_review{% if q %}&q={{ q }}{% endif %}">● Pending Review (QC)</a>
             <a class="stat-chip {% if status_filter == 'reviewed' %}active{% endif %}"
-               href="?status=reviewed{% if q %}&q={{ q }}{% endif %}">● Reviewed</a>
+               href="?status=reviewed{% if q %}&q={{ q }}{% endif %}">● Pending Approval (Manager)</a>
             <a class="stat-chip {% if status_filter == 'approved' %}active{% endif %}"
-               href="?status=approved{% if q %}&q={{ q }}{% endif %}">● Approved</a>
+               href="?status=approved{% if q %}&q={{ q }}{% endif %}">● Approved (Manager)</a>
         </div>
 
         <!-- Search -->
@@ -147,12 +156,24 @@
             {% if q %} — search: "{{ q }}"{% endif %}
         </div>
 
+        <form method="post" id="sku_bulk_actions_form" class="search-row" style="align-items:center; gap:10px; margin-bottom:12px;">
+            {% csrf_token %}
+            <span class="muted">Bulk actions for selected rows:</span>
+            <button class="btn warning" type="submit" name="action" value="bulk_archive"
+                    onclick="return confirm('Archive selected SKUs? Archived recipes will be hidden from the active master list.');">Archive selected</button>
+            <button class="btn danger" type="submit" name="action" value="bulk_delete"
+                    onclick="return confirm('Permanently delete selected SKUs? This cannot be undone.');">Delete selected</button>
+            <span class="muted">Approved recipes can only be archived or deleted by admin users.</span>
+        </form>
+
         <div class="table-shell">
             <table>
                 <thead>
                     <tr>
+                        <th style="width:1%;"><input type="checkbox" id="check_all" form="sku_bulk_actions_form"></th>
                         <th>#</th>
                         <th>SKU</th>
+                        <th>Created By</th>
                         <th>Job Name</th>
                         <th>Material</th>
                         <th>Color</th>
@@ -172,8 +193,10 @@
                 <tbody>
                     {% for recipe in recipes %}
                     <tr{% if recipe.bulk_highlight_type == 'created' %} class="bulk-row-created"{% endif %}{% if updated_ts and now_ts|add:'-300' < updated_ts %} style="background:#fffbe6;"{% endif %}>
+                        <td><input type="checkbox" name="selected_ids" value="{{ recipe.id }}" form="sku_bulk_actions_form"></td>
                         <td class="muted">{{ forloop.counter }}</td>
                         <td class="{% if 'sku' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}" style="font-weight:700;color:#1f3048;white-space:nowrap;">{{ recipe.sku }}</td>
+                        <td>{% if recipe.created_by %}{{ recipe.created_by.get_full_name|default:recipe.created_by.username }}{% else %}-{% endif %}</td>
                         <td class="{% if 'job_name' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.job_name|default:"-" }}</td>
                         <td class="{% if 'material' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.material|default:"-" }}</td>
                         <td class="{% if 'color_spec' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.color_spec|default:"-" }}</td>
@@ -191,7 +214,14 @@
                         <td class="{% if 'default_unit_cost' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.default_unit_cost|default:"-" }}</td>
                         <td>
                             <span class="badge {{ recipe.master_data_status }}">
-                                <span class="dot"></span> {{ recipe.master_data_status|title }}
+                                <span class="dot"></span>
+                                {% if recipe.master_data_status == 'pending_review' %}
+                                    Pending Review
+                                {% elif recipe.master_data_status == 'reviewed' %}
+                                    Pending Approval (Manager)
+                                {% else %}
+                                    {{ recipe.master_data_status|title }}
+                                {% endif %}
                             </span>
                         </td>
                         <td>
@@ -200,19 +230,31 @@
                         </td>
                         <td>
                             <div class="action-group">
-                                <a class="btn sm" href="{% url 'planning:sku_recipe_edit' recipe.id %}">Edit</a>
-                                <form method="post" action="" style="display:inline;">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
-                                    <button class="btn sm danger" type="submit" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
-                                </form>
+                                {% if recipe.master_data_status == 'approved' and not can_edit_approved %}
+                                    <span class="btn sm secondary" style="opacity:0.6;cursor:not-allowed;">Admin only</span>
+                                    <button class="btn sm danger" type="button" disabled style="opacity:0.6;cursor:not-allowed;">Delete</button>
+                                    <button class="btn sm warning" type="button" disabled style="opacity:0.6;cursor:not-allowed;">Archive</button>
+                                {% else %}
+                                    <a class="btn sm" href="{% url 'planning:sku_recipe_edit' recipe.id %}">Edit</a>
+                                    <form method="post" action="" style="display:inline;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
+                                        <button class="btn sm danger" type="submit" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
+                                    </form>
+                                    <form method="post" action="" style="display:inline;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="archive">
+                                        <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
+                                        <button class="btn sm warning" type="submit" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
+                                    </form>
+                                {% endif %}
                             </div>
                         </td>
                     </tr>
                     {% if recipe.master_data_status == 'draft' and recipe.rejection_comment %}
                     <tr class="reject-band">
-                        <td colspan="16">
+                        <td colspan="18">
                             <strong>↩ Rejection note:</strong> {{ recipe.rejection_comment }}
                             {% if recipe.last_rejected_by %}
                                 — <em>by {{ recipe.last_rejected_by.get_full_name|default:recipe.last_rejected_by.username }}
@@ -223,7 +265,7 @@
                     {% endif %}
 
                     {% empty %}
-                    <tr><td colspan="16" class="empty-state">
+                    <tr><td colspan="18" class="empty-state">
                         No SKU recipes found{% if q %} matching "{{ q }}"{% endif %}{% if status_filter %} with status "{{ status_filter }}"{% endif %}.
                         <a href="{% url 'planning:sku_recipe_add' %}">Add one now.</a>
                     </td></tr>
@@ -263,9 +305,9 @@
             {% csrf_token %}
             <input type="hidden" name="action" value="back_to_draft">
             <input type="hidden" name="recipe_id" id="rejectRecipeId" value="">
-            <textarea name="rejection_comment" id="rejectComment"
+            <textarea name="rejection_comment" id="rejectComment" required
                       placeholder="e.g. Material spec is incorrect, please update purchase sheet size and UPS…"></textarea>
-            <div class="muted" style="margin-top:5px;">Comment is optional but strongly recommended for traceability.</div>
+            <div class="muted" style="margin-top:5px;">Please provide a reason when sending a SKU back to Draft.</div>
             <div class="modal-actions">
                 <button type="button" class="btn secondary" onclick="closeRejectModal()">Cancel</button>
                 <button type="submit" class="btn warning">↩ Send Back to Draft</button>
@@ -292,6 +334,16 @@ document.getElementById('rejectModal').addEventListener('click', function(e) {
 document.addEventListener('keydown', function(e) {
     if (e.key === 'Escape') closeRejectModal();
 });
+
+var bulkSelectAll = document.getElementById('check_all');
+if (bulkSelectAll) {
+    bulkSelectAll.addEventListener('change', function (event) {
+        var checked = event.target.checked;
+        document.querySelectorAll('input[name="selected_ids"][form="sku_bulk_actions_form"]').forEach(function (box) {
+            box.checked = checked;
+        });
+    });
+}
 </script>
 </body>
 </html>
