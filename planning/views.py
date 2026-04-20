@@ -1567,20 +1567,57 @@ def sku_recipe_edit(request, recipe_id=None):
         page_title = 'Add New SKU Recipe'
 
     if request.method == 'POST':
+        action = request.POST.get('action', '').strip()
         form = SkuRecipeForm(request.POST, instance=recipe)
         if form.is_valid():
             obj = form.save(commit=False)
             if not recipe_id:
                 obj.created_by = request.user
-            # Stage-1 workflow: every new or changed recipe starts in Draft and requires approval.
+            # Default: always save as draft unless workflow action below
             obj.master_data_status = 'draft'
             obj.reviewed_by = None
             obj.reviewed_at = None
             obj.approved_by = None
             obj.approved_at = None
+
+            # Handle workflow actions for existing recipes
+            if recipe_id and action:
+                if action == 'submit_review' and obj.master_data_status == 'draft':
+                    obj.master_data_status = 'pending_review'
+                    messages.success(request, f'SKU Recipe "{obj.sku}" submitted for review. Status: Pending Review.')
+                elif action == 'review' and obj.master_data_status == 'pending_review':
+                    obj.master_data_status = 'reviewed'
+                    obj.reviewed_by = request.user
+                    from django.utils import timezone
+                    obj.reviewed_at = timezone.now()
+                    messages.success(request, f'SKU Recipe "{obj.sku}" reviewed and submitted for approval.')
+                elif action == 'approve' and obj.master_data_status == 'reviewed':
+                    # Check required fields before approving
+                    from .views import _missing_required_master_fields
+                    missing = _missing_required_master_fields(obj)
+                    if missing:
+                        messages.error(request, f'Cannot approve. Missing required fields: {", ".join(missing)}.')
+                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title})
+                    obj.master_data_status = 'approved'
+                    obj.approved_by = request.user
+                    from django.utils import timezone
+                    obj.approved_at = timezone.now()
+                    messages.success(request, f'SKU Recipe "{obj.sku}" approved for master data usage.')
+                elif action == 'back_to_draft' and obj.master_data_status in ('pending_review', 'reviewed', 'approved'):
+                    obj.master_data_status = 'draft'
+                    obj.reviewed_by = None
+                    obj.reviewed_at = None
+                    obj.approved_by = None
+                    obj.approved_at = None
+                    messages.success(request, f'SKU Recipe "{obj.sku}" moved back to Draft.')
+            else:
+                messages.success(request, f'SKU Recipe "{obj.sku}" saved as Draft. Submit for approval from SKU Recipe Master.')
+
             obj.save()
-            messages.success(request, f'SKU Recipe "{obj.sku}" saved as Draft. Submit for approval from SKU Recipe Master.')
             return redirect('planning:sku_recipes')
+        else:
+            # Surface a clear top-level message so users notice validation errors
+            messages.error(request, 'There are errors in the form. Please correct the highlighted fields and try again.')
     else:
         form = SkuRecipeForm(instance=recipe)
 
@@ -1806,7 +1843,7 @@ def sku_recipe_template_download(request):
     return response
 
 
-
+def _collect_pending_sku_rows(po_docs):
     """Build pending SKU rows from PO documents where SKU recipe is missing."""
     rows = []
     for po_doc in po_docs:

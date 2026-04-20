@@ -160,6 +160,7 @@ class SkuRecipe(models.Model):
     lamination_front_and_back = models.BooleanField(default=False, help_text='Lamination is applied on both front and back')
     MASTER_DATA_STATUS_CHOICES = [
         ('draft', 'Draft'),
+        ('pending_review', 'Pending Review'),
         ('reviewed', 'Reviewed'),
         ('approved', 'Approved'),
     ]
@@ -191,7 +192,7 @@ class SkuRecipe(models.Model):
     master_data_status = models.CharField(
         max_length=20,
         choices=MASTER_DATA_STATUS_CHOICES,
-        default='approved',
+        default='draft',
     )
     reviewed_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
