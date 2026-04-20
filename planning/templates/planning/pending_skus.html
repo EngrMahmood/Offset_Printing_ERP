@@ -55,6 +55,7 @@
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
             <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">SKU Recipe Master</a>
+            <a class="btn secondary" href="{% url 'planning:pending_skus_ignored' %}">Ignored SKUs</a>
         </div>
     </div>
 
@@ -113,6 +114,7 @@
                         <th>Master Data Stage</th>
                         <th>Missing Required</th>
                         <th>Action</th>
+                        <th>Manage</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -149,9 +151,42 @@
                                 {% if row.recipe %}Open Master Form{% else %}Enter Master Data{% endif %}
                             </a>
                         </td>
+                        <td>
+                            <form method="post" action="" style="display:inline; margin-right:4px;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="ignore">
+                                <input type="hidden" name="sku" value="{{ row.sku }}">
+                                <input type="hidden" name="po_doc_id" value="{{ row.po_doc_id }}">
+                                <input type="hidden" name="return_po" value="{{ po_filter }}">
+                                <input type="hidden" name="return_q" value="{{ q }}">
+                                <button class="btn secondary" type="submit" onclick="return confirm('Ignore this pending SKU and remove it from further processing?');">Ignore</button>
+                            </form>
+                            {% if row.recipe and row.recipe.is_active %}
+                                {% if row.recipe.master_data_status == 'approved' and not can_admin_actions %}
+                                    <span class="muted">Admin only</span>
+                                {% else %}
+                                    <form method="post" action="" style="display:inline; margin-right:4px;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="archive">
+                                        <input type="hidden" name="recipe_id" value="{{ row.recipe.id }}">
+                                        <input type="hidden" name="return_po" value="{{ po_filter }}">
+                                        <input type="hidden" name="return_q" value="{{ q }}">
+                                        <button class="btn warning" type="submit" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
+                                    </form>
+                                    <form method="post" action="" style="display:inline;">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="recipe_id" value="{{ row.recipe.id }}">
+                                        <input type="hidden" name="return_po" value="{{ po_filter }}">
+                                        <input type="hidden" name="return_q" value="{{ q }}">
+                                        <button class="btn danger" type="submit" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
+                                    </form>
+                                {% endif %}
+                            {% endif %}
+                        </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="8">No pending SKUs for the selected filter.</td></tr>
+                    <tr><td colspan="9">No pending SKUs for the selected filter.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

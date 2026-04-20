@@ -61,7 +61,10 @@
     <form method="post" id="archived_bulk_actions_form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
         {% csrf_token %}
         <button class="btn" type="submit" name="action" value="bulk_restore" onclick="return confirm('Restore selected archived SKU recipes?');">Restore selected</button>
-        <span class="muted">Use checkboxes to restore archived recipes. Approved archived recipes can only be restored by admin users.</span>
+        {% if can_delete_archived %}
+            <button class="btn warn" type="submit" name="action" value="bulk_delete" onclick="return confirm('Permanently delete selected archived SKU recipes? This cannot be undone.');">Delete selected</button>
+        {% endif %}
+        <span class="muted">Use checkboxes to restore archived recipes. Only admin users can delete permanently.</span>
     </form>
 
     <div class="stats-strip">
@@ -112,15 +115,23 @@
                     <td>{% if recipe.archived_by %}{{ recipe.archived_by.get_full_name|default:recipe.archived_by.username }}{% else %}-{% endif %}</td>
                     <td>{% if recipe.archived_at %}{{ recipe.archived_at|date:'d M Y H:i' }}{% else %}-{% endif %}</td>
                     <td>{{ recipe.archive_reason|default:'-' }}</td>
-                    <td>
+                    <td style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;">
                         {% if recipe.master_data_status == 'approved' and not can_restore_approved %}
-                        <button class="btn secondary" type="button" disabled style="opacity:0.6;cursor:not-allowed;">Restore (admin only)</button>
+                        <span class="muted">Admin only</span>
                         {% else %}
                         <form method="post" action="" style="display:inline;">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="restore">
                             <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
                             <button class="btn secondary" type="submit" onclick="return confirm('Restore this archived SKU recipe?');">Restore</button>
+                        </form>
+                        {% endif %}
+                        {% if can_delete_archived %}
+                        <form method="post" action="" style="display:inline;">
+                            {% csrf_token %}
+                            <input type="hidden" name="action" value="delete">
+                            <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
+                            <button class="btn warn" type="submit" onclick="return confirm('Permanently delete this archived SKU recipe? This cannot be undone.');">Delete</button>
                         </form>
                         {% endif %}
                     </td>

@@ -296,6 +296,10 @@
                     {% elif recipe.master_data_status == 'approved' and can_edit_approved %}
                         <button type="submit" class="btn secondary" name="action" value="back_to_draft">Back to Draft</button>
                     {% endif %}
+                    {% if recipe and (recipe.master_data_status != 'approved' or can_admin_actions) %}
+                        <button type="submit" class="btn danger" name="action" value="delete" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
+                        <button type="submit" class="btn warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
+                    {% endif %}
                 {% endif %}
                 <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Cancel</a>
             </div>

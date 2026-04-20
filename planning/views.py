@@ -480,6 +480,26 @@ def _sanitize_po_payload_items(payload):
     return items
 
 
+def _po_payload_items(payload, exclude_ignored=True):
+    items = _sanitize_po_payload_items(payload)
+    if not exclude_ignored:
+        return items
+
+    ignored_skus = {
+        _sku_key(s)
+        for s in (payload.get('new_skus_ignored') or [])
+        if s
+    }
+    if not ignored_skus:
+        return items
+
+    return [
+        item
+        for item in items
+        if _sku_key(item.get('sku')) not in ignored_skus
+    ]
+
+
 def _annotate_items_with_recipe(items, recipe_map):
     annotated = []
     repeat_count = 0
@@ -1643,6 +1663,7 @@ def sku_recipes_list(request):
         'q': q,
         'status_filter': status_filter,
         'can_edit_approved': is_admin_user,
+        'can_admin_actions': is_admin_user,
     })
 
 
@@ -1681,6 +1702,20 @@ def sku_recipes_archived(request):
                 messages.error(request, 'Invalid recipe ID.')
             return redirect(redirect_url)
 
+        if action == 'delete':
+            if not is_admin_user:
+                messages.error(request, 'Only admin users can permanently delete archived recipes.')
+                return redirect(redirect_url)
+
+            recipe_id = request.POST.get('recipe_id')
+            try:
+                recipe_obj = SkuRecipe.objects.get(id=int(recipe_id), is_active=False)
+                recipe_obj.delete()
+                messages.success(request, 'Archived SKU Recipe permanently deleted.')
+            except (TypeError, ValueError, SkuRecipe.DoesNotExist):
+                messages.error(request, 'Invalid recipe ID.')
+            return redirect(redirect_url)
+
         if action == 'bulk_restore':
             selected_ids = []
             for raw_id in request.POST.getlist('selected_ids'):
@@ -1706,6 +1741,36 @@ def sku_recipes_archived(request):
             messages.success(request, f'Bulk restore complete. Restored {restored}, skipped {skipped_locked}.')
             return redirect(redirect_url)
 
+        if action == 'bulk_delete':
+            if not is_admin_user:
+                messages.error(request, 'Only admin users can permanently delete archived recipes.')
+                return redirect(redirect_url)
+
+            selected_ids = []
+            for raw_id in request.POST.getlist('selected_ids'):
+                try:
+                    selected_ids.append(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+
+            if not selected_ids:
+                messages.error(request, 'Select at least one archived SKU recipe first.')
+                return redirect(redirect_url)
+
+            deleted = 0
+            failures = []
+            for recipe_obj in SkuRecipe.objects.filter(id__in=selected_ids, is_active=False):
+                try:
+                    recipe_obj.delete()
+                    deleted += 1
+                except Exception as exc:
+                    failures.append(f'{recipe_obj.sku}: {str(exc)}')
+
+            messages.success(request, f'Bulk delete complete. Deleted {deleted}.')
+            if failures:
+                messages.error(request, 'Some items could not be deleted: ' + '; '.join(failures))
+            return redirect(redirect_url)
+
     q = (request.GET.get('q') or '').strip()
     status_filter = (request.GET.get('status') or '').strip()
     qs = SkuRecipe.objects.filter(is_active=False)
@@ -1726,6 +1791,7 @@ def sku_recipes_archived(request):
         'q': q,
         'status_filter': status_filter,
         'can_restore_approved': is_admin_user,
+        'can_delete_archived': is_admin_user,
     })
 
 
@@ -1744,12 +1810,34 @@ def sku_recipe_edit(request, recipe_id=None):
     can_edit_approved = True
     if recipe and recipe.master_data_status == 'approved' and not is_admin_user:
         can_edit_approved = False
+    can_admin_actions = is_admin_user
 
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
+        if recipe and action == 'delete':
+            if recipe.master_data_status == 'approved' and not is_admin_user:
+                messages.error(request, 'Approved records can only be deleted by admin users.')
+            else:
+                recipe.delete()
+                messages.success(request, f'SKU Recipe "{recipe.sku}" deleted.')
+            return redirect('planning:sku_recipes')
+
+        if recipe and action == 'archive':
+            if recipe.master_data_status == 'approved' and not is_admin_user:
+                messages.error(request, 'Approved records can only be archived by admin users.')
+                return redirect('planning:sku_recipes')
+            recipe.is_active = False
+            recipe.archived_by = request.user
+            recipe.archived_at = timezone.now()
+            recipe.archive_reason = (request.POST.get('archive_reason') or '').strip()
+            recipe.save(update_fields=['is_active', 'archived_by', 'archived_at', 'archive_reason', 'updated_at'])
+            messages.success(request, f'SKU Recipe "{recipe.sku}" archived.')
+            return redirect('planning:sku_recipes')
+
         if recipe and recipe.master_data_status == 'approved' and not is_admin_user:
             messages.error(request, 'Approved master records can only be changed by admin users.')
-            return render(request, 'planning/sku_recipe_edit.html', {'form': SkuRecipeForm(instance=recipe), 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
+            return render(request, 'planning/sku_recipe_edit.html', {'form': SkuRecipeForm(instance=recipe), 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
+
         form = SkuRecipeForm(request.POST, instance=recipe)
         if form.is_valid():
             obj = form.save(commit=False)
@@ -1780,11 +1868,10 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.approved_at = None
                     messages.success(request, f'SKU Recipe "{obj.sku}" reviewed and submitted for approval.')
                 elif action == 'approve' and current_status == 'reviewed':
-                    from .views import _missing_required_master_fields
                     missing = _missing_required_master_fields(obj)
                     if missing:
                         messages.error(request, f'Cannot approve. Missing required fields: {", ".join(missing)}.')
-                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
+                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
                     obj.master_data_status = 'approved'
                     obj.approved_by = request.user
                     from django.utils import timezone
@@ -1825,7 +1912,13 @@ def sku_recipe_edit(request, recipe_id=None):
     else:
         form = SkuRecipeForm(instance=recipe)
 
-    return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
+    return render(request, 'planning/sku_recipe_edit.html', {
+        'form': form,
+        'recipe': recipe,
+        'page_title': page_title,
+        'can_edit_approved': can_edit_approved,
+        'can_admin_actions': can_admin_actions,
+    })
 
 
 @login_required
@@ -2052,7 +2145,7 @@ def _collect_pending_sku_rows(po_docs):
     rows = []
     for po_doc in po_docs:
         payload = po_doc.extracted_payload or {}
-        items = _sanitize_po_payload_items(payload)
+        items = _po_payload_items(payload)
         if not items:
             continue
 
@@ -2068,7 +2161,14 @@ def _collect_pending_sku_rows(po_docs):
                 item_map[key] = item
 
         po_number = payload.get('po_number') or '-'
+        ignored_skus = {
+            _sku_key(s)
+            for s in (payload.get('new_skus_ignored') or [])
+            if s
+        }
         for sku in missing_skus:
+            if _sku_key(sku) in ignored_skus:
+                continue
             item = item_map.get(_sku_key(sku), {})
             rows.append(
                 {
@@ -2090,6 +2190,7 @@ def _collect_pending_sku_rows(po_docs):
 @transaction.atomic
 def pending_skus(request):
     """Central queue of SKUs that are still missing in SKU Recipe master data."""
+    is_admin_user = _user_is_admin(request.user)
     if request.method == 'POST':
         action = (request.POST.get('action') or 'save').strip()
         sku = (request.POST.get('sku') or '').strip()
@@ -2105,6 +2206,50 @@ def pending_skus(request):
                 params['q'] = return_q
             url = reverse('planning:pending_skus')
             return redirect(f'{url}?{urlencode(params)}' if params else url)
+
+        if action in {'delete', 'archive'}:
+            recipe_id = request.POST.get('recipe_id')
+            try:
+                recipe_obj = SkuRecipe.objects.get(id=int(recipe_id))
+            except (TypeError, ValueError, SkuRecipe.DoesNotExist):
+                messages.error(request, 'Invalid recipe ID.')
+                return _redirect_pending()
+
+            if recipe_obj.master_data_status == 'approved' and not is_admin_user:
+                messages.error(request, 'Approved records can only be managed by admin users.')
+                return _redirect_pending()
+
+            if action == 'delete':
+                recipe_obj.delete()
+                messages.success(request, f'SKU recipe {recipe_obj.sku} deleted.')
+            else:
+                recipe_obj.is_active = False
+                recipe_obj.archived_by = request.user
+                recipe_obj.archived_at = timezone.now()
+                recipe_obj.archive_reason = (request.POST.get('archive_reason') or '').strip()
+                recipe_obj.save(update_fields=['is_active', 'archived_by', 'archived_at', 'archive_reason', 'updated_at'])
+                messages.success(request, f'SKU recipe {recipe_obj.sku} archived.')
+
+            return _redirect_pending()
+
+        if action == 'ignore':
+            try:
+                po_doc = PoDocument.objects.get(id=int(po_doc_id)) if po_doc_id else None
+            except (TypeError, ValueError, PoDocument.DoesNotExist):
+                po_doc = None
+
+            if not po_doc or not sku:
+                messages.error(request, 'Invalid SKU or PO reference for ignore action.')
+                return _redirect_pending()
+
+            payload = po_doc.extracted_payload or {}
+            ignored = { _sku_key(s) for s in (payload.get('new_skus_ignored') or []) if s }
+            ignored.add(_sku_key(sku))
+            payload['new_skus_ignored'] = sorted(ignored)
+            po_doc.extracted_payload = payload
+            po_doc.save(update_fields=['extracted_payload'])
+            messages.success(request, f'SKU {sku} will be ignored and removed from pending processing.')
+            return _redirect_pending()
 
         if not sku:
             messages.error(request, 'SKU is required.')
@@ -2304,8 +2449,94 @@ def pending_skus(request):
         'po_summary': sorted(po_summary_map.values(), key=lambda x: x['po_number']),
         'po_filter': po_filter,
         'q': q,
+        'can_admin_actions': is_admin_user,
     }
     return render(request, 'planning/pending_skus.html', context)
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+@transaction.atomic
+def pending_skus_ignored(request):
+    """Display pending SKUs that were marked ignored and no longer appear in the active pending queue."""
+    is_admin_user = _user_is_admin(request.user)
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        sku = (request.POST.get('sku') or '').strip()
+        po_doc_id = request.POST.get('po_doc_id')
+        if action == 'unignore':
+            try:
+                po_doc = PoDocument.objects.get(id=int(po_doc_id)) if po_doc_id else None
+            except (TypeError, ValueError, PoDocument.DoesNotExist):
+                po_doc = None
+
+            if not po_doc or not sku:
+                messages.error(request, 'Invalid PO or SKU for unignore action.')
+                return redirect('planning:pending_skus_ignored')
+
+            payload = po_doc.extracted_payload or {}
+            ignored = [s for s in (payload.get('new_skus_ignored') or []) if s]
+            normalized = _sku_key(sku)
+            kept = [s for s in ignored if _sku_key(s) != normalized]
+            payload['new_skus_ignored'] = sorted(kept)
+            po_doc.extracted_payload = payload
+            po_doc.save(update_fields=['extracted_payload'])
+            messages.success(request, f'SKU {sku} restored to the pending queue.')
+            return redirect('planning:pending_skus_ignored')
+
+    po_filter = (request.GET.get('po') or '').strip()
+    q = (request.GET.get('q') or '').strip()
+
+    docs = PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('-created_at')[:400]
+    rows = []
+    for doc in docs:
+        payload = doc.extracted_payload or {}
+        ignored_skus = [s for s in (payload.get('new_skus_ignored') or []) if s]
+        if not ignored_skus:
+            continue
+
+        po_number = payload.get('po_number') or '-'
+        for sku in ignored_skus:
+            if not sku:
+                continue
+            recipe = SkuRecipe.objects.filter(sku__iexact=sku).first()
+            rows.append({
+                'po_doc_id': doc.id,
+                'po_number': po_number,
+                'supplier': payload.get('supplier_name') or '-',
+                'sku': sku,
+                'job_name': recipe.job_name if recipe else '-',
+                'recipe_status': recipe.master_data_status if recipe else 'missing',
+                'recipe': recipe,
+                'uploaded_at': doc.created_at,
+            })
+
+    if po_filter:
+        rows = [row for row in rows if row['po_number'] == po_filter]
+    if q:
+        q_upper = q.upper()
+        rows = [
+            row
+            for row in rows
+            if q_upper in (row['sku'] or '').upper()
+            or q_upper in (row['po_number'] or '').upper()
+            or q_upper in (row['job_name'] or '').upper()
+        ]
+
+    po_summary = {}
+    for row in rows:
+        po_summary.setdefault(row['po_number'], {'po_number': row['po_number'], 'count': 0})
+        po_summary[row['po_number']]['count'] += 1
+
+    rows.sort(key=lambda row: (row['po_number'], row['sku']))
+
+    return render(request, 'planning/pending_skus_ignored.html', {
+        'rows': rows,
+        'po_summary': sorted(po_summary.values(), key=lambda x: x['po_number']),
+        'po_filter': po_filter,
+        'q': q,
+        'can_admin_actions': is_admin_user,
+    })
 
 
 @login_required
@@ -2344,6 +2575,7 @@ def pending_sku_master_entry(request):
     payload = po_doc.extracted_payload or {}
     po_number = payload.get('po_number') or '-'
     items = _sanitize_po_payload_items(payload)
+    is_admin_user = _user_is_admin(request.user)
 
     suggested_item = None
     sku_key = _sku_key(sku)
@@ -2363,6 +2595,27 @@ def pending_sku_master_entry(request):
     recipe = SkuRecipe.objects.filter(sku__iexact=sku).first()
 
     if request.method == 'POST':
+        action = (request.POST.get('action') or 'save_draft').strip()
+        if recipe and action == 'delete':
+            if recipe.master_data_status == 'approved' and not is_admin_user:
+                messages.error(request, 'Approved records can only be deleted by admin users.')
+            else:
+                recipe.delete()
+                messages.success(request, f'SKU Recipe "{recipe.sku}" deleted.')
+            return _redirect_pending()
+
+        if recipe and action == 'archive':
+            if recipe.master_data_status == 'approved' and not is_admin_user:
+                messages.error(request, 'Approved records can only be archived by admin users.')
+                return _redirect_pending()
+            recipe.is_active = False
+            recipe.archived_by = request.user
+            recipe.archived_at = timezone.now()
+            recipe.archive_reason = (request.POST.get('archive_reason') or '').strip()
+            recipe.save(update_fields=['is_active', 'archived_by', 'archived_at', 'archive_reason', 'updated_at'])
+            messages.success(request, f'SKU Recipe "{recipe.sku}" archived.')
+            return _redirect_pending()
+
         posted = request.POST.copy()
         # Job name is sourced from PO parsing; keep it authoritative and non-editable.
         posted['job_name'] = po_job_name
@@ -2463,13 +2716,40 @@ def pending_sku_master_entry(request):
         'missing_required_fields': _missing_required_master_fields(current_recipe, po_job_name),
         'mismatch_alerts': mismatch_alerts,
     }
+    context['can_admin_actions'] = is_admin_user
     return render(request, 'planning/pending_sku_master_entry.html', context)
 
 
 @login_required
 @permission_required('can_edit_jobcard')
+@transaction.atomic
 def po_inbox(request):
     """PO intake queue after upload: split-ready documents with repeat/new counts."""
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        if action == 'delete_po_intake':
+            po_number = (request.POST.get('po_number') or '').strip()
+            if not po_number:
+                messages.error(request, 'Invalid PO number for delete action.')
+                return redirect('planning:po_inbox')
+
+            docs_to_delete = PoDocument.objects.filter(extracted_payload__po_number__iexact=po_number)
+            count = docs_to_delete.count()
+            if count == 0:
+                messages.error(request, f'No PO intake found for {po_number}.')
+                return redirect('planning:po_inbox')
+
+            for doc in docs_to_delete:
+                try:
+                    if doc.po_file:
+                        doc.po_file.delete(save=False)
+                except Exception:
+                    pass
+                doc.delete()
+
+            messages.success(request, f'Deleted PO intake {po_number} and {count} document(s).')
+            return redirect('planning:po_inbox')
+
     docs = PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('-created_at')[:400]
     deduped_docs = []
     seen_po_numbers = set()
@@ -2486,7 +2766,7 @@ def po_inbox(request):
     rows = []
     for doc in docs:
         payload = doc.extracted_payload or {}
-        items, _ = _deduplicate_po_items_by_sku(payload.get('items', []))
+        items = _po_payload_items(payload)
         recipe_map = _build_recipe_map(items)
         _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map)
         repeat_count, new_count = _history_repeat_new_counts(items)
@@ -2499,6 +2779,7 @@ def po_inbox(request):
                 'repeat_count': repeat_count,
                 'new_count': new_count,
                 'missing_count': len(missing_skus),
+                'ignored_count': len([s for s in (payload.get('new_skus_ignored') or []) if s]),
                 'repeat_jobs_created_count': payload.get('repeat_jobs_created_count') or 0,
                 'repeat_jobs_updated_count': payload.get('repeat_jobs_updated_count') or 0,
                 'repeat_jobs_locked_count': payload.get('repeat_jobs_locked_count') or 0,
@@ -2658,10 +2939,12 @@ def po_review(request, doc_id):
     """Review extracted PO data and create PlanningJob records."""
     po_doc = get_object_or_404(PoDocument, id=doc_id)
     payload = po_doc.extracted_payload or {}
-    items, duplicate_skus = _deduplicate_po_items_by_sku(payload.get('items', []))
+    all_items, duplicate_skus = _deduplicate_po_items_by_sku(payload.get('items', []))
+    items = _po_payload_items(payload)
+    ignored_skus = sorted({s for s in (payload.get('new_skus_ignored') or []) if s})
     if duplicate_skus:
         payload['source_item_count'] = payload.get('source_item_count') or len(payload.get('items', []))
-        payload['items'] = items
+        payload['items'] = all_items
         payload['merged_duplicate_skus'] = sorted(set(duplicate_skus))
         po_doc.extracted_payload = payload
         po_doc.save(update_fields=['extracted_payload'])
@@ -2721,6 +3004,24 @@ def po_review(request, doc_id):
 
     if request.method == 'POST':
         action = request.POST.get('action', '')
+        if action == 'ignore':
+            sku = (request.POST.get('sku') or '').strip()
+            if not sku:
+                messages.error(request, 'SKU is required for ignore action.')
+                return redirect('planning:po_review', doc_id=po_doc.id)
+
+            ignored = {
+                _sku_key(s)
+                for s in (payload.get('new_skus_ignored') or [])
+                if s
+            }
+            ignored.add(_sku_key(sku))
+            payload['new_skus_ignored'] = sorted(ignored)
+            po_doc.extracted_payload = payload
+            po_doc.save(update_fields=['extracted_payload'])
+            messages.success(request, f'SKU {sku} ignored and removed from PO intake review.')
+            return redirect('planning:po_review', doc_id=po_doc.id)
+
         if action == 'create_jobs':
             with transaction.atomic():
                 created_count = 0
@@ -2852,6 +3153,8 @@ def po_review(request, doc_id):
         'new_count': new_count,
         'configured_new_count': len(configured_new_skus),
         'missing_skus': missing_skus,
+        'ignored_skus': ignored_skus,
+        'ignored_count': len(ignored_skus),
     }
     return render(request, 'planning/po_review.html', context)
 
@@ -2862,7 +3165,7 @@ def po_review(request, doc_id):
 def po_new_skus(request, doc_id):
     po_doc = get_object_or_404(PoDocument, id=doc_id)
     payload = po_doc.extracted_payload or {}
-    items = payload.get('items', [])
+    items = _po_payload_items(payload)
 
     recipe_map = _build_recipe_map(items)
     _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map)

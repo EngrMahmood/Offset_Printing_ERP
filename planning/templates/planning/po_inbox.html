@@ -45,6 +45,7 @@
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
             <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO</a>
+            <a class="btn secondary" href="{% url 'planning:pending_skus_ignored' %}">Ignored SKUs</a>
             <a class="btn" href="{% url 'planning:approval_queue' %}">Approval Queue</a>
         </div>
     </div>
@@ -72,6 +73,7 @@
                     <th>Items</th>
                     <th>Repeat</th>
                     <th>New</th>
+                    <th>Ignored</th>
                     <th>Pending Master</th>
                     <th>Merge Note</th>
                     <th>Uploaded</th>
@@ -86,6 +88,14 @@
                     <td>{{ row.item_count }}</td>
                     <td><span class="badge repeat">{{ row.repeat_count }}</span></td>
                     <td><span class="badge new">{{ row.new_count }}</span></td>
+                    <td>
+                        {% if row.ignored_count %}
+                            <span class="badge" style="background:#fff2f0;border-color:#e6b0aa;color:#8a2f23;">{{ row.ignored_count }}</span>
+                            <div class="muted" style="margin-top:4px;"><a href="{% url 'planning:pending_skus_ignored' %}?po={{ row.po_number|urlencode }}">Review</a></div>
+                        {% else %}
+                            <span class="muted">0</span>
+                        {% endif %}
+                    </td>
                     <td>{{ row.missing_count }}</td>
                     <td>
                         {% if row.merged_duplicates %}
@@ -115,9 +125,17 @@
                         {% if row.new_count > 0 %}
                         <div class="flow-note" style="font-weight:700;color:#8a3f00;margin-top:8px;margin-bottom:5px;">New Route</div>
                         <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:6px;">
-                            <a href="{% url 'planning:pending_skus' %}" class="btn secondary">Open Pending Master Data</a>
+                            <a href="{% url 'planning:pending_skus' %}?po={{ row.po_number|urlencode }}" class="btn secondary">Open Pending Master Data</a>
                             {% if row.new_skus_sent_to_planning_count > 0 %}
                             <a href="{% url 'planning:jobs' %}?q={{ row.po_number }}" class="btn secondary">Open Planning</a>
+                            {% endif %}
+                            {% if row.po_number != '-' %}
+                            <form method="post" action="" style="display:inline; margin:0;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_po_intake">
+                                <input type="hidden" name="po_number" value="{{ row.po_number }}">
+                                <button class="btn danger" type="submit" onclick="return confirm('Delete the entire PO intake for {{ row.po_number }}? This removes the intake document(s) and cannot be undone.');">Delete Intake</button>
+                            </form>
                             {% endif %}
                         </div>
                         <div class="flow-note" style="margin-top:5px;color:#8a3f00;">

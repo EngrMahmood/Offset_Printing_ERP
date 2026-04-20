@@ -232,8 +232,6 @@
                             <div class="action-group">
                                 {% if recipe.master_data_status == 'approved' and not can_edit_approved %}
                                     <span class="btn sm secondary" style="opacity:0.6;cursor:not-allowed;">Admin only</span>
-                                    <button class="btn sm danger" type="button" disabled style="opacity:0.6;cursor:not-allowed;">Delete</button>
-                                    <button class="btn sm warning" type="button" disabled style="opacity:0.6;cursor:not-allowed;">Archive</button>
                                 {% else %}
                                     <a class="btn sm" href="{% url 'planning:sku_recipe_edit' recipe.id %}">Edit</a>
                                     <form method="post" action="" style="display:inline;">

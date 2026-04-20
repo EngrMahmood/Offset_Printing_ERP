@@ -50,6 +50,9 @@
         <li>Upload PO PDF and review extracted lines in intake queue.</li>
         <li>Repeat lines go directly to Planning Jobs.</li>
         <li>New lines go to Pending SKU master completion first.</li>
+        <li>Ignore any new SKU during PO review if it should not be sent to pending processing.</li>
+        <li>Ignored SKUs are stored with the PO payload and removed from the active pending/new counts.</li>
+        <li>Use the Ignored SKUs page to restore items back into pending processing when needed.</li>
     </ul>
 
     <h2>3. Pending New SKU (Step 3)</h2>

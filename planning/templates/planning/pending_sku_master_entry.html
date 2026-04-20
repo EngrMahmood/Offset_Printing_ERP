@@ -213,6 +213,13 @@
             <div class="actions">
                 <button type="submit" class="btn secondary" name="action" value="save_draft">Save Draft (Master)</button>
                 <button type="submit" class="btn" name="action" value="submit_review">Send to QC Review</button>
+                <button type="submit" class="btn secondary" name="action" value="ignore" onclick="return confirm('Ignore this pending SKU and remove it from further processing?');">Ignore</button>
+                {% if recipe %}
+                    {% if recipe.master_data_status != 'approved' or can_admin_actions %}
+                        <button type="submit" class="btn danger" name="action" value="delete" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
+                        <button type="submit" class="btn warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
+                    {% endif %}
+                {% endif %}
             </div>
         </form>
     </section>

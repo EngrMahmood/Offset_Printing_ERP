@@ -26,6 +26,7 @@ urlpatterns = [
     # Backward-compatible alias for users typing /planning/po_debug
     path('po_debug/', views.po_debug_extract, name='po_debug_alias'),
     path('pending-skus/', views.pending_skus, name='pending_skus'),
+    path('pending-skus/ignored/', views.pending_skus_ignored, name='pending_skus_ignored'),
     path('pending-skus/master-entry/', views.pending_sku_master_entry, name='pending_sku_master_entry'),
     path('sku-recipes/', views.sku_recipes_list, name='sku_recipes'),
     path('sku-recipes/draft/', views.sku_recipes_status, {'status': 'draft'}, name='sku_recipes_draft'),
