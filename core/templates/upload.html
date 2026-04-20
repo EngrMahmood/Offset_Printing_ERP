@@ -7,27 +7,30 @@
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 12px;
             background: #f3f6f9;
         }
 
         .container {
-            max-width: 980px;
+            max-width: 1100px;
             margin: 0 auto;
+            min-height: calc(100vh - 24px);
         }
 
         .card {
             background: white;
             border-radius: 10px;
-            padding: 22px;
+            padding: 18px;
             box-shadow: 0 2px 12px rgba(0, 0, 0, 0.08);
-            margin-bottom: 18px;
+            margin-bottom: 12px;
         }
 
         .top-actions {
             display: flex;
             gap: 10px;
-            margin-bottom: 18px;
+            margin-bottom: 12px;
+            align-items: center;
+            flex-wrap: wrap;
         }
 
         .btn {
@@ -35,9 +38,10 @@
             text-decoration: none;
             border: none;
             border-radius: 6px;
-            padding: 10px 14px;
+            padding: 7px 10px;
             cursor: pointer;
-            font-size: 14px;
+            font-size: 12px;
+            font-weight: 600;
             background: #417690;
             color: white;
         }
@@ -57,6 +61,7 @@
         h1 {
             margin: 0 0 8px;
             color: #1f2d3d;
+            font-size: 1.4rem;
         }
 
         .muted {
@@ -68,16 +73,29 @@
             display: flex;
             gap: 10px;
             flex-wrap: wrap;
-            margin-bottom: 16px;
+            margin-bottom: 12px;
         }
 
         .file-input {
             width: 100%;
-            padding: 10px;
+            padding: 8px;
             border: 1px solid #ccd4dd;
             border-radius: 6px;
-            margin: 10px 0 14px;
+            margin: 8px 0 10px;
             box-sizing: border-box;
+        }
+
+        .upload-form-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .upload-form-row .file-input {
+            flex: 1;
+            min-width: 260px;
+            margin: 0;
         }
 
         .summary {
@@ -108,6 +126,7 @@
             width: 100%;
             border-collapse: collapse;
             margin-top: 8px;
+            font-size: 13px;
         }
 
         th, td {
@@ -125,20 +144,39 @@
             .summary {
                 grid-template-columns: 1fr;
             }
+            .upload-form-row {
+                flex-direction: column;
+                align-items: stretch;
+            }
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
     <div class="container">
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
             <a href="javascript:history.back()" class="btn">Back</a>
+            {% if user.profile.can_edit_jobcard %}
+            <a href="{% url 'job_card_records' %}" class="btn">Job Card Records</a>
+            {% endif %}
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
         </div>
 
         <div class="card">
             <h1>Bulk Upload Job Cards</h1>
             <div class="muted">Upload CSV or Excel files to create multiple job cards in one go.</div>
+            <div class="muted" style="margin-top:-6px;">
+                Mandatory per row: Job Card No, SKU, PO Date, Material, Machine, Department, Order Qty, UPS, Colour, Total Impressions Required.
+            </div>
+            <div class="muted" style="margin-top:-6px;">
+                For PO Date, always use <strong>YYYY-MM-DD</strong> (example: 2026-03-12) to avoid day/month swap.
+            </div>
+            <div class="muted" style="margin-top:-6px;">
+                Optional: add <strong>Month</strong> column (e.g., March or 3). If PO Date is ambiguous like 12-03-2026, system will align using Month.
+            </div>
 
             <div class="download-row">
                 <a href="{% url 'jobcard_template_download' %}?format=csv" class="btn">Download CSV Template</a>
@@ -148,8 +186,10 @@
             <form method="POST" enctype="multipart/form-data">
                 {% csrf_token %}
                 <label><strong>Supported formats:</strong> .csv, .xlsx, .xls</label>
-                <input class="file-input" type="file" name="file" accept=".csv,.xlsx,.xls" required>
-                <button type="submit" class="btn btn-green">Upload File</button>
+                <div class="upload-form-row">
+                    <input class="file-input" type="file" name="file" accept=".csv,.xlsx,.xls" required>
+                    <button type="submit" class="btn btn-green">Upload File</button>
+                </div>
             </form>
         </div>
 

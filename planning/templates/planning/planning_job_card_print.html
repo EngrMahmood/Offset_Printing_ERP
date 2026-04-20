@@ -1,0 +1,164 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Job Card {{ job.jc_number }}</title>
+    <style>
+        @page { size: A4 portrait; margin: 8mm; }
+        body { font-family: Arial, sans-serif; color: #111; font-size: 11px; margin: 0; }
+        .card { border: 1px solid #333; padding: 7px; }
+        .head { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; margin-bottom: 6px; }
+        .title { font-size: 16px; font-weight: 700; }
+        .small { font-size: 10px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #555; padding: 4px; vertical-align: top; }
+        th { background: #efefef; text-align: left; }
+        .section-title { font-weight: 700; margin: 7px 0 4px; }
+        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
+        .muted { color: #444; }
+        .nowrap { white-space: nowrap; }
+        @media print { .no-print { display: none; } }
+    </style>
+</head>
+<body>
+<div class="card">
+    <div class="head">
+        <div>
+            <div class="title">Utopia Printing & Packaging</div>
+            <div class="small">Production Job Card</div>
+        </div>
+        <div class="small" style="text-align:right;">
+            <div><strong>JOB CARD#:</strong> {{ job.jc_number }}</div>
+            <div><strong>PO#:</strong> {{ job.po_number|default:'-' }}</div>
+            <div><strong>Date:</strong> {{ job.plan_date|default:'-' }}</div>
+            <div><strong>Status:</strong> {{ status_now }}</div>
+        </div>
+    </div>
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">
+        <div class="small muted">Scan QR to open this planning card directly in system.</div>
+        <div style="text-align:center;">
+            {% if qr_code_b64 %}
+                <img src="data:image/png;base64,{{ qr_code_b64 }}" alt="Job QR" style="width:88px;height:88px;border:1px solid #999;padding:2px;">
+            {% else %}
+                <div class="small muted" style="border:1px solid #999;padding:6px 8px;">QR unavailable</div>
+            {% endif %}
+            <div class="small" style="max-width:180px;word-break:break-all;margin-top:2px;">{{ scan_url }}</div>
+        </div>
+    </div>
+
+    <div class="section-title">Order Information</div>
+    {% if job.repeat_flag|lower == 'new' %}
+    <div style="border:1px solid #b15a00;background:#fff1e5;color:#7a2f00;padding:8px 10px;margin-bottom:8px;font-weight:700;">
+        NEW SKU ALERT: Shade matching and setup verification required before production run.
+    </div>
+    {% endif %}
+    {% if is_repeat_with_changes %}
+    <div style="border:2px solid #d97706;background:#fef3c7;color:#78350f;padding:8px 10px;margin-bottom:8px;font-weight:700;">
+        <div style="margin-bottom:4px;">⚠ CHANGES DETECTED IN REPEAT JOB</div>
+        <div style="font-size:10px;margin-bottom:4px;">Modified Fields: {% for field in changed_fields %}{{ field }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
+        {% if last_edited_by %}<div style="font-size:10px;">Edited by {{ last_edited_by.username }} on {{ last_edited_at|date:'d M Y H:i' }}</div>{% endif %}
+    </div>
+    {% endif %}
+    <table>
+        <tr>
+            <th>SKU</th><td>{{ job.sku|default:'-' }}</td>
+            <th>Order Qty</th><td>{{ job.order_qty|default:'-' }}</td>
+        </tr>
+        <tr>
+            <th>Job Name</th><td>{{ job.job_name|default:'-' }}</td>
+            <th>Department</th><td>{{ job.department|default:'-' }}</td>
+        </tr>
+        <tr>
+            <th>Repeat</th><td>{{ job.repeat_flag|default:'-' }}</td>
+            <th>Daily Demand</th><td>{{ job.daily_demand|default:'-' }}</td>
+        </tr>
+    </table>
+
+    <div class="section-title">Material And Work Process</div>
+    <table>
+        <tr>
+            <th>Material Type</th><td>{{ job.material|default:'-' }}</td>
+            <th>Color</th><td>{{ job.color_spec|default:'-' }}</td>
+        </tr>
+        <tr>
+            <th>Size W mm</th><td>{{ job.size_w_mm|default:'-' }}</td>
+            <th>Size H mm</th><td>{{ job.size_h_mm|default:'-' }}</td>
+        </tr>
+        <tr>
+            <th>Print Sheet Size</th><td>{{ job.print_sheet_size|default:'-' }}</td>
+            <th>Ups</th><td>{{ job.ups|default:'-' }}</td>
+        </tr>
+        <tr>
+            <th>Total Sheet Qty</th><td>{{ job.actual_sheet_required|default:job.print_sheets|default:'-' }}</td>
+            <th>Machine</th><td>{{ job.machine_name|default:'-' }}</td>
+        </tr>
+        <tr>
+            <th>No of Colors</th><td>{{ job.total_colors|default:'-' }}</td>
+            <th>Wastage</th><td>{{ job.wastage_sheets|default:'-' }}</td>
+        </tr>
+        <tr>
+            <th>Purchase Material</th><td>{{ job.purchase_material|default:'-' }}</td>
+            <th>Plate Set No.</th><td>{{ job.plate_set_no|default:'-' }}</td>
+        </tr>
+        <tr>
+            <th>Aging</th><td>{{ job.aging_days|default:'-' }}</td>
+            <th>Die Cutting</th><td>{{ job.die_cutting|default:'-' }}</td>
+        </tr>
+    </table>
+
+    <div class="section-title">Execution Logs</div>
+    <div class="two-col">
+        <div>
+            <div class="small muted" style="margin-bottom:3px;"><strong>Printing Runs</strong></div>
+            <table>
+                <thead><tr><th>#</th><th>Date</th><th>Qty</th><th>Wastage</th></tr></thead>
+                <tbody>
+                {% for row in job.print_runs.all %}
+                    <tr>
+                        <td class="nowrap">{{ row.run_index }}</td>
+                        <td>{{ row.print_date|default:'-' }}</td>
+                        <td>{{ row.print_qty|default:'-' }}</td>
+                        <td>{{ row.wastage_qty|default:'-' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4">No print run logs.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div>
+            <div class="small muted" style="margin-bottom:3px;"><strong>Dispatch Runs</strong></div>
+            <table>
+                <thead><tr><th>#</th><th>Date</th><th>DC</th><th>Qty</th></tr></thead>
+                <tbody>
+                {% for row in job.dispatch_runs.all %}
+                    <tr>
+                        <td class="nowrap">{{ row.dispatch_index }}</td>
+                        <td>{{ row.delivery_date|default:'-' }}</td>
+                        <td>{{ row.dc_no|default:'-' }}</td>
+                        <td>{{ row.delivered_qty|default:'-' }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="4">No dispatch logs.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="section-title">Special Instructions</div>
+    <table>
+        <tr><td style="height:55px;">{{ job.remarks|default:job.requirement|default:'-' }}</td></tr>
+    </table>
+
+    <div class="small muted" style="margin-top:6px;">Generated at {{ now_ts }} | Planning version {{ job.job_card_version }}</div>
+
+    <div class="no-print" style="margin-top:8px;">
+        <button onclick="window.print()">Print A4</button>
+    </div>
+</div>
+</body>
+</html>

@@ -8,12 +8,14 @@
         body {
             font-family: Arial, sans-serif;
             margin: 0;
-            padding: 20px;
+            padding: 12px;
             background-color: #f5f5f5;
+            overflow-x: hidden;
         }
 
         .container {
-            max-width: 1200px;
+            max-width: 100%;
+            width: 100%;
             margin: 0 auto;
         }
 
@@ -67,7 +69,7 @@
 
         .charts-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
             gap: 20px;
             margin-bottom: 30px;
         }
@@ -90,10 +92,12 @@
             border-radius: 8px;
             box-shadow: 0 2px 10px rgba(0,0,0,0.1);
             margin-bottom: 30px;
+            overflow-x: auto;
         }
 
         .production-table {
             width: 100%;
+            min-width: 980px;
             border-collapse: collapse;
         }
 
@@ -118,6 +122,7 @@
             display: flex;
             gap: 20px;
             align-items: center;
+            flex-wrap: wrap;
         }
 
         .btn {
@@ -147,6 +152,7 @@
             display: flex;
             gap: 10px;
             margin-bottom: 20px;
+            flex-wrap: wrap;
         }
 
         .nav-btn {
@@ -162,21 +168,31 @@
             background: #2f5b73;
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
     <div class="container">
         <div class="top-actions">
             <a href="/" class="nav-btn">Home</a>
             <a href="javascript:history.back()" class="nav-btn">Back</a>
+            {% if user.profile.can_edit_production %}
             <a href="{% url 'production_records' %}" class="nav-btn">Production Records</a>
+            {% endif %}
+            {% if user.profile.can_approve_dispatch %}
             <a href="{% url 'dispatch_entry' %}" class="nav-btn">Dispatch Entry</a>
             <a href="{% url 'dispatch_records' %}" class="nav-btn">Dispatch Records</a>
+            {% endif %}
+            {% if user.profile.role == 'admin' %}
+            <a href="{% url 'shift_config' %}" class="nav-btn">Shift Config</a>
+            {% endif %}
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
         </div>
 
         <h1>📊 Production Dashboard</h1>
 
-        <div class="filters">
+        <form class="filters" method="GET">
             <div>
                 <label>Time Period:</label>
                 <select id="days" onchange="changePeriod(this.value)">
@@ -185,8 +201,22 @@
                     <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 Days</option>
                 </select>
             </div>
+            <div>
+                <label for="start_date">Start Date:</label>
+                <input type="date" id="start_date" name="start_date" value="{{ start_date }}">
+            </div>
+            <div>
+                <label for="end_date">End Date:</label>
+                <input type="date" id="end_date" name="end_date" value="{{ end_date }}">
+            </div>
+            <div style="display:flex;gap:8px;align-items:flex-end;">
+                <button type="submit" class="btn">Apply Date Filter</button>
+                <a href="{% url 'production_dashboard' %}?days=7" class="btn">Reset</a>
+            </div>
+            {% if user.profile.can_edit_production %}
             <a href="{% url 'production_entry' %}" class="btn btn-primary">➕ Add Production Data</a>
-        </div>
+            {% endif %}
+        </form>
 
         <!-- Period OEE Metrics -->
         <div class="metrics-grid">
@@ -226,6 +256,49 @@
                 <div class="metric-label">{{ period_label }} Downtime (minutes)</div>
                 <div class="metric-value">{{ total_downtime|floatformat:0 }}</div>
             </div>
+            <div class="metric-card">
+                <div class="metric-label">Open Jobs Pending Start (All)</div>
+                <div class="metric-value">{{ pending_start_count }}</div>
+                <div class="metric-label" style="margin-top:6px;">In selected period: {{ pending_start_in_period_count }}</div>
+            </div>
+        </div>
+
+        <!-- Planning vs Actual & Schedule Utilization -->
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Planned Time (minutes)</div>
+                <div class="metric-value">{{ total_planned_minutes|floatformat:0 }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Actual Time Used (minutes)</div>
+                <div class="metric-value">{{ total_actual_minutes|floatformat:0 }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Planned Variance (Actual - Planned)</div>
+                <div class="metric-value" style="color:{% if planned_variance_minutes > 0 %}#b03a00{% elif planned_variance_minutes < 0 %}#1a6830{% else %}#666{% endif %};">
+                    {{ planned_variance_minutes|floatformat:1 }}
+                </div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Schedule Utilization</div>
+                <div class="metric-value">{{ schedule_utilization_pct|floatformat:1 }}%</div>
+                <div class="metric-label" style="margin-top:6px;">Used {{ actual_used_minutes_total|floatformat:0 }} / Scheduled {{ scheduled_minutes_total|floatformat:0 }} min</div>
+            </div>
+        </div>
+
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Overrun Cause: Setup (min)</div>
+                <div class="metric-value" style="font-size:1.7em;color:#7a4f18;">{{ overrun_setup_minutes|floatformat:0 }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Overrun Cause: Unplanned Downtime (min)</div>
+                <div class="metric-value" style="font-size:1.7em;color:#b03a00;">{{ overrun_downtime_minutes|floatformat:0 }}</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Overrun Cause: Run Performance Gap (min)</div>
+                <div class="metric-value" style="font-size:1.7em;color:#5b0a15;">{{ overrun_run_perf_minutes|floatformat:0 }}</div>
+            </div>
         </div>
 
         <!-- Dispatch Summary -->
@@ -248,10 +321,23 @@
             </div>
         </div>
 
+        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-label">Pending Short Close (All Active Jobs)</div>
+                <div class="metric-value" style="color:#7a4200;">{{ pending_short_close_total }}</div>
+                <div class="metric-label" style="margin-top:6px;">Across {{ pending_short_close_jobs }} job cards</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-label">Short Close Closed as Wastage ({{ period_label }})</div>
+                <div class="metric-value" style="color:#7b1c27;">{{ short_close_closed_period_qty }}</div>
+                <div class="metric-label" style="margin-top:6px;">Across {{ short_close_closed_period_jobs }} job cards</div>
+            </div>
+        </div>
+
         <!-- Charts -->
         <div class="charts-grid">
             <div class="chart-card">
-                <h3>Production Trend ({{ days }} days)</h3>
+                <h3>Production Trend ({{ period_label }})</h3>
                 <div class="chart-container">
                     <canvas id="productionChart"></canvas>
                 </div>
@@ -281,7 +367,7 @@
 
         <div class="charts-grid">
             <div class="chart-card">
-                <h3>Dispatch Trend ({{ days }} days)</h3>
+                <h3>Dispatch Trend ({{ period_label }})</h3>
                 <div class="chart-container">
                     <canvas id="dispatchTrendChart"></canvas>
                 </div>
@@ -292,6 +378,186 @@
                     <canvas id="dispatchTopJobCardsChart"></canvas>
                 </div>
             </div>
+        </div>
+
+        <!-- ── Advanced Analytics ───────────────────────────────────────────── -->
+        <h2 style="color:var(--brand-primary);margin:30px 0 16px;font-size:1.1rem;letter-spacing:.3px;">Advanced Analytics</h2>
+
+        <!-- Machine & Operator Efficiency Rankings -->
+        <div class="charts-grid" style="grid-template-columns:1fr 1fr;">
+            <div class="chart-card">
+                <h3 style="margin-bottom:14px;">🏭 Machine Efficiency Ranking</h3>
+                {% if machine_efficiency %}
+                <table class="production-table">
+                    <thead><tr>
+                        <th>#</th><th>Machine</th><th>OEE %</th><th>Avail %</th><th>Perf %</th><th>Qual %</th><th>Output</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for m in machine_efficiency %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td>{{ m.name }}</td>
+                        <td style="font-weight:700;color:{% if m.oee >= 65 %}#1f5e2c{% elif m.oee >= 45 %}#7a4f18{% else %}#7b1c27{% endif %};">{{ m.oee }}%</td>
+                        <td>{{ m.availability }}%</td>
+                        <td>{{ m.performance }}%</td>
+                        <td>{{ m.quality }}%</td>
+                        <td>{{ m.total_output }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<p style="color:#888;">No data for selected period.</p>{% endif %}
+            </div>
+
+            <div class="chart-card">
+                <h3 style="margin-bottom:14px;">👷 Operator Efficiency Ranking</h3>
+                {% if operator_efficiency %}
+                <table class="production-table">
+                    <thead><tr>
+                        <th>#</th><th>Operator</th><th>OEE %</th><th>Avail %</th><th>Perf %</th><th>Qual %</th><th>Sessions</th>
+                    </tr></thead>
+                    <tbody>
+                    {% for o in operator_efficiency %}
+                    <tr>
+                        <td>{{ forloop.counter }}</td>
+                        <td>{{ o.name }}</td>
+                        <td style="font-weight:700;color:{% if o.oee >= 65 %}#1f5e2c{% elif o.oee >= 45 %}#7a4f18{% else %}#7b1c27{% endif %};">{{ o.oee }}%</td>
+                        <td>{{ o.availability }}%</td>
+                        <td>{{ o.performance }}%</td>
+                        <td>{{ o.quality }}%</td>
+                        <td>{{ o.sessions }}</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<p style="color:#888;">No data for selected period.</p>{% endif %}
+            </div>
+        </div>
+
+        <!-- Waste Pareto + Shift Comparison -->
+        <div class="charts-grid" style="grid-template-columns:1fr 1fr;">
+            <div class="chart-card">
+                <h3 style="margin-bottom:14px;">📊 Waste Pareto (80/20)</h3>
+                <div class="chart-container">
+                    <canvas id="wasteParetoChart"></canvas>
+                </div>
+                {% if waste_pareto %}
+                <table class="production-table" style="margin-top:12px;font-size:0.82rem;">
+                    <thead><tr><th>Reason</th><th>Sheets</th><th>%</th><th>Cumulative %</th></tr></thead>
+                    <tbody>
+                    {% for w in waste_pareto %}
+                    <tr>
+                        <td>{{ w.reason }}</td>
+                        <td>{{ w.total_waste }}</td>
+                        <td>{{ w.pct }}%</td>
+                        <td style="font-weight:700;color:{% if w.cumulative_pct <= 80 %}#7b1c27{% else %}#888{% endif %};">{{ w.cumulative_pct }}%</td>
+                    </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}<p style="color:#888;margin-top:10px;">No waste data logged for selected period.</p>{% endif %}
+            </div>
+
+            <div class="chart-card">
+                <h3 style="margin-bottom:14px;">🔄 Shift A vs B Comparison</h3>
+                <div class="chart-container" style="height:220px;">
+                    <canvas id="shiftComparisonChart"></canvas>
+                </div>
+                <table class="production-table" style="margin-top:12px;font-size:0.85rem;">
+                    <thead><tr><th>Metric</th><th>Shift A</th><th>Shift B</th></tr></thead>
+                    <tbody>
+                        <tr><td>OEE %</td>
+                            <td style="font-weight:700;color:#5b0a15;">{{ shift_a.oee }}%</td>
+                            <td style="font-weight:700;color:#7a4f18;">{{ shift_b.oee }}%</td></tr>
+                        <tr><td>Availability</td><td>{{ shift_a.availability }}%</td><td>{{ shift_b.availability }}%</td></tr>
+                        <tr><td>Performance</td><td>{{ shift_a.performance }}%</td><td>{{ shift_b.performance }}%</td></tr>
+                        <tr><td>Quality</td><td>{{ shift_a.quality }}%</td><td>{{ shift_b.quality }}%</td></tr>
+                        <tr><td>Output (sheets)</td><td>{{ shift_a.total_output }}</td><td>{{ shift_b.total_output }}</td></tr>
+                        <tr><td>Waste (sheets)</td><td>{{ shift_a.total_waste }}</td><td>{{ shift_b.total_waste }}</td></tr>
+                        <tr><td>Downtime (min)</td><td>{{ shift_a.downtime }}</td><td>{{ shift_b.downtime }}</td></tr>
+                        <tr><td>Sessions</td><td>{{ shift_a.sessions }}</td><td>{{ shift_b.sessions }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Predictive Delay Detection -->
+        <div class="recent-productions">
+            <h3>⚠️ Predictive Delay Detection — At-Risk Jobs</h3>
+            <p style="color:#666;font-size:0.85rem;margin:4px 0 12px;">Jobs where estimated completion exceeds 7 days based on current daily production rate.</p>
+            {% if at_risk_jobs %}
+            <table class="production-table">
+                <thead><tr>
+                    <th>Job Card</th><th>Order Qty</th><th>Produced</th><th>Remaining</th>
+                    <th>Completion %</th><th>Daily Rate</th><th>Est. Days Left</th><th>Risk</th>
+                </tr></thead>
+                <tbody>
+                {% for j in at_risk_jobs %}
+                <tr>
+                    <td><strong>{{ j.job_card_no }}</strong></td>
+                    <td>{{ j.order_qty }}</td>
+                    <td>{{ j.output }}</td>
+                    <td>{{ j.remaining }}</td>
+                    <td>
+                        <div style="background:#eee;border-radius:4px;height:8px;width:80px;display:inline-block;vertical-align:middle;">
+                            <div style="background:#a78a2f;height:8px;border-radius:4px;width:{{ j.completion_pct }}%;"></div>
+                        </div>
+                        {{ j.completion_pct }}%
+                    </td>
+                    <td>{{ j.daily_rate }} sheets/day</td>
+                    <td>{% if j.est_days_left %}{{ j.est_days_left }} days{% else %}—{% endif %}</td>
+                    <td>
+                        <span style="padding:3px 9px;border-radius:12px;font-size:0.78rem;font-weight:700;
+                            background:{% if j.risk == 'High Risk' %}#fceff0{% elif j.risk == 'No Production' %}#f3f0ff{% else %}#fff8e1{% endif %};
+                            color:{% if j.risk == 'High Risk' %}#7b1c27{% elif j.risk == 'No Production' %}#4a2a8a{% else %}#7a4f18{% endif %};">
+                            {{ j.risk }}
+                        </span>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color:#1f5e2c;background:#f1f8f1;padding:10px 14px;border-radius:8px;font-size:0.875rem;">✅ All active jobs appear to be on track.</p>
+            {% endif %}
+        </div>
+
+        <!-- Job Cycle Time Analysis -->
+        <div class="recent-productions">
+            <h3>⏱ Job Cycle Time Analysis</h3>
+            <p style="color:#666;font-size:0.85rem;margin:4px 0 12px;">Days from first to last production entry per job. Shorter cycles = faster throughput.</p>
+            {% if job_cycle_data %}
+            <table class="production-table">
+                <thead><tr>
+                    <th>Job Card</th><th>Status</th><th>First Production</th><th>Last Production</th>
+                    <th>Cycle Days</th><th>Order Qty</th><th>Output</th><th>Progress</th>
+                </tr></thead>
+                <tbody>
+                {% for j in job_cycle_data %}
+                <tr>
+                    <td><strong>{{ j.job_card_no }}</strong></td>
+                    <td><span style="font-size:0.78rem;padding:2px 8px;border-radius:10px;
+                        background:{% if j.status == 'Completed' %}#f1f8f1{% elif j.status == 'In Progress' %}#fff8e1{% else %}#f5f5f5{% endif %};
+                        color:{% if j.status == 'Completed' %}#1f5e2c{% elif j.status == 'In Progress' %}#7a4f18{% else %}#555{% endif %};">
+                        {{ j.status }}</span></td>
+                    <td>{{ j.first_prod }}</td>
+                    <td>{{ j.last_prod }}</td>
+                    <td style="font-weight:700;">{{ j.cycle_days }} day{{ j.cycle_days|pluralize }}</td>
+                    <td>{{ j.order_qty }}</td>
+                    <td>{{ j.output }}</td>
+                    <td>
+                        <div style="background:#eee;border-radius:4px;height:8px;width:80px;display:inline-block;vertical-align:middle;">
+                            <div style="background:#5b0a15;height:8px;border-radius:4px;width:{{ j.completion_pct }}%;"></div>
+                        </div>
+                        {{ j.completion_pct }}%
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color:#888;">No job cycle data available.</p>
+            {% endif %}
         </div>
 
         <!-- Recent Productions -->
@@ -356,6 +622,37 @@
                 </tbody>
             </table>
         </div>
+
+        <div class="recent-productions">
+            <h3>🗂 Planned Jobs Not Started Yet</h3>
+            <p style="color:#666;font-size:0.85rem;margin:4px 0 12px;">These jobs have planning data but no production entries yet. Keep them in planning; do not create production rows until run starts.</p>
+            <table class="production-table">
+                <thead>
+                    <tr>
+                        <th>Job Card</th>
+                        <th>SKU</th>
+                        <th>Order Qty</th>
+                        <th>Total Impressions Required</th>
+                        <th>Created Date</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in pending_start_jobs %}
+                    <tr>
+                        <td>{{ row.job_card_no }}</td>
+                        <td>{{ row.sku }}</td>
+                        <td>{{ row.order_qty }}</td>
+                        <td>{{ row.total_impressions_required }}</td>
+                        <td>{{ row.created_at }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5">No planned-only jobs found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 
     <script>
@@ -415,7 +712,7 @@
         new Chart(downtimeCtx, {
             type: 'pie',
             data: {
-                labels: downtimeData.map(item => item.downtime_category),
+                labels: downtimeData.map(item => item.downtime_label || item.downtime_category),
                 datasets: [{
                     data: downtimeData.map(item => item.total_minutes),
                     backgroundColor: [
@@ -503,6 +800,72 @@
         function changePeriod(days) {
             window.location.href = `?days=${days}`;
         }
+
+        // Waste Pareto Chart
+        const wasteParetoData = JSON.parse('{{ waste_pareto_json|escapejs }}');
+        if (wasteParetoData.length > 0) {
+            const wpCtx = document.getElementById('wasteParetoChart').getContext('2d');
+            new Chart(wpCtx, {
+                type: 'bar',
+                data: {
+                    labels: wasteParetoData.map(w => w.reason),
+                    datasets: [
+                        {
+                            label: 'Waste Sheets',
+                            data: wasteParetoData.map(w => w.total_waste),
+                            backgroundColor: '#5b0a15',
+                            yAxisID: 'y',
+                        },
+                        {
+                            label: 'Cumulative %',
+                            data: wasteParetoData.map(w => w.cumulative_pct),
+                            type: 'line',
+                            borderColor: '#a78a2f',
+                            backgroundColor: 'transparent',
+                            pointBackgroundColor: '#a78a2f',
+                            yAxisID: 'y2',
+                            tension: 0.1,
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        y: { beginAtZero: true, title: { display: true, text: 'Waste Sheets' } },
+                        y2: { beginAtZero: true, max: 100, position: 'right', title: { display: true, text: 'Cumulative %' },
+                              grid: { drawOnChartArea: false } }
+                    }
+                }
+            });
+        }
+
+        // Shift Comparison Chart
+        const shiftData = JSON.parse('{{ shift_comparison_json|escapejs }}');
+        const scCtx = document.getElementById('shiftComparisonChart').getContext('2d');
+        new Chart(scCtx, {
+            type: 'bar',
+            data: {
+                labels: ['OEE %', 'Availability %', 'Performance %', 'Quality %'],
+                datasets: [
+                    {
+                        label: 'Shift A',
+                        data: shiftData[0] ? [shiftData[0].oee, shiftData[0].availability, shiftData[0].performance, shiftData[0].quality] : [0,0,0,0],
+                        backgroundColor: 'rgba(91,10,21,0.75)',
+                    },
+                    {
+                        label: 'Shift B',
+                        data: shiftData[1] ? [shiftData[1].oee, shiftData[1].availability, shiftData[1].performance, shiftData[1].quality] : [0,0,0,0],
+                        backgroundColor: 'rgba(167,138,47,0.75)',
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: { y: { beginAtZero: true, max: 100 } }
+            }
+        });
     </script>
 </body>
 </html>

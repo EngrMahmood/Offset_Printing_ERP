@@ -1,0 +1,60 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Restore Record - Offset ERP</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
+        .container { max-width: 760px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; }
+        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; }
+        .btn:hover { background: #2f5b73; }
+        .btn-green { background: #198754; }
+        .btn-green:hover { background: #136a42; }
+        .alert { border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
+        .alert-success { background: #e6f4ea; color: #1e6d33; border: 1px solid #bee3c7; }
+        .alert-error { background: #fce8e6; color: #8a1c1c; border: 1px solid #f5c2c7; }
+        label { display: block; margin-bottom: 6px; font-weight: 600; }
+        textarea { width: 100%; min-height: 110px; box-sizing: border-box; padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
+        .actions { display: flex; gap: 10px; margin-top: 14px; }
+        .notice { margin-bottom: 14px; color: #5f6b7a; }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+</head>
+<body>
+    <div class="container">
+        <div class="top-actions">
+            <a href="{% url 'archived_records' %}?entity={{ entity_type }}" class="btn">Back To Archived</a>
+            <a href="{% url 'change_history' entity_type record.id %}" class="btn">History</a>
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
+        </div>
+
+        <div class="card">
+            <h1>Restore {{ entity_label }}</h1>
+            <div class="notice">
+                Record: <strong>{{ record }}</strong><br>
+                Restoring this record will return it to normal ERP workflows and analytics.
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+
+            <form method="post">
+                {% csrf_token %}
+                <label for="restore_reason">Reason For Restore</label>
+                <textarea id="restore_reason" name="restore_reason" placeholder="Explain why this record is being restored." required></textarea>
+                <div class="actions">
+                    <button type="submit" class="btn btn-green">Restore Record</button>
+                    <a href="{% url 'archived_records' %}?entity={{ entity_type }}" class="btn">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

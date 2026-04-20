@@ -1,10 +1,15 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+from django.contrib.auth import get_user_model
 from django.urls import path, reverse
 from django.template.response import TemplateResponse
 from django.utils.html import format_html
+from django.utils.safestring import mark_safe
 
 
-from .models import JobCard, Production, Dispatch, Machine, Department, Material, Operator
+from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, Material, Operator, UserProfile, ChangeLog, EditOverrideRequest
+
+User = get_user_model()
 
 
 # =========================
@@ -19,6 +24,40 @@ class ProductionInline(admin.TabularInline):
 class DispatchInline(admin.TabularInline):
     model = Dispatch
     extra = 1
+
+
+class ProductionDowntimeInline(admin.TabularInline):
+    model = ProductionDowntime
+    extra = 1
+
+
+@admin.register(ChangeLog)
+class ChangeLogAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'entity_type', 'record_label', 'action', 'changed_by')
+    list_filter = ('entity_type', 'action', 'created_at')
+    search_fields = ('record_label', 'changed_by__username', 'change_reason')
+    readonly_fields = ('entity_type', 'record_id', 'record_label', 'action', 'changed_by', 'change_reason', 'field_changes', 'created_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(EditOverrideRequest)
+class EditOverrideRequestAdmin(admin.ModelAdmin):
+    list_display = ('created_at', 'entity_type', 'record_label', 'requested_by', 'status', 'reviewed_by', 'expires_at')
+    list_filter = ('status', 'entity_type', 'created_at')
+    search_fields = ('record_label', 'requested_by__username', 'reason')
+    readonly_fields = ('entity_type', 'record_id', 'record_label', 'requested_by', 'reason', 'status',
+                       'reviewed_by', 'review_note', 'created_at', 'reviewed_at', 'expires_at')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
 
 
 # =========================
@@ -168,6 +207,8 @@ class JobCardAdmin(admin.ModelAdmin):
 @admin.register(Production)
 class ProductionAdmin(admin.ModelAdmin):
 
+    inlines = [ProductionDowntimeInline]
+
     list_display = (
     'job_card',
     'date',
@@ -244,6 +285,55 @@ class MachineAdmin(admin.ModelAdmin):
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
     search_fields = ['name']
+
+
+# =========================
+# USER PROFILE & RBAC ADMIN
+# =========================
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    """Manage user roles and permissions"""
+    list_display = ['username', 'email', 'role_display', 'created_at']
+    list_filter = ['role', 'created_at']
+    search_fields = ['user__username', 'user__email']
+    readonly_fields = ['user', 'created_at', 'updated_at']
+    
+    def username(self, obj):
+        return obj.user.username
+    username.short_description = 'Username'
+    
+    def email(self, obj):
+        return obj.user.email
+    email.short_description = 'Email'
+    
+    def role_display(self, obj):
+        colors = {
+            'admin': 'darkred',
+            'manager': 'darkblue',
+            'planner': 'darkblue',
+            'production': 'darkgreen',
+            'operator': 'darkgreen',
+            'dispatch': 'darkorange',
+            'finance': 'purple',
+            'qc': 'darkred',
+            'storekeeper': 'darkslategray',
+        }
+        color = colors.get(obj.role, 'gray')
+        html = f'<span style="color:{color};font-weight:bold;">{obj.get_role_display()}</span>'
+        return mark_safe(html)
+    role_display.short_description = 'Role'
+
+
+# Extend User admin to include UserProfile
+class CustomUserAdmin(BaseUserAdmin):
+    """Extended User admin with role assignment"""
+    pass
+
+
+# Unregister default User admin and register custom one
+admin.site.unregister(User)
+admin.site.register(User, CustomUserAdmin)
 
 @admin.register(Material)
 class MaterialAdmin(admin.ModelAdmin):

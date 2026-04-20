@@ -1,0 +1,62 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Review Edit Override - Offset ERP</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
+        .container { max-width: 740px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 14px; }
+        .btn { background: #417690; color: #fff; text-decoration: none; padding: 8px 14px; border-radius: 6px; border: none; cursor: pointer; font-size: 0.9rem; }
+        .btn:hover { background: #2f5b73; }
+        .btn-green { background: #198754; }
+        .btn-green:hover { background: #136a42; }
+        .btn-red { background: #b91c1c; }
+        .btn-red:hover { background: #991b1b; }
+        .stack { display: grid; gap: 12px; }
+        .panel { background: #f7f9fb; border: 1px solid #e7ebef; border-radius: 8px; padding: 12px; }
+        .panel h2 { margin: 0 0 8px; font-size: 1rem; }
+        .meta { margin: 0; font-size: 0.9rem; color: #4b5563; }
+        .meta strong { color: #111827; }
+        textarea { width: 100%; box-sizing: border-box; min-height: 90px; padding: 9px; border: 1px solid #cfd6de; border-radius: 6px; font-size: 0.9rem; }
+        .action-row { display: flex; gap: 10px; margin-top: 10px; }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+</head>
+<body>
+    <div class="container">
+        <div class="top-actions">
+            <a href="{% url 'override_requests' %}" class="btn">← Back to Requests</a>
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
+        </div>
+
+        <div class="stack">
+            <div class="panel">
+                <h2>Override Request Details</h2>
+                <p class="meta"><strong>Type:</strong> {{ override.get_entity_type_display }}</p>
+                <p class="meta"><strong>Record:</strong> {{ override.record_label }}</p>
+                <p class="meta"><strong>Requested By:</strong> {{ override.requested_by.get_full_name|default:override.requested_by.username }}</p>
+                <p class="meta"><strong>Submitted:</strong> {{ override.created_at|date:"d M Y H:i" }}</p>
+                <p class="meta"><strong>Reason:</strong> {{ override.reason }}</p>
+            </div>
+
+            <div class="panel">
+                <h2>Review Decision</h2>
+                <p class="meta">If approved, user gets <strong>{{ override_hours }} hour(s)</strong> to edit the locked record.</p>
+                <form method="POST">
+                    {% csrf_token %}
+                    <label for="review_note" class="meta"><strong>Review Note (optional)</strong></label>
+                    <textarea id="review_note" name="review_note" placeholder="Optional decision note visible for audit review."></textarea>
+                    <div class="action-row">
+                        <button type="submit" name="action" value="approve" class="btn btn-green">Approve Request</button>
+                        <button type="submit" name="action" value="reject" class="btn btn-red">Reject Request</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
+

@@ -1,0 +1,203 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bulk Upload SKU Recipes</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260419">
+    <style>
+        .wrap { max-width: 860px; margin: 0 auto; }
+        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 16px; }
+        .btn { display: inline-block; padding: 7px 12px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; font-family: inherit; }
+        .btn:hover { background: #32465d; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .btn.secondary:hover { background: #f0f5fb; }
+        .btn.success { background: #1b7f45; border-color: #1b7f45; }
+        .btn.success:hover { background: #166337; }
+        .muted { color: #5f6f82; font-size: 12px; }
+        .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 12px; border: 1px solid #c8d7e7; background: #f5f9ff; color: #2e3f53; }
+        .msg.error { background: #fff5f5; border-color: #f5c6c6; color: #7a1a1a; }
+        .upload-zone { border: 2px dashed #b8cce2; border-radius: 10px; padding: 24px 18px; text-align: center; background: #f7fbff; margin-bottom: 16px; transition: border-color 0.15s; }
+        .upload-zone:hover { border-color: #445366; }
+        .upload-zone input[type="file"] { display: block; margin: 10px auto 0; font-size: 13px; }
+        .guide-section { margin-top: 16px; }
+        .guide-section h3 { font-size: 13px; font-weight: 700; color: #32465d; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em; }
+        .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; margin-bottom: 10px; }
+        .field-chip { background: #f0f5fb; border: 1px solid #d0dcea; border-radius: 6px; padding: 5px 9px; font-size: 12px; }
+        .field-chip .fname { font-weight: 700; color: #1f3048; font-family: Consolas, monospace; font-size: 11px; }
+        .field-chip .fdesc { color: #5f6f82; font-size: 11px; margin-top: 2px; }
+        .field-chip.required { border-left: 3px solid #1b7f45; }
+        .note-box { background: #fff8ec; border: 1px solid #f0d890; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #7a5700; margin-top: 10px; }
+        .note-box ul { margin: 6px 0 0 16px; padding: 0; }
+        .note-box li { margin-bottom: 3px; }
+        .steps-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+        .step-box { flex: 1; min-width: 160px; border: 1px solid #c9d9ea; border-radius: 8px; background: #fff; padding: 8px 10px; }
+        .step-box .k { font-size: 10px; text-transform: uppercase; color: #55708a; font-weight: 700; }
+        .step-box .v { font-size: 12px; color: #1f3048; font-weight: 700; margin-top: 2px; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+
+    {% with current_step='master' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Bulk Upload SKU Recipes</h1>
+            <div class="muted">Upload master SKU data from CSV or XLSX. All uploaded rows are saved as <strong>Draft</strong> and must go through Review → Approve before PO sync.</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+            <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">← SKU Master</a>
+            <a class="btn success" href="{% url 'planning:sku_recipe_template_download' %}">⬇ Download Template (CSV)</a>
+            <a class="btn success" href="/static/planning/docs/sku_recipe_upload_sample.xlsx" download>⬇ Download Template (Excel)</a>
+        </div>
+    </div>
+
+    {% for msg in messages %}
+        <div class="msg {% if 'error' in msg.tags %}error{% endif %}">{{ msg }}</div>
+    {% endfor %}
+
+    <!-- How it works steps -->
+    <div class="steps-row">
+        <div class="step-box">
+            <div class="k">Step 1</div>
+            <div class="v">Download the CSV template</div>
+        </div>
+        <div class="step-box">
+            <div class="k">Step 2</div>
+            <div class="v">Fill in your SKU data</div>
+        </div>
+        <div class="step-box">
+            <div class="k">Step 3</div>
+            <div class="v">Upload CSV or XLSX here</div>
+        </div>
+        <div class="step-box">
+            <div class="k">Step 4</div>
+            <div class="v">Review → Approve in SKU Master</div>
+        </div>
+    </div>
+
+    <section class="panel">
+        <!-- Upload zone -->
+        <form method="post" enctype="multipart/form-data">
+            {% csrf_token %}
+            <div class="upload-zone">
+                <div style="font-size:28px;">📂</div>
+                <div style="font-size:14px;font-weight:700;color:#32465d;margin-top:6px;">Choose CSV or XLSX file</div>
+                <div class="muted" style="margin-top:4px;">Existing SKU records will be updated. New SKU codes will be created.</div>
+                <input type="file" name="upload_file" accept=".csv,.xlsx" required>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:center;">
+                <button class="btn" type="submit" style="padding:9px 24px;font-size:13px;">⬆ Upload File</button>
+                <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Cancel</a>
+            </div>
+        </form>
+
+        <!-- Field reference -->
+        <div class="guide-section">
+            <h3>Column Reference</h3>
+            <div class="field-grid">
+                <div class="field-chip required">
+                    <div class="fname">sku</div>
+                    <div class="fdesc">Required. Exact SKU code.</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">job_name</div>
+                    <div class="fdesc">Alias: Job Name</div>
+                </div>
+                <div class="field-chip required">
+                    <div class="fname">material</div>
+                    <div class="fdesc">e.g. Art Card 300gsm</div>
+                </div>
+                <div class="field-chip required">
+                    <div class="fname">color_spec</div>
+                    <div class="fdesc">Alias: Color / Colour. e.g. 4 color</div>
+                </div>
+                <div class="field-chip required">
+                    <div class="fname">application</div>
+                    <div class="fdesc">UV / Lamination Gloss / Lamination Matt / NO</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">size_w_mm</div>
+                    <div class="fdesc">Width in mm</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">size_h_mm</div>
+                    <div class="fdesc">Height in mm</div>
+                </div>
+                <div class="field-chip required">
+                    <div class="fname">ups</div>
+                    <div class="fdesc">Units per sheet</div>
+                </div>
+                <div class="field-chip required">
+                    <div class="fname">print_sheet_size</div>
+                    <div class="fdesc">Alias: Print Sheet. e.g. 720x1020</div>
+                </div>
+                <div class="field-chip required">
+                    <div class="fname">purchase_sheet_size</div>
+                    <div class="fdesc">Alias: Purchase Sheet</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">purchase_sheet_ups</div>
+                    <div class="fdesc">Purchase Sheet Ups</div>
+                </div>
+                <div class="field-chip required">
+                    <div class="fname">purchase_material</div>
+                    <div class="fdesc">Local or Imported only</div>
+                </div>
+                <div class="field-chip required">
+                    <div class="fname">machine_name</div>
+                    <div class="fdesc">Alias: Machine</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">department</div>
+                    <div class="fdesc">Alias: Department</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">default_unit_cost</div>
+                    <div class="fdesc">Alias: Unit Cost</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">daily_demand</div>
+                    <div class="fdesc">Alias: Daily Demand</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">awc_no</div>
+                    <div class="fdesc">AWC Number</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">plate_set_no</div>
+                    <div class="fdesc">Plate Set No</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">die_cutting</div>
+                    <div class="fdesc">Alias: Die. e.g. YES / NO</div>
+                </div>
+                <div class="field-chip">
+                    <div class="fname">notes</div>
+                    <div class="fdesc">Any additional notes</div>
+                </div>
+            </div>
+            <div style="font-size:11px;color:#5f6f82;margin-bottom:6px;">
+                <span style="display:inline-block;width:10px;height:10px;background:#1b7f45;border-radius:2px;margin-right:4px;vertical-align:middle;"></span> Green border = Required for Approval
+            </div>
+        </div>
+
+        <div class="note-box">
+            <strong>Important rules:</strong>
+            <ul>
+                <li>If a SKU code already exists it will be <strong>updated</strong> and reset to Draft for re-approval.</li>
+                <li>Rows with a blank SKU column are skipped.</li>
+                <li><code>application</code> must be exactly: UV, Lamination Gloss, Lamination Matt, or NO.</li>
+                <li><code>purchase_material</code> must be exactly: Local or Imported.</li>
+                <li>After upload, go to <a href="{% url 'planning:sku_recipes' %}">SKU Master</a> to review and approve records.</li>
+            </ul>
+        </div>
+    </section>
+
+</main>
+</body>
+</html>

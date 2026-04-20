@@ -1,0 +1,83 @@
+<style>
+    .wf-sequence {
+        margin: 0 0 12px;
+        border: 1px solid #c9d7e6;
+        border-radius: 12px;
+        background: linear-gradient(180deg, #f8fbff 0%, #f2f7fc 100%);
+        padding: 10px;
+        box-shadow: 0 6px 16px rgba(43, 73, 106, 0.08);
+    }
+    .wf-sequence-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-bottom: 7px;
+    }
+    .wf-sequence-title {
+        font-size: 12px;
+        font-weight: 700;
+        color: #1f3a56;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+    }
+    .wf-sequence-note {
+        font-size: 11px;
+        color: #5c6f85;
+    }
+    .wf-track {
+        display: grid;
+        grid-template-columns: repeat(6, minmax(120px, 1fr));
+        gap: 6px;
+        overflow-x: auto;
+    }
+    .wf-item {
+        text-decoration: none;
+        border: 1px solid #c3d1e0;
+        background: #ffffff;
+        border-radius: 8px;
+        padding: 7px 10px;
+        font-size: 11px;
+        font-weight: 700;
+        color: #2f4964;
+        white-space: nowrap;
+        transition: background 0.15s ease, color 0.15s ease, border-color 0.15s ease, transform 0.15s ease;
+        text-align: center;
+    }
+    .wf-item:hover {
+        border-color: #7a9ec5;
+        color: #1d426d;
+        transform: translateY(-1px);
+    }
+    .wf-item.active {
+        border-color: #2d608f;
+        background: #2d608f;
+        color: #ffffff;
+    }
+    @media (max-width: 980px) {
+        .wf-track {
+            grid-template-columns: repeat(3, minmax(140px, 1fr));
+        }
+    }
+    @media (max-width: 640px) {
+        .wf-track {
+            grid-template-columns: repeat(2, minmax(140px, 1fr));
+        }
+    }
+</style>
+
+<div class="wf-sequence" role="navigation" aria-label="Planning workflow sequence">
+    <div class="wf-sequence-header">
+        <div class="wf-sequence-title">Master-First Workflow</div>
+        <div class="wf-sequence-note">Repeat: PO -> Planning | New: PO -> Pending SKU -> Approval -> Planning</div>
+    </div>
+    <div class="wf-track">
+        <a class="wf-item {% if current_step == 'start' or current_step == 'master' %}active{% endif %}" href="{% url 'planning:sku_recipes' %}">1. Master SKU</a>
+        <a class="wf-item {% if current_step == 'po' %}active{% endif %}" href="{% url 'planning:po_inbox' %}">2. PO Intake</a>
+        <a class="wf-item {% if current_step == 'master' %}active{% endif %}" href="{% url 'planning:pending_skus' %}">3. Pending New SKU</a>
+        <a class="wf-item {% if current_step == 'approval' %}active{% endif %}" href="{% url 'planning:approval_queue' %}">4. Approval Queue</a>
+        <a class="wf-item {% if current_step == 'planning' %}active{% endif %}" href="{% url 'planning:jobs' %}">5. Planning Jobs</a>
+        <a class="wf-item {% if current_step == 'shop' %}active{% endif %}" href="{% url 'planning:scan' %}">6. Job Card / Scan</a>
+    </div>
+</div>

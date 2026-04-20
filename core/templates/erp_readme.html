@@ -1,0 +1,159 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>ERP README - Offset ERP</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; color: #223; }
+        .container { max-width: 980px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
+        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; display: inline-block; }
+        .btn:hover { background: #2f5b73; }
+        .btn-green { background: #198754; }
+        .btn-green:hover { background: #136a42; }
+        h1 { margin: 0 0 8px; color: #1f2d3d; }
+        h2 { margin: 22px 0 8px; color: #355; font-size: 1.05rem; }
+        p, li { line-height: 1.6; }
+        code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
+        .meta { color: #667085; font-size: 13px; margin-bottom: 12px; }
+        .note { background: #fff8e1; border: 1px solid #f3de9a; color: #7a5d1a; padding: 10px 12px; border-radius: 8px; margin-top: 14px; }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+</head>
+<body>
+<div class="container">
+    <div class="top-actions">
+        <a href="/" class="btn">Home</a>
+        <a href="javascript:history.back()" class="btn">Back</a>
+        <a href="{% url 'download_erp_readme' %}" class="btn btn-green">Download Guide</a>
+    </div>
+
+    <h1>Offset ERP - Full Easy Guide</h1>
+    <div class="meta">Generated on: {{ generated_on|date:'Y-m-d H:i' }}</div>
+
+    <p>
+        This guide explains every major ERP section in simple language for planner, production, dispatch, manager, and admin users.
+        If you are new, read section by section in order.
+    </p>
+
+    <h2>0. Quick Access For Wrong Dropdown Values</h2>
+    <ul>
+        <li>If a wrong dropdown value is added (machine/operator/material/department), open <a href="{% url 'machine_master_tools' %}">Master Corrections</a>.</li>
+        <li>Use Rename to correct spelling/name.</li>
+        <li>Use Deactivate for machine/operator when you want to stop future use.</li>
+        <li>Old records remain safe for audit.</li>
+    </ul>
+
+    <h2>1. Job Card Entry (Planning Stage)</h2>
+    <ul>
+        <li>Job Card No: unique order number for tracking.</li>
+        <li>SKU: product code.</li>
+        <li>PO Number/Date: customer order reference.</li>
+        <li>Material: paper or board used.</li>
+        <li>Colours: print colors (for example 4 or 1+1).</li>
+        <li>Order Qty: customer required finished pieces.</li>
+        <li>UPS: pieces per sheet.</li>
+        <li>Wastage: planned setup/loss sheets.</li>
+        <li>Machine: planned machine for this job.</li>
+        <li>Production Tolerance %: allowed extra sheets over planned quantity.</li>
+    </ul>
+
+    <h2>2. Job Card Auto Calculations</h2>
+    <ul>
+        <li>Required Sheets = Order Qty / UPS</li>
+        <li>Total Planned Sheets = Required Sheets + Wastage</li>
+        <li>Tolerance Sheets = Planned Sheets × Production Tolerance %</li>
+        <li>Allowed Sheets = Planned Sheets + Tolerance Sheets</li>
+    </ul>
+
+    <h2>3. Planned Time Calculations (Auto)</h2>
+    <ul>
+        <li>Estimated Run Time (min) = (Total Impressions Required / Machine Speed per hour) × 60</li>
+        <li>Estimated Setup Time (min) = Total Colors × Machine Setup Minutes per Color</li>
+        <li>Estimated Total Planned Time = Run Time + Setup Time</li>
+    </ul>
+
+    <h2>4. Production Entry (Execution Stage)</h2>
+    <ul>
+        <li>Job Card: choose which job is running.</li>
+        <li>Machine: auto-picked from job card, but override can be used when needed.</li>
+        <li>Operator, Shift, Date: who worked and when.</li>
+        <li>Impressions: total machine impressions done.</li>
+        <li>Output Sheets: good sheets produced.</li>
+        <li>Waste Sheets + Waste Reason: reject sheets and reason.</li>
+        <li>Run, Setup, Downtime minutes: actual consumed time.</li>
+        <li>Downtime Breakdown: add multiple downtime categories with minutes for one production entry.</li>
+    </ul>
+
+    <h2>5. Repeated Production Entries (Same Job Card)</h2>
+    <ul>
+        <li>Planned minutes are auto-allocated from remaining planned time.</li>
+        <li>Remaining Planned Time = Job Planned Total - Sum(previous active production planned times)</li>
+        <li>If extra allocation is needed beyond remaining planned time, overrun reason is mandatory.</li>
+    </ul>
+
+    <h2>6. Dispatch Entry (Delivery Stage)</h2>
+    <ul>
+        <li>Job Card: select the job being delivered.</li>
+        <li>Dispatch Date and Dispatch Qty: what was delivered and when.</li>
+        <li>DC No: optional dispatch challan reference.</li>
+        <li>Job completion threshold is 95% dispatch ratio.</li>
+    </ul>
+
+    <h2>7. OEE Rules</h2>
+    <ul>
+        <li>Availability uses unplanned downtime categories only: breakdown, operator, other (summed across all downtime rows).</li>
+        <li>Setup and planned/external losses are tracked, but treated differently from unplanned losses.</li>
+        <li>Performance compares actual impressions against machine expected impressions from run time.</li>
+        <li>Quality compares good sheets against quality-impact total sheets.</li>
+    </ul>
+
+    <h2>8. Overrun, Short Close, and Wastage Decisions</h2>
+    <ul>
+        <li>Overrun Minutes = (Run + Setup + Downtime) - Planned Minutes</li>
+        <li>Overrun is planning/time variance, not auto-wastage.</li>
+        <li>Job completion at 95% dispatch does not auto-convert remaining 5% to waste.</li>
+        <li>Remaining quantity below 100% appears as Short Close and must be operationally reviewed (carry forward, cancel balance, or dispatch later).</li>
+        <li>Manager/dispatch can click Close Gap with reason, and that pending short-close quantity is moved into Closed as Wastage.</li>
+    </ul>
+
+    <h2>9. Shift & Machine Schedule Config</h2>
+    <ul>
+        <li>Effective From/To: set validity date range of this shift plan.</li>
+        <li>Net Shift Hours: real productive hours after breaks.</li>
+        <li>Machine Work Schedule checkbox:</li>
+        <li>Checked means machine runs that day/shift.</li>
+        <li>Unchecked means machine is OFF that day/shift.</li>
+    </ul>
+
+    <h2>10. Dashboard Module (How to Read)</h2>
+    <ul>
+        <li>Top KPIs: OEE, Availability, Performance, Quality.</li>
+        <li>Planning KPIs: Planned vs Actual minutes, variance, schedule utilization.</li>
+        <li>Trend and analysis: production charts, machine/operator ranking, downtime, shift comparison, Pareto, at-risk jobs.</li>
+        <li>Short-close KPIs: pending short close and closed as wastage.</li>
+    </ul>
+
+    <h2>11. Search & Ease-of-use Helpers</h2>
+    <ul>
+        <li>Production Entry includes a user-friendly job card search picker.</li>
+        <li>Dispatch Entry includes job card search.</li>
+        <li>Machine is auto-picked from Job Card in Production Entry.</li>
+    </ul>
+
+    <h2>12. Daily Working Discipline (Recommended)</h2>
+    <ul>
+        <li>Planner updates Job Card with correct machine before release.</li>
+        <li>Production logs shift-wise data same day.</li>
+        <li>Dispatch logs delivery same day.</li>
+        <li>Manager reviews short-close and overrun reasons daily.</li>
+        <li>Shift config is updated when timing/working pattern changes.</li>
+    </ul>
+
+    <div class="note">
+        Keep this guide updated whenever formulas, validations, fields, or dashboard KPI logic changes.
+    </div>
+</div>
+</body>
+</html>
+

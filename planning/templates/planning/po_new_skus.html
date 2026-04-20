@@ -1,0 +1,104 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>New SKU Setup | {{ payload.po_number }}</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .card { background: #fff; border: 1px solid #d6e0ea; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
+        .btn { display: inline-block; padding: 7px 11px; border-radius: 5px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; }
+        .btn.secondary { background: #fff; color: #445366; }
+        .muted { color: #5f6f82; font-size: 11px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; }
+        th, td { border-bottom: 1px solid #e7eef5; padding: 7px; text-align: left; vertical-align: top; }
+        th { background: #f0f5fa; font-size: 10px; text-transform: uppercase; letter-spacing: 0.02em; }
+        input, textarea { width: 100%; border: 1px solid #bfd0e2; border-radius: 4px; padding: 5px 7px; font-size: 12px; }
+        textarea { min-height: 56px; }
+        .status { display:inline-block; padding:3px 8px; border-radius:999px; font-size:10px; border:1px solid #d3deea; background:#f3f7fb; text-transform:uppercase; }
+        .status.draft { background:#fff4e6; border-color:#f1c58b; color:#8a3f00; }
+        .status.reviewed { background:#fffbe8; border-color:#eed789; color:#6b4c00; }
+        .status.approved { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    {% with current_step='master' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div>
+            <h1 style="margin:0;font-size:20px;">New SKU Recipe Setup</h1>
+            <div class="muted">PO {{ payload.po_number|default:'-' }} | Configure missing SKUs to move them into planning flow.</div>
+        </div>
+        <a href="{% url 'planning:po_review' po_doc.id %}" class="btn secondary">Back To PO Review</a>
+    </div>
+
+    {% if not missing_skus %}
+    <div class="card" style="margin-top:10px;">
+        <div style="font-size:13px;font-weight:700;color:#1f2f43;">No new SKUs found</div>
+        <div class="muted" style="margin-top:4px;">All extracted SKUs already exist in SKU Recipe Master.</div>
+    </div>
+    {% else %}
+    <form method="post" class="card" style="margin-top:10px;">
+        {% csrf_token %}
+        <div style="font-size:13px;font-weight:700;color:#1f2f43;margin-bottom:8px;">Missing SKU Recipes ({{ missing_skus|length }})</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>SKU</th>
+                    <th>Current Stage</th>
+                    <th>Job Name</th>
+                    <th>Material</th>
+                    <th>Color</th>
+                    <th>Application</th>
+                    <th>Machine</th>
+                    <th>Department</th>
+                    <th>Print Sheet Size</th>
+                    <th>Purchase Sheet Size</th>
+                    <th>UPS</th>
+                    <th>Purchase Material</th>
+                    <th>Default Unit Cost</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in missing_sku_rows %}
+                <tr>
+                    <td>
+                        <input type="text" value="{{ row.sku }}" readonly>
+                    </td>
+                    <td>
+                        {% if row.recipe %}
+                        <span class="status {{ row.recipe.master_data_status }}">{{ row.recipe.master_data_status }}</span>
+                        {% else %}
+                        <span class="status draft">draft</span>
+                        {% endif %}
+                    </td>
+                    <td><input type="text" name="sku_{{ row.sku }}_job_name" value="{% if row.recipe %}{{ row.recipe.job_name }}{% endif %}" placeholder="Required in practice"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_material" value="{% if row.recipe %}{{ row.recipe.material }}{% endif %}"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_color_spec" value="{% if row.recipe %}{{ row.recipe.color_spec }}{% endif %}"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_application" value="{% if row.recipe %}{{ row.recipe.application }}{% endif %}"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_machine_name" value="{% if row.recipe %}{{ row.recipe.machine_name }}{% endif %}"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_department" value="{% if row.recipe %}{{ row.recipe.department }}{% endif %}"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_print_sheet_size" value="{% if row.recipe %}{{ row.recipe.print_sheet_size }}{% endif %}"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_purchase_sheet_size" value="{% if row.recipe %}{{ row.recipe.purchase_sheet_size }}{% endif %}"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_ups" value="{% if row.recipe %}{{ row.recipe.ups }}{% endif %}"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_purchase_material" value="{% if row.recipe %}{{ row.recipe.purchase_material }}{% endif %}"></td>
+                    <td><input type="text" name="sku_{{ row.sku }}_default_unit_cost" value="{% if row.recipe %}{{ row.recipe.default_unit_cost }}{% endif %}" placeholder="0.00"></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
+            <button type="submit" class="btn">Save SKU Recipes</button>
+            <a href="{% url 'planning:po_review' po_doc.id %}" class="btn secondary">Back Without Saving</a>
+        </div>
+        <div class="muted" style="margin-top:8px;">Saving from this screen keeps SKU master data in Draft stage. Use Pending SKUs to move Draft -> Reviewed -> Approved.</div>
+    </form>
+    {% endif %}
+</main>
+</body>
+</html>

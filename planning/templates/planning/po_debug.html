@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>PO Extraction Debug</title>
+<style>
+  body { font-family: monospace; font-size: 12px; padding: 20px; background: #f9f9f9; }
+  h2 { font-size: 15px; margin-top: 24px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
+  pre { background: #fff; border: 1px solid #ddd; padding: 10px; overflow-x: auto; white-space: pre-wrap; word-break: break-all; max-height: 400px; overflow-y: auto; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }
+  .ok { background: #d4edda; color: #155724; }
+  .warn { background: #fff3cd; color: #856404; }
+  .err { background: #f8d7da; color: #721c24; }
+  form { margin-bottom: 20px; }
+  input[type=file] { margin-right: 10px; }
+  button { padding: 6px 16px; background: #0d6efd; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
+  .stat { margin: 4px 0; }
+</style>
+</head>
+<body>
+{% with current_step='po' %}
+  {% include 'planning/includes/workflow_sequence_bar.html' %}
+{% endwith %}
+
+<h1 style="font-size:18px;">PO Extraction Debug</h1>
+<p style="color:#666;">Upload your PDF to see exactly what each parser strategy extracts. Share the output below with the developer.</p>
+
+<form method="post" enctype="multipart/form-data">
+  {% csrf_token %}
+  <input type="file" name="po_pdf" accept=".pdf" required>
+  <button type="submit">Run Debug Extract</button>
+</form>
+
+{% if error %}
+<div class="badge err">ERROR: {{ error }}</div>
+{% endif %}
+
+{% if full_text %}
+
+<h2>Summary</h2>
+<div class="stat">Expected (from # column): <span class="badge {% if expected %}ok{% else %}warn{% endif %}">{{ expected|default:"0 (not detected)" }}</span></div>
+<div class="stat">Strict parser: <span class="badge {% if strict_count %}ok{% else %}err{% endif %}">{{ strict_count }}</span></div>
+<div class="stat">Flexible parser: <span class="badge {% if flexible_count %}ok{% else %}err{% endif %}">{{ flexible_count }}</span></div>
+<div class="stat">Table-row parser: <span class="badge {% if from_rows_count %}ok{% else %}err{% endif %}">{{ from_rows_count }}</span></div>
+<div class="stat">Table-blob parser: <span class="badge {% if from_blobs_count %}ok{% else %}err{% endif %}">{{ from_blobs_count }}</span></div>
+<div class="stat">Text-window parser: <span class="badge {% if from_windows_count %}ok{% else %}err{% endif %}">{{ from_windows_count }}</span></div>
+
+<h2>Raw Extracted Text (full_text)</h2>
+<pre>{{ full_text }}</pre>
+
+<h2>Table Rows (structured cells — one list per row)</h2>
+<pre>{{ table_rows }}</pre>
+
+<h2>Table Blobs (flattened rows)</h2>
+<pre>{{ table_blobs }}</pre>
+
+<h2>Strict Parser Results ({{ strict_count }} items)</h2>
+<pre>{{ strict }}</pre>
+
+<h2>Flexible Parser Results ({{ flexible_count }} items)</h2>
+<pre>{{ flexible }}</pre>
+
+<h2>Table-Row Parser Results ({{ from_rows_count }} items)</h2>
+<pre>{{ from_rows }}</pre>
+
+<h2>Table-Blob Parser Results ({{ from_blobs_count }} items)</h2>
+<pre>{{ from_blobs }}</pre>
+
+<h2>Text-Window Parser Results ({{ from_windows_count }} items)</h2>
+<pre>{{ from_windows }}</pre>
+
+{% endif %}
+</body>
+</html>

@@ -1,0 +1,91 @@
+{% load static %}
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Change History - Offset ERP</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
+        .container { max-width: 1080px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; }
+        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; }
+        .btn:hover { background: #2f5b73; }
+        .btn-green { background: #198754; }
+        .btn-green:hover { background: #136a42; }
+        h1 { margin-top: 0; }
+        .record-meta { margin-bottom: 16px; color: #5f6b7a; }
+        .history-list { display: grid; gap: 12px; }
+        .history-item { border: 1px solid #e7ebef; border-radius: 8px; padding: 14px; background: #fffdfb; }
+        .history-head { display: flex; justify-content: space-between; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+        .history-title { font-weight: 700; color: #1f2d3d; }
+        .history-meta { color: #697586; font-size: 12px; }
+        .reason { margin-bottom: 10px; color: #5b0a15; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 8px 10px; border-bottom: 1px solid #e7ebef; text-align: left; vertical-align: top; }
+        th { background: #f7f9fb; }
+        .muted { color: #697586; }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+</head>
+<body>
+    <div class="container">
+        <div class="top-actions">
+            <a href="{% url back_view_name %}" class="btn">Back To Records</a>
+            <a href="/" class="btn">Home</a>
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
+        </div>
+
+        <div class="card">
+            <h1>Change History</h1>
+            <div class="record-meta">
+                {{ entity_label }}: <strong>{{ record }}</strong>
+            </div>
+
+            <div class="history-list">
+                {% for entry in history_entries %}
+                <div class="history-item">
+                    <div class="history-head">
+                        <div>
+                            <div class="history-title">{{ entry.get_action_display }}</div>
+                            <div class="history-meta">By {{ entry.changed_by.get_full_name|default:entry.changed_by.username|default:'System' }}</div>
+                        </div>
+                        <div class="history-meta">{{ entry.created_at|date:'d M Y, h:i A' }}</div>
+                    </div>
+
+                    <div class="reason">
+                        <strong>Reason:</strong> {{ entry.change_reason|default:'No reason provided' }}
+                    </div>
+
+                    {% if entry.field_changes %}
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Field</th>
+                                <th>Previous</th>
+                                <th>Updated</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for field_name, change in entry.field_changes.items %}
+                            <tr>
+                                <td>{{ change.label }}</td>
+                                <td>{{ change.from }}</td>
+                                <td>{{ change.to }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <div class="muted">No field-level differences were recorded.</div>
+                    {% endif %}
+                </div>
+                {% empty %}
+                <div class="muted">No history is available for this record yet.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</body>
+</html>

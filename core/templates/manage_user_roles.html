@@ -1,0 +1,364 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage User Roles — Offset ERP</title>
+    <style>
+        :root {
+            --brand-bg: #f8f6f4;
+            --brand-surface: #ffffff;
+            --brand-text: #2b1b1d;
+            --brand-muted: #6f6265;
+            --brand-line: #e6dedd;
+            --brand-primary: #5b0a15;
+            --brand-primary-dark: #440811;
+            --brand-error-bg: #fceff0;
+            --brand-error-text: #7b1c27;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+
+        body {
+            font-family: "Segoe UI", Tahoma, sans-serif;
+            background: var(--brand-bg);
+            color: var(--brand-text);
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        .top-nav {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .btn {
+            background: #417690;
+            color: white;
+            padding: 10px 14px;
+            border-radius: 4px;
+            text-decoration: none;
+            display: inline-block;
+            border: none;
+            cursor: pointer;
+        }
+
+        .btn:hover {
+            background: #2f5b73;
+        }
+
+        .btn-logout {
+            background: #7b1c27;
+            margin-left: auto;
+        }
+
+        h1 {
+            color: var(--brand-primary);
+            margin-bottom: 20px;
+        }
+
+        .card {
+            background: var(--brand-surface);
+            border: 1px solid var(--brand-line);
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--brand-line);
+        }
+
+        th {
+            background: #f5f3f2;
+            font-weight: 600;
+            color: var(--brand-text);
+        }
+
+        tr:hover {
+            background: #faf8f7;
+        }
+
+        select {
+            padding: 6px 10px;
+            border: 1px solid var(--brand-line);
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+
+        .btn-update {
+            background: var(--brand-primary);
+            color: white;
+            padding: 6px 12px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+
+        .btn-update:hover {
+            background: var(--brand-primary-dark);
+        }
+
+        .alert {
+            padding: 12px 14px;
+            border-radius: 6px;
+            margin-bottom: 16px;
+        }
+
+        .alert-success {
+            background: #f1f8f1;
+            color: #1f5e2c;
+            border: 1px solid #c8decf;
+        }
+
+        .alert-error {
+            background: var(--brand-error-bg);
+            color: var(--brand-error-text);
+            border: 1px solid #edc8cd;
+        }
+
+        .role-badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            display: inline-block;
+        }
+
+        .role-admin {
+            background: #ffe0e0;
+            color: #7b1c27;
+        }
+
+        .role-manager {
+            background: #dbe8f5;
+            color: #003d99;
+        }
+
+        .role-planner {
+            background: #e6f2ff;
+            color: #0052cc;
+        }
+
+        .role-production {
+            background: #dff5e0;
+            color: #1f5e2c;
+        }
+
+        .role-operator {
+            background: #dff5e0;
+            color: #1f5e2c;
+        }
+
+        .role-dispatch {
+            background: #ffe6cc;
+            color: #7a4f18;
+        }
+
+        .role-finance {
+            background: #e8d9f0;
+            color: #4a2a8a;
+        }
+
+        .role-qc {
+            background: #ffe0e0;
+            color: #7b1c27;
+        }
+
+        .role-storekeeper {
+            background: #d9e8e0;
+            color: #2f4a4a;
+        }
+    </style>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+</head>
+<body>
+    <div class="container">
+        <div class="top-nav">
+            <a href="/" class="btn">← Home</a>
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
+        </div>
+
+        <h1>👥 Manage User Roles & Permissions</h1>
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">
+                    {{ message }}
+                </div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="card">
+            <h2>User Role Assignments</h2>
+            <p style="color:#666;font-size:0.9rem;margin-bottom:16px;">
+                Update user roles to control access to features. Each role has specific permissions.
+            </p>
+            
+            {% if users %}
+            <table>
+                <thead>
+                    <tr>
+                        <th>Username</th>
+                        <th>Email</th>
+                        <th>Current Role</th>
+                        <th>New Role</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td><strong>{{ user.username }}</strong></td>
+                        <td>{{ user.email|default:"-" }}</td>
+                        <td>
+                            <span class="role-badge role-{{ user.profile.role }}">
+                                {{ user.profile.get_role_display }}
+                            </span>
+                        </td>
+                        <td>
+                            <form method="post" style="display:inline;">
+                                {% csrf_token %}
+                                <input type="hidden" name="user_id" value="{{ user.id }}">
+                                <select name="role" style="width:200px;">
+                                    {% for role_val, role_label in role_choices %}
+                                    <option value="{{ role_val }}" {% if user.profile.role == role_val %}selected{% endif %}>
+                                        {{ role_label }}
+                                    </option>
+                                    {% endfor %}
+                                </select>
+                        </td>
+                        <td>
+                                <button type="submit" class="btn-update">Update</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p style="color:#888;">No users found.</p>
+            {% endif %}
+        </div>
+
+        <div class="card">
+            <h2>Role Permissions Reference</h2>
+            <table style="font-size:0.85rem;">
+                <thead>
+                    <tr>
+                        <th>Role</th>
+                        <th>Job Cards</th>
+                        <th>Production</th>
+                        <th>Dispatch</th>
+                        <th>Analytics</th>
+                        <th>Master Data</th>
+                        <th>Best For</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><strong>Admin</strong></td>
+                        <td>✅</td>
+                        <td>✅</td>
+                        <td>✅</td>
+                        <td>✅</td>
+                        <td>✅</td>
+                        <td>System configuration, full access</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Manager</strong></td>
+                        <td>✅</td>
+                        <td>✅</td>
+                        <td>✅</td>
+                        <td>✅</td>
+                        <td>✅</td>
+                        <td>Overall oversight & approvals</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Planner</strong></td>
+                        <td>✅</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>✅</td>
+                        <td>❌</td>
+                        <td>Create & plan job cards</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Production Supervisor</strong></td>
+                        <td>❌</td>
+                        <td>✅</td>
+                        <td>❌</td>
+                        <td>✅</td>
+                        <td>❌</td>
+                        <td>Manage production team & entries</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Machine Operator</strong></td>
+                        <td>❌</td>
+                        <td>✅</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>Log daily production only</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Dispatch Coordinator</strong></td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>✅</td>
+                        <td>✅</td>
+                        <td>❌</td>
+                        <td>Manage dispatch & tracking</td>
+                    </tr>
+                    <tr>
+                        <td><strong>QC Inspector</strong></td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>Quality checks & approvals</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Store Keeper</strong></td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>Material & inventory management</td>
+                    </tr>
+                    <tr>
+                        <td><strong>Finance Viewer</strong></td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>❌</td>
+                        <td>✅</td>
+                        <td>❌</td>
+                        <td>Read-only reports & analytics</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+</body>
+</html>
+

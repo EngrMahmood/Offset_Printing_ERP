@@ -1,0 +1,62 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Edit Planning Job {{ job.jc_number }}</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 980px; margin: 0 auto; }
+        .card { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:12px; }
+        .grid { display:grid; grid-template-columns:repeat(2, minmax(260px, 1fr)); gap:10px; }
+        label { display:block; font-size:11px; font-weight:700; color:#445366; margin-bottom:4px; text-transform:uppercase; }
+        input, select, textarea { width:100%; border:1px solid #bfd0e2; border-radius:6px; padding:7px 9px; font-size:12px; }
+        .btn { display:inline-block; padding:8px 12px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
+        .btn.secondary { background:#fff; color:#445366; }
+        .errors { background:#fdeceb; border:1px solid #f3c8c5; color:#8e2222; border-radius:6px; padding:8px 10px; font-size:12px; margin-bottom:10px; }
+        @media (max-width: 900px){ .grid { grid-template-columns:1fr; } }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    {% with current_step='planning' %}
+        {% include 'planning/includes/workflow_sequence_bar.html' %}
+    {% endwith %}
+
+    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+        <div>
+            <h1 style="margin:0;font-size:20px;">Edit {{ job.jc_number }}</h1>
+            <div style="font-size:12px;color:#5f6f82;">Version will increment after save.</div>
+        </div>
+        <div>
+            <a class="btn secondary" href="{% url 'planning:job_detail' job.id %}">Back</a>
+        </div>
+    </div>
+
+    <section class="card" style="margin-top:10px;">
+        {% if form.errors %}
+        <div class="errors">Please correct the highlighted fields and try again.</div>
+        {% endif %}
+        <form method="post">
+            {% csrf_token %}
+            <div class="grid">
+                {% for field in form %}
+                <div {% if field.name == 'remarks' or field.name == 'requirement' %}style="grid-column:1 / -1;"{% endif %}>
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}
+                        <div style="font-size:11px;color:#8e2222;margin-top:4px;">{{ field.errors|striptags }}</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+            <div style="display:flex;gap:8px;margin-top:12px;">
+                <button class="btn" type="submit">Save Changes</button>
+                <a class="btn secondary" href="{% url 'planning:job_detail' job.id %}">Cancel</a>
+            </div>
+        </form>
+    </section>
+</main>
+</body>
+</html>

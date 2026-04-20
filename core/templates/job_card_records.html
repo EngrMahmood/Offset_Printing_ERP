@@ -4,77 +4,232 @@
 <head>
     <title>Job Card Records - Offset ERP</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; }
-        .container { max-width: 1200px; margin: 0 auto; }
-        .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
-        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; }
-        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; }
+        body { font-family: Arial, sans-serif; margin: 0; padding: 12px; background: #edf1f5; overflow-x: hidden; color: #233042; }
+        .container { max-width: 100%; margin: 0 auto; }
+        .card { background: #fff; border-radius: 6px; padding: 14px; border: 1px solid #d9e1ea; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
+        .top-actions { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
+        .btn { background: #445366; color: #fff; text-decoration: none; padding: 8px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; }
         .btn:hover { background: #2f5b73; }
         .btn-green { background: #198754; }
         .btn-green:hover { background: #136a42; }
-        h1 { margin-top: 0; }
-        .filters { display: grid; grid-template-columns: 2fr 1fr auto; gap: 10px; margin-bottom: 14px; }
-        input, select { padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px; border-bottom: 1px solid #e7ebef; text-align: left; }
-        th { background: #f7f9fb; }
+        h1 { margin: 0; font-size: 22px; color: #1f2f43; }
+        .records-layout { display: grid; grid-template-columns: 240px 1fr; gap: 12px; }
+        .filter-panel { background: #f1f4f8; border: 1px solid #d4dce6; border-radius: 4px; padding: 10px; height: fit-content; }
+        .filter-panel h3 { margin: 0 0 10px; color: #1f2f43; font-size: 16px; }
+        .filter-form { display: grid; gap: 10px; }
+        .filter-form label { font-size: 11px; color: #3c4b5c; font-weight: 700; }
+        .filter-actions { display: grid; gap: 8px; }
+        input, select { padding: 6px 8px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 12px; background: #fff; }
+        .records-layout > div { min-width: 0; }
+        .table-meta { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 10px; }
+        .table-shell {
+            width: 100%;
+            overflow-x: auto;
+            overflow-y: auto;
+            max-height: calc(100vh - 260px);
+            border: 1px solid #e5eaf0;
+            border-radius: 4px;
+            background: #fff;
+        }
+        table { width: 100%; min-width: 1500px; border-collapse: collapse; font-size: 11px; }
+        th, td { padding: 7px 8px; border-bottom: 1px solid #e1e8f0; text-align: left; white-space: nowrap; vertical-align: top; }
+        th {
+            position: sticky;
+            top: 0;
+            z-index: 2;
+            background: #eef2f7;
+            color: #304256;
+            font-size: 10px;
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+        }
+        tbody tr:hover { background: #f8fbff; }
         .muted { color: #697586; }
+        .actions-cell { white-space: nowrap; }
+        @media (max-width: 980px) {
+            .records-layout { grid-template-columns: 1fr; }
+            .table-shell { max-height: none; }
+        }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}">
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
     <div class="container">
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
+            {% if user.profile.can_edit_jobcard %}
             <a href="{% url 'job_card_entry' %}" class="btn btn-green">+ Add Job Card</a>
             <a href="{% url 'bulk_upload_jobcards' %}" class="btn">Bulk Upload</a>
+            {% endif %}
+            {% if user.profile.can_archive_records %}
+            <a href="{% url 'archived_records' %}?entity=job_card" class="btn">Archived</a>
+            {% endif %}
+            <div style="margin-left:auto;display:flex;align-items:center;">
+                {% include 'includes/user_identity_chip.html' %}
+            </div>
         </div>
 
         <div class="card">
             <h1>Job Card Records</h1>
 
-            <form method="GET" class="filters">
-                <input name="q" value="{{ q }}" placeholder="Search by JC No / SKU / PO No">
-                <select name="status">
-                    <option value="">All Status</option>
-                    <option value="Open" {% if status == 'Open' %}selected{% endif %}>Open</option>
-                    <option value="In Progress" {% if status == 'In Progress' %}selected{% endif %}>In Progress</option>
-                    <option value="Completed" {% if status == 'Completed' %}selected{% endif %}>Completed</option>
-                </select>
-                <button type="submit" class="btn">Filter</button>
-            </form>
+            {% if messages %}
+                {% for message in messages %}
+                    <div style="border-radius:6px;padding:10px 12px;margin-bottom:10px;{% if message.tags == 'success' %}background:#e6f4ea;color:#1e6d33;border:1px solid #bee3c7;{% else %}background:#fce8e6;color:#8a1c1c;border:1px solid #f5c2c7;{% endif %}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
 
-            <table>
+            <div class="records-layout">
+                <aside class="filter-panel">
+                    <h3>Filters</h3>
+                    <form method="GET" class="filter-form">
+                        <label for="q">Search</label>
+                        <input id="q" name="q" value="{{ q }}" placeholder="JC No / SKU / PO No">
+
+                        <label for="status">Status</label>
+                        <select id="status" name="status">
+                            <option value="">All Status</option>
+                            <option value="Open" {% if status == 'Open' %}selected{% endif %}>Open</option>
+                            <option value="In Progress" {% if status == 'In Progress' %}selected{% endif %}>In Progress</option>
+                            <option value="Completed" {% if status == 'Completed' %}selected{% endif %}>Completed</option>
+                        </select>
+
+                        <label for="date_from">PO Date From</label>
+                        <input id="date_from" type="date" name="date_from" value="{{ date_from }}">
+
+                        <label for="date_to">PO Date To</label>
+                        <input id="date_to" type="date" name="date_to" value="{{ date_to }}">
+
+                        <label for="per_page">Rows Per Page</label>
+                        <select id="per_page" name="per_page">
+                            <option value="50" {% if per_page == 50 %}selected{% endif %}>50 / page</option>
+                            <option value="100" {% if per_page == 100 %}selected{% endif %}>100 / page</option>
+                        </select>
+
+                        <div class="filter-actions">
+                            <button type="submit" class="btn">Apply Filters</button>
+                            <a href="{% url 'job_card_records' %}" class="btn">Clear</a>
+                        </div>
+                    </form>
+                </aside>
+
+                <div>
+                    <div class="table-meta">
+                        <p class="muted" style="margin:0;">Total entries: {{ total_count }}</p>
+                    </div>
+
+                    {% if user.profile.role == 'admin' %}
+                    <form id="bulk_archive_form_jobcard" method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="bulk_delete">
+                        <button type="submit" class="btn" onclick="return confirm('Permanently delete selected job cards? This cannot be undone.');">Bulk Delete Selected</button>
+                        <span class="muted" style="font-size:12px;">Admin only</span>
+                    </form>
+                    {% endif %}
+
+                    <div class="table-shell">
+                    <table>
                 <thead>
                     <tr>
-                        <th>Job Card</th>
-                        <th>SKU</th>
-                        <th>PO No</th>
-                        <th>PO Date</th>
-                        <th>Order Qty</th>
-                        <th>Total Dispatch</th>
+                        {% if user.profile.role == 'admin' %}<th><input type="checkbox" id="select_all_jobcards"></th>{% endif %}
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card_no&dir={% if sort == 'job_card_no' and dir == 'asc' %}desc{% else %}asc{% endif %}">Job Card</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=sku&dir={% if sort == 'sku' and dir == 'asc' %}desc{% else %}asc{% endif %}">SKU</a></th>
+                        <th>Type</th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=po_no&dir={% if sort == 'po_no' and dir == 'asc' %}desc{% else %}asc{% endif %}">PO No</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=po_date&dir={% if sort == 'po_date' and dir == 'asc' %}desc{% else %}asc{% endif %}">PO Date</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=order_qty&dir={% if sort == 'order_qty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Order Qty</a></th>
+                        <th>Actual Sheet Required</th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=dispatch&dir={% if sort == 'dispatch' and dir == 'asc' %}desc{% else %}asc{% endif %}">Total Dispatch</a></th>
+                        <th>Dispatch %</th>
                         <th>Balance</th>
-                        <th>Status</th>
+                        <th>Short Close</th>
+                        <th>Closed as Wastage</th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=status&dir={% if sort == 'status' and dir == 'asc' %}desc{% else %}asc{% endif %}">Status</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}">Added By</a></th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for row in jobcards %}
                     <tr>
+                        {% if user.profile.role == 'admin' %}
+                        <td><input type="checkbox" class="bulk-check-jobcard" name="selected_ids" value="{{ row.id }}" form="bulk_archive_form_jobcard"></td>
+                        {% endif %}
                         <td>{{ row.job_card_no }}</td>
                         <td>{{ row.SKU }}</td>
+                        <td>
+                            {% if row.is_print_job %}
+                            <span style="background:#d0ebff;color:#1a5e96;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;">Print</span>
+                            {% else %}
+                            <span style="background:#fff3cd;color:#7a4200;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;">Cut & Pack</span>
+                            {% endif %}
+                        </td>
                         <td>{{ row.PO_No|default:'-' }}</td>
                         <td>{{ row.po_date|default:'-' }}</td>
                         <td>{{ row.order_qty }}</td>
-                        <td>{{ row.total_dispatch }}</td>
-                        <td>{{ row.balance_qty }}</td>
-                        <td>{{ row.job_status }}</td>
+                        <td>{{ row.total_sheets_planned }}</td>
+                        <td>{{ row.total_dispatch_display }}</td>
+                        <td>{{ row.dispatch_completion_percent_display }}%</td>
+                        <td>{{ row.balance_qty_display }}</td>
+                        <td>
+                            {% if row.short_close_qty_display > 0 %}
+                            <span style="background:#fff3cd;color:#7a4200;border-radius:4px;padding:2px 8px;font-size:12px;font-weight:600;">{{ row.short_close_qty_display }} pcs</span>
+                            {% else %}
+                            -
+                            {% endif %}
+                        </td>
+                        <td>{{ row.short_close_wastage_qty|default:0 }} pcs</td>
+                        <td>{{ row.job_status_display }}</td>
+                        <td>{{ row.created_by.username|default:'-' }}</td>
+                        <td class="actions-cell">
+                            <a href="{% url 'job_card_entry' %}?view={{ row.id }}" class="btn">View</a>
+                            <a href="{% url 'job_card_entry' %}?edit={{ row.id }}" class="btn">Edit</a>
+                            <a href="{% url 'change_history' 'job_card' row.id %}" class="btn btn-green">History</a>
+                            {% if user.profile.can_approve_dispatch and row.short_close_qty_display > 0 %}
+                            <form method="POST" style="display:inline-block;margin-top:6px;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="close_short_close">
+                                <input type="hidden" name="job_card_id" value="{{ row.id }}">
+                                <input name="short_close_reason" placeholder="Reason to close gap as wastage" style="width:220px;padding:6px;border:1px solid #cfd6de;border-radius:4px;" required>
+                                <button type="submit" class="btn">Close Gap</button>
+                            </form>
+                            {% endif %}
+                            {% if user.profile.can_archive_records %}
+                            <a href="{% url 'delete_record' 'job_card' row.id %}" class="btn">Archive</a>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="8" class="muted">No job cards found.</td></tr>
+                    <tr><td colspan="16" class="muted">No job cards found.</td></tr>
                     {% endfor %}
                 </tbody>
-            </table>
+                    </table>
+                    </div>
+
+                    {% if page_obj and page_obj.paginator.num_pages > 1 %}
+                    <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;">
+                        {% if page_obj.has_previous %}
+                        <a class="btn" href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
+                        {% endif %}
+                        <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                        {% if page_obj.has_next %}
+                        <a class="btn" href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
         </div>
     </div>
+
+    <script>
+        const selectAllJobCards = document.getElementById('select_all_jobcards');
+        if (selectAllJobCards) {
+            selectAllJobCards.addEventListener('change', function () {
+                document.querySelectorAll('.bulk-check-jobcard').forEach((el) => {
+                    el.checked = selectAllJobCards.checked;
+                });
+            });
+        }
+    </script>
 </body>
 </html>
