@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planning Workspace</title>
+    <title>Archived Planning Jobs</title>
     <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
     <style>
         .wrap { max-width: 100%; margin: 0 auto; }
@@ -16,7 +16,7 @@
         .filters input, .filters select { width: 100%; border: 1px solid #bfd0e2; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
         .stats { display:flex; gap:6px; flex-wrap: wrap; margin-bottom: 8px; }
         .table-shell { overflow: auto; max-height: calc(100vh - 230px); border: 1px solid #d6e0ea; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1380px; }
+        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1500px; }
         th, td { border-bottom: 1px solid #e7eef5; padding: 7px; text-align: left; vertical-align: top; }
         th { position: sticky; top: 0; background: #f6f9fc; z-index: 1; }
         .muted { color: #5f6f82; font-size: 11px; }
@@ -26,12 +26,8 @@
         .badge.approved { background:#e6f6ea; border-color:#bde4c7; }
         .badge.closed { background:#f3f4f6; border-color:#d2d6dc; }
         .row-approved { background: #f8fffb; }
-        .bulk-row { display:flex; gap:8px; align-items:center; margin-bottom: 8px; flex-wrap:wrap; }
-        .bulk-row select { border: 1px solid #bfd0e2; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
         .route-shell { margin-bottom:10px; padding:10px; border-radius:10px; border:1px solid #d8e4f1; background:#f5f9ff; display:grid; grid-template-columns: repeat(3, minmax(200px, 1fr)); gap:8px; }
         .route-card { border:1px solid #c9d9ea; border-radius:8px; background:#fff; padding:8px; }
-        .route-card .k { font-size:10px; text-transform:uppercase; color:#55708a; font-weight:700; }
-        .route-card .v { font-size:12px; color:#223f5b; font-weight:700; margin-top:3px; }
         @media (max-width: 1080px) {
             .filters { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
             .route-shell { grid-template-columns: 1fr; }
@@ -46,11 +42,11 @@
 
     <div class="top">
         <div>
-            <h1 style="margin:0;font-size:20px;">Planning Workspace</h1>
-            <div class="muted">Upload planning sheet, manage jobs, and issue A4 job cards for production.</div>
+            <h1 style="margin:0;font-size:20px;">Archived Planning Jobs</h1>
+            <div class="muted">Browse planning jobs that were archived and removed from the active list.</div>
         </div>
         <div>
-            <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
+            <a class="btn secondary" href="{% url 'planning:jobs' %}">Active Jobs</a>
             <a class="btn secondary" href="{% url 'planning:planning_readme' %}">Guide</a>
             <a class="btn secondary" href="{% url 'home' %}">Back Home</a>
             <a class="btn secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
@@ -60,8 +56,6 @@
             <a class="btn secondary" href="{% url 'planning:scan' %}">Scan QR</a>
             <a class="btn secondary" href="{% url 'planning:report' %}">Planning Report</a>
             <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
-            <a class="btn secondary" href="{% url 'planning:jobs_archived' %}">Archived Jobs</a>
-            <a class="btn" href="{% url 'planning:import_sheet' %}">Import Planning Sheet</a>
         </div>
     </div>
 
@@ -72,16 +66,16 @@
 
         <div class="route-shell">
             <div class="route-card">
-                <div class="k">Input Source</div>
-                <div class="v">Repeat from PO intake and Approved New SKUs</div>
+                <div class="k">Archive View</div>
+                <div class="v">Planning jobs that have been archived</div>
             </div>
             <div class="route-card">
-                <div class="k">Step 3</div>
-                <div class="v">Plan, validate, and prepare jobs</div>
+                <div class="k">Visible Inactive</div>
+                <div class="v">Includes held state history and archive reason</div>
             </div>
             <div class="route-card">
-                <div class="k">Next Step</div>
-                <div class="v">Send to Approval Queue (QC -> PM)</div>
+                <div class="k">Search</div>
+                <div class="v">Filter by JC, PO, SKU, status, department or machine</div>
             </div>
         </div>
 
@@ -99,7 +93,7 @@
             <input type="date" name="to_date" value="{{ filters.to_date }}">
             <div style="grid-column: 1 / -1; display:flex; gap:8px;">
                 <button class="btn" type="submit">Apply Filters</button>
-                <a class="btn secondary" href="{% url 'planning:jobs' %}">Reset</a>
+                <a class="btn secondary" href="{% url 'planning:jobs_archived' %}">Reset</a>
             </div>
         </form>
 
@@ -111,27 +105,20 @@
             <span class="badge closed">Closed: {{ status_counts.closed|default:0 }}</span>
         </div>
 
-        <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="archive_reason" value="">
-            <div class="bulk-row">
-                <span class="muted">Bulk actions for selected rows:</span>
-                <select name="target_status" required>
-                    <option value="">Choose status</option>
-                    {% for value, label in status_choices %}
-                        <option value="{{ value }}">{{ label }}</option>
-                    {% endfor %}
-                </select>
-                <button class="btn" type="submit" name="action" value="bulk_update_status">Update Selected</button>
-                <button class="btn warning" type="button" onclick="submitBulkArchive(this);">Archive Selected</button>
-                <span class="muted">Approved rows are locked for direct edits and most bulk transitions.</span>
-            </div>
+        <div class="bulk-row">
+            <span class="muted">Bulk actions for selected rows:</span>
+            <button class="btn" type="button" onclick="submitBulkAction('bulk_restore', 'Restore reason for selected archived jobs?');">Restore Selected</button>
+            {% if can_admin_actions %}
+                <button class="btn danger" type="button" onclick="submitBulkAction('bulk_delete', 'Permanently delete selected archived jobs? This cannot be undone.');">Delete Selected</button>
+            {% endif %}
+        </div>
+        <div id="csrf-container" style="display:none;">{% csrf_token %}</div>
 
         <div class="table-shell">
             <table>
                 <thead>
                     <tr>
-                        <th><input type="checkbox" id="check_all"></th>
+                        <th><input type="checkbox" id="check_all_archive"></th>
                         <th>JC</th>
                         <th>PO</th>
                         <th>SKU</th>
@@ -150,11 +137,19 @@
                 <tbody>
                 {% for job in jobs %}
                     <tr class="{% if job.status|lower == 'approved' %}row-approved{% endif %}">
-                        <td><input type="checkbox" name="selected_ids" value="{{ job.id }}"></td>
+                        <td><input type="checkbox" class="bulk-check" value="{{ job.id }}"></td>
                         <td><strong>{{ job.jc_number }}</strong><div class="muted">{{ job.plan_date|default:"" }}</div></td>
                         <td>{{ job.po_number|default:"-" }}</td>
                         <td>{{ job.sku|default:"-" }}</td>
-                        <td>{{ job.job_name|default:"-" }}</td>
+                        <td>
+                            {{ job.job_name|default:"-" }}
+                            {% if job.archive_reason %}
+                                <div class="muted" style="margin-top:4px;">Reason: {{ job.archive_reason }}</div>
+                            {% endif %}
+                            <div class="muted" style="margin-top:4px;">
+                                Archived {{ job.archived_at|date:"Y-m-d" }}{% if job.archived_by %} by {{ job.archived_by }}{% endif %}
+                            </div>
+                        </td>
                         <td>{{ job.order_qty|default:"-" }}</td>
                         <td>
                             <span class="badge {% if job.repeat_flag|lower == 'new' %}reviewed{% else %}draft{% endif %}">{{ job.repeat_flag|default:"-" }}</span>
@@ -170,33 +165,15 @@
                         <td>{{ job.dispatch_runs.count }}</td>
                         <td style="display:grid; gap:4px;">
                             <a class="btn secondary" href="{% url 'planning:job_detail' job.id %}">View</a>
-                            <a class="btn secondary" href="{% url 'planning:job_edit' job.id %}">Edit</a>
-                            <a class="btn" href="{% url 'planning:job_card_print' job.id %}" target="_blank" rel="noopener">A4 Print</a>
-                            {% if job.is_on_hold %}
-                                <form method="post" onsubmit="return true;">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="action" value="release_hold">
-                                    <input type="hidden" name="job_id" value="{{ job.id }}">
-                                    <button type="submit" class="btn secondary">Release Hold</button>
-                                </form>
-                            {% else %}
-                                <form method="post" data-reason-prompt="Hold reason for {{ job.jc_number }}?">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="action" value="hold">
-                                    <input type="hidden" name="job_id" value="{{ job.id }}">
-                                    <input type="hidden" name="reason" value="">
-                                    <button type="button" class="btn secondary" onclick="submitWithPrompt(this);">Hold</button>
-                                </form>
-                            {% endif %}
-                            <form method="post" data-reason-prompt="Archive reason for {{ job.jc_number }} (optional):">
+                            <form method="post" data-reason-prompt="Restore reason for {{ job.jc_number }}?" style="margin:0;">
                                 {% csrf_token %}
-                                <input type="hidden" name="action" value="archive">
+                                <input type="hidden" name="action" value="restore">
                                 <input type="hidden" name="job_id" value="{{ job.id }}">
                                 <input type="hidden" name="reason" value="">
-                                <button type="button" class="btn warning" onclick="submitWithPrompt(this);">Archive</button>
+                                <button type="button" class="btn" onclick="submitWithPrompt(this);">Restore</button>
                             </form>
                             {% if can_admin_actions %}
-                                <form method="post" onsubmit="return confirm('Delete this Planning job and all related planning runs?');">
+                                <form method="post" onsubmit="return confirm('Permanently delete this archived planning job? This cannot be undone.');" style="margin:0;">
                                     {% csrf_token %}
                                     <input type="hidden" name="action" value="delete">
                                     <input type="hidden" name="job_id" value="{{ job.id }}">
@@ -206,12 +183,11 @@
                         </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="14">No planning jobs yet. Import the planning sheet first.</td></tr>
+                    <tr><td colspan="14">No archived planning jobs found.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
         </div>
-        </form>
 
         {% if jobs.has_other_pages %}
             <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
@@ -223,9 +199,9 @@
     </section>
 </main>
 <script>
-document.getElementById('check_all')?.addEventListener('change', function (event) {
+document.getElementById('check_all_archive')?.addEventListener('change', function (event) {
     const checked = event.target.checked;
-    document.querySelectorAll('input[name="selected_ids"]').forEach(function (box) {
+    document.querySelectorAll('.bulk-check').forEach(function (box) {
         box.checked = checked;
     });
 });
@@ -248,22 +224,61 @@ function submitWithPrompt(button) {
     form.submit();
     return true;
 }
-function submitBulkArchive(button) {
-    const form = button.closest('form');
-    if (!form) {
+
+function submitBulkAction(action, promptText) {
+    const selected = Array.from(document.querySelectorAll('.bulk-check:checked'));
+    if (!selected.length) {
+        alert('Select at least one archived planning job.');
         return false;
     }
-    const reasonInput = form.querySelector('input[name="archive_reason"]');
-    const value = prompt('Archive reason for selected jobs (optional):', reasonInput.value || '');
-    if (value === null) {
-        return false;
+
+    let reason = '';
+    if (action === 'bulk_restore') {
+        reason = prompt(promptText, '');
+        if (reason === null) {
+            return false;
+        }
+        reason = reason.trim();
     }
-    reasonInput.value = value.trim();
+    if (action === 'bulk_delete') {
+        if (!confirm(promptText)) {
+            return false;
+        }
+    }
+
+    const csrfInput = document.querySelector('#csrf-container input[name="csrfmiddlewaretoken"]');
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = '';
+    form.style.display = 'none';
+
+    if (csrfInput) {
+        form.appendChild(csrfInput.cloneNode(true));
+    }
+
     const actionInput = document.createElement('input');
     actionInput.type = 'hidden';
     actionInput.name = 'action';
-    actionInput.value = 'bulk_archive';
+    actionInput.value = action;
     form.appendChild(actionInput);
+
+    selected.forEach(function (checkbox) {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'selected_ids';
+        input.value = checkbox.value;
+        form.appendChild(input);
+    });
+
+    if (action === 'bulk_restore') {
+        const reasonInput = document.createElement('input');
+        reasonInput.type = 'hidden';
+        reasonInput.name = 'reason';
+        reasonInput.value = reason;
+        form.appendChild(reasonInput);
+    }
+
+    document.body.appendChild(form);
     form.submit();
     return true;
 }

@@ -112,13 +112,14 @@
     {% endif %}
 
     <section class="panel">
-        <form method="post" novalidate>
+        <form id="skuRecipeForm" method="post" novalidate>
             {% csrf_token %}
             {% if form.non_field_errors %}
                 <div class="error" style="margin-bottom:12px; font-size:14px; color:#b5282a; background:#fff3f3; border:2px solid #e03a3a; border-radius:7px; padding:10px 16px; font-weight:600;">
                     {{ form.non_field_errors.0 }}
                 </div>
             {% endif %}
+            <div class="muted" style="margin-bottom:12px;">Fields marked <span style="color:#b5282a;">*</span> are required for SKU master approval.</div>
             <div class="form-grid">
 
                 <!-- Identity -->
@@ -143,25 +144,25 @@
                 <div class="section-label">Material &amp; Specification</div>
 
                 <div class="field">
-                    <label for="{{ form.material.id_for_label }}">Material</label>
+                    <label for="{{ form.material.id_for_label }}">Material <span style="color:#b5282a;">*</span></label>
                     {{ form.material }}
                     {% if form.material.errors %}<div class="error">{{ form.material.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.purchase_material.id_for_label }}">Purchase Material Origin (Local/Imported)</label>
+                    <label for="{{ form.purchase_material.id_for_label }}">Purchase Material Origin (Local/Imported) <span style="color:#b5282a;">*</span></label>
                     {{ form.purchase_material }}
                     {% if form.purchase_material.errors %}<div class="error">{{ form.purchase_material.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.color_spec.id_for_label }}">Color (e.g. 4 color or 1+1)</label>
+                    <label for="{{ form.color_spec.id_for_label }}">Color (e.g. 4 color or 1+1) <span style="color:#b5282a;">*</span></label>
                     {{ form.color_spec }}
                     {% if form.color_spec.errors %}<div class="error">{{ form.color_spec.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.application.id_for_label }}">Application (UV / Lamination Gloss / Lamination Matt / NO)</label>
+                    <label for="{{ form.application.id_for_label }}">Application (UV / Lamination Gloss / Lamination Matt / NO) <span style="color:#b5282a;">*</span></label>
                     {{ form.application }}
                     {% if form.application.errors %}<div class="error">{{ form.application.errors.0 }}</div>{% endif %}
                 </div>
@@ -172,37 +173,37 @@
                 <div class="section-label">Dimensions &amp; Layout</div>
 
                 <div class="field">
-                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm)</label>
+                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm) <span style="color:#b5282a;">*</span></label>
                     {{ form.size_w_mm }}
                     {% if form.size_w_mm.errors %}<div class="error">{{ form.size_w_mm.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm)</label>
+                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm) <span style="color:#b5282a;">*</span></label>
                     {{ form.size_h_mm }}
                     {% if form.size_h_mm.errors %}<div class="error">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.ups.id_for_label }}">Ups</label>
+                    <label for="{{ form.ups.id_for_label }}">Ups <span style="color:#b5282a;">*</span></label>
                     {{ form.ups }}
                     {% if form.ups.errors %}<div class="error">{{ form.ups.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet Size</label>
+                    <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet Size <span style="color:#b5282a;">*</span></label>
                     {{ form.print_sheet_size }}
                     {% if form.print_sheet_size.errors %}<div class="error">{{ form.print_sheet_size.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field full-width">
-                    <label for="{{ form.purchase_sheet_size.id_for_label }}">Purchase Sheet Size</label>
+                    <label for="{{ form.purchase_sheet_size.id_for_label }}">Purchase Sheet Size <span style="color:#b5282a;">*</span></label>
                     {{ form.purchase_sheet_size }}
                     {% if form.purchase_sheet_size.errors %}<div class="error">{{ form.purchase_sheet_size.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.purchase_sheet_ups.id_for_label }}">Purchase Sheet Ups</label>
+                    <label for="{{ form.purchase_sheet_ups.id_for_label }}">Purchase Sheet Ups <span style="color:#b5282a;">*</span></label>
                     {{ form.purchase_sheet_ups }}
                     {% if form.purchase_sheet_ups.errors %}<div class="error">{{ form.purchase_sheet_ups.errors.0 }}</div>{% endif %}
                 </div>
@@ -213,13 +214,13 @@
                 <div class="section-label">Routing &amp; Cost</div>
 
                 <div class="field">
-                    <label for="{{ form.machine_name.id_for_label }}">Machine Name</label>
+                    <label for="{{ form.machine_name.id_for_label }}">Machine Name <span style="color:#b5282a;">*</span></label>
                     {{ form.machine_name }}
                     {% if form.machine_name.errors %}<div class="error">{{ form.machine_name.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.department.id_for_label }}">Department</label>
+                    <label for="{{ form.department.id_for_label }}">Department <span style="color:#b5282a;">*</span></label>
                     {{ form.department }}
                     {% if form.department.errors %}<div class="error">{{ form.department.errors.0 }}</div>{% endif %}
                 </div>
@@ -296,7 +297,7 @@
                     {% elif recipe.master_data_status == 'approved' and can_edit_approved %}
                         <button type="submit" class="btn secondary" name="action" value="back_to_draft">Back to Draft</button>
                     {% endif %}
-                    {% if recipe and (recipe.master_data_status != 'approved' or can_admin_actions) %}
+                    {% if recipe.master_data_status != 'approved' or can_admin_actions %}
                         <button type="submit" class="btn danger" name="action" value="delete" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
                         <button type="submit" class="btn warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
                     {% endif %}
@@ -306,6 +307,27 @@
         </form>
     </section>
 
+    <script>
+        (function() {
+            var form = document.getElementById('skuRecipeForm');
+            if (!form) {
+                return;
+            }
+            var validationActions = ['submit_review', 'review', 'approve'];
+            var buttons = form.querySelectorAll('button[name="action"]');
+            buttons.forEach(function(button) {
+                if (validationActions.indexOf(button.value) === -1) {
+                    return;
+                }
+                button.addEventListener('click', function(event) {
+                    if (!form.checkValidity()) {
+                        event.preventDefault();
+                        form.reportValidity();
+                    }
+                });
+            });
+        })();
+    </script>
 </main>
 </body>
 </html>

@@ -40,6 +40,11 @@
         <div>
             <h1 style="margin:0;font-size:20px;">{{ job.jc_number }}</h1>
             <div class="muted">PO: {{ job.po_number|default:"-" }} | SKU: {{ job.sku|default:"-" }} | Status: {{ status_now }}</div>
+            {% if job.restored_at %}
+            <div class="muted" style="margin-top:4px;">
+                Restored {{ job.restored_at|date:"Y-m-d H:i" }}{% if job.restored_by %} by {{ job.restored_by.get_full_name|default:job.restored_by.username }}{% endif %}{% if job.restore_reason %} — Reason: {{ job.restore_reason }}{% endif %}
+            </div>
+            {% endif %}
             <div style="margin-top:6px;">
                 <span class="badge {% if job.repeat_flag|lower == 'new' %}new{% else %}repeat{% endif %}">Flag: {{ job.repeat_flag|default:'Repeat' }}</span>
             </div>
