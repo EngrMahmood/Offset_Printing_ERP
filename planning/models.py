@@ -73,6 +73,35 @@ class PlanningJob(models.Model):
     die_cutting = models.CharField(max_length=120, blank=True)
 
     issued_to_production = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    is_on_hold = models.BooleanField(default=False)
+    hold_reason = models.TextField(blank=True)
+    hold_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planning_jobs_held',
+    )
+    hold_at = models.DateTimeField(null=True, blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planning_jobs_archived',
+    )
+    archived_at = models.DateTimeField(null=True, blank=True)
+    archive_reason = models.TextField(blank=True)
+    restored_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planning_jobs_restored',
+    )
+    restored_at = models.DateTimeField(null=True, blank=True)
+    restore_reason = models.TextField(blank=True)
     job_card_version = models.PositiveIntegerField(default=1)
     has_edits_since_creation = models.BooleanField(default=False)
     edited_fields_list = models.JSONField(default=list, blank=True)
@@ -161,7 +190,7 @@ class SkuRecipe(models.Model):
     MASTER_DATA_STATUS_CHOICES = [
         ('draft', 'Draft'),
         ('pending_review', 'Pending Review'),
-        ('reviewed', 'Reviewed'),
+        ('reviewed', 'Pending Approval (Manager)'),
         ('approved', 'Approved'),
     ]
 
@@ -189,6 +218,16 @@ class SkuRecipe(models.Model):
     plate_set_no = models.CharField(max_length=120, blank=True)
     die_cutting = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
+    is_active = models.BooleanField(default=True)
+    archive_reason = models.TextField(blank=True)
+    archived_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='sku_recipes_archived',
+    )
+    archived_at = models.DateTimeField(null=True, blank=True)
     master_data_status = models.CharField(
         max_length=20,
         choices=MASTER_DATA_STATUS_CHOICES,

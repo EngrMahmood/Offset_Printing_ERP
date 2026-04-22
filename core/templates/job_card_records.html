@@ -99,6 +99,12 @@
                         <label for="date_to">PO Date To</label>
                         <input id="date_to" type="date" name="date_to" value="{{ date_to }}">
 
+                        <label for="entry_date_from">Entry Date From</label>
+                        <input id="entry_date_from" type="date" name="entry_date_from" value="{{ entry_date_from }}">
+
+                        <label for="entry_date_to">Entry Date To</label>
+                        <input id="entry_date_to" type="date" name="entry_date_to" value="{{ entry_date_to }}">
+
                         <label for="per_page">Rows Per Page</label>
                         <select id="per_page" name="per_page">
                             <option value="50" {% if per_page == 50 %}selected{% endif %}>50 / page</option>
@@ -131,20 +137,20 @@
                 <thead>
                     <tr>
                         {% if user.profile.role == 'admin' %}<th><input type="checkbox" id="select_all_jobcards"></th>{% endif %}
-                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card_no&dir={% if sort == 'job_card_no' and dir == 'asc' %}desc{% else %}asc{% endif %}">Job Card</a></th>
-                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=sku&dir={% if sort == 'sku' and dir == 'asc' %}desc{% else %}asc{% endif %}">SKU</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort=job_card_no&dir={% if sort == 'job_card_no' and dir == 'asc' %}desc{% else %}asc{% endif %}">Job Card</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort=sku&dir={% if sort == 'sku' and dir == 'asc' %}desc{% else %}asc{% endif %}">SKU</a></th>
                         <th>Type</th>
-                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=po_no&dir={% if sort == 'po_no' and dir == 'asc' %}desc{% else %}asc{% endif %}">PO No</a></th>
-                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=po_date&dir={% if sort == 'po_date' and dir == 'asc' %}desc{% else %}asc{% endif %}">PO Date</a></th>
-                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=order_qty&dir={% if sort == 'order_qty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Order Qty</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort=po_no&dir={% if sort == 'po_no' and dir == 'asc' %}desc{% else %}asc{% endif %}">PO No</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort=po_date&dir={% if sort == 'po_date' and dir == 'asc' %}desc{% else %}asc{% endif %}">PO Date</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort=order_qty&dir={% if sort == 'order_qty' and dir == 'asc' %}desc{% else %}asc{% endif %}">Order Qty</a></th>
                         <th>Actual Sheet Required</th>
-                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=dispatch&dir={% if sort == 'dispatch' and dir == 'asc' %}desc{% else %}asc{% endif %}">Total Dispatch</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort=dispatch&dir={% if sort == 'dispatch' and dir == 'asc' %}desc{% else %}asc{% endif %}">Total Dispatch</a></th>
                         <th>Dispatch %</th>
                         <th>Balance</th>
                         <th>Short Close</th>
                         <th>Closed as Wastage</th>
-                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=status&dir={% if sort == 'status' and dir == 'asc' %}desc{% else %}asc{% endif %}">Status</a></th>
-                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}">Added By</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort=status&dir={% if sort == 'status' and dir == 'asc' %}desc{% else %}asc{% endif %}">Status</a></th>
+                        <th><a href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}">Added By</a></th>
                         <th>Actions</th>
                     </tr>
                 </thead>
@@ -182,7 +188,17 @@
                         <td>{{ row.created_by.username|default:'-' }}</td>
                         <td class="actions-cell">
                             <a href="{% url 'job_card_entry' %}?view={{ row.id }}" class="btn">View</a>
-                            <a href="{% url 'job_card_entry' %}?edit={{ row.id }}" class="btn">Edit</a>
+                            {% if edit_lock_cutoff and row.po_date and row.po_date < edit_lock_cutoff and not can_bypass_edit_lock %}
+                                {% if row.id in approved_override_ids %}
+                                <a href="{% url 'job_card_entry' %}?edit={{ row.id }}" class="btn">Edit (Approved)</a>
+                                {% elif row.id in pending_override_ids %}
+                                <span class="muted">Override Pending</span>
+                                {% else %}
+                                <a href="{% url 'request_edit_override' 'job_card' row.id %}" class="btn">Request Override</a>
+                                {% endif %}
+                            {% else %}
+                                <a href="{% url 'job_card_entry' %}?edit={{ row.id }}" class="btn">Edit</a>
+                            {% endif %}
                             <a href="{% url 'change_history' 'job_card' row.id %}" class="btn btn-green">History</a>
                             {% if user.profile.can_approve_dispatch and row.short_close_qty_display > 0 %}
                             <form method="POST" style="display:inline-block;margin-top:6px;">
@@ -208,11 +224,11 @@
                     {% if page_obj and page_obj.paginator.num_pages > 1 %}
                     <div style="display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:12px;">
                         {% if page_obj.has_previous %}
-                        <a class="btn" href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
+                        <a class="btn" href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
                         {% endif %}
                         <span class="muted">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
                         {% if page_obj.has_next %}
-                        <a class="btn" href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
+                        <a class="btn" href="?q={{ q }}&status={{ status }}&date_from={{ date_from }}&date_to={{ date_to }}&entry_date_from={{ entry_date_from }}&entry_date_to={{ entry_date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
                         {% endif %}
                     </div>
                     {% endif %}

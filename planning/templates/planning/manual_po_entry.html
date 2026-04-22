@@ -1,0 +1,174 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manual PO Entry</title>
+    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    <style>
+        .wrap { max-width: 100%; margin: 0 auto; }
+        .btn { display:inline-block; padding:7px 11px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
+        .btn.secondary { background:#fff; color:#445366; }
+        .btn.danger { background:#8d3040; border-color:#8d3040; }
+        .panel { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:15px; }
+        .field-group { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:14px; }
+        .field-group label { display:block; font-size:12px; margin-bottom:5px; color:#1f2f43; }
+        .field-group input, .field-group textarea, .field-group select { width:100%; padding:8px; border:1px solid #b0c4d8; border-radius:6px; font-size:13px; }
+        .table-shell { overflow-x:auto; border:1px solid #d6e0ea; border-radius:8px; margin-bottom:14px; }
+        table { width:100%; border-collapse:collapse; min-width:1200px; font-size:12px; }
+        th, td { padding:8px; border-bottom:1px solid #e7eef5; text-align:left; vertical-align:middle; }
+        th { background:#f6f9fc; font-size:11px; text-transform:uppercase; letter-spacing:0.02em; }
+        .muted { color:#5f6f82; font-size:12px; }
+        .msg { padding:9px 12px; border-radius:6px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; margin-bottom:10px; }
+        .alert-error { background:#fce8e6; color:#8a1c1c; border:1px solid #f5c2c7; }
+        .info-row { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
+        .info-row h1 { margin:0; font-size:20px; }
+        .form-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
+        .remove-button { border:1px solid #c7414f; background:#fff2f0; color:#8a2f23; border-radius:6px; padding:6px 10px; cursor:pointer; }
+    </style>
+</head>
+<body>
+<main class="wrap page-container">
+    <div class="info-row">
+        <div>
+            <h1>Manual PO Entry</h1>
+            <div class="muted">Create a PO intake record manually with the same fields extracted from a PDF.</div>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
+            <a class="btn secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
+        </div>
+    </div>
+
+    {% for msg in messages %}
+        <div class="msg alert-error">{{ msg }}</div>
+    {% endfor %}
+
+    <section class="panel">
+        <form method="post" id="manual_po_form">
+            {% csrf_token %}
+            <div class="field-group">
+                <div>
+                    <label for="po_number">PO Number</label>
+                    <input id="po_number" name="po_number" type="text" required>
+                </div>
+                <div>
+                    <label for="po_date">PO Date</label>
+                    <input id="po_date" name="po_date" type="date">
+                </div>
+                <div>
+                    <label for="approval_date">Approval Date</label>
+                    <input id="approval_date" name="approval_date" type="date">
+                </div>
+                <div>
+                    <label for="department">Department</label>
+                    <input id="department" name="department" type="text">
+                </div>
+                <div>
+                    <label for="delivery_location">Delivery Location</label>
+                    <input id="delivery_location" name="delivery_location" type="text">
+                </div>
+                <div>
+                    <label for="supplier_name">Supplier Name</label>
+                    <input id="supplier_name" name="supplier_name" type="text">
+                </div>
+                <div>
+                    <label for="buyer_name">Buyer Name</label>
+                    <input id="buyer_name" name="buyer_name" type="text">
+                </div>
+                <div>
+                    <label for="grand_total">Grand Total</label>
+                    <input id="grand_total" name="grand_total" type="number" step="0.01" min="0">
+                </div>
+            </div>
+
+            <div class="table-shell">
+                <table>
+                    <thead>
+                        <tr>
+                            <th style="width:48px;"></th>
+                            <th style="width:110px;">SKU</th>
+                            <th style="width:180px;">Job Name</th>
+                            <th style="width:70px;">Qty</th>
+                            <th style="width:80px;">Unit</th>
+                            <th style="width:120px;">Delivery Date</th>
+                            <th style="width:100px;">Unit Cost</th>
+                            <th style="width:100px;">Net Total</th>
+                            <th style="width:120px;">Print Sheet Size</th>
+                            <th style="width:120px;">Purchase Sheet Size</th>
+                            <th style="width:70px;">UPS</th>
+                            <th style="width:120px;">Machine</th>
+                        </tr>
+                    </thead>
+                    <tbody id="manual_po_items_body">
+                        <tr data-index="1">
+                            <td>
+                                <button type="button" class="remove-button" onclick="removeLine(this)">-</button>
+                                <input type="hidden" name="item_index" value="1">
+                            </td>
+                            <td><input name="manual_sku_1" type="text" required></td>
+                            <td><input name="manual_job_name_1" type="text"></td>
+                            <td><input name="manual_quantity_1" type="number" min="0" required></td>
+                            <td><input name="manual_unit_1" type="text"></td>
+                            <td><input name="manual_delivery_date_1" type="date"></td>
+                            <td><input name="manual_unit_cost_1" type="number" step="0.01" min="0"></td>
+                            <td><input name="manual_net_total_1" type="number" step="0.01" min="0"></td>
+                            <td><input name="manual_print_sheet_size_1" type="text"></td>
+                            <td><input name="manual_purchase_sheet_size_1" type="text"></td>
+                            <td><input name="manual_ups_1" type="number" min="0"></td>
+                            <td><input name="manual_machine_name_1" type="text"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="form-actions">
+                <button type="button" class="btn secondary" onclick="addLine()">Add another line</button>
+                <button type="submit" class="btn">Save Manual PO</button>
+            </div>
+        </form>
+    </section>
+</main>
+
+<script>
+let nextLineIndex = 2;
+
+function addLine() {
+    const tbody = document.getElementById('manual_po_items_body');
+    const index = nextLineIndex++;
+    const row = document.createElement('tr');
+    row.dataset.index = index;
+    row.innerHTML = `
+        <td>
+            <button type="button" class="remove-button" onclick="removeLine(this)">-</button>
+            <input type="hidden" name="item_index" value="${index}">
+        </td>
+        <td><input name="manual_sku_${index}" type="text" required></td>
+        <td><input name="manual_job_name_${index}" type="text"></td>
+        <td><input name="manual_quantity_${index}" type="number" min="0" required></td>
+        <td><input name="manual_unit_${index}" type="text"></td>
+        <td><input name="manual_delivery_date_${index}" type="date"></td>
+        <td><input name="manual_unit_cost_${index}" type="number" step="0.01" min="0"></td>
+        <td><input name="manual_net_total_${index}" type="number" step="0.01" min="0"></td>
+        <td><input name="manual_print_sheet_size_${index}" type="text"></td>
+        <td><input name="manual_purchase_sheet_size_${index}" type="text"></td>
+        <td><input name="manual_ups_${index}" type="number" min="0"></td>
+        <td><input name="manual_machine_name_${index}" type="text"></td>
+    `;
+    tbody.appendChild(row);
+}
+
+function removeLine(button) {
+    const row = button.closest('tr');
+    if (!row) return;
+    const tbody = document.getElementById('manual_po_items_body');
+    if (tbody.children.length <= 1) {
+        alert('At least one PO line is required.');
+        return;
+    }
+    row.remove();
+}
+</script>
+</body>
+</html>

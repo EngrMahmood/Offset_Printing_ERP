@@ -115,6 +115,12 @@
             font-size: 0.95rem;
         }
 
+        .version-label {
+            margin-top: 14px;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
         .header-image {
             min-height: 205px;
             background: #e6edf5;
@@ -236,6 +242,7 @@
                         Manage daily printing operations from one place: create job cards,
                         capture production, monitor OEE performance, and control dispatch records.
                     </p>
+                    <div class="version-label">Version {{ erp_software_version }}{% if erp_software_release_date %} · Released {{ erp_software_release_date }}{% endif %}</div>
                 </div>
                 <div class="header-image">
                     <img src="{% static 'core/image/cmyk.jpg' %}" alt="CMYK offset printing process image">
@@ -319,15 +326,15 @@
             <p class="section-subtitle">System administration and configuration tools.</p>
             <div class="nav-grid">
                 <a href="{% url 'manage_user_roles' %}" class="card">
-                    <h3>ðŸ‘¥ Manage User Roles</h3>
+                    <h3>Manage User Roles</h3>
                     <p>Assign roles and permissions to team members (Admin only).</p>
                 </a>
                 <a href="{% url 'machine_master_tools' %}" class="card">
-                    <h3>ðŸ›  Master Corrections</h3>
+                    <h3>Master Corrections</h3>
                     <p>Rename or deactivate wrong dropdown values (machine, operator, material, department).</p>
                 </a>
                 <a href="/admin/" class="card">
-                    <h3>âš™ï¸ Django Admin</h3>
+                    <h3>Django Admin</h3>
                     <p>Master data management: Machines, operators, materials, departments.</p>
                 </a>
             </div>

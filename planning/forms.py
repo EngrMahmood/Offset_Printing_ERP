@@ -151,13 +151,29 @@ class SkuRecipeForm(forms.ModelForm):
 
         field = self.fields['purchase_material']
         field.widget = forms.Select(choices=PURCHASE_MATERIAL_ORIGIN_CHOICES)
-        field.required = False
+        field.required = True
+        field.widget.attrs.setdefault('required', 'required')
 
         app_field = self.fields['application']
         app_field.widget = forms.Select(choices=APPLICATION_CHOICES)
-        app_field.required = False
+        app_field.required = True
+        app_field.widget.attrs.setdefault('required', 'required')
 
-        self.fields['department'].required = False
+        self.fields['job_name'].widget.attrs.setdefault('required', 'required')
+        self.fields['material'].widget.attrs.setdefault('required', 'required')
+        self.fields['color_spec'].widget.attrs.setdefault('required', 'required')
+        self.fields['application'].widget.attrs.setdefault('required', 'required')
+        self.fields['machine_name'].widget.attrs.setdefault('required', 'required')
+        self.fields['print_sheet_size'].widget.attrs.setdefault('required', 'required')
+        self.fields['purchase_sheet_size'].widget.attrs.setdefault('required', 'required')
+        self.fields['ups'].widget.attrs.setdefault('required', 'required')
+        self.fields['purchase_sheet_ups'].widget.attrs.setdefault('required', 'required')
+        self.fields['purchase_material'].widget.attrs.setdefault('required', 'required')
+        self.fields['size_w_mm'].widget.attrs.setdefault('required', 'required')
+        self.fields['size_h_mm'].widget.attrs.setdefault('required', 'required')
+
+        self.fields['department'].required = True
+        self.fields['department'].widget.attrs.setdefault('required', 'required')
         self.fields['color_spec'].widget.attrs.setdefault('placeholder', 'e.g. 4 color or 1+1')
 
     def clean_purchase_material(self):

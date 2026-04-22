@@ -63,6 +63,92 @@
         If the same PO + SKU is uploaded again, the existing planning job is updated instead of creating duplicates.
     </div>
 
+    <div class="card" style="margin-bottom:10px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+            <div>
+                <span style="font-size:13px;font-weight:700;color:#1f2f43;">Manual PO Number</span>
+                <div class="muted">Enter or correct the PO number for this intake before creating jobs.</div>
+            </div>
+            <div>
+                <span class="badge" style="background:#fff8e5;border-color:#f2d197;color:#8a5c00;">PO Edit</span>
+            </div>
+        </div>
+        <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:flex-end;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="update_po_number">
+            <div>
+                <label for="manual_po_number">PO Number</label><br>
+                <input id="manual_po_number" name="manual_po_number" type="text" required value="{{ payload.po_number|default:'' }}" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div style="grid-column: span 2; display:flex; justify-content:flex-start;">
+                <button class="btn" type="submit" style="margin-top:0;">Save PO Number</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="card" style="margin-bottom:10px;padding:12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
+            <div>
+                <span style="font-size:13px;font-weight:700;color:#1f2f43;">Add Manual PO Line</span>
+                <div class="muted">Enter manual row data here if extraction missed a line. The row is added to PO review and routed like extracted items.</div>
+            </div>
+            <div>
+                <span class="badge" style="background:#fff8e5;border-color:#f2d197;color:#8a5c00;">Manual Entry</span>
+            </div>
+        </div>
+        <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:flex-end;">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="add_manual_item">
+            <div>
+                <label for="manual_sku">SKU</label><br>
+                <input id="manual_sku" name="manual_sku" type="text" required style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_job_name">Job Name</label><br>
+                <input id="manual_job_name" name="manual_job_name" type="text" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_quantity">Quantity</label><br>
+                <input id="manual_quantity" name="manual_quantity" type="number" min="0" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_unit">Unit</label><br>
+                <input id="manual_unit" name="manual_unit" type="text" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_delivery_date">Delivery Date</label><br>
+                <input id="manual_delivery_date" name="manual_delivery_date" type="date" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_unit_cost">Unit Cost</label><br>
+                <input id="manual_unit_cost" name="manual_unit_cost" type="number" step="0.01" min="0" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_net_total">Net Total</label><br>
+                <input id="manual_net_total" name="manual_net_total" type="number" step="0.01" min="0" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_print_sheet_size">Print Sheet Size</label><br>
+                <input id="manual_print_sheet_size" name="manual_print_sheet_size" type="text" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_purchase_sheet_size">Purchase Sheet Size</label><br>
+                <input id="manual_purchase_sheet_size" name="manual_purchase_sheet_size" type="text" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_ups">UPS</label><br>
+                <input id="manual_ups" name="manual_ups" type="number" min="0" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div>
+                <label for="manual_machine_name">Machine</label><br>
+                <input id="manual_machine_name" name="manual_machine_name" type="text" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
+            </div>
+            <div style="grid-column: span 2; display:flex; justify-content:flex-start;">
+                <button class="btn" type="submit" style="margin-top:0;">Add Manual PO Line</button>
+            </div>
+        </form>
+    </div>
+
     <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
         <div>
             <span class="badge repeat">Repeat SKUs: {{ repeat_count }}</span>
@@ -102,10 +188,17 @@
             </div>
         </div>
         <div class="muted" style="margin-bottom:8px;">For repeat lines, planner can adjust Print Sheet Size, Purchase Sheet Size, UPS and Machine before creating draft jobs.</div>
+        {% if ignored_count %}
+            <div class="muted" style="margin-bottom:8px;color:#8a3f00;">
+                {{ ignored_count }} SKU{{ ignored_count|pluralize }} ignored from this PO intake review.
+                <a href="{% url 'planning:pending_skus_ignored' %}?po={{ payload.po_number|urlencode }}" class="btn secondary" style="padding:4px 7px;font-size:11px;">Manage ignored SKUs</a>
+            </div>
+        {% endif %}
 
         <form method="post" id="review_form">
             {% csrf_token %}
-            <input type="hidden" name="action" value="create_jobs">
+            <input type="hidden" name="action" id="review_form_action" value="create_jobs">
+            <input type="hidden" name="sku" id="review_form_sku" value="">
 
             <div class="table-shell">
                 <table>
@@ -117,6 +210,7 @@
                             <th>SKU</th>
                             <th>Recipe</th>
                             <th>Forward</th>
+                            <th>Ignore</th>
                             <th>Existing Job</th>
                             <th>Delivery Date</th>
                             <th>Qty</th>
@@ -142,6 +236,13 @@
                             <td style="max-width:320px;word-break:break-all;">{{ item.sku }}</td>
                             <td><span class="badge {% if item.is_repeat %}repeat{% else %}new{% endif %}">{{ item.recipe_status }}</span></td>
                             <td><span class="badge {% if item.forward_flag == 'New' %}new{% else %}repeat{% endif %}">{{ item.forward_flag }}</span></td>
+                            <td>
+                                {% if item.recipe_status == 'New' %}
+                                    <button class="btn secondary" type="button" style="font-size:11px;padding:4px 7px;" onclick="ignorePoReviewSku('{{ item.sku|escapejs }}')">Ignore</button>
+                                {% else %}
+                                    <span class="muted">-</span>
+                                {% endif %}
+                            </td>
                             <td>
                                 {% if item.existing_job_id %}
                                     <div><strong>{{ item.existing_jc_number }}</strong></div>
@@ -238,6 +339,17 @@ function toggleRowStyle(lineNo, isSkipped) {
         row.style.opacity = isSkipped ? '0.35' : '1';
         row.style.textDecoration = isSkipped ? 'line-through' : 'none';
     }
+}
+
+function ignorePoReviewSku(sku) {
+    const actionField = document.getElementById('review_form_action');
+    const skuField = document.getElementById('review_form_sku');
+    if (!actionField || !skuField) {
+        return;
+    }
+    actionField.value = 'ignore';
+    skuField.value = sku;
+    document.getElementById('review_form').submit();
 }
 </script>
 </body>

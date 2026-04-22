@@ -73,7 +73,13 @@
                         <td>
                             <span class="badge badge-{{ ov.status }}">{{ ov.get_status_display }}</span>
                         </td>
-                        <td>{{ ov.reviewed_by.get_full_name|default:ov.reviewed_by.username|default:'-' }}</td>
+                        <td>
+                            {% if ov.reviewed_by %}
+                                {{ ov.reviewed_by.get_full_name|default:ov.reviewed_by.username }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
                         <td>{{ ov.expires_at|date:"d M H:i"|default:'-' }}</td>
                         <td>
                             {% if ov.status == 'pending' %}

@@ -32,6 +32,7 @@
 
     <h1>Planning Module - Full Easy Guide</h1>
     <div class="meta">Generated on: {{ generated_on|date:'Y-m-d H:i' }}</div>
+    <div class="meta">Version: {{ erp_software_version }}{% if erp_software_release_date %} · Released {{ erp_software_release_date }}{% endif %}</div>
 
     <p>
         This guide explains the planning workflow in simple language.
@@ -41,54 +42,72 @@
     <h2>1. Master SKU (Step 1)</h2>
     <ul>
         <li>Create or bulk upload SKU master records.</li>
-        <li>Use workflow: Draft -> Reviewed -> Approved.</li>
-        <li>Only approved master records should be used downstream.</li>
+        <li>Use the workflow: Draft → Reviewed → Approved.</li>
+        <li>Only approved master records should be used downstream in planning.</li>
+        <li>If a SKU is missing required master fields, it will remain in Pending SKU until complete.</li>
     </ul>
 
     <h2>2. PO Intake (Step 2)</h2>
     <ul>
-        <li>Upload PO PDF and review extracted lines in intake queue.</li>
-        <li>Repeat lines go directly to Planning Jobs.</li>
-        <li>New lines go to Pending SKU master completion first.</li>
+        <li>Open the PO Intake Queue from the Planning home page.</li>
+        <li>You can either upload a PO PDF or use Manual PO Entry for non-PDF orders.</li>
+        <li>After upload, the system redirects you to the PO Review page for verification before intake.</li>
+        <li>On PO Review you can correct the PO number, add missing PO lines manually, or ignore unwanted SKUs.</li>
+        <li>Manual PO entry supports the same fields as PDF extraction: PO number, PO date, approval date, department, delivery location, supplier, buyer, grand total, SKU, job name, quantity, unit, delivery date, unit cost, net total, print sheet size, purchase sheet size, UPS, and machine.</li>
+        <li>Repeat lines are routed directly to Planning Jobs after sync.</li>
+        <li>New lines go to Pending SKU for master completion and approval.</li>
+        <li>Ignored SKUs are tracked on the PO and can be restored later from the Ignored SKUs page.</li>
     </ul>
 
     <h2>3. Pending New SKU (Step 3)</h2>
     <ul>
-        <li>Complete missing master fields for new SKUs.</li>
-        <li>Job name is PO-derived; do not enter manually.</li>
+        <li>Complete missing master fields for new SKUs that arrive from PO Intake.</li>
+        <li>Use the Pending SKU workflow to edit and approve new SKU master data.</li>
+        <li>After approval, new SKU lines auto-sync into Planning Jobs.</li>
+        <li>Job Name is normally taken from the PO and should not be changed unless necessary.</li>
         <li>Application values allowed: UV, Lamination Gloss, Lamination Matt, NO.</li>
-        <li>Purchase Material Origin allowed: Local, Imported.</li>
-        <li>After approval, new SKU lines auto-sync to Planning Jobs.</li>
+        <li>Purchase Material Origin values allowed: Local, Imported.</li>
     </ul>
 
     <h2>4. Planning Jobs (Step 4)</h2>
     <ul>
-        <li>Review, filter, edit, and manage planning jobs.</li>
-        <li>Use bulk status update only when appropriate.</li>
-        <li>Prepare jobs for QC and Production Manager approvals.</li>
+        <li>Review Planning Jobs, filter by status, department, machine, and PO.</li>
+        <li>Use the bulk action panel to update statuses or archive selected jobs.</li>
+        <li>You can place jobs on hold, release hold, archive, or permanently delete jobs.</li>
+        <li>Archived jobs are moved to the Archived Jobs page for restore or permanent delete.</li>
+        <li>Always verify the job details before approving or archiving to avoid data loss.</li>
     </ul>
 
     <h2>5. Approval Queue (Step 5)</h2>
     <ul>
-        <li>Draft -> QC Approved -> Production Manager Approved.</li>
-        <li>Only approved jobs should be released to execution.</li>
+        <li>Jobs flow through: Draft → Pending Review → Pending Approval (Manager).</li>
+        <li>Only approved jobs should be released to execution and production planning.</li>
+        <li>Use this queue to ensure master data and routing are correct before final release.</li>
     </ul>
 
     <h2>6. Job Card and Scan (Step 6)</h2>
     <ul>
-        <li>Print A4 Job Card for shop floor.</li>
-        <li>Use QR scan to open and track jobs quickly.</li>
+        <li>Print the A4 Job Card for shop floor operations.</li>
+        <li>Use the QR scan feature to open and track jobs quickly on the production floor.</li>
+        <li>Job Card version updates after each save on the planning job.</li>
     </ul>
 
     <h2>7. Cost / Department Mismatch Alerts</h2>
     <ul>
-        <li>Repeat jobs highlight cost mismatch against PO as COST ALERT.</li>
-        <li>Repeat jobs highlight department mismatch against PO as DEPARTMENT ALERT.</li>
-        <li>These alerts help planners review variances before production.</li>
+        <li>Repeat jobs highlight cost mismatches with a COST ALERT note.</li>
+        <li>Repeat jobs highlight department mismatches with a DEPARTMENT ALERT note.</li>
+        <li>Review these alerts before creating or updating Planning Jobs.</li>
+    </ul>
+
+    <h2>8. Professional Change Tracking</h2>
+    <ul>
+        <li>This release is documented in the project `CHANGELOG.md` file for audit and review.</li>
+        <li>Use the changelog to compare versions and verify the merged planning/main updates.</li>
     </ul>
 
     <div class="note">
         Keep this planning guide updated whenever workflow rules, mandatory fields, or routing behavior changes.
+        Review the guide after each release or merge to ensure users have current instructions.
     </div>
 </div>
 </body>

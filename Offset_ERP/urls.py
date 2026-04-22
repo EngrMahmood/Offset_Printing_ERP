@@ -39,4 +39,5 @@ urlpatterns = [
     path('machine-master-tools/', views.machine_master_tools, name='machine_master_tools'),
     path('erp-readme/', views.erp_readme, name='erp_readme'),
     path('erp-readme/download/', views.download_erp_readme, name='download_erp_readme'),
+    path('version/', views.erp_version, name='erp_version'),
 ]
