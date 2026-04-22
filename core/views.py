@@ -541,6 +541,14 @@ def home(request):
     return render(request, 'home.html')
 
 
+def erp_version(request):
+    return JsonResponse({
+        'erp_software_version': getattr(settings, 'ERP_SOFTWARE_VERSION', '0.0.0'),
+        'erp_software_release_date': getattr(settings, 'ERP_SOFTWARE_RELEASE_DATE', ''),
+        'server_time': timezone.now().isoformat(),
+    })
+
+
 @login_required
 @permission_required('can_edit_jobcard')
 def bulk_upload_jobcards(request):

@@ -115,6 +115,12 @@
             font-size: 0.95rem;
         }
 
+        .version-label {
+            margin-top: 14px;
+            color: var(--muted);
+            font-size: 0.92rem;
+        }
+
         .header-image {
             min-height: 205px;
             background: #e6edf5;
@@ -236,6 +242,7 @@
                         Manage daily printing operations from one place: create job cards,
                         capture production, monitor OEE performance, and control dispatch records.
                     </p>
+                    <div class="version-label">Version {{ erp_software_version }}{% if erp_software_release_date %} · Released {{ erp_software_release_date }}{% endif %}</div>
                 </div>
                 <div class="header-image">
                     <img src="{% static 'core/image/cmyk.jpg' %}" alt="CMYK offset printing process image">

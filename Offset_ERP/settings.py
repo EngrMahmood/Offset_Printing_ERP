@@ -63,6 +63,7 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                'core.context_processors.software_version',
             ],
         },
     },
@@ -120,6 +121,10 @@ LOGOUT_REDIRECT_URL = '/login/'
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = '/static/'
+
+# ERP software version information
+ERP_SOFTWARE_VERSION = '2026.04.22.1'
+ERP_SOFTWARE_RELEASE_DATE = '2026-04-22'
 
 # Lock older operational records from edit for non-managerial roles.
 ERP_RECORD_EDIT_LOCK_DAYS = 2
