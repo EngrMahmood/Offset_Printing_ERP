@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Q, Sum
@@ -926,48 +927,125 @@ def planning_welcome(request):
 @login_required
 @permission_required('can_edit_jobcard')
 def planning_home(request):
-    queryset = PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs').all()
+    queryset = PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs').filter(is_active=True)
 
-    if request.method == 'POST' and request.POST.get('action') == 'bulk_update_status':
-        selected_ids = []
-        for raw_id in request.POST.getlist('selected_ids'):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'bulk_update_status':
+            selected_ids = []
+            for raw_id in request.POST.getlist('selected_ids'):
+                try:
+                    selected_ids.append(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+
+            target_status = _normalize_status(request.POST.get('target_status'), default='')
+            if target_status not in PLANNING_STATUS_SET:
+                messages.error(request, 'Please select a valid target status for bulk update.')
+                return redirect('planning:jobs')
+
+            if not selected_ids:
+                messages.error(request, 'Select at least one planning row for bulk update.')
+                return redirect('planning:jobs')
+
+            updated = 0
+            skipped_locked = 0
+            for job in PlanningJob.objects.filter(id__in=selected_ids):
+                current_status = _normalize_status(job.status)
+                if current_status == 'approved' and target_status not in {'approved', 'reviewed'}:
+                    skipped_locked += 1
+                    continue
+                if current_status == target_status:
+                    continue
+
+                job.status = target_status
+                if target_status == 'approved':
+                    job.issued_to_production = True
+                elif current_status == 'approved' and target_status == 'reviewed':
+                    job.issued_to_production = False
+                job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
+                updated += 1
+
+            messages.success(
+                request,
+                f'Bulk status update complete. Updated {updated}, locked-skip {skipped_locked}.',
+            )
+            return redirect('planning:jobs')
+
+        if action == 'bulk_archive':
+            selected_ids = []
+            for raw_id in request.POST.getlist('selected_ids'):
+                try:
+                    selected_ids.append(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+
+            reason = (request.POST.get('archive_reason') or '').strip()
+            if not selected_ids:
+                messages.error(request, 'Select at least one planning row to archive.')
+                return redirect('planning:jobs')
+
+            archived_count = 0
+            for job in PlanningJob.objects.filter(id__in=selected_ids, is_active=True):
+                job.is_active = False
+                job.archive_reason = reason
+                job.archived_by = request.user
+                job.archived_at = timezone.now()
+                job.save(update_fields=['is_active', 'archive_reason', 'archived_by', 'archived_at', 'updated_at'])
+                archived_count += 1
+
+            messages.success(request, f'Bulk archive complete. Archived {archived_count} jobs.')
+            return redirect('planning:jobs')
+
+        if action in {'hold', 'release_hold', 'archive', 'delete'}:
+            job_id = request.POST.get('job_id')
             try:
-                selected_ids.append(int(raw_id))
+                job_id = int(job_id)
             except (TypeError, ValueError):
-                continue
+                messages.error(request, 'Invalid planning job selected.')
+                return redirect('planning:jobs')
 
-        target_status = _normalize_status(request.POST.get('target_status'), default='')
-        if target_status not in PLANNING_STATUS_SET:
-            messages.error(request, 'Please select a valid target status for bulk update.')
-            return redirect('planning:jobs')
+            job = get_object_or_404(PlanningJob, id=job_id)
+            if action == 'delete' and not _user_is_admin(request.user):
+                messages.error(request, 'Only administrators can delete planning jobs.')
+                return redirect('planning:jobs')
 
-        if not selected_ids:
-            messages.error(request, 'Select at least one planning row for bulk update.')
-            return redirect('planning:jobs')
+            if action == 'hold':
+                reason = (request.POST.get('reason') or '').strip()
+                if not reason:
+                    messages.error(request, 'A hold reason is required to place a job on hold.')
+                    return redirect('planning:jobs')
+                job.is_on_hold = True
+                job.hold_reason = reason
+                job.hold_by = request.user
+                job.hold_at = timezone.now()
+                job.save(update_fields=['is_on_hold', 'hold_reason', 'hold_by', 'hold_at', 'updated_at'])
+                messages.success(request, f'Planning job {job.jc_number} was placed on hold.')
+                return redirect('planning:jobs')
 
-        updated = 0
-        skipped_locked = 0
-        for job in PlanningJob.objects.filter(id__in=selected_ids):
-            current_status = _normalize_status(job.status)
-            if current_status == 'approved' and target_status not in {'approved', 'reviewed'}:
-                skipped_locked += 1
-                continue
-            if current_status == target_status:
-                continue
+            if action == 'release_hold':
+                job.is_on_hold = False
+                job.hold_reason = ''
+                job.hold_by = None
+                job.hold_at = None
+                job.save(update_fields=['is_on_hold', 'hold_reason', 'hold_by', 'hold_at', 'updated_at'])
+                messages.success(request, f'Planning job {job.jc_number} hold was released.')
+                return redirect('planning:jobs')
 
-            job.status = target_status
-            if target_status == 'approved':
-                job.issued_to_production = True
-            elif current_status == 'approved' and target_status == 'reviewed':
-                job.issued_to_production = False
-            job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
-            updated += 1
+            if action == 'archive':
+                reason = (request.POST.get('reason') or '').strip()
+                job.is_active = False
+                job.archive_reason = reason
+                job.archived_by = request.user
+                job.archived_at = timezone.now()
+                job.save(update_fields=['is_active', 'archive_reason', 'archived_by', 'archived_at', 'updated_at'])
+                messages.success(request, f'Planning job {job.jc_number} was archived.')
+                return redirect('planning:jobs')
 
-        messages.success(
-            request,
-            f'Bulk status update complete. Updated {updated}, locked-skip {skipped_locked}.',
-        )
-        return redirect('planning:jobs')
+            if action == 'delete':
+                job.delete()
+                messages.success(request, f'Planning job {job.jc_number} was permanently deleted.')
+                return redirect('planning:jobs')
 
     q = (request.GET.get('q') or '').strip()
     status_filter = _normalize_status(request.GET.get('status'), default='')
@@ -1014,6 +1092,135 @@ def planning_home(request):
             'jobs': jobs,
             'status_counts': status_counts,
             'status_choices': PLANNING_STATUSES,
+            'can_admin_actions': _user_is_admin(request.user),
+            'filters': {
+                'q': q,
+                'status': status_filter,
+                'department': department_filter,
+                'machine': machine_filter,
+                'from_date': request.GET.get('from_date', ''),
+                'to_date': request.GET.get('to_date', ''),
+            },
+        },
+    )
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planning_jobs_archived(request):
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action in {'bulk_restore', 'bulk_delete'}:
+            selected_ids = []
+            for raw_id in request.POST.getlist('selected_ids'):
+                try:
+                    selected_ids.append(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+
+            if not selected_ids:
+                messages.error(request, 'Select at least one archived planning job.')
+                return redirect('planning:jobs_archived')
+
+            if action == 'bulk_restore':
+                reason = (request.POST.get('reason') or '').strip()
+                restored_count = 0
+                for job in PlanningJob.objects.filter(id__in=selected_ids, is_active=False):
+                    job.is_active = True
+                    job.restored_by = request.user
+                    job.restored_at = timezone.now()
+                    job.restore_reason = reason
+                    job.save(update_fields=['is_active', 'restored_by', 'restored_at', 'restore_reason', 'updated_at'])
+                    restored_count += 1
+                messages.success(request, f'Bulk restore complete. Restored {restored_count} jobs.')
+                return redirect('planning:jobs_archived')
+
+            if action == 'bulk_delete':
+                if not _user_is_admin(request.user):
+                    messages.error(request, 'Only administrators can permanently delete archived planning jobs.')
+                    return redirect('planning:jobs_archived')
+                deleted_count = PlanningJob.objects.filter(id__in=selected_ids, is_active=False).delete()[0]
+                messages.success(request, f'Bulk delete complete. Deleted {deleted_count} jobs.')
+                return redirect('planning:jobs_archived')
+
+        job_id = request.POST.get('job_id')
+        try:
+            job_id = int(job_id)
+        except (TypeError, ValueError):
+            messages.error(request, 'Invalid archived planning job selected.')
+            return redirect('planning:jobs_archived')
+
+        job = get_object_or_404(PlanningJob, id=job_id, is_active=False)
+
+        if action == 'restore':
+            reason = (request.POST.get('reason') or '').strip()
+            job.is_active = True
+            job.restored_by = request.user
+            job.restored_at = timezone.now()
+            job.restore_reason = reason
+            job.save(update_fields=['is_active', 'restored_by', 'restored_at', 'restore_reason', 'updated_at'])
+            messages.success(request, f'Planning job {job.jc_number} was restored from archive.')
+            return redirect('planning:jobs_archived')
+
+        if action == 'delete':
+            if not _user_is_admin(request.user):
+                messages.error(request, 'Only administrators can permanently delete archived planning jobs.')
+                return redirect('planning:jobs_archived')
+            job.delete()
+            messages.success(request, f'Planning job {job.jc_number} was permanently deleted.')
+            return redirect('planning:jobs_archived')
+
+        messages.error(request, 'Unknown action for archived planning jobs.')
+        return redirect('planning:jobs_archived')
+
+    queryset = PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs').filter(is_active=False)
+
+    q = (request.GET.get('q') or '').strip()
+    status_filter = _normalize_status(request.GET.get('status'), default='')
+    department_filter = (request.GET.get('department') or '').strip()
+    machine_filter = (request.GET.get('machine') or '').strip()
+    from_date = _parse_date_filter(request.GET.get('from_date'))
+    to_date = _parse_date_filter(request.GET.get('to_date'))
+
+    if q:
+        queryset = queryset.filter(
+            Q(jc_number__icontains=q)
+            | Q(po_number__icontains=q)
+            | Q(sku__icontains=q)
+            | Q(job_name__icontains=q)
+        )
+    if status_filter:
+        queryset = queryset.filter(status__iexact=status_filter)
+    if department_filter:
+        queryset = queryset.filter(department__icontains=department_filter)
+    if machine_filter:
+        queryset = queryset.filter(machine_name__icontains=machine_filter)
+    if from_date:
+        queryset = queryset.filter(plan_date__gte=from_date)
+    if to_date:
+        queryset = queryset.filter(plan_date__lte=to_date)
+
+    status_rows = (
+        queryset.values('status')
+        .annotate(total=Count('id'))
+        .order_by('status')
+    )
+    status_counts = {
+        _normalize_status(row['status']): row['total']
+        for row in status_rows
+    }
+
+    paginator = Paginator(queryset, 50)
+    page_number = request.GET.get('page')
+    jobs = paginator.get_page(page_number)
+    return render(
+        request,
+        'planning/planning_archived_jobs.html',
+        {
+            'jobs': jobs,
+            'status_counts': status_counts,
+            'status_choices': PLANNING_STATUSES,
+            'can_admin_actions': _user_is_admin(request.user),
             'filters': {
                 'q': q,
                 'status': status_filter,
@@ -2928,9 +3135,85 @@ def upload_po(request):
             if sync_result['missing_recipe']:
                 msg += f" Repeat SKU(s) missing approved master data: {sync_result['missing_recipe']}."
             messages.success(request, msg)
-        return redirect('planning:po_inbox')
+        return redirect('planning:po_review', doc_id=po_doc.id)
 
     return render(request, 'planning/po_upload.html')
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def manual_po_entry(request):
+    """Create a PO intake record manually without uploading a PDF."""
+    if request.method == 'POST':
+        po_number = (request.POST.get('po_number') or '').strip()
+        if not po_number:
+            messages.error(request, 'PO number is required.')
+            return redirect('planning:manual_po_entry')
+
+        items = []
+        line_indexes = request.POST.getlist('item_index')
+        for index in line_indexes:
+            sku = (request.POST.get(f'manual_sku_{index}') or '').strip()
+            if not sku:
+                continue
+            quantity = _to_int(request.POST.get(f'manual_quantity_{index}'))
+            if quantity is None:
+                messages.error(request, f'Quantity must be a valid number for line {index}.')
+                return redirect('planning:manual_po_entry')
+
+            item = {
+                'sku': sku,
+                'job_name': (request.POST.get(f'manual_job_name_{index}') or '').strip() or sku,
+                'quantity': quantity,
+                'unit': (request.POST.get(f'manual_unit_{index}') or '').strip() or '',
+                'delivery_date': (request.POST.get(f'manual_delivery_date_{index}') or '').strip() or '',
+                'unit_cost': _to_decimal(request.POST.get(f'manual_unit_cost_{index}')),
+                'net_total': _to_decimal(request.POST.get(f'manual_net_total_{index}')),
+                'print_sheet_size': (request.POST.get(f'manual_print_sheet_size_{index}') or '').strip() or '',
+                'purchase_sheet_size': (request.POST.get(f'manual_purchase_sheet_size_{index}') or '').strip() or '',
+                'ups': _to_optional_positive_int(request.POST.get(f'manual_ups_{index}')),
+                'machine_name': (request.POST.get(f'manual_machine_name_{index}') or '').strip() or '',
+            }
+            items.append(item)
+
+        if not items:
+            messages.error(request, 'At least one PO line is required.')
+            return redirect('planning:manual_po_entry')
+
+        payload = {
+            'po_number': po_number,
+            'po_date': (request.POST.get('po_date') or '').strip(),
+            'approval_date': (request.POST.get('approval_date') or '').strip(),
+            'department': (request.POST.get('department') or '').strip(),
+            'delivery_location': (request.POST.get('delivery_location') or '').strip(),
+            'supplier_name': (request.POST.get('supplier_name') or '').strip(),
+            'buyer_name': (request.POST.get('buyer_name') or '').strip(),
+            'grand_total': _to_decimal(request.POST.get('grand_total')),
+            'items': items,
+            'source_item_count': len(items),
+        }
+
+        manual_file = ContentFile(b'', name=f'manual_po_{po_number}_{timezone.now().strftime("%Y%m%d%H%M%S")}.txt')
+        po_doc = PoDocument.objects.create(
+            po_file=manual_file,
+            extracted_payload=payload,
+            extraction_status='processed',
+            uploaded_by=request.user,
+        )
+
+        sync_result = _sync_repeat_jobs_from_po(po_doc, actor=request.user)
+        messages.success(request, f'Manual PO {po_number} created with {len(items)} line(s).')
+        if sync_result['created'] or sync_result['updated']:
+            messages.success(
+                request,
+                f'Repeat jobs sent to Planning: created {sync_result["created"]}, updated {sync_result["updated"]}.',
+            )
+        if sync_result['missing_recipe']:
+            messages.warning(request, f'Repeat SKU(s) missing approved master data: {sync_result["missing_recipe"]}.')
+
+        return redirect('planning:po_review', doc_id=po_doc.id)
+
+    return render(request, 'planning/manual_po_entry.html')
 
 
 @login_required
@@ -3020,6 +3303,49 @@ def po_review(request, doc_id):
             po_doc.extracted_payload = payload
             po_doc.save(update_fields=['extracted_payload'])
             messages.success(request, f'SKU {sku} ignored and removed from PO intake review.')
+            return redirect('planning:po_review', doc_id=po_doc.id)
+
+        if action == 'update_po_number':
+            manual_po_number = (request.POST.get('manual_po_number') or '').strip()
+            if not manual_po_number:
+                messages.error(request, 'PO number is required to update the PO intake record.')
+                return redirect('planning:po_review', doc_id=po_doc.id)
+
+            payload['po_number'] = manual_po_number
+            po_doc.extracted_payload = payload
+            po_doc.save(update_fields=['extracted_payload'])
+            messages.success(request, f'PO number updated to {manual_po_number}.')
+            return redirect('planning:po_review', doc_id=po_doc.id)
+
+        if action == 'add_manual_item':
+            sku = (request.POST.get('manual_sku') or '').strip()
+            if not sku:
+                messages.error(request, 'SKU is required to add a manual PO line.')
+                return redirect('planning:po_review', doc_id=po_doc.id)
+
+            quantity = _to_int(request.POST.get('manual_quantity'))
+            if quantity is None:
+                messages.error(request, 'Quantity must be a valid number to add a manual PO line.')
+                return redirect('planning:po_review', doc_id=po_doc.id)
+
+            manual_item = {
+                'sku': sku,
+                'job_name': (request.POST.get('manual_job_name') or '').strip() or sku,
+                'quantity': quantity,
+                'unit': (request.POST.get('manual_unit') or '').strip() or '',
+                'delivery_date': (request.POST.get('manual_delivery_date') or '').strip() or '',
+                'unit_cost': _to_decimal(request.POST.get('manual_unit_cost')),
+                'net_total': _to_decimal(request.POST.get('manual_net_total')),
+                'print_sheet_size': (request.POST.get('manual_print_sheet_size') or '').strip() or '',
+                'purchase_sheet_size': (request.POST.get('manual_purchase_sheet_size') or '').strip() or '',
+                'ups': _to_optional_positive_int(request.POST.get('manual_ups')),
+                'machine_name': (request.POST.get('manual_machine_name') or '').strip() or '',
+            }
+            payload['items'] = list(payload.get('items', []))
+            payload['items'].append(manual_item)
+            po_doc.extracted_payload = payload
+            po_doc.save(update_fields=['extracted_payload'])
+            messages.success(request, f'Manual PO line for SKU {sku} added.')
             return redirect('planning:po_review', doc_id=po_doc.id)
 
         if action == 'create_jobs':

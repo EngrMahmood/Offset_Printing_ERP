@@ -42,8 +42,9 @@
                 <input type="file" name="po_pdf" accept=".pdf" required>
                 <div class="muted" style="margin-top:6px;">Only system-generated PDF from Utopia ERP system is supported.</div>
             </div>
-            <div style="display:flex;gap:8px;margin-top:10px;">
+            <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;">
                 <button type="submit" class="btn">Extract & Review</button>
+                <a href="{% url 'planning:manual_po_entry' %}" class="btn secondary">Manual PO Entry</a>
                 <a href="{% url 'planning:home' %}" class="btn secondary">Back to Planning</a>
             </div>
         </form>
