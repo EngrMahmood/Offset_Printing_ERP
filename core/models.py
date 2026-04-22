@@ -180,6 +180,11 @@ class JobCard(models.Model):
         return self.total_sheets_planned + self.tolerance_sheets
 
     @property
+    def total_impressions_allowed_with_tolerance(self):
+        tolerance = float(self.production_tolerance_percent or 0) / 100
+        return int(round(self.total_impressions_required * (1 + tolerance)))
+
+    @property
     def extra_sheets_used(self):
         total_consumed = self.productions.filter(is_active=True).aggregate(
             total_output=Sum('output_sheets'),
@@ -355,16 +360,29 @@ class Production(models.Model):
 
     # 🔴 MAIN VALIDATION (FIXED)
         if total_existing_consumption + current_consumption > self.job_card.total_sheets_allowed_with_tolerance:
-         errors['output_sheets'] = (
-             "Total sheets (production + waste) exceed allowed sheets with tolerance! "
-             f"Allowed: {self.job_card.total_sheets_allowed_with_tolerance}"
-         )
+            errors['output_sheets'] = (
+                "Total sheets (production + waste) exceed allowed sheets with tolerance! "
+                f"Allowed: {self.job_card.total_sheets_allowed_with_tolerance}"
+            )
 
         # Impressions validation
         if self.impressions <= 0:
             errors['impressions'] = "Impressions must be greater than 0"
         if self.impressions < self.output_sheets:
             errors['impressions'] = "Impressions should be at least equal to output sheets"
+
+        existing_impressions = Production.objects.filter(
+            job_card=self.job_card,
+            is_active=True,
+        ).exclude(id=self.id).aggregate(total_impressions=Sum('impressions'))
+        total_existing_impressions = existing_impressions['total_impressions'] or 0
+        total_impressions = total_existing_impressions + (self.impressions or 0)
+        allowed_impressions = self.job_card.total_impressions_allowed_with_tolerance
+        if total_impressions > allowed_impressions:
+            errors['impressions'] = (
+                "Total impressions exceed allowed tolerance. "
+                f"Allowed: {allowed_impressions}"
+            )
 
     # ⏱ TIME VALIDATIONS
         # Overruns are allowed. Run time can exceed planned allocation for a session.

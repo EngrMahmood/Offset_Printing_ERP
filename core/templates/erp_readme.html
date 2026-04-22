@@ -89,6 +89,8 @@
     <ul>
         <li>Planned minutes are auto-allocated from remaining planned time.</li>
         <li>Remaining Planned Time = Job Planned Total - Sum(previous active production planned times)</li>
+        <li>Total impressions are cumulative across production entries for the same job card.</li>
+        <li>Total impressions are validated against Total Impressions Required plus Production Tolerance %.</li>
         <li>If extra allocation is needed beyond remaining planned time, overrun reason is mandatory.</li>
     </ul>
 
@@ -141,7 +143,14 @@
         <li>Machine is auto-picked from Job Card in Production Entry.</li>
     </ul>
 
-    <h2>12. Daily Working Discipline (Recommended)</h2>
+    <h2>12. Archived Records</h2>
+    <ul>
+        <li>Archived Records lets you view deleted Job Cards, Production, and Dispatch records.</li>
+        <li>Use the All view to see every archived entity type together.</li>
+        <li>Restoring a record reactivates it while preserving audit trace.</li>
+    </ul>
+
+    <h2>13. Daily Working Discipline (Recommended)</h2>
     <ul>
         <li>Planner updates Job Card with correct machine before release.</li>
         <li>Production logs shift-wise data same day.</li>

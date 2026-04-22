@@ -357,6 +357,7 @@ def get_record_edit_lock_cutoff():
 
 def record_is_time_locked(entity_type, record):
     date_field_map = {
+        'job_card': 'po_date',
         'production': 'date',
         'dispatch': 'dispatch_date',
     }
@@ -702,6 +703,9 @@ def job_card_entry(request):
     edit_id = '' if is_view_mode else (request.POST.get('edit_id') or request.GET.get('edit') or '').strip()
     edit_record = get_active_record_or_404(JobCard, view_id) if is_view_mode else (get_active_record_or_404(JobCard, edit_id) if edit_id else None)
 
+    if edit_record and not is_view_mode and not ensure_edit_lock_allowed(request, 'job_card', edit_record):
+        return redirect('job_card_records')
+
     if request.method == "POST" and not is_view_mode:
         try:
             change_reason = (request.POST.get('change_reason') or '').strip()
@@ -891,6 +895,8 @@ def job_card_records(request):
     status = (request.GET.get('status') or '').strip()
     date_from_raw = (request.GET.get('date_from') or '').strip()
     date_to_raw = (request.GET.get('date_to') or '').strip()
+    entry_date_from_raw = (request.GET.get('entry_date_from') or '').strip()
+    entry_date_to_raw = (request.GET.get('entry_date_to') or '').strip()
     sort = (request.GET.get('sort') or 'created_at').strip()
     direction = (request.GET.get('dir') or 'desc').strip().lower()
     per_page = request.GET.get('per_page') or '50'
@@ -932,6 +938,23 @@ def job_card_records(request):
         except ValueError:
             add_unique_message(request, messages.ERROR, 'Invalid To date format. Use YYYY-MM-DD.')
             date_to_raw = ''
+
+    entry_date_from = None
+    entry_date_to = None
+    if entry_date_from_raw:
+        try:
+            entry_date_from = datetime.strptime(entry_date_from_raw, '%Y-%m-%d').date()
+            jobcards = jobcards.filter(created_at__date__gte=entry_date_from)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid Entry Date From format. Use YYYY-MM-DD.')
+            entry_date_from_raw = ''
+    if entry_date_to_raw:
+        try:
+            entry_date_to = datetime.strptime(entry_date_to_raw, '%Y-%m-%d').date()
+            jobcards = jobcards.filter(created_at__date__lte=entry_date_to)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid Entry Date To format. Use YYYY-MM-DD.')
+            entry_date_to_raw = ''
 
     if date_from and date_to and date_from > date_to:
         add_unique_message(request, messages.ERROR, 'From date cannot be later than To date.')
@@ -982,6 +1005,20 @@ def job_card_records(request):
         else:
             row.short_close_qty_display = 0
 
+    cutoff = get_record_edit_lock_cutoff()
+    pending_ids: set = set()
+    approved_ids: set = set()
+    if cutoff and not user_can_bypass_edit_lock(request.user):
+        user_overrides = EditOverrideRequest.objects.filter(
+            entity_type='job_card',
+            requested_by=request.user,
+        ).values('record_id', 'status', 'expires_at')
+        for ov in user_overrides:
+            if ov['status'] == 'pending':
+                pending_ids.add(ov['record_id'])
+            elif ov['status'] == 'approved' and ov['expires_at'] and ov['expires_at'] > timezone.now():
+                approved_ids.add(ov['record_id'])
+
     context = {
         'jobcards': jobcards,
         'page_obj': page_obj,
@@ -990,9 +1027,16 @@ def job_card_records(request):
         'status': status,
         'date_from': date_from_raw,
         'date_to': date_to_raw,
+        'entry_date_from': entry_date_from_raw,
+        'entry_date_to': entry_date_to_raw,
         'sort': sort,
         'dir': direction,
         'per_page': per_page,
+        'edit_lock_days': get_record_edit_lock_days(),
+        'edit_lock_cutoff': cutoff,
+        'can_bypass_edit_lock': user_can_bypass_edit_lock(request.user),
+        'pending_override_ids': pending_ids,
+        'approved_override_ids': approved_ids,
     }
     return render(request, 'job_card_records.html', context)
 
@@ -1362,7 +1406,7 @@ def production_records(request):
     approved_ids: set = set()
     if cutoff and not user_can_bypass_edit_lock(request.user):
         user_overrides = EditOverrideRequest.objects.filter(
-            entity_type='production',
+            entity_type='job_card',
             requested_by=request.user,
         ).values('record_id', 'status', 'expires_at')
         for ov in user_overrides:
@@ -1372,6 +1416,11 @@ def production_records(request):
                 approved_ids.add(ov['record_id'])
 
     context = {
+        'edit_lock_days': get_record_edit_lock_days(),
+        'edit_lock_cutoff': cutoff,
+        'can_bypass_edit_lock': user_can_bypass_edit_lock(request.user),
+        'pending_override_ids': pending_ids,
+        'approved_override_ids': approved_ids,
         'records': records,
         'page_obj': page_obj,
         'total_count': total_count,
@@ -1607,41 +1656,60 @@ def archived_records(request):
 
     accessible_entities = get_accessible_entities(request.user)
 
-    requested_entity = (request.GET.get('entity') or '').strip()
-    entity_type = requested_entity if requested_entity in accessible_entities else accessible_entities[0]
-    query = (request.GET.get('q') or '').strip()
-    config = AUDIT_CONFIG[entity_type]
-
-    records = config['model'].objects.filter(is_active=False).order_by('-id')
-    if entity_type == 'job_card':
-        records = records.select_related('material', 'machine_name', 'department').order_by('-created_at')
-        if query:
-            records = records.filter(
-                Q(job_card_no__icontains=query) |
-                Q(SKU__icontains=query) |
-                Q(PO_No__icontains=query)
-            )
-    elif entity_type == 'production':
-        records = records.select_related('job_card', 'machine', 'operator').order_by('-date', '-id')
-        if query:
-            records = records.filter(
-                Q(job_card__job_card_no__icontains=query) |
-                Q(machine__name__icontains=query) |
-                Q(operator__name__icontains=query)
-            )
+    requested_entity = (request.GET.get('entity') or '').strip().lower()
+    if requested_entity == 'all':
+        entity_type = 'all'
+    elif requested_entity in accessible_entities:
+        entity_type = requested_entity
     else:
-        records = records.select_related('job_card').order_by('-dispatch_date', '-id')
-        if query:
-            records = records.filter(
-                Q(job_card__job_card_no__icontains=query) |
-                Q(dc_no__icontains=query)
-            )
+        entity_type = 'all'
+
+    query = (request.GET.get('q') or '').strip()
+
+    def build_archived_queryset(entity):
+        config = AUDIT_CONFIG[entity]
+        records = config['model'].objects.filter(is_active=False)
+
+        if entity == 'job_card':
+            records = records.select_related('material', 'machine_name', 'department').order_by('-created_at')
+            if query:
+                records = records.filter(
+                    Q(job_card_no__icontains=query) |
+                    Q(SKU__icontains=query) |
+                    Q(PO_No__icontains=query)
+                )
+        elif entity == 'production':
+            records = records.select_related('job_card', 'machine', 'operator').order_by('-date', '-id')
+            if query:
+                records = records.filter(
+                    Q(job_card__job_card_no__icontains=query) |
+                    Q(machine__name__icontains=query) |
+                    Q(operator__name__icontains=query)
+                )
+        else:
+            records = records.select_related('job_card').order_by('-dispatch_date', '-id')
+            if query:
+                records = records.filter(
+                    Q(job_card__job_card_no__icontains=query) |
+                    Q(dc_no__icontains=query)
+                )
+
+        return records
+
+    records = None
+    records_by_entity = None
+    if entity_type == 'all':
+        records_by_entity = {entity: build_archived_queryset(entity) for entity in accessible_entities}
+    else:
+        records = build_archived_queryset(entity_type)
 
     context = {
         'accessible_entities': accessible_entities,
         'entity_type': entity_type,
         'query': query,
         'records': records,
+        'records_by_entity': records_by_entity,
+        'all_mode': entity_type == 'all',
     }
     return render(request, 'archived_records.html', context)
 
@@ -1720,7 +1788,7 @@ OVERRIDE_EDIT_WINDOW_HOURS = 2
 def request_edit_override(request, entity_type, record_id):
     """Operational user submits a reason-based request to edit a locked record."""
     config = AUDIT_CONFIG.get(entity_type)
-    if config is None or entity_type not in ('production', 'dispatch'):
+    if config is None or entity_type not in ('job_card', 'production', 'dispatch'):
         messages.error(request, 'Override requests are not supported for this record type.')
         return redirect('home')
 
@@ -2463,6 +2531,8 @@ Important fields:
 
 Validations:
 - Output + Waste cannot exceed Allowed Sheets.
+- Total impressions are cumulative across repeated production entries for the same job card.
+- Total impressions are validated against Total Impressions Required plus Production Tolerance %.
 - If planned allocation exceeds remaining planned minutes, overrun reason is mandatory.
 - Overrun Minutes = (Run + Setup + Downtime) - Planned Time
 
@@ -2536,11 +2606,19 @@ Use "Master Corrections" page:
 =============================
 - Always select correct Job Card first.
 - Do not use waste to hide dispatch short-close.
+- Total impressions are tracked across production entries and must stay within allowance.
 - Give a reason when overriding machine or closing short-close.
 - Keep shift schedule dates current for accurate utilization.
 
 =============================
-8) MAINTENANCE NOTE
+8) ARCHIVED RECORDS
+=============================
+- Use the Archived Records page to view deleted job cards, production, and dispatch entries.
+- You can filter by entity type or use the All view to see every archived record type together.
+- Restored records come back active with audit history intact.
+
+=============================
+9) MAINTENANCE NOTE
 =============================
 - Update this guide whenever fields, formulas, rules, or dashboard KPIs change.
 """

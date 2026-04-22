@@ -38,6 +38,7 @@
             <h1>Archived Records</h1>
 
             <div class="tabs">
+                <a href="{% url 'archived_records' %}?entity=all" class="btn {% if entity_type == 'all' %}tab-active{% endif %}">All</a>
                 {% for item in accessible_entities %}
                 <a href="{% url 'archived_records' %}?entity={{ item }}" class="btn {% if entity_type == item %}tab-active{% endif %}">
                     {{ item|title }}
@@ -51,7 +52,102 @@
                 <button type="submit" class="btn">Filter</button>
             </form>
 
-            {% if entity_type == 'job_card' %}
+            {% if all_mode %}
+                {% if 'job_card' in accessible_entities %}
+                <h2>Job Cards</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Job Card</th>
+                            <th>SKU</th>
+                            <th>PO No</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in records_by_entity.job_card %}
+                        <tr>
+                            <td>{{ row.job_card_no }}</td>
+                            <td>{{ row.SKU }}</td>
+                            <td>{{ row.PO_No|default:'-' }}</td>
+                            <td>{{ row.status }}</td>
+                            <td class="actions-cell">
+                                <a href="{% url 'change_history' 'job_card' row.id %}" class="btn">History</a>
+                                <a href="{% url 'restore_record' 'job_card' row.id %}" class="btn btn-green">Restore</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="muted">No archived job cards found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+
+                {% if 'production' in accessible_entities %}
+                <h2>Production</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Job Card</th>
+                            <th>Machine</th>
+                            <th>Operator</th>
+                            <th>Output</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in records_by_entity.production %}
+                        <tr>
+                            <td>{{ row.date }}</td>
+                            <td>{{ row.job_card.job_card_no }}</td>
+                            <td>{{ row.machine.name }}</td>
+                            <td>{{ row.operator.name|default:'-' }}</td>
+                            <td>{{ row.output_sheets }}</td>
+                            <td class="actions-cell">
+                                <a href="{% url 'change_history' 'production' row.id %}" class="btn">History</a>
+                                <a href="{% url 'restore_record' 'production' row.id %}" class="btn btn-green">Restore</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="muted">No archived production records found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+
+                {% if 'dispatch' in accessible_entities %}
+                <h2>Dispatch</h2>
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Job Card</th>
+                            <th>DC No</th>
+                            <th>Dispatch Qty</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in records_by_entity.dispatch %}
+                        <tr>
+                            <td>{{ row.dispatch_date }}</td>
+                            <td>{{ row.job_card.job_card_no }}</td>
+                            <td>{{ row.dc_no|default:'-' }}</td>
+                            <td>{{ row.dispatch_qty }}</td>
+                            <td class="actions-cell">
+                                <a href="{% url 'change_history' 'dispatch' row.id %}" class="btn">History</a>
+                                <a href="{% url 'restore_record' 'dispatch' row.id %}" class="btn btn-green">Restore</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5" class="muted">No archived dispatch records found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% endif %}
+            {% elif entity_type == 'job_card' %}
             <table>
                 <thead>
                     <tr>
