@@ -66,29 +66,6 @@
     <div class="card" style="margin-bottom:10px;padding:12px;">
         <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
             <div>
-                <span style="font-size:13px;font-weight:700;color:#1f2f43;">Manual PO Number</span>
-                <div class="muted">Enter or correct the PO number for this intake before creating jobs.</div>
-            </div>
-            <div>
-                <span class="badge" style="background:#fff8e5;border-color:#f2d197;color:#8a5c00;">PO Edit</span>
-            </div>
-        </div>
-        <form method="post" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;align-items:flex-end;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="update_po_number">
-            <div>
-                <label for="manual_po_number">PO Number</label><br>
-                <input id="manual_po_number" name="manual_po_number" type="text" required value="{{ payload.po_number|default:'' }}" style="width:100%;padding:6px;border:1px solid #b0c4d8;border-radius:4px;">
-            </div>
-            <div style="grid-column: span 2; display:flex; justify-content:flex-start;">
-                <button class="btn" type="submit" style="margin-top:0;">Save PO Number</button>
-            </div>
-        </form>
-    </div>
-
-    <div class="card" style="margin-bottom:10px;padding:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-            <div>
                 <span style="font-size:13px;font-weight:700;color:#1f2f43;">Add Manual PO Line</span>
                 <div class="muted">Enter manual row data here if extraction missed a line. The row is added to PO review and routed like extracted items.</div>
             </div>

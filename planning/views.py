@@ -228,6 +228,20 @@ def _format_display_qty(raw_value):
     return text or '0'
 
 
+def _format_decimal_string(raw_value):
+    """Render decimals without unnecessary trailing zeros."""
+    if raw_value is None:
+        return None
+    value = _to_decimal(raw_value)
+    if value is None:
+        return None
+    if value == value.to_integral_value():
+        return str(int(value))
+    normalized = value.normalize()
+    text = format(normalized, 'f').rstrip('0').rstrip('.')
+    return text or '0'
+
+
 def _normalize_color_spec_input(raw_value):
     raw_text = str(raw_value or '').strip()
     if not raw_text:
@@ -547,15 +561,28 @@ def _deduplicate_po_items_by_sku(items):
         duplicate_skus.add(sku)
         existing = merged[sku_key]
 
-        # Never add quantities from duplicate lines; keep first captured qty.
-        # This avoids qty inflation when the same PO is uploaded multiple times.
         existing_qty = _to_int(existing.get('quantity'))
         current_qty = _to_int(item_copy.get('quantity'))
-        if existing_qty is None and current_qty is not None:
+        if existing_qty is None:
             existing['quantity'] = current_qty
+        elif current_qty is not None:
+            existing['quantity'] = existing_qty + current_qty
 
-        # Fill empty values from later duplicate rows when useful.
-        for field in ['job_name', 'delivery_date', 'unit', 'unit_cost', 'net_total']:
+        existing_net = _to_decimal(existing.get('net_total'))
+        current_net = _to_decimal(item_copy.get('net_total'))
+        if existing_net is None:
+            existing['net_total'] = _format_decimal_string(current_net)
+        elif current_net is not None:
+            existing['net_total'] = _format_decimal_string(existing_net + current_net)
+
+        existing_subtotal = _to_decimal(existing.get('subtotal'))
+        current_subtotal = _to_decimal(item_copy.get('subtotal'))
+        if existing_subtotal is None:
+            existing['subtotal'] = _format_decimal_string(current_subtotal)
+        elif current_subtotal is not None:
+            existing['subtotal'] = _format_decimal_string(existing_subtotal + current_subtotal)
+
+        for field in ['job_name', 'delivery_date', 'unit', 'unit_cost']:
             if not existing.get(field) and item_copy.get(field):
                 existing[field] = item_copy.get(field)
 
@@ -3161,18 +3188,23 @@ def manual_po_entry(request):
                 messages.error(request, f'Quantity must be a valid number for line {index}.')
                 return redirect('planning:manual_po_entry')
 
+            unit_cost = _to_decimal(request.POST.get(f'manual_unit_cost_{index}'))
+            if unit_cost is None:
+                messages.error(request, f'Unit cost must be a valid number for line {index}.')
+                return redirect('planning:manual_po_entry')
+
+            net_total = None
+            if quantity is not None and unit_cost is not None:
+                net_total = unit_cost * Decimal(quantity)
+
             item = {
                 'sku': sku,
                 'job_name': (request.POST.get(f'manual_job_name_{index}') or '').strip() or sku,
                 'quantity': quantity,
-                'unit': (request.POST.get(f'manual_unit_{index}') or '').strip() or '',
+                'unit': (request.POST.get(f'manual_unit_{index}') or '').strip() or 'Pcs',
                 'delivery_date': (request.POST.get(f'manual_delivery_date_{index}') or '').strip() or '',
-                'unit_cost': _to_decimal(request.POST.get(f'manual_unit_cost_{index}')),
-                'net_total': _to_decimal(request.POST.get(f'manual_net_total_{index}')),
-                'print_sheet_size': (request.POST.get(f'manual_print_sheet_size_{index}') or '').strip() or '',
-                'purchase_sheet_size': (request.POST.get(f'manual_purchase_sheet_size_{index}') or '').strip() or '',
-                'ups': _to_optional_positive_int(request.POST.get(f'manual_ups_{index}')),
-                'machine_name': (request.POST.get(f'manual_machine_name_{index}') or '').strip() or '',
+                'unit_cost': _format_decimal_string(unit_cost),
+                'net_total': _format_decimal_string(net_total),
             }
             items.append(item)
 
@@ -3180,15 +3212,25 @@ def manual_po_entry(request):
             messages.error(request, 'At least one PO line is required.')
             return redirect('planning:manual_po_entry')
 
+        sku_keys = [_sku_key(item['sku']) for item in items if item.get('sku')]
+        duplicate_sku_keys = [sku for sku in sku_keys if sku_keys.count(sku) > 1]
+        if duplicate_sku_keys:
+            messages.error(request, 'Duplicate SKUs are not allowed within the same PO. Please remove duplicate lines before saving.')
+            return redirect('planning:manual_po_entry')
+
+        supplier_name = (request.POST.get('supplier_name') or '').strip() or 'UTOPIA PRINTING & PACKAGING'
+        buyer_name = (request.POST.get('buyer_name') or '').strip() or 'UTOPIA INDUSTRIES (PVT.) LTD.'
+        grand_total = sum((Decimal(item['net_total']) if item.get('net_total') is not None else Decimal('0')) for item in items)
+
         payload = {
             'po_number': po_number,
             'po_date': (request.POST.get('po_date') or '').strip(),
             'approval_date': (request.POST.get('approval_date') or '').strip(),
             'department': (request.POST.get('department') or '').strip(),
             'delivery_location': (request.POST.get('delivery_location') or '').strip(),
-            'supplier_name': (request.POST.get('supplier_name') or '').strip(),
-            'buyer_name': (request.POST.get('buyer_name') or '').strip(),
-            'grand_total': _to_decimal(request.POST.get('grand_total')),
+            'supplier_name': supplier_name,
+            'buyer_name': buyer_name,
+            'grand_total': _format_decimal_string(grand_total),
             'items': items,
             'source_item_count': len(items),
         }
@@ -3222,19 +3264,19 @@ def po_review(request, doc_id):
     """Review extracted PO data and create PlanningJob records."""
     po_doc = get_object_or_404(PoDocument, id=doc_id)
     payload = po_doc.extracted_payload or {}
-    all_items, duplicate_skus = _deduplicate_po_items_by_sku(payload.get('items', []))
     items = _po_payload_items(payload)
-    ignored_skus = sorted({s for s in (payload.get('new_skus_ignored') or []) if s})
+    sku_counts = {}
+    for item in payload.get('items', []) or []:
+        sku_key = _sku_key(item.get('sku'))
+        if sku_key:
+            sku_counts[sku_key] = sku_counts.get(sku_key, 0) + 1
+    duplicate_skus = [sku for sku, count in sku_counts.items() if count > 1]
     if duplicate_skus:
-        payload['source_item_count'] = payload.get('source_item_count') or len(payload.get('items', []))
-        payload['items'] = all_items
-        payload['merged_duplicate_skus'] = sorted(set(duplicate_skus))
-        po_doc.extracted_payload = payload
-        po_doc.save(update_fields=['extracted_payload'])
-        messages.info(
+        messages.error(
             request,
-            f"Duplicate SKU lines were merged for this PO: {', '.join(sorted(set(duplicate_skus)))}.",
+            f'Duplicate SKUs are not allowed in the same PO. Please remove duplicate lines for: {", ".join(sorted(duplicate_skus))}.',
         )
+    ignored_skus = sorted({s for s in (payload.get('new_skus_ignored') or []) if s})
     po_number = payload.get('po_number', '')
     configured_new_skus = {_sku_key(sku) for sku in (payload.get('new_skus_configured') or []) if sku}
     recipe_map = _build_recipe_map(items)
@@ -3275,10 +3317,6 @@ def po_review(request, doc_id):
         item['existing_job_id'] = existing_job.id if existing_job else None
         item['existing_jc_number'] = existing_job.jc_number if existing_job else ''
         recipe = recipe_map.get(sku_key)
-        item['default_print_sheet_size'] = recipe.print_sheet_size if recipe else ''
-        item['default_purchase_sheet_size'] = recipe.purchase_sheet_size if recipe else ''
-        item['default_ups'] = recipe.ups if recipe else ''
-        item['default_machine_name'] = recipe.machine_name if recipe else ''
         if sku_key:
             seen_skus_in_payload.add(sku_key)
 
@@ -3323,19 +3361,27 @@ def po_review(request, doc_id):
                 messages.error(request, 'SKU is required to add a manual PO line.')
                 return redirect('planning:po_review', doc_id=po_doc.id)
 
+            sku_key = _sku_key(sku)
+            existing_skus = {_sku_key(item.get('sku')) for item in payload.get('items', []) if item.get('sku')}
+            if sku_key in existing_skus:
+                messages.error(request, f'SKU {sku} is already present on this PO. Duplicate SKUs are not allowed.')
+                return redirect('planning:po_review', doc_id=po_doc.id)
+
             quantity = _to_int(request.POST.get('manual_quantity'))
             if quantity is None:
                 messages.error(request, 'Quantity must be a valid number to add a manual PO line.')
                 return redirect('planning:po_review', doc_id=po_doc.id)
 
+            unit_cost_value = _to_decimal(request.POST.get('manual_unit_cost'))
+            net_total_value = _to_decimal(request.POST.get('manual_net_total'))
             manual_item = {
                 'sku': sku,
                 'job_name': (request.POST.get('manual_job_name') or '').strip() or sku,
                 'quantity': quantity,
                 'unit': (request.POST.get('manual_unit') or '').strip() or '',
                 'delivery_date': (request.POST.get('manual_delivery_date') or '').strip() or '',
-                'unit_cost': _to_decimal(request.POST.get('manual_unit_cost')),
-                'net_total': _to_decimal(request.POST.get('manual_net_total')),
+                'unit_cost': _format_decimal_string(unit_cost_value),
+                'net_total': _format_decimal_string(net_total_value),
                 'print_sheet_size': (request.POST.get('manual_print_sheet_size') or '').strip() or '',
                 'purchase_sheet_size': (request.POST.get('manual_purchase_sheet_size') or '').strip() or '',
                 'ups': _to_optional_positive_int(request.POST.get('manual_ups')),
@@ -3349,6 +3395,21 @@ def po_review(request, doc_id):
             return redirect('planning:po_review', doc_id=po_doc.id)
 
         if action == 'create_jobs':
+            sku_counts = {}
+            for item in annotated_items:
+                sku_key = _sku_key(item.get('sku'))
+                if not sku_key:
+                    continue
+                sku_counts[sku_key] = sku_counts.get(sku_key, 0) + 1
+
+            duplicate_skus = [sku for sku, count in sku_counts.items() if count > 1]
+            if duplicate_skus:
+                messages.error(
+                    request,
+                    'Duplicate SKUs are not allowed in the same PO. Remove duplicate lines before creating jobs.',
+                )
+                return redirect('planning:po_review', doc_id=po_doc.id)
+
             with transaction.atomic():
                 created_count = 0
                 updated_count = 0
@@ -3389,9 +3450,7 @@ def po_review(request, doc_id):
                     delivery_date = _parse_iso_date(item.get('delivery_date'))
                     plan_date = delivery_date or po_date
 
-                    # Re-use existing PO+SKU job to avoid duplicates; otherwise allocate a new serial.
                     existing_job = existing_jobs_by_sku.get(sku_key)
-
                     if existing_job:
                         if _normalize_status(existing_job.status) == 'approved':
                             locked_count += 1
@@ -3407,10 +3466,6 @@ def po_review(request, doc_id):
 
                     unit_cost_val = item.get('unit_cost')
                     unit_cost_dec = Decimal(str(unit_cost_val)) if unit_cost_val is not None else None
-                    override_print_sheet_size = (request.POST.get(f"{field_prefix}print_sheet_size") or '').strip()
-                    override_purchase_sheet_size = (request.POST.get(f"{field_prefix}purchase_sheet_size") or '').strip()
-                    override_machine_name = (request.POST.get(f"{field_prefix}machine_name") or '').strip()
-                    override_ups = _to_optional_positive_int(request.POST.get(f"{field_prefix}ups"))
 
                     defaults = {
                         'po_number': po_number,
@@ -3428,11 +3483,11 @@ def po_review(request, doc_id):
                         'application': recipe.application,
                         'size_w_mm': recipe.size_w_mm,
                         'size_h_mm': recipe.size_h_mm,
-                        'ups': override_ups if override_ups is not None else recipe.ups,
-                        'print_sheet_size': override_print_sheet_size or recipe.print_sheet_size,
-                        'purchase_sheet_size': override_purchase_sheet_size or recipe.purchase_sheet_size,
+                        'ups': recipe.ups,
+                        'print_sheet_size': recipe.print_sheet_size,
+                        'purchase_sheet_size': recipe.purchase_sheet_size,
                         'purchase_material': recipe.purchase_material,
-                        'machine_name': override_machine_name or recipe.machine_name,
+                        'machine_name': recipe.machine_name,
                     }
                     if plan_date:
                         defaults['plan_date'] = plan_date
@@ -3453,6 +3508,12 @@ def po_review(request, doc_id):
             po_doc.save(update_fields=['extraction_status'])
 
             if created_count == 0 and updated_count == 0:
+                if missing_recipe_count > 0:
+                    messages.warning(
+                        request,
+                        'This PO contains only new SKUs. Configure them in master data before sending to planning.',
+                    )
+                    return redirect('planning:po_new_skus', doc_id=po_doc.id)
                 messages.warning(
                     request,
                     f'No jobs created. Skipped {skipped_count}, missing-recipe {missing_recipe_count}, locked-skip {locked_count}. Add missing SKU master data from Pending SKUs and run create again.',

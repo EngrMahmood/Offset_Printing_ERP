@@ -71,15 +71,15 @@
                 </div>
                 <div>
                     <label for="supplier_name">Supplier Name</label>
-                    <input id="supplier_name" name="supplier_name" type="text">
+                    <input id="supplier_name" name="supplier_name" type="text" value="UTOPIA PRINTING & PACKAGING">
                 </div>
                 <div>
                     <label for="buyer_name">Buyer Name</label>
-                    <input id="buyer_name" name="buyer_name" type="text">
+                    <input id="buyer_name" name="buyer_name" type="text" value="UTOPIA INDUSTRIES (PVT.) LTD.">
                 </div>
                 <div>
                     <label for="grand_total">Grand Total</label>
-                    <input id="grand_total" name="grand_total" type="number" step="0.01" min="0">
+                    <input id="grand_total" name="grand_total" type="number" step="0.01" min="0" readonly>
                 </div>
             </div>
 
@@ -95,10 +95,6 @@
                             <th style="width:120px;">Delivery Date</th>
                             <th style="width:100px;">Unit Cost</th>
                             <th style="width:100px;">Net Total</th>
-                            <th style="width:120px;">Print Sheet Size</th>
-                            <th style="width:120px;">Purchase Sheet Size</th>
-                            <th style="width:70px;">UPS</th>
-                            <th style="width:120px;">Machine</th>
                         </tr>
                     </thead>
                     <tbody id="manual_po_items_body">
@@ -109,15 +105,11 @@
                             </td>
                             <td><input name="manual_sku_1" type="text" required></td>
                             <td><input name="manual_job_name_1" type="text"></td>
-                            <td><input name="manual_quantity_1" type="number" min="0" required></td>
-                            <td><input name="manual_unit_1" type="text"></td>
+                            <td><input name="manual_quantity_1" type="number" min="0" required oninput="updateLineTotal(this.closest('tr'))"></td>
+                            <td><input name="manual_unit_1" type="text" value="Pcs"></td>
                             <td><input name="manual_delivery_date_1" type="date"></td>
-                            <td><input name="manual_unit_cost_1" type="number" step="0.01" min="0"></td>
-                            <td><input name="manual_net_total_1" type="number" step="0.01" min="0"></td>
-                            <td><input name="manual_print_sheet_size_1" type="text"></td>
-                            <td><input name="manual_purchase_sheet_size_1" type="text"></td>
-                            <td><input name="manual_ups_1" type="number" min="0"></td>
-                            <td><input name="manual_machine_name_1" type="text"></td>
+                            <td><input name="manual_unit_cost_1" type="number" step="0.01" min="0" oninput="updateLineTotal(this.closest('tr'))"></td>
+                            <td><input name="manual_net_total_1" type="number" step="0.01" min="0" readonly></td>
                         </tr>
                     </tbody>
                 </table>
@@ -146,17 +138,54 @@ function addLine() {
         </td>
         <td><input name="manual_sku_${index}" type="text" required></td>
         <td><input name="manual_job_name_${index}" type="text"></td>
-        <td><input name="manual_quantity_${index}" type="number" min="0" required></td>
-        <td><input name="manual_unit_${index}" type="text"></td>
+        <td><input name="manual_quantity_${index}" type="number" min="0" required oninput="updateLineTotal(this.closest('tr'))"></td>
+        <td><input name="manual_unit_${index}" type="text" value="Pcs"></td>
         <td><input name="manual_delivery_date_${index}" type="date"></td>
-        <td><input name="manual_unit_cost_${index}" type="number" step="0.01" min="0"></td>
-        <td><input name="manual_net_total_${index}" type="number" step="0.01" min="0"></td>
-        <td><input name="manual_print_sheet_size_${index}" type="text"></td>
-        <td><input name="manual_purchase_sheet_size_${index}" type="text"></td>
-        <td><input name="manual_ups_${index}" type="number" min="0"></td>
-        <td><input name="manual_machine_name_${index}" type="text"></td>
+        <td><input name="manual_unit_cost_${index}" type="number" step="0.01" min="0" oninput="updateLineTotal(this.closest('tr'))"></td>
+        <td><input name="manual_net_total_${index}" type="number" step="0.01" min="0" readonly></td>
     `;
     tbody.appendChild(row);
+}
+
+function updateLineTotal(row) {
+    if (!row) return;
+    const qtyInput = row.querySelector('input[name^="manual_quantity_"]');
+    const costInput = row.querySelector('input[name^="manual_unit_cost_"]');
+    const netInput = row.querySelector('input[name^="manual_net_total_"]');
+
+    const qty = parseFloat((qtyInput.value || '').replace(/,/g, ''));
+    const cost = parseFloat((costInput.value || '').replace(/,/g, ''));
+    if (!Number.isFinite(qty) || !Number.isFinite(cost)) {
+        netInput.value = '';
+    } else {
+        netInput.value = formatDisplayValue(qty * cost);
+    }
+    updateGrandTotal();
+}
+
+function updateGrandTotal() {
+    const rows = document.querySelectorAll('#manual_po_items_body tr');
+    let total = 0;
+    rows.forEach(row => {
+        const netInput = row.querySelector('input[name^="manual_net_total_"]');
+        const lineValue = parseFloat((netInput.value || '').replace(/,/g, ''));
+        if (Number.isFinite(lineValue)) {
+            total += lineValue;
+        }
+    });
+    const grandTotal = document.getElementById('grand_total');
+    grandTotal.value = formatDisplayValue(total);
+}
+
+function formatDisplayValue(value) {
+    if (!Number.isFinite(value)) {
+        return '';
+    }
+    if (Number.isInteger(value)) {
+        return String(value);
+    }
+    const text = value.toFixed(2).replace(/\.00$/, '');
+    return text;
 }
 
 function removeLine(button) {
@@ -168,6 +197,7 @@ function removeLine(button) {
         return;
     }
     row.remove();
+    updateGrandTotal();
 }
 </script>
 </body>
