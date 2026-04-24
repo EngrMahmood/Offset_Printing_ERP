@@ -692,10 +692,8 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'status': 'draft',
             'repeat_flag': 'Repeat',
             'requirement': _append_unique_note_line(
-                _append_unique_note_line(
-                    _sync_new_sku_requirement(existing_job.requirement if existing_job else '', False),
-                    _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
-                ),
+                _sync_new_sku_requirement(existing_job.requirement if existing_job else '', False),
+                _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
             ),
             'material': recipe.material,
             'color_spec': recipe.color_spec,
@@ -742,6 +740,107 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
         'locked': locked_count,
         'missing_recipe': missing_recipe_count,
     }
+
+
+def _sync_first_production_jobs_from_po(po_doc, actor=None):
+    """Create PlanningJob records for SKUs in a PO that have no historical PlanningJob.
+
+    This ensures the first manual PO for a SKU results in a PlanningJob so subsequent
+    POs are treated as Repeat.
+    """
+    payload = po_doc.extracted_payload or {}
+    items, _ = _deduplicate_po_items_by_sku(payload.get('items', []))
+    po_number = (payload.get('po_number') or '').strip()
+    po_date = _parse_iso_date(payload.get('po_date'))
+
+    if not items:
+        return {'created': 0}
+
+    item_sku_keys = {_sku_key(item.get('sku')) for item in items if item.get('sku')}
+    existing_any_jobs_skus = set()
+    if item_sku_keys:
+        sku_any_query = Q()
+        for sku_key in item_sku_keys:
+            sku_any_query |= Q(sku__iexact=sku_key)
+        existing_any_jobs_skus = {
+            _sku_key(sku)
+            for sku in PlanningJob.objects.filter(sku_any_query).values_list('sku', flat=True)
+            if sku
+        }
+
+    recipe_map = _build_recipe_map(items)
+    created_count = 0
+
+    for item in items:
+        sku = (item.get('sku') or '').strip()
+        sku_key = _sku_key(sku)
+        if not sku_key:
+            continue
+
+        # Skip if historical jobs already exist for this SKU
+        if sku_key in existing_any_jobs_skus:
+            continue
+
+        recipe = recipe_map.get(sku_key)
+
+        delivery_date = _parse_iso_date(item.get('delivery_date'))
+        plan_date = delivery_date or po_date
+        qty = item.get('quantity')
+        order_qty = int(qty) if qty is not None else None
+        unit_cost_val = item.get('unit_cost')
+        unit_cost_dec = Decimal(str(unit_cost_val)) if unit_cost_val is not None else None
+        jc_number = allocate_next_jc_number(plan_date)
+
+        defaults = {
+            'po_number': po_number,
+            'sku': sku,
+            'job_name': (item.get('job_name') or '').strip() or sku,
+            'order_qty': order_qty,
+            'department': payload.get('department') or '',
+            'destination': payload.get('delivery_location') or '',
+            'unit_cost': unit_cost_dec,
+            'status': 'draft',
+            'repeat_flag': 'New',
+            'requirement': _sync_new_sku_requirement('', True),
+        }
+
+        if recipe:
+            defaults.update({
+                'material': recipe.material,
+                'color_spec': recipe.color_spec,
+                'application': recipe.application,
+                'size_w_mm': recipe.size_w_mm,
+                'size_h_mm': recipe.size_h_mm,
+                'ups': recipe.ups,
+                'print_sheet_size': recipe.print_sheet_size,
+                'purchase_sheet_size': recipe.purchase_sheet_size,
+                'purchase_sheet_ups': recipe.purchase_sheet_ups,
+                'purchase_material': recipe.purchase_material,
+                'machine_name': recipe.machine_name,
+                'daily_demand': recipe.daily_demand,
+                'awc_no': recipe.awc_no,
+                'plate_set_no': recipe.plate_set_no,
+                'die_cutting': recipe.die_cutting,
+            })
+
+        if plan_date:
+            defaults['plan_date'] = plan_date
+        if actor:
+            defaults['created_by'] = actor
+
+        try:
+            PlanningJob.objects.create(jc_number=jc_number, **defaults)
+            created_count += 1
+            existing_any_jobs_skus.add(sku_key)
+        except Exception:
+            # If creation fails (unique jc_number collision etc.), skip silently.
+            continue
+
+    payload['first_production_jobs_created'] = created_count
+    po_doc.extracted_payload = payload
+    po_doc.save(update_fields=['extracted_payload'])
+
+    return {'created': created_count}
 
 
 def _sync_new_jobs_for_approved_sku(sku, actor=None):
@@ -828,10 +927,8 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
 
         if not is_first_production:
             defaults['requirement'] = _append_unique_note_line(
-                _append_unique_note_line(
-                    defaults['requirement'],
-                    _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
-                ),
+                defaults['requirement'],
+                _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
             )
         if plan_date:
             defaults['plan_date'] = plan_date
@@ -3106,6 +3203,7 @@ def upload_po(request):
                 uploaded_by=request.user,
             )
 
+        first_sync = _sync_first_production_jobs_from_po(po_doc, actor=request.user)
         sync_result = _sync_repeat_jobs_from_po(po_doc, actor=request.user)
         item_count = len(extracted.get('items', []))
         if existing_doc and ignored_lines:
@@ -3144,6 +3242,8 @@ def upload_po(request):
                 )
                 if duplicate_skus:
                     msg += f" Duplicate SKU lines merged: {', '.join(sorted(set(duplicate_skus)))}."
+            if first_sync.get('created'):
+                msg += f" First-production jobs created: {first_sync['created']}."
             if sync_result['created'] or sync_result['updated']:
                 msg += (
                     f" Repeat jobs sent to Planning: created {sync_result['created']}, "
@@ -3233,8 +3333,12 @@ def manual_po_entry(request):
             uploaded_by=request.user,
         )
 
+        first_sync = _sync_first_production_jobs_from_po(po_doc, actor=request.user)
         sync_result = _sync_repeat_jobs_from_po(po_doc, actor=request.user)
+
         messages.success(request, f'Manual PO {po_number} created with {len(items)} line(s).')
+        if first_sync.get('created'):
+            messages.success(request, f'First-production jobs created: {first_sync["created"]}.')
         if sync_result['created'] or sync_result['updated']:
             messages.success(
                 request,
