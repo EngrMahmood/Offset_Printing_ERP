@@ -138,51 +138,7 @@
         <a href="{% url 'planning:po_new_skus' po_doc.id %}" class="btn {% if new_count == 0 %}secondary{% endif %}">Configure New SKUs</a>
     </div>
 
-    <!-- Quick-config modal for fast SKU master entry -->
-    <div class="modal-overlay" id="quickConfigModal" style="display:none;position:fixed;inset:0;background:rgba(20,30,45,0.45);z-index:9999;align-items:center;justify-content:center;">
-        <div class="modal-box" style="background:#fff;border-radius:12px;padding:18px 20px;width:520px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,0.22);">
-            <h3 style="margin:0 0 6px;font-size:16px;color:#1f3048;">Quick Configure SKU</h3>
-            <p style="margin:0 0 12px;font-size:13px;color:#445366;">Create a minimal SKU master record so this PO line can be sent to planning.</p>
-            <form method="post" id="quickConfigForm">
-                {% csrf_token %}
-                <input type="hidden" name="action" value="quick_config">
-                <input type="hidden" name="sku" id="qc_sku" value="">
-                <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
-                    <div>
-                        <label>Job Name</label><br>
-                        <input id="qc_job_name" name="job_name" type="text" style="width:100%;padding:7px;border:1px solid #bfd0e2;border-radius:6px;">
-                    </div>
-                    <div>
-                        <label>Unit Cost</label><br>
-                        <input id="qc_default_unit_cost" name="default_unit_cost" type="number" step="0.01" style="width:100%;padding:7px;border:1px solid #bfd0e2;border-radius:6px;">
-                    </div>
-                    <div>
-                        <label>Machine</label><br>
-                        <input id="qc_machine_name" name="machine_name" type="text" style="width:100%;padding:7px;border:1px solid #bfd0e2;border-radius:6px;">
-                    </div>
-                    <div>
-                        <label>UPS</label><br>
-                        <input id="qc_ups" name="ups" type="number" min="0" style="width:100%;padding:7px;border:1px solid #bfd0e2;border-radius:6px;">
-                    </div>
-                    <div>
-                        <label>Print Sheet Size</label><br>
-                        <input id="qc_print_sheet_size" name="print_sheet_size" type="text" style="width:100%;padding:7px;border:1px solid #bfd0e2;border-radius:6px;">
-                    </div>
-                    <div>
-                        <label>Purchase Sheet Size</label><br>
-                        <input id="qc_purchase_sheet_size" name="purchase_sheet_size" type="text" style="width:100%;padding:7px;border:1px solid #bfd0e2;border-radius:6px;">
-                    </div>
-                    <div style="grid-column: 1 / -1; display:flex;gap:8px;justify-content:flex-end;margin-top:6px;">
-                        <label style="display:flex;align-items:center;gap:6px;font-size:13px;" title="Create planning job immediately after creating master (admin only)">
-                            <input type="checkbox" name="create_job" id="qc_create_job" value="1"> <span style="font-size:12px;color:#5f6f82;">Create Planning Job</span>
-                        </label>
-                        <button type="button" class="btn secondary" onclick="closeQuickConfigModal()">Cancel</button>
-                        <button type="submit" class="btn">Save</button>
-                    </div>
-                </div>
-            </form>
-        </div>
-    </div>
+    
 
     <!-- PO Header Summary -->
     <div class="card">
@@ -262,7 +218,6 @@
                             <td>
                                 {% if item.recipe_status == 'New' %}
                                     <button class="btn secondary" type="button" style="font-size:11px;padding:4px 7px;" onclick="ignorePoReviewSku('{{ item.sku|escapejs }}')">Ignore</button>
-                                    <button class="btn" type="button" style="font-size:11px;padding:4px 7px;margin-left:6px;" onclick="openQuickConfigModal('{{ item.sku|escapejs }}')">Quick Configure</button>
                                 {% else %}
                                     <span class="muted">-</span>
                                 {% endif %}
@@ -374,22 +329,6 @@ function ignorePoReviewSku(sku) {
     actionField.value = 'ignore';
     skuField.value = sku;
     document.getElementById('review_form').submit();
-}
-
-function openQuickConfigModal(sku) {
-    const item = (itemsData || []).find(i => (i.sku || '').toUpperCase() === (sku || '').toUpperCase());
-    document.getElementById('qc_sku').value = sku || '';
-    document.getElementById('qc_job_name').value = item ? (item.job_name || item.sku || '') : (sku || '');
-    document.getElementById('qc_default_unit_cost').value = item ? (item.unit_cost || '') : '';
-    document.getElementById('qc_machine_name').value = item ? (item.default_machine_name || '') : '';
-    document.getElementById('qc_ups').value = item ? (item.default_ups || '') : '';
-    document.getElementById('qc_print_sheet_size').value = item ? (item.default_print_sheet_size || '') : '';
-    document.getElementById('qc_purchase_sheet_size').value = item ? (item.default_purchase_sheet_size || '') : '';
-    document.getElementById('quickConfigModal').style.display = 'flex';
-}
-
-function closeQuickConfigModal() {
-    document.getElementById('quickConfigModal').style.display = 'none';
 }
 </script>
 </body>
