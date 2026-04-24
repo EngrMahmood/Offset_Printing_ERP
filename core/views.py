@@ -85,6 +85,32 @@ def permission_required(permission_method):
     return decorator
 
 
+def permission_required_any(*permission_methods):
+    """Decorator to check any of the given permission methods on UserProfile."""
+    def decorator(view_func):
+        @wraps(view_func)
+        def wrapped_view(request, *args, **kwargs):
+            if not request.user.is_authenticated:
+                return redirect('login')
+            try:
+                profile = request.user.profile
+                for pm in permission_methods:
+                    try:
+                        if getattr(profile, pm)():
+                            return view_func(request, *args, **kwargs)
+                    except AttributeError:
+                        continue
+                if request.user.is_staff:
+                    return view_func(request, *args, **kwargs)
+                add_unique_message(request, messages.ERROR, '❌ You do not have permission to access this feature.')
+                return redirect('home')
+            except (UserProfile.DoesNotExist, Exception):
+                add_unique_message(request, messages.ERROR, '⚠️ Permission check failed. Contact admin.')
+                return redirect('login')
+        return wrapped_view
+    return decorator
+
+
 AUDIT_CONFIG = {
     'job_card': {
         'model': JobCard,

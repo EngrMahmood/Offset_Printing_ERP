@@ -171,6 +171,7 @@
                                 {% if row.recipe.master_data_status == 'approved' and not can_admin_actions %}
                                     <span class="muted">Admin only</span>
                                 {% else %}
+                                    {% if can_edit_jobcard %}
                                     <form method="post" action="" style="display:inline; margin-right:4px;">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="archive">
@@ -187,6 +188,9 @@
                                         <input type="hidden" name="return_q" value="{{ q }}">
                                         <button class="btn danger" type="submit" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
                                     </form>
+                                    {% else %}
+                                        <span class="muted">View only</span>
+                                    {% endif %}
                                 {% endif %}
                             {% endif %}
                         </td>

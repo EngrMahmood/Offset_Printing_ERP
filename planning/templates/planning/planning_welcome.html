@@ -336,6 +336,7 @@
 <main class="page">
     <div class="utility-bar">
         {% include 'includes/user_identity_chip.html' %}
+        <a class="go-btn" href="{% url 'planning:planning_readme' %}">Planning Guide</a>
     </div>
 
     {% with current_step='start' %}
@@ -572,6 +573,41 @@
                 {% endif %}
             </div>
         </section>
+    </section>
+    {% elif can_approve_qc %}
+    <section class="workflow-shell">
+        <div class="phase-panel active">
+            <div class="phase-head">
+                <h2>QC Access</h2>
+                <p>You can review pending SKU master data and approve planning jobs from the QC queue.</p>
+            </div>
+            <div class="cards">
+                <article class="tool-card master">
+                    <h3>SKU Reviews</h3>
+                    <p>Review SKUs in Pending Review status and perform QC approvals.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">QC Access</span>
+                        <a class="go-btn" href="{% url 'planning:sku_recipes_pending_review' %}">Open</a>
+                    </div>
+                </article>
+                <article class="tool-card approval">
+                    <h3>Approval Queue</h3>
+                    <p>Review planning jobs and move them through QC approval stages.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">QC Access</span>
+                        <a class="go-btn" href="{% url 'planning:approval_queue' %}">Open</a>
+                    </div>
+                </article>
+                <article class="tool-card shop">
+                    <h3>Planning README / Guide</h3>
+                    <p>Open the planning workflow guide for QC and planning users.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Reference Guide</span>
+                        <a class="go-btn" href="{% url 'planning:planning_readme' %}">Open</a>
+                    </div>
+                </article>
+            </div>
+        </div>
     </section>
     {% else %}
     <section class="workflow-shell">

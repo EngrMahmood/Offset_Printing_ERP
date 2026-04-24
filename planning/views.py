@@ -20,7 +20,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
 from core.jc_numbering import allocate_next_jc_number
-from core.views import permission_required
+from core.views import permission_required, permission_required_any
 from .forms import PlanningJobEditForm, SkuRecipeForm
 from .models import PlanningDispatchRun, PlanningJob, PlanningPrintRun, PoDocument, SkuRecipe
 from .po_extractor import extract_po_from_pdf
@@ -154,6 +154,7 @@ Repeat route behavior:
 
 New route behavior:
 - New SKU records must complete master approval before planning sync.
+- QC users review SKU recipes in Pending Review status; this is separate from the Pending SKUs intake queue.
 
 =============================
 8) DAILY DISCIPLINE
@@ -1019,18 +1020,21 @@ def planning_welcome(request):
     can_edit_jobcard = False
     can_view_reports = False
     can_manage_masters = False
+    can_approve_qc = False
 
     if profile is not None:
         user_role = (profile.role or 'unassigned').strip().lower()
         can_edit_jobcard = bool(profile.can_edit_jobcard())
         can_view_reports = bool(profile.can_view_reports())
         can_manage_masters = bool(profile.can_manage_masters())
+        can_approve_qc = bool(profile.can_approve_qc())
 
     context = {
         'user_role': user_role,
         'can_edit_jobcard': can_edit_jobcard,
         'can_view_reports': can_view_reports,
         'can_manage_masters': can_manage_masters,
+        'can_approve_qc': can_approve_qc,
     }
     return render(request, 'planning/planning_welcome.html', context)
 
@@ -1204,6 +1208,7 @@ def planning_home(request):
             'status_counts': status_counts,
             'status_choices': PLANNING_STATUSES,
             'can_admin_actions': _user_is_admin(request.user),
+            'can_approve_qc': getattr(request.user, 'profile', None) and getattr(request.user.profile, 'can_approve_qc', lambda: False)(),
             'filters': {
                 'q': q,
                 'status': status_filter,
@@ -1332,6 +1337,7 @@ def planning_jobs_archived(request):
             'status_counts': status_counts,
             'status_choices': PLANNING_STATUSES,
             'can_admin_actions': _user_is_admin(request.user),
+            'can_approve_qc': getattr(request.user, 'profile', None) and getattr(request.user.profile, 'can_approve_qc', lambda: False)(),
             'filters': {
                 'q': q,
                 'status': status_filter,
@@ -1500,7 +1506,7 @@ def import_planning_sheet(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required_any('can_edit_jobcard', 'can_approve_qc')
 def planning_job_detail(request, job_id):
     job = get_object_or_404(
         PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs'),
@@ -1573,7 +1579,7 @@ def planning_job_edit(request, job_id):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required_any('can_edit_jobcard', 'can_approve_qc')
 @transaction.atomic
 def planning_job_status_update(request, job_id):
     if request.method != 'POST':
@@ -1790,16 +1796,39 @@ def po_debug_extract(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
 def sku_recipes_list(request):
     """List all SKU recipes with search; handles delete via POST."""
     is_admin_user = _user_is_admin(request.user)
+    profile = getattr(request.user, 'profile', None)
+    can_edit_jobcard = bool(profile and getattr(profile, 'can_edit_jobcard', lambda: False)())
+    can_approve_qc = bool(profile and getattr(profile, 'can_approve_qc', lambda: False)())
+    status_filter = (request.GET.get('status') or '').strip().lower()
+    if status_filter and status_filter != 'pending_review' and not can_edit_jobcard:
+        messages.error(request, 'You do not have permission to view this SKU recipe list.')
+        return redirect('planning:home')
+
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         recipe_id = request.POST.get('recipe_id')
         redirect_url = request.path
         if request.GET:
             redirect_url += '?' + request.GET.urlencode()
+
+        if not can_edit_jobcard and not can_approve_qc:
+            messages.error(request, 'You do not have permission to modify SKU recipes.')
+            return redirect(redirect_url)
+
+        if action in {'delete', 'archive', 'bulk_archive', 'bulk_delete'} and not can_edit_jobcard:
+            messages.error(request, 'Only planning editors can archive or delete SKU recipes.')
+            return redirect(redirect_url)
+
+        if action == 'submit_review' and not can_edit_jobcard:
+            messages.error(request, 'Only planning editors can submit recipes for review.')
+            return redirect(redirect_url)
+
+        if action in {'review', 'approve', 'back_to_draft'} and not can_approve_qc and not can_edit_jobcard:
+            messages.error(request, 'Only QC users can perform review or approval actions.')
+            return redirect(redirect_url)
 
         if action == 'delete':
             try:
@@ -1981,10 +2010,13 @@ def sku_recipes_list(request):
         'status_filter': status_filter,
         'can_edit_approved': is_admin_user,
         'can_admin_actions': is_admin_user,
+        'can_approve_qc': can_approve_qc,
+        'can_edit_jobcard': can_edit_jobcard,
     })
 
 
 @login_required
+@permission_required_any('can_edit_jobcard', 'can_approve_qc')
 def sku_recipes_status(request, status=None):
     """List SKU recipes filtered by a fixed status for role-specific views."""
     if status not in {'draft', 'pending_review', 'reviewed', 'approved'}:
@@ -1995,7 +2027,7 @@ def sku_recipes_status(request, status=None):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required_any('can_edit_jobcard', 'can_approve_qc')
 def sku_recipes_archived(request):
     """List archived SKU recipes."""
     is_admin_user = _user_is_admin(request.user)
@@ -2112,7 +2144,7 @@ def sku_recipes_archived(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required_any('can_edit_jobcard', 'can_approve_qc')
 def sku_recipe_edit(request, recipe_id=None):
     """Create or edit a single SKU recipe."""
     if recipe_id:
@@ -2153,7 +2185,7 @@ def sku_recipe_edit(request, recipe_id=None):
 
         if recipe and recipe.master_data_status == 'approved' and not is_admin_user:
             messages.error(request, 'Approved master records can only be changed by admin users.')
-            return render(request, 'planning/sku_recipe_edit.html', {'form': SkuRecipeForm(instance=recipe), 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
+            return render(request, 'planning/sku_recipe_edit.html', {'form': SkuRecipeForm(instance=recipe), 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions, 'can_approve_qc': getattr(request.user, 'profile', None) and getattr(request.user.profile, 'can_approve_qc', lambda: False)()})
 
         form = SkuRecipeForm(request.POST, instance=recipe)
         if form.is_valid():
@@ -2188,7 +2220,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     missing = _missing_required_master_fields(obj)
                     if missing:
                         messages.error(request, f'Cannot approve. Missing required fields: {", ".join(missing)}.')
-                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
+                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions, 'can_approve_qc': getattr(request.user, 'profile', None) and getattr(request.user.profile, 'can_approve_qc', lambda: False)()})
                     obj.master_data_status = 'approved'
                     obj.approved_by = request.user
                     from django.utils import timezone
@@ -2246,6 +2278,7 @@ def sku_recipe_edit(request, recipe_id=None):
         'page_title': page_title,
         'can_edit_approved': can_edit_approved,
         'can_admin_actions': can_admin_actions,
+        'can_approve_qc': getattr(request.user, 'profile', None) and getattr(request.user.profile, 'can_approve_qc', lambda: False)(),
     })
 
 
@@ -2777,12 +2810,14 @@ def pending_skus(request):
         'po_filter': po_filter,
         'q': q,
         'can_admin_actions': is_admin_user,
+        'can_approve_qc': getattr(request.user, 'profile', None) and getattr(request.user.profile, 'can_approve_qc', lambda: False)(),
+        'can_edit_jobcard': getattr(request.user, 'profile', None) and getattr(request.user.profile, 'can_edit_jobcard', lambda: False)(),
     }
     return render(request, 'planning/pending_skus.html', context)
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required_any('can_edit_jobcard', 'can_approve_qc')
 @transaction.atomic
 def pending_skus_ignored(request):
     """Display pending SKUs that were marked ignored and no longer appear in the active pending queue."""
@@ -2863,11 +2898,12 @@ def pending_skus_ignored(request):
         'po_filter': po_filter,
         'q': q,
         'can_admin_actions': is_admin_user,
+        'can_approve_qc': getattr(request.user, 'profile', None) and getattr(request.user.profile, 'can_approve_qc', lambda: False)(),
     })
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required_any('can_edit_jobcard', 'can_approve_qc')
 @transaction.atomic
 def pending_sku_master_entry(request):
     """Open a focused form for one pending SKU and send it through master-data approval flow."""
@@ -3038,6 +3074,7 @@ def pending_sku_master_entry(request):
         'mismatch_alerts': mismatch_alerts,
     }
     context['can_admin_actions'] = is_admin_user
+    context['can_approve_qc'] = getattr(request.user, 'profile', None) and getattr(request.user.profile, 'can_approve_qc', lambda: False)()
     return render(request, 'planning/pending_sku_master_entry.html', context)
 
 
@@ -3116,7 +3153,7 @@ def po_inbox(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required_any('can_edit_jobcard', 'can_approve_qc')
 def approval_queue(request):
     """Queue page to forward planning jobs to QC then Production Manager."""
     draft_jobs = PlanningJob.objects.filter(status__iexact='draft').order_by('-updated_at', '-id')[:300]
@@ -3124,6 +3161,8 @@ def approval_queue(request):
     context = {
         'draft_jobs': draft_jobs,
         'reviewed_jobs': reviewed_jobs,
+        'can_edit_jobcard': _user_is_admin(request.user) or getattr(getattr(request.user, 'profile', None), 'can_edit_jobcard', lambda: False)(),
+        'can_approve_qc': getattr(getattr(request.user, 'profile', None), 'can_approve_qc', lambda: False)(),
     }
     return render(request, 'planning/approval_queue.html', context)
 

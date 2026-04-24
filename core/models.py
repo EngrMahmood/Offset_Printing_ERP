@@ -659,7 +659,7 @@ class UserProfile(models.Model):
         ('production', 'Production Supervisor — Manage production entries & team'),
         ('operator', 'Machine Operator — Production entry only'),
         ('dispatch', 'Dispatch Coordinator — Dispatch approval & tracking'),
-        ('qc', 'QC Inspector — Quality checks & approvals'),
+        ('qc', 'QC'),
         ('storekeeper', 'Store Keeper — Material & inventory management'),
         ('finance', 'Finance Viewer — Read-only analytics & reports'),
     ]

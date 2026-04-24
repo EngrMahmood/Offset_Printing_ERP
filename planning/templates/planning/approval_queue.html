@@ -83,7 +83,11 @@
                     <td>{{ job.repeat_flag|default:'-' }}</td>
                     <td class="muted">{{ job.updated_at|date:'d M Y H:i' }}</td>
                     <td style="display:flex;gap:6px;flex-wrap:wrap;">
-                        <a href="{% url 'planning:job_edit' job.id %}" class="btn secondary">Edit</a>
+                        {% if can_edit_jobcard %}
+                            <a href="{% url 'planning:job_edit' job.id %}" class="btn secondary">Edit</a>
+                        {% else %}
+                            <a href="{% url 'planning:job_detail' job.id %}" class="btn secondary">View</a>
+                        {% endif %}
                         <form method="post" action="{% url 'planning:job_status_update' job.id %}" style="margin:0;">{% csrf_token %}<input type="hidden" name="transition" value="submit_review"><button type="submit" class="btn warn">Forward To QC</button></form>
                     </td>
                 </tr>

@@ -308,6 +308,18 @@
                 </a>
                 {% endif %}
 
+                {% if user.profile.can_approve_qc %}
+                <a href="{% url 'planning:sku_recipes_pending_review' %}" class="card">
+                    <h3>QC Recipe Reviews</h3>
+                    <p>Review SKU recipes in Pending Review status and approve QC changes.</p>
+                </a>
+
+                <a href="{% url 'planning:approval_queue' %}" class="card">
+                    <h3>Approval Queue</h3>
+                    <p>Review planning jobs pending QC or manager approval before release.</p>
+                </a>
+                {% endif %}
+
                 {% if user.profile.can_archive_records %}
                 <a href="{% url 'archived_records' %}" class="card">
                     <h3>Archived Records</h3>

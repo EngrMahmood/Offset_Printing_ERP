@@ -38,6 +38,7 @@
     <ul>
         <li>Removed <strong>department</strong> from SKU master; `PlanningJob.department` is now sourced from PO intake payload.</li>
         <li>Approving a master SKU (from any UI path) now auto-syncs matching New PO lines into Planning Jobs.</li>
+        <li>QC users now review SKU recipes in Pending Review status and use the Approval Queue for planning approvals.</li>
         <li>Added `size_w_mm` and `size_h_mm` fields to Pending SKU master entry to match the master edit form.</li>
         <li>Quick-config modal feature has been removed in this release.</li>
     </ul>
@@ -72,6 +73,8 @@
         <li>Complete missing master fields for new SKUs that arrive from PO Intake.</li>
         <li>Use the Pending SKU workflow to edit and approve new SKU master data.</li>
         <li>After approval, new SKU lines auto-sync into Planning Jobs.</li>
+        <li>QC users review SKU recipes in Pending Review status; this is the QC approval path.</li>
+        <li>Pending SKUs is a planning-editor queue; QC review is separate from Pending SKU intake.</li>
         <li>Job Name is normally taken from the PO and should not be changed unless necessary.</li>
         <li>Application values allowed: UV, Lamination Gloss, Lamination Matt, NO.</li>
         <li>Purchase Material Origin values allowed: Local, Imported.</li>
@@ -89,6 +92,7 @@
     <h2>5. Approval Queue (Step 5)</h2>
     <ul>
         <li>Jobs flow through: Draft → Pending Review → Pending Approval (Manager).</li>
+        <li>QC users review jobs in the Approval Queue and move them onward when ready.</li>
         <li>Only approved jobs should be released to execution and production planning.</li>
         <li>Use this queue to ensure master data and routing are correct before final release.</li>
     </ul>
