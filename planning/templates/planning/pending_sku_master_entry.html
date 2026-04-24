@@ -140,6 +140,16 @@
                     {% if form.application.errors %}<div class="error">{{ form.application.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="field">
+                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm) <span class="req">*</span></label>
+                    {{ form.size_w_mm }}
+                    {% if form.size_w_mm.errors %}<div class="error">{{ form.size_w_mm.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="field">
+                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm) <span class="req">*</span></label>
+                    {{ form.size_h_mm }}
+                    {% if form.size_h_mm.errors %}<div class="error">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="field">
                     <label for="{{ form.machine_name.id_for_label }}">Machine <span class="req">*</span></label>
                     {{ form.machine_name }}
                     {% if form.machine_name.errors %}<div class="error">{{ form.machine_name.errors.0 }}</div>{% endif %}
