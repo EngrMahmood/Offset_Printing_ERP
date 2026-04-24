@@ -9,7 +9,7 @@ All notable changes to Offset Printing ERP.
 - Added PO review manual entry support for manual PO number edits and PO line additions.
 - Added planning job archive and hold workflows, plus archived jobs management page.
 - Added a `Manual PO Entry` option from the PO upload and intake pages.
-- Updated ERP software version to `2026.04.22.1`.
+- Updated ERP software version to `2026.04.24.1`.
 
 ### Changed
 - Redirect PO PDF upload success to the PO review page instead of PO intake queue.

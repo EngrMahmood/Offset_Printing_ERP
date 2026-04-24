@@ -123,7 +123,7 @@ LOGOUT_REDIRECT_URL = '/login/'
 STATIC_URL = '/static/'
 
 # ERP software version information
-ERP_SOFTWARE_VERSION = '2026.04.22.1'
+ERP_SOFTWARE_VERSION = '2026.04.24.1'
 ERP_SOFTWARE_RELEASE_DATE = '2026-04-22'
 
 # Lock older operational records from edit for non-managerial roles.
