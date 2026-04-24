@@ -2033,6 +2033,7 @@ def sku_recipe_edit(request, recipe_id=None):
 
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
+        _do_sync_on_approve = False
         if recipe and action == 'delete':
             if recipe.master_data_status == 'approved' and not is_admin_user:
                 messages.error(request, 'Approved records can only be deleted by admin users.')
@@ -2095,6 +2096,8 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.approved_by = request.user
                     from django.utils import timezone
                     obj.approved_at = timezone.now()
+                    # Will sync to planning after save
+                    _do_sync_on_approve = True
                     messages.success(request, f'SKU Recipe "{obj.sku}" approved for master data usage.')
                 elif action == 'back_to_draft' and current_status in ('pending_review', 'reviewed', 'approved'):
                     comment = (request.POST.get('rejection_comment') or '').strip()
@@ -2124,6 +2127,15 @@ def sku_recipe_edit(request, recipe_id=None):
                     messages.success(request, f'SKU Recipe "{obj.sku}" saved as Draft. Submit for approval from SKU Recipe Master.')
 
             obj.save()
+            if _do_sync_on_approve:
+                try:
+                    sync_result = _sync_new_jobs_for_approved_sku(obj.sku, actor=request.user)
+                    messages.success(
+                        request,
+                        f'Sent to Planning: {sync_result["sent"]} PO line(s), created {sync_result["created"]}, updated {sync_result["updated"]}, locked {sync_result["locked"]}.',
+                    )
+                except Exception:
+                    messages.error(request, 'Error while sending approved SKU to Planning; check logs.')
             return redirect('planning:sku_recipes')
         else:
             # Surface a clear top-level message so users notice validation errors
