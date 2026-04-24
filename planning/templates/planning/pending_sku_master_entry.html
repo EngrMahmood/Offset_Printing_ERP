@@ -144,12 +144,6 @@
                     {{ form.machine_name }}
                     {% if form.machine_name.errors %}<div class="error">{{ form.machine_name.errors.0 }}</div>{% endif %}
                 </div>
-
-                <div class="field">
-                    <label for="{{ form.department.id_for_label }}">Department</label>
-                    {{ form.department }}
-                    {% if form.department.errors %}<div class="error">{{ form.department.errors.0 }}</div>{% endif %}
-                </div>
                 <div class="field">
                     <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet <span class="req">*</span></label>
                     {{ form.print_sheet_size }}

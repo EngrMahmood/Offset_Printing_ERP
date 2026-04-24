@@ -59,6 +59,12 @@
         </div>
     </div>
 
+    <!-- Sub-tabs: Master / Pending SKUs -->
+    <div style="margin:8px 0 12px;">
+        <a class="stat-chip" href="{% url 'planning:sku_recipes' %}">Master</a>
+        <a class="stat-chip active" href="{% url 'planning:pending_skus' %}">Pending SKUs</a>
+    </div>
+
     {% for msg in messages %}
         <div class="msg {% if 'warning' in msg.tags %}warning{% endif %}">{{ msg }}</div>
     {% endfor %}

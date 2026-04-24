@@ -220,12 +220,6 @@
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.department.id_for_label }}">Department <span style="color:#b5282a;">*</span></label>
-                    {{ form.department }}
-                    {% if form.department.errors %}<div class="error">{{ form.department.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="field">
                     <label for="{{ form.default_unit_cost.id_for_label }}">Default Unit Cost</label>
                     {{ form.default_unit_cost }}
                     {% if form.default_unit_cost.errors %}<div class="error">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}

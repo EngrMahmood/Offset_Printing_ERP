@@ -40,7 +40,6 @@ PLANNING_STATUSES = [
 PLANNING_STATUS_SET = {value for value, _ in PLANNING_STATUSES}
 NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
 COST_MISMATCH_NOTE_PREFIX = 'COST ALERT:'
-DEPARTMENT_MISMATCH_NOTE_PREFIX = 'DEPARTMENT ALERT:'
 SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('job_name', 'Job Name'),
     ('material', 'Material'),
@@ -327,16 +326,6 @@ def _build_cost_mismatch_note(master_cost, po_cost):
     if master == po:
         return ''
     return f"{COST_MISMATCH_NOTE_PREFIX} PO unit cost {po} differs from master default {master}. PO cost is applied to this job."
-
-
-def _build_department_mismatch_note(master_department, po_department):
-    master = (master_department or '').strip()
-    po = (po_department or '').strip()
-    if not master or not po:
-        return ''
-    if master.lower() == po.lower():
-        return ''
-    return f"{DEPARTMENT_MISMATCH_NOTE_PREFIX} PO department '{po}' differs from master department '{master}'."
 
 
 def _to_date(raw_value):
@@ -697,7 +686,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'sku': sku,
             'job_name': recipe.job_name or (item.get('job_name') or '').strip() or sku,
             'order_qty': order_qty,
-            'department': recipe.department or department,
+            'department': department,
             'destination': delivery_location,
             'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
             'status': 'draft',
@@ -707,7 +696,6 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
                     _sync_new_sku_requirement(existing_job.requirement if existing_job else '', False),
                     _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
                 ),
-                _build_department_mismatch_note(recipe.department, department),
             ),
             'material': recipe.material,
             'color_spec': recipe.color_spec,
@@ -815,7 +803,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'sku': sku,
             'job_name': recipe.job_name or (target_item.get('job_name') or '').strip() or sku,
             'order_qty': order_qty,
-            'department': recipe.department or (payload.get('department') or ''),
+            'department': payload.get('department') or '',
             'destination': payload.get('delivery_location') or '',
             'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
             'status': 'draft',
@@ -844,7 +832,6 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
                     defaults['requirement'],
                     _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
                 ),
-                _build_department_mismatch_note(recipe.department, payload.get('department') or ''),
             )
         if plan_date:
             defaults['plan_date'] = plan_date
@@ -1879,7 +1866,6 @@ def sku_recipes_list(request):
             | Q(job_name__icontains=q)
             | Q(material__icontains=q)
             | Q(machine_name__icontains=q)
-            | Q(department__icontains=q)
         )
     if status_filter in ('draft', 'pending_review', 'reviewed', 'approved'):
         qs = qs.filter(master_data_status=status_filter)
@@ -2014,7 +2000,6 @@ def sku_recipes_archived(request):
             | Q(job_name__icontains=q)
             | Q(material__icontains=q)
             | Q(machine_name__icontains=q)
-            | Q(department__icontains=q)
         )
     if status_filter in ('draft', 'pending_review', 'reviewed', 'approved'):
         qs = qs.filter(master_data_status=status_filter)
@@ -2186,7 +2171,6 @@ def sku_recipe_bulk_upload(request):
             'Purchase Material': 'purchase_material',
             'Machine Name': 'machine_name',
             'Machine': 'machine_name',
-            'Department': 'department',
             'Cost': 'default_unit_cost',
             'Default Unit Cost': 'default_unit_cost',
             'Daily Demand': 'daily_demand',
@@ -2256,7 +2240,7 @@ def sku_recipe_bulk_upload(request):
             'sku', 'job_name', 'material', 'color_spec', 'application',
             'size_w_mm', 'size_h_mm', 'ups', 'print_sheet_size',
             'purchase_sheet_size', 'purchase_sheet_ups', 'purchase_material',
-            'machine_name', 'department', 'default_unit_cost', 'daily_demand',
+            'machine_name', 'default_unit_cost', 'daily_demand',
             'awc_no', 'plate_set_no', 'die_cutting', 'notes',
         }
 
@@ -2358,12 +2342,12 @@ def sku_recipe_template_download(request):
         'Sno.', 'SKU', 'JOB NAME', 'Order Status', 'Material', 'Color', 'Application',
         'Size W mm', 'Size H mm', 'Size W Inch', 'Size H Inch', 'Ups', 'Print Sheet Size',
         'Purchase Sheet Size', 'Purchase Sheet ups', 'Purchase Material', 'Machine',
-        'Department', 'Default Unit Cost', 'Daily Demand', 'AWC No', 'Plate Set No', 'Die', 'Notes'
+        'Default Unit Cost', 'Daily Demand', 'AWC No', 'Plate Set No', 'Die', 'Notes'
     ]
     sample_row = [
         '1', 'SKU-001', 'Sample Job Name', 'Repeat', 'Art Card 300gsm', '4 color', 'UV',
         '100', '150', '3.94', '5.91', '4', '720x1020', '720x1020', '2', 'Local',
-        'Heidelberg SM52', 'Printing', '5.00', '500', 'AWC-001', 'PLT-001', 'YES', 'Sample notes'
+        'Heidelberg SM52', '5.00', '500', 'AWC-001', 'PLT-001', 'YES', 'Sample notes'
     ]
     output = io.StringIO()
     writer = csv.writer(output)
@@ -2854,8 +2838,6 @@ def pending_sku_master_entry(request):
         # Job name is sourced from PO parsing; keep it authoritative and non-editable.
         posted['job_name'] = po_job_name
         posted['sku'] = sku
-        if not (posted.get('department') or '').strip() and po_department:
-            posted['department'] = po_department
         if not (posted.get('default_unit_cost') or '').strip() and po_unit_cost is not None:
             posted['default_unit_cost'] = str(po_unit_cost)
         if not (posted.get('color_spec') or '').strip() and po_color_spec:
@@ -2914,7 +2896,6 @@ def pending_sku_master_entry(request):
         initial = {
             'sku': sku,
             'job_name': po_job_name,
-            'department': (recipe.department if recipe else '') or po_department,
             'default_unit_cost': (recipe.default_unit_cost if recipe else None) or po_unit_cost,
             'color_spec': (recipe.color_spec if recipe else '') or po_color_spec,
             'application': (recipe.application if recipe else '') or po_application,
@@ -2930,11 +2911,8 @@ def pending_sku_master_entry(request):
     mismatch_alerts = []
     if current_recipe:
         cost_alert = _build_cost_mismatch_note(current_recipe.default_unit_cost, po_unit_cost)
-        dept_alert = _build_department_mismatch_note(current_recipe.department, po_department)
         if cost_alert:
             mismatch_alerts.append(cost_alert)
-        if dept_alert:
-            mismatch_alerts.append(dept_alert)
 
     context = {
         'form': form,
@@ -3394,6 +3372,86 @@ def po_review(request, doc_id):
             messages.success(request, f'Manual PO line for SKU {sku} added.')
             return redirect('planning:po_review', doc_id=po_doc.id)
 
+        if action == 'quick_config':
+            sku = (request.POST.get('sku') or '').strip()
+            if not sku:
+                messages.error(request, 'SKU is required for quick configuration.')
+                return redirect('planning:po_review', doc_id=po_doc.id)
+
+            job_name = (request.POST.get('job_name') or '').strip() or sku
+            material = (request.POST.get('material') or '').strip()
+            machine_name = (request.POST.get('machine_name') or '').strip()
+            print_sheet_size = (request.POST.get('print_sheet_size') or '').strip()
+            purchase_sheet_size = (request.POST.get('purchase_sheet_size') or '').strip()
+            ups = _to_optional_positive_int(request.POST.get('ups'))
+            default_unit_cost = None
+            try:
+                default_unit_cost_raw = (request.POST.get('default_unit_cost') or '').strip()
+                default_unit_cost = Decimal(default_unit_cost_raw) if default_unit_cost_raw else None
+            except Exception:
+                default_unit_cost = None
+
+            recipe, created_recipe = SkuRecipe.objects.update_or_create(
+                sku=sku,
+                defaults={
+                    'job_name': job_name,
+                    'material': material,
+                    'machine_name': machine_name,
+                    'print_sheet_size': print_sheet_size,
+                    'purchase_sheet_size': purchase_sheet_size,
+                    'ups': ups,
+                    'default_unit_cost': default_unit_cost,
+                    'created_by': request.user,
+                    'master_data_status': 'draft',
+                    'reviewed_by': None,
+                    'reviewed_at': None,
+                    'approved_by': None,
+                    'approved_at': None,
+                },
+            )
+
+            configured = set(payload.get('new_skus_configured') or [])
+            configured.add(sku)
+            payload['new_skus_configured'] = sorted(configured)
+            po_doc.extracted_payload = payload
+            po_doc.save(update_fields=['extracted_payload'])
+            messages.success(request, f'SKU {sku} quick-configured as Draft.')
+
+            # Optionally create a PlanningJob immediately
+            if request.POST.get('create_job') == '1':
+                target_item = None
+                for it in annotated_items:
+                    if _sku_key(it.get('sku')) == _sku_key(sku):
+                        target_item = it
+                        break
+                qty = target_item.get('quantity') if target_item else None
+                order_qty = int(qty) if qty is not None else None
+                delivery_date = _parse_iso_date(target_item.get('delivery_date')) if target_item else None
+                plan_date = delivery_date or _parse_iso_date(payload.get('po_date'))
+                jc_number = allocate_next_jc_number(plan_date)
+                unit_cost_dec = default_unit_cost if default_unit_cost is not None else None
+                job_defaults = {
+                    'po_number': po_number,
+                    'sku': sku,
+                    'job_name': recipe.job_name or job_name,
+                    'order_qty': order_qty,
+                    'department': payload.get('department') or '',
+                    'destination': payload.get('delivery_location') or '',
+                    'unit_cost': unit_cost_dec,
+                    'status': 'draft',
+                    'repeat_flag': 'New' if _sku_key(sku) not in existing_any_jobs_skus else 'Repeat',
+                    'material': recipe.material,
+                    'machine_name': recipe.machine_name,
+                    'print_sheet_size': recipe.print_sheet_size,
+                    'purchase_sheet_size': recipe.purchase_sheet_size,
+                }
+                if plan_date:
+                    job_defaults['plan_date'] = plan_date
+                job_obj = PlanningJob.objects.create(jc_number=jc_number, **job_defaults)
+                messages.success(request, f'Planning job {job_obj.jc_number} created for SKU {sku}.')
+
+            return redirect('planning:po_review', doc_id=po_doc.id)
+
         if action == 'create_jobs':
             sku_counts = {}
             for item in annotated_items:
@@ -3472,7 +3530,7 @@ def po_review(request, doc_id):
                         'sku': sku,
                         'job_name': recipe.job_name or job_name,
                         'order_qty': order_qty,
-                        'department': recipe.department or department,
+                        'department': department,
                         'destination': delivery_location,
                         'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
                         'status': 'draft',
@@ -3581,7 +3639,6 @@ def po_new_skus(request, doc_id):
             color_spec = (request.POST.get(f"{prefix}_color_spec") or '').strip()
             application = (request.POST.get(f"{prefix}_application") or '').strip()
             machine_name = (request.POST.get(f"{prefix}_machine_name") or '').strip()
-            department = (request.POST.get(f"{prefix}_department") or '').strip()
             print_sheet_size = (request.POST.get(f"{prefix}_print_sheet_size") or '').strip()
             purchase_sheet_size = (request.POST.get(f"{prefix}_purchase_sheet_size") or '').strip()
             ups = _to_optional_positive_int(request.POST.get(f"{prefix}_ups"))
@@ -3607,7 +3664,6 @@ def po_new_skus(request, doc_id):
                     'color_spec': color_spec,
                     'application': application,
                     'machine_name': machine_name,
-                    'department': department,
                     'print_sheet_size': print_sheet_size,
                     'purchase_sheet_size': purchase_sheet_size,
                     'ups': ups,

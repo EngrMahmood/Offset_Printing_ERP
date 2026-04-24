@@ -97,6 +97,12 @@
         <div class="msg {% if 'error' in msg.tags %}error{% elif 'warning' in msg.tags %}warning{% endif %}">{{ msg }}</div>
     {% endfor %}
 
+    <!-- Sub-tabs: Master / Pending SKUs -->
+    <div style="margin:8px 0 12px;">
+        <a class="stat-chip active" href="{% url 'planning:sku_recipes' %}">Master</a>
+        <a class="stat-chip" href="{% url 'planning:pending_skus' %}">Pending SKUs</a>
+    </div>
+
     <!-- End-to-end workflow guide -->
     <div class="workflow-bar">
         <div class="wf-step">
@@ -145,7 +151,7 @@
         <!-- Search -->
         <form method="get" class="search-row">
             {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
-            <input type="text" name="q" placeholder="Search SKU, job name, material, machine, department…" value="{{ q }}">
+            <input type="text" name="q" placeholder="Search SKU, job name, material, machine…" value="{{ q }}">
             <button class="btn" type="submit">Search</button>
             {% if q or status_filter %}<a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Clear All</a>{% endif %}
         </form>
@@ -183,7 +189,6 @@
                         <th>Print Sheet</th>
                         <th>Purchase Sheet</th>
                         <th>Machine</th>
-                        <th>Dept</th>
                         <th>Unit Cost</th>
                         <th>Status</th>
                         <th>Reviewed / Approved By</th>
@@ -210,7 +215,6 @@
                         <td class="{% if 'print_sheet_size' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.print_sheet_size|default:"-" }}</td>
                         <td class="{% if 'purchase_sheet_size' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.purchase_sheet_size|default:"-" }}</td>
                         <td class="{% if 'machine_name' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.machine_name|default:"-" }}</td>
-                        <td class="{% if 'department' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.department|default:"-" }}</td>
                         <td class="{% if 'default_unit_cost' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.default_unit_cost|default:"-" }}</td>
                         <td>
                             <span class="badge {{ recipe.master_data_status }}">

@@ -211,7 +211,6 @@ class SkuRecipe(models.Model):
     purchase_material = models.CharField(max_length=120, blank=True)
 
     machine_name = models.CharField(max_length=120, blank=True)
-    department = models.CharField(max_length=120, blank=True)
     default_unit_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     daily_demand = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     awc_no = models.CharField(max_length=120, blank=True)

@@ -134,7 +134,6 @@ class SkuRecipeForm(forms.ModelForm):
             'purchase_sheet_ups',
             'purchase_material',
             'machine_name',
-            'department',
             'default_unit_cost',
             'daily_demand',
             'awc_no',
@@ -172,8 +171,6 @@ class SkuRecipeForm(forms.ModelForm):
         self.fields['size_w_mm'].widget.attrs.setdefault('required', 'required')
         self.fields['size_h_mm'].widget.attrs.setdefault('required', 'required')
 
-        self.fields['department'].required = True
-        self.fields['department'].widget.attrs.setdefault('required', 'required')
         self.fields['color_spec'].widget.attrs.setdefault('placeholder', 'e.g. 4 color or 1+1')
 
     def clean_purchase_material(self):

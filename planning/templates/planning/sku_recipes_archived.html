@@ -53,7 +53,7 @@
     {% endfor %}
 
     <form method="get" class="search-row">
-        <input type="text" name="q" placeholder="Search SKU, job name, material, machine, department…" value="{{ q }}">
+        <input type="text" name="q" placeholder="Search SKU, job name, material, machine…" value="{{ q }}">
         <button class="btn" type="submit">Search</button>
         {% if q or status_filter %}<a class="btn secondary" href="{% url 'planning:sku_recipes_archived' %}">Clear</a>{% endif %}
     </form>
@@ -83,7 +83,6 @@
                     <th>SKU</th>
                     <th>Job Name</th>
                     <th>Machine</th>
-                    <th>Department</th>
                     <th>Created By</th>
                     <th>Status</th>
                     <th>Archived By</th>
@@ -99,7 +98,6 @@
                     <td style="font-weight:700;">{{ recipe.sku }}</td>
                     <td>{{ recipe.job_name|default:'-' }}</td>
                     <td>{{ recipe.machine_name|default:'-' }}</td>
-                    <td>{{ recipe.department|default:'-' }}</td>
                     <td>{% if recipe.created_by %}{{ recipe.created_by.get_full_name|default:recipe.created_by.username }}{% else %}-{% endif %}</td>
                     <td>
                         <span class="badge {{ recipe.master_data_status }}">

@@ -56,7 +56,6 @@
                     <th>Color</th>
                     <th>Application</th>
                     <th>Machine</th>
-                    <th>Department</th>
                     <th>Print Sheet Size</th>
                     <th>Purchase Sheet Size</th>
                     <th>UPS</th>
@@ -82,7 +81,6 @@
                     <td><input type="text" name="sku_{{ row.sku }}_color_spec" value="{% if row.recipe %}{{ row.recipe.color_spec }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_application" value="{% if row.recipe %}{{ row.recipe.application }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_machine_name" value="{% if row.recipe %}{{ row.recipe.machine_name }}{% endif %}"></td>
-                    <td><input type="text" name="sku_{{ row.sku }}_department" value="{% if row.recipe %}{{ row.recipe.department }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_print_sheet_size" value="{% if row.recipe %}{{ row.recipe.print_sheet_size }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_purchase_sheet_size" value="{% if row.recipe %}{{ row.recipe.purchase_sheet_size }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_ups" value="{% if row.recipe %}{{ row.recipe.ups }}{% endif %}"></td>
