@@ -34,6 +34,14 @@
     <div class="meta">Generated on: {{ generated_on|date:'Y-m-d H:i' }}</div>
     <div class="meta">Version: {{ erp_software_version }}{% if erp_software_release_date %} · Released {{ erp_software_release_date }}{% endif %}</div>
 
+    <h2>Release Notes ({{ erp_software_version }})</h2>
+    <ul>
+        <li>Removed <strong>department</strong> from SKU master; `PlanningJob.department` is now sourced from PO intake payload.</li>
+        <li>Approving a master SKU (from any UI path) now auto-syncs matching New PO lines into Planning Jobs.</li>
+        <li>Added `size_w_mm` and `size_h_mm` fields to Pending SKU master entry to match the master edit form.</li>
+        <li>Quick-config modal feature has been removed in this release.</li>
+    </ul>
+
     <p>
         This guide explains the planning workflow in simple language.
         Follow the sequence exactly so repeat and new SKU jobs are routed correctly.
