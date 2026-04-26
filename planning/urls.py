@@ -16,6 +16,7 @@ urlpatterns = [
     path('job/<int:job_id>/edit/', views.planning_job_edit, name='job_edit'),
     path('job/<int:job_id>/status/', views.planning_job_status_update, name='job_status_update'),
     path('job/<int:job_id>/print/', views.planning_job_card_print, name='job_card_print'),
+    path('job/<int:job_id>/print/pdf/', views.planning_job_card_pdf, name='job_card_print_pdf'),
     path('approval-queue/', views.approval_queue, name='approval_queue'),
     path('readme/', views.planning_readme, name='planning_readme'),
     path('readme/download/', views.download_planning_readme, name='download_planning_readme'),

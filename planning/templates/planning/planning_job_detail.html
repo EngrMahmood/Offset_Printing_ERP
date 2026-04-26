@@ -53,7 +53,8 @@
             <a class="btn secondary" href="{% url 'planning:home' %}">Back</a>
             <a class="btn secondary" href="{% url 'planning:report' %}">Report</a>
             <a class="btn secondary" href="{% url 'planning:job_edit' job.id %}">Edit</a>
-            <a class="btn" target="_blank" rel="noopener" href="{% url 'planning:job_card_print' job.id %}">A4 Print</a>
+            <a class="btn secondary" target="_blank" rel="noopener" href="{% url 'planning:job_card_print' job.id %}">A4 Print</a>
+            <a class="btn" target="_blank" rel="noopener" href="{% url 'planning:job_card_print_pdf' job.id %}">Download PDF</a>
         </div>
     </div>
 

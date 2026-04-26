@@ -19,6 +19,12 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import mm
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
 from core.jc_numbering import allocate_next_jc_number
 from core.views import permission_required, permission_required_any
 from .forms import PlanningJobEditForm, SkuRecipeForm
@@ -387,6 +393,149 @@ def _build_qr_image_base64(data):
     buffer = io.BytesIO()
     image.save(buffer, format='PNG')
     return base64.b64encode(buffer.getvalue()).decode('ascii')
+
+
+def _format_job_value(value):
+    if value is None:
+        return '-'
+    if isinstance(value, str):
+        return value.strip() or '-'
+    return str(value)
+
+
+def _paragraph_text(text):
+    safe_text = str(text or '').strip().replace('\n', '<br/>')
+    if not safe_text:
+        safe_text = '-'
+    return Paragraph(safe_text, ParagraphStyle('Normal', fontName='Helvetica', fontSize=9, leading=11))
+
+
+def _build_job_card_pdf_bytes(job, scan_url):
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        leftMargin=15 * mm,
+        rightMargin=15 * mm,
+        topMargin=15 * mm,
+        bottomMargin=15 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+    normal = styles['Normal']
+    normal.fontName = 'Helvetica'
+    normal.fontSize = 9
+    normal.leading = 11
+
+    title_style = ParagraphStyle('Title', parent=normal, fontName='Helvetica-Bold', fontSize=16, leading=18)
+    section_title_style = ParagraphStyle('SectionTitle', parent=normal, fontName='Helvetica-Bold', fontSize=11, leading=13)
+    label_style = ParagraphStyle('Label', parent=normal, fontName='Helvetica-Bold', fontSize=9, leading=11)
+
+    story = [Paragraph('Utopia Printing & Packaging', title_style), Spacer(1, 4), Paragraph('Production Job Card', normal), Spacer(1, 8)]
+
+    header_data = [
+        [Paragraph('JOB CARD#', label_style), _format_job_value(job.jc_number), Paragraph('PO#', label_style), _format_job_value(job.po_number)],
+        [Paragraph('DATE', label_style), _format_job_value(job.plan_date), Paragraph('STATUS', label_style), _format_job_value(_normalize_status(job.status))],
+        [Paragraph('SKU', label_style), _format_job_value(job.sku), Paragraph('JOB NAME', label_style), _format_job_value(job.job_name)],
+        [Paragraph('REPEAT FLAG', label_style), _format_job_value(job.repeat_flag), Paragraph('DEPARTMENT', label_style), _format_job_value(job.department)],
+    ]
+    header_table = Table(header_data, colWidths=[30 * mm, 60 * mm, 30 * mm, 60 * mm], hAlign='LEFT')
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
+    ]))
+    story.extend([header_table, Spacer(1, 10)])
+
+    detail_data = [
+        [Paragraph('ORDER QTY', label_style), _format_job_value(job.order_qty), Paragraph('PRINT PCS', label_style), _format_job_value(job.print_pcs)],
+        [Paragraph('MATERIAL', label_style), _format_job_value(job.material), Paragraph('COLOR', label_style), _format_job_value(job.color_spec)],
+        [Paragraph('APPLICATION', label_style), _format_job_value(job.application), Paragraph('PRINT SHEET', label_style), _format_job_value(job.print_sheet_size)],
+        [Paragraph('UPS', label_style), _format_job_value(job.ups), Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
+        [Paragraph('ACTUAL SHEETS', label_style), _format_job_value(job.actual_sheet_required), Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
+        [Paragraph('PURCHASE MATERIAL', label_style), _format_job_value(job.purchase_material), Paragraph('PURCHASE SHEET', label_style), _format_job_value(job.purchase_sheet_size)],
+        [Paragraph('PURCHASE UPS', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('PURCHASE REQ', label_style), _format_job_value(job.purchase_sheet_required)],
+        [Paragraph('MACHINE', label_style), _format_job_value(job.machine_name), Paragraph('TOTAL COLORS', label_style), _format_job_value(job.total_colors)],
+        [Paragraph('PLATE SET NO.', label_style), _format_job_value(job.plate_set_no), Paragraph('AWC No.', label_style), _format_job_value(job.awc_no)],
+        [Paragraph('AGING DAYS', label_style), _format_job_value(job.aging_days), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting)],
+        [Paragraph('UNIT COST', label_style), _format_job_value(job.unit_cost), Paragraph('STOCK QTY', label_style), _format_job_value(job.stock_qty)],
+        [Paragraph('STOCK BAG', label_style), _format_job_value(job.stock_bag), Paragraph('DESTINATION', label_style), _format_job_value(job.destination)],
+        [Paragraph('REMAINING SHEET', label_style), _format_job_value(job.remaining_sheet), Paragraph('Balance Qty', label_style), _format_job_value(job.balance_qty)],
+        [Paragraph('REJECTED QTY', label_style), _format_job_value(job.rejected_qty), Paragraph('PR REFERENCE', label_style), _format_job_value(job.pr_reference)],
+    ]
+    detail_table = Table(detail_data, colWidths=[30 * mm, 60 * mm, 30 * mm, 60 * mm], hAlign='LEFT')
+    detail_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
+    ]))
+    story.extend([Paragraph('Job & Material Details', section_title_style), Spacer(1, 4), detail_table, Spacer(1, 10)])
+
+    if job.repeat_flag and str(job.repeat_flag).strip().lower() == 'new':
+        story.extend([
+            Paragraph('<font color="red"><b>NEW SKU ALERT:</b> Shade matching and setup verification required before production run.</font>', normal),
+            Spacer(1, 8),
+        ])
+    if getattr(job, 'has_edits_since_creation', False) and job.edited_fields_list:
+        story.extend([
+            Paragraph('<font color="darkorange"><b>CHANGES DETECTED IN REPEAT JOB:</b> %s</font>' % ', '.join(job.edited_fields_list), normal),
+            Spacer(1, 8),
+        ])
+
+    story.extend([Paragraph('Execution Logs', section_title_style), Spacer(1, 4)])
+
+    print_log_data = [[Paragraph('Print Run #', label_style), Paragraph('Date', label_style), Paragraph('Qty', label_style), Paragraph('Wastage', label_style)]]
+    for row in job.print_runs.all():
+        print_log_data.append([
+            _format_job_value(row.run_index),
+            _format_job_value(row.print_date),
+            _format_job_value(row.print_qty),
+            _format_job_value(row.wastage_qty),
+        ])
+    if len(print_log_data) == 1:
+        print_log_data.append(['-', '-', '-', '-'])
+    print_table = Table(print_log_data, colWidths=[30 * mm, 45 * mm, 40 * mm, 40 * mm], hAlign='LEFT')
+    print_table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
+    ]))
+
+    dispatch_log_data = [[Paragraph('Dispatch #', label_style), Paragraph('Date', label_style), Paragraph('DC No.', label_style), Paragraph('Qty', label_style)]]
+    for row in job.dispatch_runs.all():
+        dispatch_log_data.append([
+            _format_job_value(row.dispatch_index),
+            _format_job_value(row.delivery_date),
+            _format_job_value(row.dc_no),
+            _format_job_value(row.delivered_qty),
+        ])
+    if len(dispatch_log_data) == 1:
+        dispatch_log_data.append(['-', '-', '-', '-'])
+    dispatch_table = Table(dispatch_log_data, colWidths=[30 * mm, 45 * mm, 40 * mm, 40 * mm], hAlign='LEFT')
+    dispatch_table.setStyle(TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
+    ]))
+
+    story.extend([print_table, Spacer(1, 10), dispatch_table, Spacer(1, 12)])
+
+    story.extend([Paragraph('Special Instructions', section_title_style), Spacer(1, 4), _paragraph_text(job.remarks or job.requirement or '-'), Spacer(1, 12)])
+
+    footer_data = [
+        [Paragraph('Scan URL', label_style), _paragraph_text(scan_url)],
+        [Paragraph('Generated At', label_style), _format_job_value(datetime.now().strftime('%Y-%m-%d %H:%M:%S'))],
+        [Paragraph('Job Card Version', label_style), _format_job_value(job.job_card_version)],
+    ]
+    footer_table = Table(footer_data, colWidths=[30 * mm, 160 * mm], hAlign='LEFT')
+    footer_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+    ]))
+    story.append(footer_table)
+
+    doc.build(story)
+    return buffer.getvalue()
 
 
 def _sku_key(sku):
@@ -1645,6 +1794,20 @@ def planning_job_card_print(request, job_id):
         'last_edited_at': job.last_edited_at,
     }
     return render(request, 'planning/planning_job_card_print.html', context)
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planning_job_card_pdf(request, job_id):
+    job = get_object_or_404(
+        PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs'),
+        id=job_id,
+    )
+    scan_url = request.build_absolute_uri(reverse('planning:scan_open', args=[job.jc_number]))
+    pdf_bytes = _build_job_card_pdf_bytes(job, scan_url)
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'inline; filename="job_card_{job.jc_number}.pdf"'
+    return response
 
 
 @login_required
