@@ -398,8 +398,6 @@ def _build_qr_image_base64(data):
     return base64.b64encode(buffer.getvalue()).decode('ascii')
 
 
-<<<<<<< Updated upstream
-=======
 def _format_job_value(value):
     if value is None:
         return '-'
@@ -565,7 +563,6 @@ def _build_job_card_pdf_bytes(job, scan_url):
     return buffer.getvalue()
 
 
->>>>>>> Stashed changes
 def _sku_key(sku):
     return (sku or '').strip().upper()
 

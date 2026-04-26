@@ -1,4 +1,4 @@
-{% load static %}
+﻿{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,21 +7,25 @@
     <title>Job Card {{ job.jc_number }}</title>
     <style>
         @page { size: A4 portrait; margin: 4mm; }
-        body { font-family: Arial, sans-serif; color: #111; font-size: 8.5px; line-height: 1.1; margin: 0; }
+        body { font-family: Arial, sans-serif; color: #111; font-size: 8px; line-height: 1.0; margin: 0; }
         .page { padding: 3mm; }
-        .card { border: 1px solid #333; padding: 4px; }
+        .card { border: 1px solid #333; padding: 4px; max-width: 1084px; margin: 0 auto; }
         .data-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 4px; }
-        .data-table th, .data-table td { border: 1px solid #333; padding: 3px 4px; vertical-align: middle; }
+        .data-table th, .data-table td { border: 1px solid #333; padding: 2px 3px; vertical-align: middle; }
         .data-table td { min-height: 14px; }
-        .header-title { font-size: 14px; font-weight: 700; }
-        .header-subtitle { font-size: 9px; text-transform: uppercase; }
-        .label { font-weight: 700; font-size: 8px; }
+        .header-title { font-size: 13px; font-weight: 700; text-transform: uppercase; }
+        .header-code { font-size: 11px; font-weight: 700; }
+        .header-meta { text-align: right; font-size: 8px; }
+        .header-meta .qr-code { margin-top: 6px; }
+        .header-meta img { width: 72px; height: 72px; display: block; border: 1px solid #333; }
+        .label { font-weight: 700; font-size: 8px; text-transform: uppercase; }
         .section-title { font-size: 9px; font-weight: 700; background: #f1f1f1; }
         .blank { min-height: 18px; }
-        .small { font-size: 8px; color: #444; }
+        .small { font-size: 7.5px; color: #444; }
         .footer-note { font-size: 7.5px; color: #555; margin-top: 4px; }
         .no-print { margin-top: 4px; }
-        .button-primary { padding: 4px 6px; border: 1px solid #333; background: #fff; cursor: pointer; font-size: 8.5px; }
+        .button-primary { padding: 4px 6px; border: 1px solid #333; background: #fff; cursor: pointer; font-size: 8px; }
+        .logo-cell { width: 100px; }
         @media print { .no-print { display: none; } .card { border: none; } }
     </style>
 </head>
@@ -29,24 +33,53 @@
 <div class="page">
     <div class="card">
         <table class="data-table">
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
             <tr>
-                <td colspan="7" class="header-title">Utopia Printing & Packaging</td>
-                <td colspan="5" class="label">Doc. #</td>
+                <td rowspan="2" class="logo-cell">&nbsp;</td>
+                <td colspan="6" class="header-title">Utopia Printing & Packaging</td>
+                <td colspan="3" rowspan="2" class="header-meta">
+                    <div>Doc. #:</div>
+                    {% if qr_code_b64 %}
+                    <div class="qr-code"><img src="data:image/png;base64,{{ qr_code_b64 }}" alt="QR Code"></div>
+                    {% endif %}
+                    <div style="margin-top:4px;">Rev. #:<br>Rev. Date:</div>
+                </td>
             </tr>
             <tr>
-                <td colspan="7" class="header-subtitle">Production Job Card</td>
-                <td colspan="5" class="label">Rev. #:<br>Rev. Date:</td>
+                <td colspan="6" class="header-code">{{ job.job_card_version|default:'0' }}</td>
             </tr>
             <tr>
                 <td class="label">JOB CARD#</td>
                 <td colspan="2">{{ job.jc_number }}</td>
                 <td colspan="5">&nbsp;</td>
-                <td class="label">Repeat</td>
-                <td colspan="2">{{ job.repeat_flag|default:'-' }}</td>
+                <td colspan="2" class="label">Repeat</td>
             </tr>
         </table>
 
         <table class="data-table">
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
             <tr><td colspan="10" class="section-title">ORDER INFORMATION</td></tr>
             <tr>
                 <td class="label">SKU</td>
@@ -57,8 +90,7 @@
                 <td colspan="2">{{ job.order_qty|default:'-' }}</td>
             </tr>
             <tr>
-                <td>&nbsp;</td>
-                <td colspan="3">&nbsp;</td>
+                <td colspan="4">&nbsp;</td>
                 <td class="label">Indent/PR</td>
                 <td colspan="2">{{ job.pr_reference|default:'-' }}</td>
                 <td colspan="3">&nbsp;</td>
@@ -82,6 +114,18 @@
         </table>
 
         <table class="data-table">
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
             <tr><td colspan="10" class="section-title">MATERIAL AND WORK PROCESS</td></tr>
             <tr>
                 <td class="label">Material Type</td>
@@ -117,21 +161,29 @@
             </tr>
             <tr>
                 <td class="label">Purch extra sheet Size</td>
-                <td colspan="3">&nbsp;</td>
-                <td class="label">Purch extra sheet qty</td>
-                <td colspan="2">&nbsp;</td>
+                <td>&nbsp;</td>
+                <td colspan="2" class="label">Purch extra sheet qty</td>
+                <td>&nbsp;</td>
                 <td class="label">Job card issue No.</td>
-                <td colspan="2">&nbsp;</td>
-            </tr>
-            <tr>
-                <td class="label">Excess sheets qty</td>
-                <td colspan="3">&nbsp;</td>
-                <td colspan="4">&nbsp;</td>
-                <td colspan="2">&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td colspan="2" class="label">Excess sheets qty</td>
             </tr>
         </table>
 
         <table class="data-table">
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
             <tr>
                 <td colspan="7" class="section-title">APPLICATIONS</td>
                 <td class="label">Stock in Sheet</td>
@@ -154,18 +206,31 @@
         </table>
 
         <table class="data-table">
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
             <tr>
-                <td colspan="2">{{ now_ts }}</td>
-                <td colspan="8">&nbsp;</td>
+                <td>{{ now_ts }}</td>
+                <td colspan="9">&nbsp;</td>
             </tr>
             <tr>
                 <td class="label">Prepared by</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">Checked By</td>
-                <td colspan="2">&nbsp;</td>
+                <td>&nbsp;</td>
+                <td colspan="2" class="label">Checked By</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
                 <td class="label">Plate Check By</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">Approved By</td>
+                <td>&nbsp;</td>
+                <td colspan="2" class="label">Approved By</td>
             </tr>
             <tr>
                 <td colspan="10">&nbsp;</td>
@@ -173,6 +238,18 @@
         </table>
 
         <table class="data-table">
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
             <tr><td colspan="10" class="section-title">MATERIAL ISSUANSE</td></tr>
             <tr>
                 <td class="label">Date</td>
@@ -197,6 +274,18 @@
         </table>
 
         <table class="data-table">
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
             <tr><td colspan="10" class="section-title">PRINTING</td></tr>
             <tr>
                 <td class="label">Date</td>
@@ -207,7 +296,7 @@
                 <td colspan="2" class="label">Wastage Sheet</td>
                 <td class="label">Half Good</td>
             </tr>
-            {% for _ in "12345" %}
+            {% for _ in "123456" %}
             <tr>
                 <td class="blank">&nbsp;</td>
                 <td class="blank">&nbsp;</td>
@@ -218,43 +307,95 @@
                 <td class="blank">&nbsp;</td>
             </tr>
             {% endfor %}
-        </table>
-
-        <table class="data-table">
-            <tr><td colspan="10" class="section-title">DISPATCH</td></tr>
             <tr>
-                <td colspan="4"></td>
-                <td colspan="6" class="label">Damage Plate Colors Name</td>
+                <td colspan="5">&nbsp;</td>
+                <td colspan="5" class="label">Damage Plate Colors Name</td>
+            </tr>
+            <tr>
+                <td>0</td>
+                <td colspan="2">0</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
             </tr>
             <tr>
                 <td colspan="2" class="label">Stock Check</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td colspan="2" class="label">Shift Supervisor</td>
-                <td colspan="2" class="blank">&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td class="label">Shift Supervisor</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
                 <td colspan="2" class="label">Dispatched by</td>
             </tr>
             <tr>
-                <td class="label">Delivery Date #01</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="label">DC#01</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="label">Qty-01</td>
-                <td class="blank">&nbsp;</td>
-                <td class="label">Packing</td>
-                <td class="blank">&nbsp;</td>
+                <td colspan="10">&nbsp;</td>
             </tr>
-            {% for idx in "23456" %}
+            <tr><td colspan="10" class="section-title">DISPATCH</td></tr>
             <tr>
-                <td class="label">Delivery Date #{{ idx }}</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="label">DC#{{ idx }}</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="label">Qty-{% if idx != '5' %}{{ idx }}{% else %}02{% endif %}</td>
-                <td class="blank">&nbsp;</td>
+                <td class="label">Delivery Date #01</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">DC#01</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Qty-01</td>
+                <td>&nbsp;</td>
                 <td class="label">Packing</td>
-                <td class="blank">&nbsp;</td>
+                <td>&nbsp;</td>
             </tr>
-            {% endfor %}
+            <tr>
+                <td class="label">Delivery Date #02</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">DC#02</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Qty-02</td>
+                <td>&nbsp;</td>
+                <td class="label">Packing</td>
+                <td>&nbsp;</td>
+            </tr>
+            <tr>
+                <td class="label">Delivery Date #03</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">DC#03</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Qty-03</td>
+                <td>&nbsp;</td>
+                <td class="label">Packing</td>
+                <td>&nbsp;</td>
+            </tr>
+            <tr>
+                <td class="label">Delivery Date #04</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">DC#04</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Qty 02</td>
+                <td>&nbsp;</td>
+                <td class="label">Packing</td>
+                <td>&nbsp;</td>
+            </tr>
+            <tr>
+                <td class="label">Delivery Date #05</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">DC#05</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Qty-04</td>
+                <td>&nbsp;</td>
+                <td class="label">Packing</td>
+                <td>&nbsp;</td>
+            </tr>
+            <tr>
+                <td class="label">Delivery Date #06</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">DC#06</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Qty-06</td>
+                <td>&nbsp;</td>
+                <td class="label">Packing</td>
+                <td>&nbsp;</td>
+            </tr>
             <tr>
                 <td colspan="5" class="label">TOTAL DELIVERED QUANTITY</td>
                 <td colspan="5">&nbsp;</td>
@@ -262,33 +403,102 @@
         </table>
 
         <table class="data-table">
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
             <tr>
-                <td class="label">Printing</td>
-                <td class="blank">&nbsp;</td>
-                <td class="label">Lamination</td>
-                <td class="blank">&nbsp;</td>
-                <td class="label">Cutting</td>
-                <td class="blank">&nbsp;</td>
-                <td class="label">Sorting</td>
-                <td class="blank">&nbsp;</td>
-                <td class="label">Packing</td>
-                <td class="blank">&nbsp;</td>
-                <td class="label">Dispatch</td>
-                <td class="blank">&nbsp;</td>
+                <td rowspan="3" class="label">Printing</td>
+                <td colspan="2" rowspan="3" class="label">Lamination</td>
+                <td colspan="2" rowspan="3" class="label">Cutting</td>
+                <td colspan="2" rowspan="3" class="label">Sorting</td>
+                <td rowspan="3" class="label">Packing</td>
+                <td colspan="2" rowspan="3" class="label">Dispatch</td>
+            </tr>
+            <tr></tr>
+            <tr></tr>
+        </table>
+
+        <table class="data-table">
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
+            <tr><td colspan="10" class="section-title">EXTRA PRODUCE</td></tr>
+            <tr>
+                <td class="label">Extra Produce</td>
+                <td>&nbsp;</td>
+                <td>&nbsp;</td>
+                <td class="label">Box / Bag NO #</td>
+                <td>&nbsp;</td>
+                <td colspan="2" class="label">Actual waste</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Total wastage per %</td>
             </tr>
         </table>
 
         <table class="data-table">
-            <tr><td colspan="12" class="section-title">EXTRA PRODUCE</td></tr>
+            <colgroup>
+                <col style="width:12.18%">
+                <col style="width:8.39%">
+                <col style="width:11.26%">
+                <col style="width:7.20%">
+                <col style="width:8.86%">
+                <col style="width:9.41%">
+                <col style="width:5.26%">
+                <col style="width:12.18%">
+                <col style="width:4.71%">
+                <col style="width:20.58%">
+            </colgroup>
+            <tr><td colspan="10" class="section-title">CUTTING SLIP</td></tr>
             <tr>
-                <td class="label">Extra Produce</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="label">Box / Bag NO #</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="label">Actual waste</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="label">Total wastage per %</td>
-                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="label">Job Card #</td>
+                <td>{{ job.jc_number }}</td>
+                <td class="label">Job Name</td>
+                <td colspan="7">{{ job.job_name|default:'-' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Purch sheet size</td>
+                <td>{{ job.purchase_sheet_size|default:'-' }}</td>
+                <td class="label">Purch sheet Ups</td>
+                <td>{{ job.purchase_sheet_ups|default:'-' }}</td>
+                <td class="label">Print sheet size</td>
+                <td>{{ job.print_sheet_size|default:'-' }}</td>
+                <td class="label">Type</td>
+                <td>{{ job.material|default:'-' }}</td>
+                <td colspan="2" class="label">Sheet Qty</td>
+            </tr>
+            <tr>
+                <td class="label">Purch sheet Qty</td>
+                <td>{{ job.purchase_sheet_required|default:'-' }}</td>
+                <td colspan="2" class="label">Remarks</td>
+                <td colspan="6">{{ job.remarks|default:job.requirement|default:'-' }}</td>
+            </tr>
+            <tr>
+                <td colspan="2">&nbsp;</td>
+                <td colspan="2">&nbsp;</td>
+                <td colspan="6">&nbsp;</td>
+            </tr>
+            <tr>
+                <td colspan="2" class="label">Cutting Operator Signature</td>
+                <td colspan="7">&nbsp;</td>
+                <td class="label">Receiving Signature</td>
             </tr>
         </table>
 
