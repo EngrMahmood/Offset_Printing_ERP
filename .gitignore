@@ -7,3 +7,13 @@ venv/
 .DS_Store
 *.sqlite3
 diagnostics/
+.vscode/
+*.pdf
+*.png
+*.jpg
+*.jpeg
+*.xls*
+*.htm
+*.xlsx
+Planning 2026_files/
+tmp_inspect_excel.py
