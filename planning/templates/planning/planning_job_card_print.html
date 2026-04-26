@@ -6,158 +6,298 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Job Card {{ job.jc_number }}</title>
     <style>
-        @page { size: A4 portrait; margin: 8mm; }
-        body { font-family: Arial, sans-serif; color: #111; font-size: 11px; margin: 0; }
-        .card { border: 1px solid #333; padding: 7px; }
-        .head { display: flex; justify-content: space-between; gap: 10px; border-bottom: 1px solid #333; padding-bottom: 5px; margin-bottom: 6px; }
-        .title { font-size: 16px; font-weight: 700; }
-        .small { font-size: 10px; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { border: 1px solid #555; padding: 4px; vertical-align: top; }
-        th { background: #efefef; text-align: left; }
-        .section-title { font-weight: 700; margin: 7px 0 4px; }
-        .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; }
-        .muted { color: #444; }
-        .nowrap { white-space: nowrap; }
-        @media print { .no-print { display: none; } }
+        @page { size: A4 portrait; margin: 4mm; }
+        body { font-family: Arial, sans-serif; color: #111; font-size: 8.5px; line-height: 1.1; margin: 0; }
+        .page { padding: 3mm; }
+        .card { border: 1px solid #333; padding: 4px; }
+        .data-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 4px; }
+        .data-table th, .data-table td { border: 1px solid #333; padding: 3px 4px; vertical-align: middle; }
+        .data-table td { min-height: 14px; }
+        .header-title { font-size: 14px; font-weight: 700; }
+        .header-subtitle { font-size: 9px; text-transform: uppercase; }
+        .label { font-weight: 700; font-size: 8px; }
+        .section-title { font-size: 9px; font-weight: 700; background: #f1f1f1; }
+        .blank { min-height: 18px; }
+        .small { font-size: 8px; color: #444; }
+        .footer-note { font-size: 7.5px; color: #555; margin-top: 4px; }
+        .no-print { margin-top: 4px; }
+        .button-primary { padding: 4px 6px; border: 1px solid #333; background: #fff; cursor: pointer; font-size: 8.5px; }
+        @media print { .no-print { display: none; } .card { border: none; } }
     </style>
 </head>
 <body>
-<div class="card">
-    <div class="head">
-        <div>
-            <div class="title">Utopia Printing & Packaging</div>
-            <div class="small">Production Job Card</div>
+<div class="page">
+    <div class="card">
+        <table class="data-table">
+            <tr>
+                <td colspan="7" class="header-title">Utopia Printing & Packaging</td>
+                <td colspan="5" class="label">Doc. #</td>
+            </tr>
+            <tr>
+                <td colspan="7" class="header-subtitle">Production Job Card</td>
+                <td colspan="5" class="label">Rev. #:<br>Rev. Date:</td>
+            </tr>
+            <tr>
+                <td class="label">JOB CARD#</td>
+                <td colspan="2">{{ job.jc_number }}</td>
+                <td colspan="5">&nbsp;</td>
+                <td class="label">Repeat</td>
+                <td colspan="2">{{ job.repeat_flag|default:'-' }}</td>
+            </tr>
+        </table>
+
+        <table class="data-table">
+            <tr><td colspan="10" class="section-title">ORDER INFORMATION</td></tr>
+            <tr>
+                <td class="label">SKU</td>
+                <td colspan="3">{{ job.sku|default:'-' }}</td>
+                <td class="label">PO#</td>
+                <td colspan="2">{{ job.po_number|default:'-' }}</td>
+                <td class="label">Order Qty</td>
+                <td colspan="2">{{ job.order_qty|default:'-' }}</td>
+            </tr>
+            <tr>
+                <td>&nbsp;</td>
+                <td colspan="3">&nbsp;</td>
+                <td class="label">Indent/PR</td>
+                <td colspan="2">{{ job.pr_reference|default:'-' }}</td>
+                <td colspan="3">&nbsp;</td>
+            </tr>
+            <tr>
+                <td class="label">Job Name</td>
+                <td colspan="3">{{ job.job_name|default:'-' }}</td>
+                <td class="label">PO Received Date</td>
+                <td colspan="2">{{ job.po_received_date|date:'d M Y'|default:'-' }}</td>
+                <td class="label">Delivery Location</td>
+                <td colspan="2">{{ job.destination|default:'-' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Department</td>
+                <td colspan="3">{{ job.department|default:'-' }}</td>
+                <td class="label">Days plan?</td>
+                <td colspan="2">{{ job.daily_demand|default:'-' }}</td>
+                <td class="label">Daily Demand</td>
+                <td colspan="2">{{ job.daily_demand|default:'-' }}</td>
+            </tr>
+        </table>
+
+        <table class="data-table">
+            <tr><td colspan="10" class="section-title">MATERIAL AND WORK PROCESS</td></tr>
+            <tr>
+                <td class="label">Material Type</td>
+                <td colspan="3">{{ job.material|default:'-' }}</td>
+                <td class="label">Size W mm</td>
+                <td colspan="2">{{ job.size_w_mm|default:'-' }}</td>
+                <td class="label">Total sheet Qty</td>
+                <td colspan="2">{{ job.print_sheets|default:job.actual_sheet_required|default:'-' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Purch Sheet Size</td>
+                <td colspan="3">{{ job.purchase_sheet_size|default:'-' }}</td>
+                <td class="label">Size H mm</td>
+                <td colspan="2">{{ job.size_h_mm|default:'-' }}</td>
+                <td class="label">No of Colors</td>
+                <td colspan="2">{{ job.total_colors|default:'-' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Purch sheet Ups</td>
+                <td colspan="3">{{ job.purchase_sheet_ups|default:'-' }}</td>
+                <td class="label">Print Sheet Size</td>
+                <td colspan="2">{{ job.print_sheet_size|default:'-' }}</td>
+                <td class="label">Wastage</td>
+                <td colspan="2">{{ job.wastage_sheets|default:'-' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Purchase Material</td>
+                <td colspan="3">{{ job.purchase_material|default:'-' }}</td>
+                <td class="label"># of UPS</td>
+                <td colspan="2">{{ job.ups|default:'-' }}</td>
+                <td class="label">Machine</td>
+                <td colspan="2">{{ job.machine_name|default:'-' }}</td>
+            </tr>
+            <tr>
+                <td class="label">Purch extra sheet Size</td>
+                <td colspan="3">&nbsp;</td>
+                <td class="label">Purch extra sheet qty</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Job card issue No.</td>
+                <td colspan="2">&nbsp;</td>
+            </tr>
+            <tr>
+                <td class="label">Excess sheets qty</td>
+                <td colspan="3">&nbsp;</td>
+                <td colspan="4">&nbsp;</td>
+                <td colspan="2">&nbsp;</td>
+            </tr>
+        </table>
+
+        <table class="data-table">
+            <tr>
+                <td colspan="7" class="section-title">APPLICATIONS</td>
+                <td class="label">Stock in Sheet</td>
+                <td colspan="2">&nbsp;</td>
+            </tr>
+            <tr>
+                <td class="label">Lamination</td>
+                <td>{{ job.application|default:'-' }}</td>
+                <td class="label">Die Cutting</td>
+                <td>{{ job.die_cutting|default:'-' }}</td>
+                <td colspan="2" class="label">Art Work No.</td>
+                <td colspan="2">{{ job.art_work_no|default:'-' }}</td>
+                <td class="label">P Set No.</td>
+                <td>{{ job.plate_set_no|default:'-' }}</td>
+            </tr>
+            <tr>
+                <td colspan="2" class="label">Special instructions if any</td>
+                <td colspan="8">{{ job.remarks|default:job.requirement|default:'-' }}</td>
+            </tr>
+        </table>
+
+        <table class="data-table">
+            <tr>
+                <td colspan="2">{{ now_ts }}</td>
+                <td colspan="8">&nbsp;</td>
+            </tr>
+            <tr>
+                <td class="label">Prepared by</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Checked By</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Plate Check By</td>
+                <td colspan="2">&nbsp;</td>
+                <td class="label">Approved By</td>
+            </tr>
+            <tr>
+                <td colspan="10">&nbsp;</td>
+            </tr>
+        </table>
+
+        <table class="data-table">
+            <tr><td colspan="10" class="section-title">MATERIAL ISSUANSE</td></tr>
+            <tr>
+                <td class="label">Date</td>
+                <td class="label">Machine</td>
+                <td colspan="2" class="label">Operator</td>
+                <td class="label">Shift A/B</td>
+                <td colspan="2" class="label">Sheet Size</td>
+                <td colspan="2" class="label">Full Sheet Qty</td>
+                <td class="label">Print Sheet Qty</td>
+            </tr>
+            {% for _ in "12345" %}
+            <tr>
+                <td class="blank">&nbsp;</td>
+                <td class="blank">&nbsp;</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="blank">&nbsp;</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="blank">&nbsp;</td>
+            </tr>
+            {% endfor %}
+        </table>
+
+        <table class="data-table">
+            <tr><td colspan="10" class="section-title">PRINTING</td></tr>
+            <tr>
+                <td class="label">Date</td>
+                <td class="label">Machine</td>
+                <td colspan="2" class="label">Operator</td>
+                <td class="label">Shift A/B</td>
+                <td colspan="2" class="label">Print Sheet Qty</td>
+                <td colspan="2" class="label">Wastage Sheet</td>
+                <td class="label">Half Good</td>
+            </tr>
+            {% for _ in "12345" %}
+            <tr>
+                <td class="blank">&nbsp;</td>
+                <td class="blank">&nbsp;</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="blank">&nbsp;</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="blank">&nbsp;</td>
+            </tr>
+            {% endfor %}
+        </table>
+
+        <table class="data-table">
+            <tr><td colspan="10" class="section-title">DISPATCH</td></tr>
+            <tr>
+                <td colspan="4"></td>
+                <td colspan="6" class="label">Damage Plate Colors Name</td>
+            </tr>
+            <tr>
+                <td colspan="2" class="label">Stock Check</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td colspan="2" class="label">Shift Supervisor</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td colspan="2" class="label">Dispatched by</td>
+            </tr>
+            <tr>
+                <td class="label">Delivery Date #01</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="label">DC#01</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="label">Qty-01</td>
+                <td class="blank">&nbsp;</td>
+                <td class="label">Packing</td>
+                <td class="blank">&nbsp;</td>
+            </tr>
+            {% for idx in "23456" %}
+            <tr>
+                <td class="label">Delivery Date #{{ idx }}</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="label">DC#{{ idx }}</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="label">Qty-{% if idx != '5' %}{{ idx }}{% else %}02{% endif %}</td>
+                <td class="blank">&nbsp;</td>
+                <td class="label">Packing</td>
+                <td class="blank">&nbsp;</td>
+            </tr>
+            {% endfor %}
+            <tr>
+                <td colspan="5" class="label">TOTAL DELIVERED QUANTITY</td>
+                <td colspan="5">&nbsp;</td>
+            </tr>
+        </table>
+
+        <table class="data-table">
+            <tr>
+                <td class="label">Printing</td>
+                <td class="blank">&nbsp;</td>
+                <td class="label">Lamination</td>
+                <td class="blank">&nbsp;</td>
+                <td class="label">Cutting</td>
+                <td class="blank">&nbsp;</td>
+                <td class="label">Sorting</td>
+                <td class="blank">&nbsp;</td>
+                <td class="label">Packing</td>
+                <td class="blank">&nbsp;</td>
+                <td class="label">Dispatch</td>
+                <td class="blank">&nbsp;</td>
+            </tr>
+        </table>
+
+        <table class="data-table">
+            <tr><td colspan="12" class="section-title">EXTRA PRODUCE</td></tr>
+            <tr>
+                <td class="label">Extra Produce</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="label">Box / Bag NO #</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="label">Actual waste</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+                <td class="label">Total wastage per %</td>
+                <td colspan="2" class="blank">&nbsp;</td>
+            </tr>
+        </table>
+
+        <div class="footer-note">Generated at {{ now_ts }} | Planning version {{ job.job_card_version }}</div>
+
+        <div class="no-print">
+            <button class="button-primary" onclick="window.print()">Print A4</button>
+            <span class="small">Use browser print and choose Save as PDF for exact A4 job-card output.</span>
         </div>
-        <div class="small" style="text-align:right;">
-            <div><strong>JOB CARD#:</strong> {{ job.jc_number }}</div>
-            <div><strong>PO#:</strong> {{ job.po_number|default:'-' }}</div>
-            <div><strong>Date:</strong> {{ job.plan_date|default:'-' }}</div>
-            <div><strong>Status:</strong> {{ status_now }}</div>
-        </div>
-    </div>
-
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:6px;">
-        <div class="small muted">Scan QR to open this planning card directly in system.</div>
-        <div style="text-align:center;">
-            {% if qr_code_b64 %}
-                <img src="data:image/png;base64,{{ qr_code_b64 }}" alt="Job QR" style="width:88px;height:88px;border:1px solid #999;padding:2px;">
-            {% else %}
-                <div class="small muted" style="border:1px solid #999;padding:6px 8px;">QR unavailable</div>
-            {% endif %}
-            <div class="small" style="max-width:180px;word-break:break-all;margin-top:2px;">{{ scan_url }}</div>
-        </div>
-    </div>
-
-    <div class="section-title">Order Information</div>
-    {% if job.repeat_flag|lower == 'new' %}
-    <div style="border:1px solid #b15a00;background:#fff1e5;color:#7a2f00;padding:8px 10px;margin-bottom:8px;font-weight:700;">
-        NEW SKU ALERT: Shade matching and setup verification required before production run.
-    </div>
-    {% endif %}
-    {% if is_repeat_with_changes %}
-    <div style="border:2px solid #d97706;background:#fef3c7;color:#78350f;padding:8px 10px;margin-bottom:8px;font-weight:700;">
-        <div style="margin-bottom:4px;">⚠ CHANGES DETECTED IN REPEAT JOB</div>
-        <div style="font-size:10px;margin-bottom:4px;">Modified Fields: {% for field in changed_fields %}{{ field }}{% if not forloop.last %}, {% endif %}{% endfor %}</div>
-        {% if last_edited_by %}<div style="font-size:10px;">Edited by {{ last_edited_by.username }} on {{ last_edited_at|date:'d M Y H:i' }}</div>{% endif %}
-    </div>
-    {% endif %}
-    <table>
-        <tr>
-            <th>SKU</th><td>{{ job.sku|default:'-' }}</td>
-            <th>Order Qty</th><td>{{ job.order_qty|default:'-' }}</td>
-        </tr>
-        <tr>
-            <th>Job Name</th><td>{{ job.job_name|default:'-' }}</td>
-            <th>Department</th><td>{{ job.department|default:'-' }}</td>
-        </tr>
-        <tr>
-            <th>Repeat</th><td>{{ job.repeat_flag|default:'-' }}</td>
-            <th>Daily Demand</th><td>{{ job.daily_demand|default:'-' }}</td>
-        </tr>
-    </table>
-
-    <div class="section-title">Material And Work Process</div>
-    <table>
-        <tr>
-            <th>Material Type</th><td>{{ job.material|default:'-' }}</td>
-            <th>Color</th><td>{{ job.color_spec|default:'-' }}</td>
-        </tr>
-        <tr>
-            <th>Size W mm</th><td>{{ job.size_w_mm|default:'-' }}</td>
-            <th>Size H mm</th><td>{{ job.size_h_mm|default:'-' }}</td>
-        </tr>
-        <tr>
-            <th>Print Sheet Size</th><td>{{ job.print_sheet_size|default:'-' }}</td>
-            <th>Ups</th><td>{{ job.ups|default:'-' }}</td>
-        </tr>
-        <tr>
-            <th>Total Sheet Qty</th><td>{{ job.actual_sheet_required|default:job.print_sheets|default:'-' }}</td>
-            <th>Machine</th><td>{{ job.machine_name|default:'-' }}</td>
-        </tr>
-        <tr>
-            <th>No of Colors</th><td>{{ job.total_colors|default:'-' }}</td>
-            <th>Wastage</th><td>{{ job.wastage_sheets|default:'-' }}</td>
-        </tr>
-        <tr>
-            <th>Purchase Material</th><td>{{ job.purchase_material|default:'-' }}</td>
-            <th>Plate Set No.</th><td>{{ job.plate_set_no|default:'-' }}</td>
-        </tr>
-        <tr>
-            <th>Aging</th><td>{{ job.aging_days|default:'-' }}</td>
-            <th>Die Cutting</th><td>{{ job.die_cutting|default:'-' }}</td>
-        </tr>
-    </table>
-
-    <div class="section-title">Execution Logs</div>
-    <div class="two-col">
-        <div>
-            <div class="small muted" style="margin-bottom:3px;"><strong>Printing Runs</strong></div>
-            <table>
-                <thead><tr><th>#</th><th>Date</th><th>Qty</th><th>Wastage</th></tr></thead>
-                <tbody>
-                {% for row in job.print_runs.all %}
-                    <tr>
-                        <td class="nowrap">{{ row.run_index }}</td>
-                        <td>{{ row.print_date|default:'-' }}</td>
-                        <td>{{ row.print_qty|default:'-' }}</td>
-                        <td>{{ row.wastage_qty|default:'-' }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4">No print run logs.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        <div>
-            <div class="small muted" style="margin-bottom:3px;"><strong>Dispatch Runs</strong></div>
-            <table>
-                <thead><tr><th>#</th><th>Date</th><th>DC</th><th>Qty</th></tr></thead>
-                <tbody>
-                {% for row in job.dispatch_runs.all %}
-                    <tr>
-                        <td class="nowrap">{{ row.dispatch_index }}</td>
-                        <td>{{ row.delivery_date|default:'-' }}</td>
-                        <td>{{ row.dc_no|default:'-' }}</td>
-                        <td>{{ row.delivered_qty|default:'-' }}</td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="4">No dispatch logs.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-
-    <div class="section-title">Special Instructions</div>
-    <table>
-        <tr><td style="height:55px;">{{ job.remarks|default:job.requirement|default:'-' }}</td></tr>
-    </table>
-
-    <div class="small muted" style="margin-top:6px;">Generated at {{ now_ts }} | Planning version {{ job.job_card_version }}</div>
-
-    <div class="no-print" style="margin-top:8px;">
-        <button onclick="window.print()">Print A4</button>
     </div>
 </div>
 </body>

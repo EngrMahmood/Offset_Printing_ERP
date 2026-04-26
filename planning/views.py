@@ -19,6 +19,16 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
 from core.jc_numbering import allocate_next_jc_number
 from core.views import permission_required
 from .forms import PlanningJobEditForm, SkuRecipeForm
@@ -388,6 +398,174 @@ def _build_qr_image_base64(data):
     return base64.b64encode(buffer.getvalue()).decode('ascii')
 
 
+<<<<<<< Updated upstream
+=======
+def _format_job_value(value):
+    if value is None:
+        return '-'
+    if isinstance(value, str):
+        return value.strip() or '-'
+    if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
+        if isinstance(value, float):
+            return f"{value:,.2f}".rstrip('0').rstrip('.')
+        if isinstance(value, int):
+            return f"{value:,}"
+        return str(value)
+    return str(value)
+
+
+def _paragraph_text(text):
+    safe_text = str(text or '').strip().replace('\n', '<br/>')
+    if not safe_text:
+        safe_text = '-'
+    return Paragraph(safe_text, ParagraphStyle('Normal', fontName='Helvetica', fontSize=9, leading=11))
+
+
+def _build_job_card_pdf_bytes(job, scan_url):
+    if not REPORTLAB_AVAILABLE:
+        raise RuntimeError('reportlab is required to generate PDF job cards. Install reportlab and restart the server.')
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=letter,
+        leftMargin=12 * mm,
+        rightMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+    )
+
+    styles = getSampleStyleSheet()
+    normal = styles['Normal']
+    normal.fontName = 'Helvetica'
+    normal.fontSize = 9
+    normal.leading = 11
+
+    title_style = ParagraphStyle('Title', parent=normal, fontName='Helvetica-Bold', fontSize=18, leading=20)
+    subtitle_style = ParagraphStyle('Subtitle', parent=normal, fontName='Helvetica-Bold', fontSize=11, leading=13)
+    section_title_style = ParagraphStyle('SectionTitle', parent=normal, fontName='Helvetica-Bold', fontSize=10.5, leading=12)
+    label_style = ParagraphStyle('Label', parent=normal, fontName='Helvetica-Bold', fontSize=8.5, leading=10)
+
+    story = [Paragraph('UTOPIA PRINTING & PACKAGING', title_style), Spacer(1, 4), Paragraph('PRODUCTION JOB CARD', subtitle_style), Spacer(1, 8)]
+
+    header_data = [
+        [Paragraph('JOB CARD #', label_style), _format_job_value(job.jc_number), Paragraph('PO #', label_style), _format_job_value(job.po_number)],
+        [Paragraph('DATE', label_style), _format_job_value(job.plan_date), Paragraph('STATUS', label_style), _format_job_value(_normalize_status(job.status))],
+        [Paragraph('SKU', label_style), _format_job_value(job.sku), Paragraph('JOB NAME', label_style), _format_job_value(job.job_name)],
+        [Paragraph('REPEAT FLAG', label_style), _format_job_value(job.repeat_flag), Paragraph('DEPARTMENT', label_style), _format_job_value(job.department)],
+    ]
+    header_table = Table(header_data, colWidths=[32 * mm, 65 * mm, 32 * mm, 65 * mm], hAlign='LEFT')
+    header_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('GRID', (0, 0), (-1, -1), 0.35, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#dedede')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+    ]))
+    story.extend([header_table, Spacer(1, 10)])
+
+    material_data = [
+        [Paragraph('ORDER QTY', label_style), _format_job_value(job.order_qty), Paragraph('PRINT PCS', label_style), _format_job_value(job.print_pcs)],
+        [Paragraph('MATERIAL TYPE', label_style), _format_job_value(job.material), Paragraph('COLOR', label_style), _format_job_value(job.color_spec)],
+        [Paragraph('APPLICATION', label_style), _format_job_value(job.application), Paragraph('PRINT SHEET SIZE', label_style), _format_job_value(job.print_sheet_size)],
+        [Paragraph('UPS', label_style), _format_job_value(job.ups), Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
+        [Paragraph('ACTUAL SHEETS', label_style), _format_job_value(job.actual_sheet_required), Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
+        [Paragraph('PURCHASE MATERIAL', label_style), _format_job_value(job.purchase_material), Paragraph('PURCHASE SHEET SIZE', label_style), _format_job_value(job.purchase_sheet_size)],
+        [Paragraph('PURCHASE SHEET UPS', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('PURCHASE REQ', label_style), _format_job_value(job.purchase_sheet_required)],
+        [Paragraph('MACHINE', label_style), _format_job_value(job.machine_name), Paragraph('TOTAL COLORS', label_style), _format_job_value(job.total_colors)],
+        [Paragraph('PLATE SET NO.', label_style), _format_job_value(job.plate_set_no), Paragraph('AWC NO.', label_style), _format_job_value(job.awc_no)],
+        [Paragraph('AGING DAYS', label_style), _format_job_value(job.aging_days), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting)],
+    ]
+    material_table = Table(material_data, colWidths=[32 * mm, 65 * mm, 32 * mm, 65 * mm], hAlign='LEFT')
+    material_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.grey),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eeeeee')),
+    ]))
+    story.extend([Paragraph('MATERIAL AND WORK PROCESS', section_title_style), Spacer(1, 4), material_table, Spacer(1, 10)])
+
+    application_data = [
+        [Paragraph('LAMINATION', label_style), _format_job_value(job.application), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting)],
+        [Paragraph('ART WORK NO.', label_style), '-', Paragraph('P SET NO.', label_style), _format_job_value(job.plate_set_no)],
+        [Paragraph('SPECIAL INSTRUCTIONS', label_style), _paragraph_text(job.remarks or job.requirement or '-'), '', ''],
+    ]
+    application_table = Table(application_data, colWidths=[30 * mm, 67 * mm, 30 * mm, 65 * mm], hAlign='LEFT')
+    application_table.setStyle(TableStyle([
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('INNERGRID', (0, 0), (-1, 1), 0.25, colors.grey),
+        ('BOX', (0, 0), (-1, 1), 0.5, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f3f3f3')),
+    ]))
+    story.extend([application_table, Spacer(1, 12)])
+
+    signature_data = [
+        [Paragraph('Prepared by', label_style), '', Paragraph('Checked By', label_style), '', Paragraph('Plate Check By', label_style), '', Paragraph('Approved By', label_style), ''],
+    ]
+    signature_table = Table(signature_data, colWidths=[28 * mm, 34 * mm, 28 * mm, 34 * mm, 28 * mm, 34 * mm, 28 * mm, 34 * mm], hAlign='LEFT')
+    signature_table.setStyle(TableStyle([
+        ('LINEABOVE', (1, 0), (1, 0), 0.25, colors.black),
+        ('LINEABOVE', (3, 0), (3, 0), 0.25, colors.black),
+        ('LINEABOVE', (5, 0), (5, 0), 0.25, colors.black),
+        ('LINEABOVE', (7, 0), (7, 0), 0.25, colors.black),
+    ]))
+    story.extend([signature_table, Spacer(1, 10)])
+
+    material_issue_data = [[Paragraph('MATERIAL ISSUANCE', section_title_style), '', '', '', '', '']]
+    material_issue_data.append([Paragraph('Date', label_style), Paragraph('Machine', label_style), Paragraph('Operator', label_style), Paragraph('Shift A/B', label_style), Paragraph('Sheet Size', label_style), Paragraph('Full Sheet Qty', label_style)])
+    for _ in range(3):
+        material_issue_data.append(['-', '-', '-', '-', '-', '-'])
+    material_issue_table = Table(material_issue_data, colWidths=[24 * mm, 30 * mm, 35 * mm, 28 * mm, 35 * mm, 30 * mm], hAlign='LEFT')
+    material_issue_table.setStyle(TableStyle([
+        ('GRID', (0, 1), (-1, -1), 0.25, colors.grey),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#d9d9d9')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+    ]))
+
+    printing_data = [[Paragraph('PRINTING', section_title_style), '', '', '', '', '', '']]
+    printing_data.append([Paragraph('Date', label_style), Paragraph('Machine', label_style), Paragraph('Operator', label_style), Paragraph('Shift A/B', label_style), Paragraph('Print Sheet Qty', label_style), Paragraph('Wastage Sheet', label_style), Paragraph('Half Good', label_style)])
+    for _ in range(4):
+        printing_data.append(['-', '-', '-', '-', '-', '-', '-'])
+    printing_table = Table(printing_data, colWidths=[24 * mm, 30 * mm, 30 * mm, 28 * mm, 34 * mm, 34 * mm, 26 * mm], hAlign='LEFT')
+    printing_table.setStyle(TableStyle([
+        ('GRID', (0, 1), (-1, -1), 0.25, colors.grey),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#d9d9d9')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+    ]))
+
+    story.extend([material_issue_table, Spacer(1, 10), printing_table, Spacer(1, 12)])
+
+    dispatch_data = [[Paragraph('DISPATCH', section_title_style), '', '', '', '', '']]
+    dispatch_data.append([Paragraph('Delivery Date', label_style), Paragraph('DC #', label_style), Paragraph('Qty', label_style), Paragraph('Packing', label_style), Paragraph('Delivered To', label_style), ''])
+    for _ in range(6):
+        dispatch_data.append(['-', '-', '-', '-', '-', '-'])
+    dispatch_table = Table(dispatch_data, colWidths=[30 * mm, 24 * mm, 24 * mm, 30 * mm, 35 * mm, 40 * mm], hAlign='LEFT')
+    dispatch_table.setStyle(TableStyle([
+        ('GRID', (0, 1), (-1, -1), 0.25, colors.grey),
+        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#d9d9d9')),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+    ]))
+    story.extend([dispatch_table, Spacer(1, 10)])
+
+    cutting_data = [
+        [Paragraph('CUTTING SLIP', section_title_style), '', '', '', '', ''],
+        [Paragraph('Job Card #', label_style), _format_job_value(job.jc_number), Paragraph('Job Name', label_style), _format_job_value(job.job_name), Paragraph('Purch sheet size', label_style), _format_job_value(job.purchase_sheet_size)],
+        [Paragraph('Purch sheet Ups', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('Print sheet size', label_style), _format_job_value(job.print_sheet_size), Paragraph('Type', label_style), _format_job_value(job.material)],
+        [Paragraph('Purch sheet Qty', label_style), _format_job_value(job.purchase_sheet_required), Paragraph('Remarks', label_style), _paragraph_text(job.remarks or job.requirement or '-'), '', ''],
+    ]
+    cutting_table = Table(cutting_data, colWidths=[30 * mm, 35 * mm, 30 * mm, 35 * mm, 30 * mm, 35 * mm], hAlign='LEFT')
+    cutting_table.setStyle(TableStyle([
+        ('SPAN', (0, 0), (-1, 0)),
+        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ('GRID', (0, 1), (-1, -1), 0.25, colors.grey),
+        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f2f2f2')),
+    ]))
+    story.extend([cutting_table])
+
+    doc.build(story)
+    return buffer.getvalue()
+
+
+>>>>>>> Stashed changes
 def _sku_key(sku):
     return (sku or '').strip().upper()
 
