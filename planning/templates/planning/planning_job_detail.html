@@ -112,7 +112,7 @@
         <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="approve_qc"><button class="btn good" type="submit">Mark QC Approved</button></form>
         {% endif %}
         {% if status_now == 'qc_approved' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="release"><button class="btn good" type="submit">Release To Planning</button></form>
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="release"><button class="btn good" type="submit">Release For Production</button></form>
         {% endif %}
         {% if status_now == 'released' %}
         <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="start_production"><button class="btn warn" type="submit">Start Production</button></form>

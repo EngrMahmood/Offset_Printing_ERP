@@ -54,18 +54,10 @@
             <h1 style="margin:0;font-size:20px;">Planning Workspace</h1>
             <div class="muted">Upload planning sheet, manage jobs, release QC-approved work, and issue A4 job cards for production.</div>
         </div>
-        <div>
-            <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
-            <a class="btn secondary" href="{% url 'planning:planning_readme' %}">Guide</a>
-            <a class="btn secondary" href="{% url 'home' %}">Back Home</a>
-            <a class="btn secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <a class="btn secondary" href="{% url 'planning:approval_queue' %}">Approval Queue</a>
-            <a class="btn secondary" href="{% url 'planning:pending_skus_ignored' %}">Ignored SKUs</a>
-            <a class="btn secondary" href="{% url 'planning:scan' %}">Scan QR</a>
-            <a class="btn secondary" href="{% url 'planning:report' %}">Planning Report</a>
-            <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
-            <a class="btn secondary" href="{% url 'planning:jobs_archived' %}">Archived Jobs</a>
-            <a class="btn" href="{% url 'planning:import_sheet' %}">Import Planning Sheet</a>
+            <a class="btn secondary" href="{% url 'planning:jobs_archived' %}">Archived</a>
+            <a class="btn" href="{% url 'planning:import_sheet' %}">Import Sheet</a>
         </div>
     </div>
 
@@ -80,7 +72,7 @@
                 <div class="v">Repeat from PO intake and Approved New SKUs</div>
             </div>
             <div class="route-card">
-                <div class="k">Step 3</div>
+                <div class="k">Step 4</div>
                 <div class="v">Plan, validate, and prepare jobs</div>
             </div>
             <div class="route-card">

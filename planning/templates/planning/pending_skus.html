@@ -34,8 +34,9 @@
         .filters select, .filters input { border:1px solid #bfd0e2; border-radius:6px; padding:6px 8px; font-size:12px; min-width:180px; }
         .po-chip-wrap { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px; }
         .po-chip { display:inline-block; padding:4px 8px; border-radius:999px; border:1px solid #d3deea; background:#f3f7fb; color:#1f3048; font-size:11px; text-decoration:none; }
-        .po-chip.active { background:#445366; border-color:#445366; color:#fff; }
-        @media (max-width: 860px) {
+        .po-chip.active { background:#445366; border-color:#445366; color:#fff; }        .stat-chip { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 1px solid #d0dcea; cursor: pointer; text-decoration: none; color: #445366; background: #fff; display: inline-block; }
+        .stat-chip:hover { background: #f0f5fb; }
+        .stat-chip.active { border-color: #445366; background: #445366; color: #fff; }        @media (max-width: 860px) {
             .route-band { grid-template-columns: 1fr; }
         }
     </style>

@@ -79,19 +79,20 @@
         <button type="button" class="tab-link" data-target="release-panel">Release{% if release_jobs %} ({{ release_jobs|length }}){% endif %}</button>
     </div>
 
-    {% if planning_jobs %}
-    <div style="margin-bottom: 12px;">
-        <form method="post" style="display:inline-block;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="bulk_send_qc">
-            <button type="submit" class="btn warn">Approve All Planning Cards</button>
-        </form>
-        <span class="muted" style="margin-left:12px;">{{ planning_jobs|length }} planning card(s) waiting for approval.</span>
-    </div>
-    {% endif %}
-
     <section id="planning-panel" class="panel tab-panel active">
-        <h3 style="margin:0 0 8px 0;">Planning Approval Queue</h3>
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
+            <h3 style="margin:0;">Planning Approval Queue</h3>
+            {% if planning_jobs %}
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span class="muted">{{ planning_jobs|length }} card(s) waiting</span>
+                <form method="post" style="margin:0;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="bulk_send_qc">
+                    <button type="submit" class="btn warn">Approve All</button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
         <table>
             <thead>
                 <tr>

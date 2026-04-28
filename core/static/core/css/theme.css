@@ -347,3 +347,56 @@ th {
     color: #42566e !important;
     font-size: 12px !important;
 }
+
+/* Secondary button override — must come after .btn rule */
+.btn.secondary {
+    background: #ffffff !important;
+    color: var(--brand-primary) !important;
+    border-color: var(--brand-line) !important;
+}
+.btn.secondary:hover {
+    background: #f0f5fb !important;
+}
+
+/* Warning / danger button variants */
+.btn.warning, .btn.warn {
+    background: #8a6c1f !important;
+    border-color: #6e5418 !important;
+    color: #fff !important;
+}
+.btn.warning:hover, .btn.warn:hover {
+    background: #6e5418 !important;
+}
+.btn.good {
+    background: #206a3c !important;
+    border-color: #185730 !important;
+    color: #fff !important;
+}
+.btn.good:hover {
+    background: #185730 !important;
+}
+.btn.danger {
+    background: #8c3244 !important;
+    border-color: #6e2535 !important;
+    color: #fff !important;
+}
+.btn.danger:hover {
+    background: #6e2535 !important;
+}
+
+/* Stat/filter chips used in planning SKU screens */
+.stat-chip {
+    padding: 5px 12px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid #d0dcea;
+    cursor: pointer;
+    text-decoration: none;
+    color: #445366;
+    background: #fff;
+    display: inline-block;
+    transition: background 0.15s ease;
+}
+.stat-chip:hover { background: #f0f5fb; }
+.stat-chip.active { border-color: #445366; background: #445366; color: #fff; }

@@ -324,18 +324,12 @@
 </head>
 <body>
     {% include 'includes/page_header.html' %}
-<header class="top-nav">
-    <div class="top-nav-wrap">
-        <div>
-            <div class="module-title">Planning And Scheduling Module</div>
-            <div class="module-subtitle">Clear sequence workflow by role and stage</div>
-        </div>
-        <div class="chip">Role: {{ user_role|default:'unassigned'|upper }}</div>
-    </div>
-</header>
-
 <main class="page">
     <div class="utility-bar">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:14px;font-weight:700;color:#1f3449;">Planning &amp; Scheduling Module</span>
+            <span class="chip">Role: {{ user_role|default:'unassigned'|upper }}</span>
+        </div>
         {% include 'includes/user_identity_chip.html' %}
     </div>
 
