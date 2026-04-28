@@ -39,6 +39,6 @@ class PoDocumentAdmin(admin.ModelAdmin):
 
 @admin.register(SkuRecipe)
 class SkuRecipeAdmin(admin.ModelAdmin):
-    list_display = ('sku', 'job_name', 'material', 'machine_name', 'updated_at')
-    search_fields = ('sku', 'job_name', 'material', 'machine_name')
-    list_filter = ('machine_name', 'updated_at')
+    list_display = ('sku', 'job_name', 'material', 'master_data_status', 'updated_at')
+    search_fields = ('sku', 'job_name', 'material')
+    list_filter = ('master_data_status', 'updated_at')

@@ -130,6 +130,13 @@ class PlanningJob(models.Model):
     def __str__(self):
         return f"{self.jc_number} | {self.sku}" if self.sku else self.jc_number
 
+    @property
+    def calculated_sheets_required(self):
+        """Auto-calculate total sheets required: print_sheets + wastage_sheets."""
+        print_sht = self.print_sheets or 0
+        wastage_sht = self.wastage_sheets or 0
+        return print_sht + wastage_sht
+
 
 class PlanningPrintRun(models.Model):
     planning_job = models.ForeignKey(PlanningJob, on_delete=models.CASCADE, related_name='print_runs')
@@ -210,7 +217,6 @@ class SkuRecipe(models.Model):
     purchase_sheet_ups = models.PositiveIntegerField(null=True, blank=True)
     purchase_material = models.CharField(max_length=120, blank=True)
 
-    machine_name = models.CharField(max_length=120, blank=True)
     default_unit_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     daily_demand = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     awc_no = models.CharField(max_length=120, blank=True)

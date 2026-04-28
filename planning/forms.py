@@ -100,7 +100,9 @@ class PlanningJobEditForm(forms.ModelForm):
             'color_spec',
             'application',
             'order_qty',
+            'ups',
             'print_sheets',
+            'wastage_sheets',
             'machine_name',
             'department',
             'destination',
@@ -133,7 +135,6 @@ class SkuRecipeForm(forms.ModelForm):
             'purchase_sheet_size',
             'purchase_sheet_ups',
             'purchase_material',
-            'machine_name',
             'default_unit_cost',
             'daily_demand',
             'awc_no',
@@ -162,7 +163,6 @@ class SkuRecipeForm(forms.ModelForm):
         self.fields['material'].widget.attrs.setdefault('required', 'required')
         self.fields['color_spec'].widget.attrs.setdefault('required', 'required')
         self.fields['application'].widget.attrs.setdefault('required', 'required')
-        self.fields['machine_name'].widget.attrs.setdefault('required', 'required')
         self.fields['print_sheet_size'].widget.attrs.setdefault('required', 'required')
         self.fields['purchase_sheet_size'].widget.attrs.setdefault('required', 'required')
         self.fields['ups'].widget.attrs.setdefault('required', 'required')
