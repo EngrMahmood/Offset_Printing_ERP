@@ -74,6 +74,7 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <main class="wrap page-container">
 
     {% with current_step='master' %}
@@ -188,7 +189,6 @@
                         <th>UPS</th>
                         <th>Print Sheet</th>
                         <th>Purchase Sheet</th>
-                        <th>Machine</th>
                         <th>Unit Cost</th>
                         <th>Status</th>
                         <th>Reviewed / Approved By</th>
@@ -214,7 +214,6 @@
                         <td class="{% if 'ups' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.ups|default:"-" }}</td>
                         <td class="{% if 'print_sheet_size' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.print_sheet_size|default:"-" }}</td>
                         <td class="{% if 'purchase_sheet_size' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.purchase_sheet_size|default:"-" }}</td>
-                        <td class="{% if 'machine_name' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.machine_name|default:"-" }}</td>
                         <td class="{% if 'default_unit_cost' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.default_unit_cost|default:"-" }}</td>
                         <td>
                             <span class="badge {{ recipe.master_data_status }}">
@@ -349,3 +348,5 @@ if (bulkSelectAll) {
 </script>
 </body>
 </html>
+
+

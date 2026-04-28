@@ -23,6 +23,7 @@
     <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <div class="container">
     <div class="top-actions">
         <a href="{% url 'planning:home' %}" class="btn">Planning Home</a>
@@ -72,17 +73,17 @@
     <h2>4. Planning Jobs (Step 4)</h2>
     <ul>
         <li>Review Planning Jobs, filter by status, department, machine, and PO.</li>
-        <li>Use the bulk action panel to update statuses or archive selected jobs.</li>
+        <li>Use the bulk action panel to move jobs through released, in production, and completed states or archive selected jobs.</li>
         <li>You can place jobs on hold, release hold, archive, or permanently delete jobs.</li>
         <li>Archived jobs are moved to the Archived Jobs page for restore or permanent delete.</li>
-        <li>Always verify the job details before approving or archiving to avoid data loss.</li>
+        <li>Always verify the job details before releasing or archiving to avoid data loss.</li>
     </ul>
 
     <h2>5. Approval Queue (Step 5)</h2>
     <ul>
-        <li>Jobs flow through: Draft → Pending Review → Pending Approval (Manager).</li>
-        <li>Only approved jobs should be released to execution and production planning.</li>
-        <li>Use this queue to ensure master data and routing are correct before final release.</li>
+        <li>Jobs flow through: Draft → Pending QC → QC Approved → Released.</li>
+        <li>Only QC-approved jobs should be released to execution and production planning.</li>
+        <li>Use this queue to ensure plate set, wastage, machine, and remarks are complete before final release.</li>
     </ul>
 
     <h2>6. Job Card and Scan (Step 6)</h2>
@@ -112,3 +113,5 @@
 </div>
 </body>
 </html>
+
+

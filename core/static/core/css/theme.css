@@ -179,6 +179,41 @@ button[type="submit"] {
     color: #fff !important;
 }
 
+.erp-page-header {
+    width: 100%;
+    padding: 10px 14px;
+    background: #1f3449;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    color: #fff;
+    border-bottom: 1px solid rgba(255,255,255,0.08);
+    position: sticky;
+    top: 0;
+    z-index: 20;
+}
+
+.erp-page-header__nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.erp-page-header .btn {
+    background: rgba(255,255,255,0.1) !important;
+    color: #fff !important;
+    border-color: rgba(255,255,255,0.2) !important;
+}
+
+.erp-page-header .btn:hover {
+    background: rgba(255,255,255,0.18) !important;
+}
+
+.erp-page-header-fixed-spacer {
+    height: 56px;
+}
+
 .plus-btn {
     min-width: var(--erp-control-height) !important;
     width: var(--erp-control-height);

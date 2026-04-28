@@ -18,6 +18,7 @@
 </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 {% with current_step='po' %}
   {% include 'planning/includes/workflow_sequence_bar.html' %}
 {% endwith %}
@@ -72,3 +73,5 @@
 {% endif %}
 </body>
 </html>
+
+

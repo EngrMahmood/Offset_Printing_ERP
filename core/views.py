@@ -19,7 +19,24 @@ from datetime import datetime, date, timedelta
 
 from .bulk_upload import process_jobcard_upload, get_template_headers, get_template_example
 from .jc_numbering import allocate_next_jc_number
-from .models import JobCard, Production, ProductionDowntime, Machine, Operator, Department, Material, Dispatch, UserProfile, ChangeLog, EditOverrideRequest, ShiftConfig, MachineWorkSchedule
+from .models import (
+    ChangeLog,
+    Department,
+    Dispatch,
+    EditOverrideRequest,
+    JOB_CARD_DISPATCHABLE_STATUSES,
+    JOB_CARD_PRODUCTION_START_STATUSES,
+    JobCard,
+    Machine,
+    MachineWorkSchedule,
+    Material,
+    Operator,
+    Production,
+    ProductionDowntime,
+    ShiftConfig,
+    UserProfile,
+)
+from .services import normalize_job_card_status
 
 try:
     import openpyxl
@@ -786,7 +803,7 @@ def job_card_entry(request):
                 'machine_name': machine,
                 'department': department,
                 'die_cutting': (request.POST.get('die_cutting') or '').strip() or None,
-                'status': (request.POST.get('status') or 'Open').strip() or 'Open',
+                'status': normalize_job_card_status(request.POST.get('status') or 'pending_data'),
                 'is_print_job': request.POST.get('is_print_job') == 'true',
             }
 
@@ -998,14 +1015,7 @@ def job_card_records(request):
         row.dispatch_completion_percent_display = round((total_dispatch / row.order_qty) * 100, 2) if row.order_qty else 0
         row.balance_qty_display = (row.order_qty or 0) - total_dispatch
 
-        if row.order_qty == 0:
-            row.job_status_display = 'Open'
-        elif row.dispatch_completion_percent_display >= 95:
-            row.job_status_display = 'Completed'
-        elif total_production > 0:
-            row.job_status_display = 'In Progress'
-        else:
-            row.job_status_display = 'Open'
+        row.job_status_display = row.workflow_status_label
 
         if row.job_status_display == 'Completed' and total_dispatch < (row.order_qty or 0):
             gap = (row.order_qty or 0) - total_dispatch
@@ -1236,6 +1246,8 @@ def production_entry(request):
                 return redirect('production_records')
 
             with transaction.atomic():
+                if job_card.workflow_status == 'released':
+                    job_card.start_production(actor=request.user, reason='Production record created')
                 record = Production.objects.create(**payload)
                 if downtime_entries:
                     ProductionDowntime.objects.bulk_create([
@@ -1259,9 +1271,9 @@ def production_entry(request):
             messages.error(request, f'Error saving production data: {str(e)}')
 
     # Get data for form dropdowns
-    job_cards = JobCard.objects.filter(is_active=True, status__in=['Open', 'In Progress']).order_by('-created_at')
+    job_cards = JobCard.objects.filter(is_active=True, status__in=JOB_CARD_PRODUCTION_START_STATUSES).order_by('-created_at')
     if edit_record:
-        job_cards = JobCard.objects.filter(is_active=True).filter(Q(status__in=['Open', 'In Progress']) | Q(pk=edit_record.job_card_id)).distinct().order_by('-created_at')
+        job_cards = JobCard.objects.filter(is_active=True).filter(Q(status__in=JOB_CARD_PRODUCTION_START_STATUSES) | Q(pk=edit_record.job_card_id)).distinct().order_by('-created_at')
     machines = Machine.objects.filter(is_active=True)
     operators = Operator.objects.all()
 
@@ -1506,8 +1518,14 @@ def dispatch_entry(request):
         except Exception as e:
             messages.error(request, f'Error saving dispatch: {str(e)}')
 
+    dispatch_jobs = JobCard.objects.filter(is_active=True, status__in=JOB_CARD_DISPATCHABLE_STATUSES)
+    if edit_record:
+        dispatch_jobs = JobCard.objects.filter(is_active=True).filter(
+            Q(status__in=JOB_CARD_DISPATCHABLE_STATUSES) | Q(pk=edit_record.job_card_id)
+        ).distinct()
+
     context = {
-        'job_cards': JobCard.objects.filter(is_active=True).order_by('-created_at')[:200],
+        'job_cards': dispatch_jobs.order_by('-created_at')[:200],
         'today': edit_record.dispatch_date if edit_record else timezone.now().date(),
         'edit_record': edit_record,
         'edit_lock_days': get_record_edit_lock_days(),
@@ -2318,7 +2336,7 @@ def production_dashboard(request):
     from datetime import date as date_type
     today = timezone.now().date()
     at_risk_jobs = []
-    open_jobs = JobCard.objects.filter(is_active=True, status__in=['Open', 'In Progress']) \
+    open_jobs = JobCard.objects.filter(is_active=True, status__in=['released', 'in_production']) \
         .annotate(
             first_prod=Min('productions__date', filter=Q(productions__is_active=True)),
             last_prod=Max('productions__date', filter=Q(productions__is_active=True)),
@@ -2360,7 +2378,7 @@ def production_dashboard(request):
     at_risk_jobs.sort(key=lambda x: (0 if x['risk'] == 'No Production' else 1 if x['risk'] == 'High Risk' else 2))
 
     # ── Planned but not started jobs ────────────────────────────────────────────
-    pending_start_qs = JobCard.objects.filter(is_active=True, status__in=['Open', 'In Progress']) \
+    pending_start_qs = JobCard.objects.filter(is_active=True, status='released') \
         .annotate(prod_entries=Count('productions', filter=Q(productions__is_active=True))) \
         .filter(prod_entries=0)
 

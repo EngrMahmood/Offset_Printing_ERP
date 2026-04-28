@@ -1,5 +1,35 @@
-﻿from django.conf import settings
+﻿import math
+import re
+
+from django.conf import settings
+from django.core.exceptions import ValidationError
 from django.db import models
+
+
+PLANNING_STATUS_CHOICES = [
+    ('draft', 'Draft'),
+    ('pending_qc', 'Pending QC'),
+    ('qc_approved', 'QC Approved'),
+    ('released', 'Released'),
+    ('in_production', 'In Production'),
+    ('completed', 'Completed'),
+]
+
+PLANNING_STATUS_ALIASES = {
+    'open': 'draft',
+    'pending': 'draft',
+    'reviewed': 'pending_qc',
+    'approved': 'qc_approved',
+    'closed': 'completed',
+}
+
+PLANNING_QC_GATE_STATUSES = {
+    'pending_qc',
+    'qc_approved',
+    'released',
+    'in_production',
+    'completed',
+}
 
 
 class PlanningJob(models.Model):
@@ -51,7 +81,7 @@ class PlanningJob(models.Model):
     mi_balance = models.PositiveIntegerField(null=True, blank=True)
 
     remaining_sheet = models.PositiveIntegerField(null=True, blank=True)
-    status = models.CharField(max_length=40, blank=True)
+    status = models.CharField(max_length=40, choices=PLANNING_STATUS_CHOICES, default='draft', blank=True)
     pr_reference = models.CharField(max_length=120, blank=True)
 
     rejected_qty = models.PositiveIntegerField(null=True, blank=True)
@@ -131,11 +161,126 @@ class PlanningJob(models.Model):
         return f"{self.jc_number} | {self.sku}" if self.sku else self.jc_number
 
     @property
+    def workflow_status(self):
+        raw_status = (self.status or '').strip().lower()
+        return PLANNING_STATUS_ALIASES.get(raw_status, raw_status or 'draft')
+
+    @property
+    def workflow_status_label(self):
+        normalized_status = self.workflow_status
+        status_labels = dict(PLANNING_STATUS_CHOICES)
+        return status_labels.get(normalized_status, normalized_status.replace('_', ' ').title())
+
+    @property
+    def total_sheet_quantity(self):
+        return self.calculated_sheets_required
+
+    @property
+    def po_received_date(self):
+        po_document = self.po_documents.order_by('created_at').first() if hasattr(self, 'po_documents') else None
+        if po_document and po_document.created_at:
+            return po_document.created_at.date()
+        if self.created_at:
+            return self.created_at.date()
+        return self.plan_date
+
+    @property
     def calculated_sheets_required(self):
-        """Auto-calculate total sheets required: print_sheets + wastage_sheets."""
-        print_sht = self.print_sheets or 0
-        wastage_sht = self.wastage_sheets or 0
-        return print_sht + wastage_sht
+        """Auto-calculate total sheets required from order qty, UPS and wastage."""
+        if self.order_qty is not None and self.ups:
+            return math.ceil(self.order_qty / self.ups) + (self.wastage_sheets or 0)
+        if self.print_sheets is not None:
+            return self.print_sheets + (self.wastage_sheets or 0)
+        if self.actual_sheet_required is not None:
+            return self.actual_sheet_required
+        return None
+
+    @property
+    def number_of_colors(self):
+        if self.total_colors is not None:
+            return self.total_colors
+        if self.front_colors is not None or self.back_colors is not None:
+            return (self.front_colors or 0) + (self.back_colors or 0)
+
+        raw_value = (self.color_spec or '').strip()
+        if not raw_value:
+            return None
+
+        plus_match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw_value)
+        if plus_match:
+            return int(plus_match.group(1)) + int(plus_match.group(2))
+
+        single_match = re.fullmatch(r'(\d+)\s*(?:colou?r(?:s)?)?', raw_value, re.IGNORECASE)
+        if single_match:
+            return int(single_match.group(1))
+
+        numbers = re.findall(r'\d+', raw_value)
+        if len(numbers) == 1:
+            return int(numbers[0])
+        if len(numbers) == 2:
+            return int(numbers[0]) + int(numbers[1])
+        return None
+
+    def qc_validation_errors(self):
+        if self.workflow_status not in PLANNING_QC_GATE_STATUSES:
+            return {}
+
+        errors = {}
+        if not str(self.plate_set_no or '').strip():
+            errors['plate_set_no'] = 'Plate Set is required before QC approval.'
+        if self.wastage_sheets is None:
+            errors['wastage_sheets'] = 'Wastage is required before QC approval.'
+        if not str(self.machine_name or '').strip():
+            errors['machine_name'] = 'Machine Name is required before QC approval.'
+        if not str(self.remarks or '').strip():
+            errors['remarks'] = 'Remarks are required before QC approval.'
+        return errors
+
+    def qc_missing_fields(self):
+        errors = self.qc_validation_errors()
+        return [field.replace('_', ' ').title() for field in errors.keys()]
+
+    def clean(self):
+        super().clean()
+        errors = self.qc_validation_errors()
+        if errors:
+            raise ValidationError(errors)
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None:
+            update_fields = set(update_fields)
+
+        self.status = self.workflow_status
+        if update_fields is not None:
+            update_fields.add('status')
+
+        calculated_total_sheet_quantity = self.calculated_sheets_required
+        if calculated_total_sheet_quantity is not None:
+            self.actual_sheet_required = calculated_total_sheet_quantity
+            if update_fields is not None:
+                update_fields.add('actual_sheet_required')
+
+        calculated_number_of_colors = self.number_of_colors
+        if calculated_number_of_colors is not None:
+            self.total_colors = calculated_number_of_colors
+            if update_fields is not None:
+                update_fields.add('total_colors')
+
+        self.full_clean()
+        if update_fields is not None:
+            kwargs['update_fields'] = list(update_fields)
+        result = super().save(*args, **kwargs)
+
+        if self.sku and self.order_qty is not None:
+            try:
+                from core.services import ensure_job_card_from_planning_job
+
+                ensure_job_card_from_planning_job(self, actor=self.last_edited_by or self.created_by)
+            except Exception:
+                raise
+
+        return result
 
 
 class PlanningPrintRun(models.Model):

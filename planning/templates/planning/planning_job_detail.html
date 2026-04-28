@@ -31,15 +31,24 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <main class="wrap page-container">
     {% with current_step='planning' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
+    {% if messages %}
+    <div style="margin-bottom:12px;">
+        {% for msg in messages %}
+        <div style="margin-bottom:8px;padding:10px;border-radius:8px;border:1px solid #c8d7e7;background:#f5f9ff;color:#2e3f53;font-size:12px;">{{ msg }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
     <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
         <div>
             <h1 style="margin:0;font-size:20px;">{{ job.jc_number }}</h1>
-            <div class="muted">PO: {{ job.po_number|default:"-" }} | SKU: {{ job.sku|default:"-" }} | Status: {{ status_now }}</div>
+            <div class="muted">PO: {{ job.po_number|default:"-" }} | SKU: {{ job.sku|default:"-" }} | Status: {{ job.workflow_status_label }}</div>
             {% if job.restored_at %}
             <div class="muted" style="margin-top:4px;">
                 Restored {{ job.restored_at|date:"Y-m-d H:i" }}{% if job.restored_by %} by {{ job.restored_by.get_full_name|default:job.restored_by.username }}{% endif %}{% if job.restore_reason %} — Reason: {{ job.restore_reason }}{% endif %}
@@ -52,8 +61,12 @@
         <div>
             <a class="btn secondary" href="{% url 'planning:home' %}">Back</a>
             <a class="btn secondary" href="{% url 'planning:report' %}">Report</a>
+            {% if status_now != 'qc_approved' and status_now != 'released' and status_now != 'in_production' and status_now != 'completed' %}
             <a class="btn secondary" href="{% url 'planning:job_edit' job.id %}">Edit</a>
+            {% endif %}
+            {% if can_print_job_card %}
             <a class="btn" target="_blank" rel="noopener" href="{% url 'planning:job_card_print' job.id %}">A4 Print</a>
+            {% endif %}
         </div>
     </div>
 
@@ -81,24 +94,37 @@
     <div class="note" style="margin-top:10px;"><strong>Requirement:</strong> {{ job.requirement|linebreaksbr }}</div>
     {% endif %}
 
-    {% if status_now == 'approved' %}
-    <div class="note" style="margin-top:10px;">This record is approved and locked. Use Unlock to Reviewed before editing values.</div>
+    {% if qc_missing_fields %}
+    <div class="note" style="margin-top:10px; background:#fff4e8; border-color:#efc28e; color:#7d4500;">
+        <strong>QC readiness:</strong> {{ qc_missing_fields|join:", " }} must be completed before QC approval.
+    </div>
+    {% endif %}
+
+    {% if status_now == 'qc_approved' or status_now == 'released' or status_now == 'in_production' or status_now == 'completed' %}
+    <div class="note" style="margin-top:10px;">This record is QC approved or later and locked for editing.</div>
     {% endif %}
 
     <div class="workflow">
         {% if status_now == 'draft' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="submit_review"><button class="btn warn" type="submit">Forward To QC Approval</button></form>
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="submit_qc"><button class="btn warn" type="submit">Send To QC Queue</button></form>
         {% endif %}
-        {% if status_now == 'reviewed' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="approve"><button class="btn good" type="submit">Approve By Production Manager</button></form>
+        {% if status_now == 'pending_qc' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="approve_qc"><button class="btn good" type="submit">Mark QC Approved</button></form>
         {% endif %}
-        {% if status_now == 'approved' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="unlock"><button class="btn warn" type="submit">Unlock To Reviewed</button></form>
+        {% if status_now == 'qc_approved' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="release"><button class="btn good" type="submit">Release To Planning</button></form>
         {% endif %}
-        {% if status_now != 'closed' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="mark_closed"><button class="btn danger" type="submit">Mark Closed</button></form>
-        {% else %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="reopen"><button class="btn warn" type="submit">Reopen</button></form>
+        {% if status_now == 'released' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="start_production"><button class="btn warn" type="submit">Start Production</button></form>
+        {% endif %}
+        {% if status_now == 'in_production' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="complete"><button class="btn danger" type="submit">Mark Completed</button></form>
+        {% endif %}
+        {% if status_now == 'completed' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="reopen"><button class="btn warn" type="submit">Reopen To Draft</button></form>
+        {% endif %}
+        {% if status_now == 'qc_approved' %}
+        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="unlock"><button class="btn secondary" type="submit">Unlock To QC Review</button></form>
         {% endif %}
     </div>
 
@@ -106,11 +132,16 @@
         <div class="card">
             <h3 style="margin-top:0;">Header</h3>
             <div><strong>Job Name:</strong> {{ job.job_name|default:"-" }}</div>
+            <div><strong>PO Received Date:</strong> {{ job.po_received_date|date:"d M Y"|default:"-" }}</div>
             <div><strong>Material:</strong> {{ job.material|default:"-" }}</div>
             <div><strong>Color:</strong> {{ job.color_spec|default:"-" }}</div>
+            <div><strong>Number of Colors:</strong> {{ job.number_of_colors|default:"-" }}</div>
             <div><strong>Size:</strong> {{ job.size_w_mm|default:"-" }} x {{ job.size_h_mm|default:"-" }} mm</div>
             <div><strong>Order Qty:</strong> {{ job.order_qty|default:"-" }}</div>
             <div><strong>Print Sheets:</strong> {{ job.print_sheets|default:"-" }}</div>
+            <div><strong>Wastage Sheets:</strong> {{ job.wastage_sheets|default:"-" }}</div>
+            <div><strong>Total Sheets Required:</strong> {{ job.calculated_sheets_required|default:"-" }}</div>
+            <div><strong>Plate Set:</strong> {{ job.plate_set_no|default:"-" }}</div>
             <div><strong>Machine:</strong> {{ job.machine_name|default:"-" }}</div>
             <div><strong>Department:</strong> {{ job.department|default:"-" }}</div>
             <div><strong>Aging:</strong> {{ job.aging_days|default:"-" }}</div>
@@ -162,3 +193,5 @@
 </main>
 </body>
 </html>
+
+

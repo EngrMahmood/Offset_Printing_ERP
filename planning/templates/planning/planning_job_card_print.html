@@ -1,4 +1,4 @@
-﻿{% load static %}
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -30,6 +30,7 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <div class="page">
     <div class="card">
         <table class="data-table">
@@ -133,7 +134,7 @@
                 <td class="label">Size W mm</td>
                 <td colspan="2">{{ job.size_w_mm|default:'-' }}</td>
                 <td class="label">Total sheet Qty</td>
-                <td colspan="2">{{ job.print_sheets|default:job.actual_sheet_required|default:'-' }}</td>
+                <td colspan="2">{{ job.calculated_sheets_required|default:'-' }}</td>
             </tr>
             <tr>
                 <td class="label">Purch Sheet Size</td>
@@ -141,7 +142,7 @@
                 <td class="label">Size H mm</td>
                 <td colspan="2">{{ job.size_h_mm|default:'-' }}</td>
                 <td class="label">No of Colors</td>
-                <td colspan="2">{{ job.total_colors|default:'-' }}</td>
+                <td colspan="2">{{ job.number_of_colors|default:'-' }}</td>
             </tr>
             <tr>
                 <td class="label">Purch sheet Ups</td>
@@ -512,3 +513,5 @@
 </div>
 </body>
 </html>
+
+

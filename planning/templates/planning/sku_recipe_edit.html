@@ -50,6 +50,7 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <main class="wrap">
 
     {% with current_step='master' %}
@@ -214,12 +215,6 @@
                 <div class="section-label">Routing &amp; Cost</div>
 
                 <div class="field">
-                    <label for="{{ form.machine_name.id_for_label }}">Machine Name <span style="color:#b5282a;">*</span></label>
-                    {{ form.machine_name }}
-                    {% if form.machine_name.errors %}<div class="error">{{ form.machine_name.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="field">
                     <label for="{{ form.default_unit_cost.id_for_label }}">Default Unit Cost</label>
                     {{ form.default_unit_cost }}
                     {% if form.default_unit_cost.errors %}<div class="error">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
@@ -325,3 +320,5 @@
 </main>
 </body>
 </html>
+
+

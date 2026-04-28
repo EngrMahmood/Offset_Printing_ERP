@@ -1,4 +1,4 @@
-﻿{% load static %}
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -220,6 +220,7 @@
     <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
     <main class="page">
         <div class="utility-bar">
             {% include 'includes/user_identity_chip.html' %}
@@ -242,7 +243,7 @@
                         Manage daily printing operations from one place: create job cards,
                         capture production, monitor OEE performance, and control dispatch records.
                     </p>
-                    <div class="version-label">Version {{ erp_software_version }}{% if erp_software_release_date %} · Released {{ erp_software_release_date }}{% endif %}</div>
+                    <div class="version-label">Version {{ erp_software_version }}{% if erp_software_release_date %} � Released {{ erp_software_release_date }}{% endif %}</div>
                 </div>
                 <div class="header-image">
                     <img src="{% static 'core/image/cmyk.jpg' %}" alt="CMYK offset printing process image">
@@ -347,4 +348,6 @@
     </main>
 </body>
 </html>
+
+
 

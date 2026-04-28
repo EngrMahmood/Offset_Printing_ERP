@@ -323,6 +323,7 @@
     <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <header class="top-nav">
     <div class="top-nav-wrap">
         <div>
@@ -389,7 +390,7 @@
                 <span class="step-pill">2. Upload PO and split Repeat/New</span>
                 <span class="step-pill">3. New SKU pending approval</span>
                 <span class="step-pill">4. Generate or update planning jobs</span>
-                <span class="step-pill">5. QC and PM approval</span>
+                <span class="step-pill">5. QC approval and release</span>
                 <span class="step-pill">6. Print card and execute</span>
             </div>
             <div class="cards">
@@ -419,7 +420,7 @@
                 </article>
                 <article class="tool-card approval">
                     <h3>Go To Approval Queue</h3>
-                    <p>Move jobs from draft to reviewed, then approved for production release.</p>
+                    <p>Move jobs from draft to pending QC, then QC approved and released for production.</p>
                     <div class="card-footer">
                         <span class="role-tag">Planner / Manager / Admin</span>
                         <a class="go-btn" href="{% url 'planning:approval_queue' %}">Open Step 4</a>
@@ -621,3 +622,5 @@
 </script>
 </body>
 </html>
+
+

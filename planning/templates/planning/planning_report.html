@@ -26,6 +26,7 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <main class="wrap page-container">
     {% with current_step='approval' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
@@ -60,8 +61,8 @@
         <div class="kpi">
             <div class="kpi-item"><div class="kpi-label">Total Jobs</div><div class="kpi-value">{{ totals.total_jobs|default:0 }}</div></div>
             <div class="kpi-item"><div class="kpi-label">Total Order Qty</div><div class="kpi-value">{{ totals.total_order_qty|default:0 }}</div></div>
-            <div class="kpi-item"><div class="kpi-label">Approved Jobs</div><div class="kpi-value">{{ totals.approved_jobs|default:0 }}</div></div>
-            <div class="kpi-item"><div class="kpi-label">Closed Jobs</div><div class="kpi-value">{{ totals.closed_jobs|default:0 }}</div></div>
+            <div class="kpi-item"><div class="kpi-label">Released Jobs</div><div class="kpi-value">{{ totals.released_jobs|default:0 }}</div></div>
+            <div class="kpi-item"><div class="kpi-label">Completed Jobs</div><div class="kpi-value">{{ totals.completed_jobs|default:0 }}</div></div>
         </div>
     </section>
 
@@ -72,7 +73,7 @@
                 <thead><tr><th>Status</th><th>Jobs</th><th>Order Qty</th></tr></thead>
                 <tbody>
                 {% for row in by_status %}
-                    <tr><td>{{ row.status|default:'draft' }}</td><td>{{ row.total }}</td><td>{{ row.order_qty|default:0 }}</td></tr>
+                    <tr><td>{{ row.status_label|default:row.status|default:'draft' }}</td><td>{{ row.total }}</td><td>{{ row.order_qty|default:0 }}</td></tr>
                 {% empty %}
                     <tr><td colspan="3">No data for selected range.</td></tr>
                 {% endfor %}
@@ -111,3 +112,5 @@
 </main>
 </body>
 </html>
+
+

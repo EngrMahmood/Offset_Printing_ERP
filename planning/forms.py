@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django import forms
 
-from .models import PlanningJob, SkuRecipe
+from .models import PLANNING_QC_GATE_STATUSES, PlanningJob, SkuRecipe
 
 
 _COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
@@ -103,6 +103,8 @@ class PlanningJobEditForm(forms.ModelForm):
             'ups',
             'print_sheets',
             'wastage_sheets',
+            'actual_sheet_required',
+            'plate_set_no',
             'machine_name',
             'department',
             'destination',
@@ -117,6 +119,39 @@ class PlanningJobEditForm(forms.ModelForm):
             'remarks': forms.Textarea(attrs={'rows': 3}),
             'requirement': forms.Textarea(attrs={'rows': 3}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if 'actual_sheet_required' in self.fields:
+            self.fields['actual_sheet_required'].disabled = True
+            self.fields['actual_sheet_required'].required = False
+        if 'plate_set_no' in self.fields:
+            self.fields['plate_set_no'].widget.attrs.setdefault('placeholder', 'Plate set reference')
+
+    def clean(self):
+        cleaned = super().clean()
+        status = (cleaned.get('status') or self.instance.status or '').strip().lower()
+
+        if status in PLANNING_QC_GATE_STATUSES:
+            required_messages = {
+                'plate_set_no': 'Plate Set is required before QC approval.',
+                'wastage_sheets': 'Wastage is required before QC approval.',
+                'machine_name': 'Machine Name is required before QC approval.',
+                'remarks': 'Remarks are required before QC approval.',
+            }
+
+            for field_name, message in required_messages.items():
+                value = cleaned.get(field_name)
+                current_value = getattr(self.instance, field_name, None)
+
+                if field_name == 'wastage_sheets':
+                    if value is None and current_value is None:
+                        self.add_error(field_name, message)
+                else:
+                    if not str(value or '').strip() and not str(current_value or '').strip():
+                        self.add_error(field_name, message)
+
+        return cleaned
 
 
 class SkuRecipeForm(forms.ModelForm):

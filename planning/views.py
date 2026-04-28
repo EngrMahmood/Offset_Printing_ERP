@@ -10,6 +10,7 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
 from django.db import transaction
@@ -31,8 +32,19 @@ except ImportError:
 
 from core.jc_numbering import allocate_next_jc_number
 from core.views import permission_required
+from core.models import JobCard
+from core.services import job_card_queue_queryset
 from .forms import PlanningJobEditForm, SkuRecipeForm
-from .models import PlanningDispatchRun, PlanningJob, PlanningPrintRun, PoDocument, SkuRecipe
+from .models import (
+    PLANNING_QC_GATE_STATUSES,
+    PLANNING_STATUS_ALIASES,
+    PLANNING_STATUS_CHOICES,
+    PlanningDispatchRun,
+    PlanningJob,
+    PlanningPrintRun,
+    PoDocument,
+    SkuRecipe,
+)
 from .po_extractor import extract_po_from_pdf
 
 
@@ -41,13 +53,19 @@ def _user_is_admin(user):
     return getattr(user, 'is_superuser', False) or (profile is not None and getattr(profile, 'role', None) == 'admin')
 
 
-PLANNING_STATUSES = [
-    ('draft', 'Draft'),
-    ('reviewed', 'Pending Approval (Manager)'),
-    ('approved', 'Production Manager Approved'),
-    ('closed', 'Closed'),
-]
+PLANNING_STATUSES = PLANNING_STATUS_CHOICES
 PLANNING_STATUS_SET = {value for value, _ in PLANNING_STATUSES}
+PLANNING_ACTIVE_STATUS_SET = {'released', 'in_production', 'completed', 'closed'}
+PLANNING_QUEUE_STATUS_SET = {'draft', 'pending_qc', 'qc_approved'}
+PLANNING_STATUS_LABELS = dict(PLANNING_STATUSES)
+PLANNING_STATUS_FILTER_ALIASES = {
+    'draft': {'draft', 'open', 'pending'},
+    'pending_qc': {'pending_qc', 'reviewed'},
+    'qc_approved': {'qc_approved', 'approved'},
+    'released': {'released'},
+    'in_production': {'in_production'},
+    'completed': {'completed', 'closed'},
+}
 NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
 COST_MISMATCH_NOTE_PREFIX = 'COST ALERT:'
 SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
@@ -64,6 +82,13 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
 
 _COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
 _COLOR_SINGLE_RE = re.compile(r'^(\d+)\s*(?:colou?r(?:s)?)?$', re.IGNORECASE)
+
+
+def _planning_status_filter_values(status):
+    normalized_status = _normalize_status(status, default='')
+    if not normalized_status:
+        return []
+    return sorted(PLANNING_STATUS_FILTER_ALIASES.get(normalized_status, {normalized_status}))
 
 
 def build_planning_readme_text():
@@ -364,8 +389,7 @@ def _parse_iso_date(raw_value):
 
 def _normalize_status(raw_value, default='draft'):
     value = (raw_value or '').strip().lower()
-    if value in {'open', 'pending'}:
-        return 'draft'
+    value = PLANNING_STATUS_ALIASES.get(value, value)
     if value in PLANNING_STATUS_SET:
         return value
     return default
@@ -447,7 +471,7 @@ def _build_job_card_pdf_bytes(job, scan_url):
 
     header_data = [
         [Paragraph('JOB CARD #', label_style), _format_job_value(job.jc_number), Paragraph('PO #', label_style), _format_job_value(job.po_number)],
-        [Paragraph('DATE', label_style), _format_job_value(job.plan_date), Paragraph('STATUS', label_style), _format_job_value(_normalize_status(job.status))],
+        [Paragraph('DATE', label_style), _format_job_value(job.plan_date), Paragraph('STATUS', label_style), _format_job_value(job.workflow_status_label)],
         [Paragraph('SKU', label_style), _format_job_value(job.sku), Paragraph('JOB NAME', label_style), _format_job_value(job.job_name)],
         [Paragraph('REPEAT FLAG', label_style), _format_job_value(job.repeat_flag), Paragraph('DEPARTMENT', label_style), _format_job_value(job.department)],
     ]
@@ -465,10 +489,10 @@ def _build_job_card_pdf_bytes(job, scan_url):
         [Paragraph('MATERIAL TYPE', label_style), _format_job_value(job.material), Paragraph('COLOR', label_style), _format_job_value(job.color_spec)],
         [Paragraph('APPLICATION', label_style), _format_job_value(job.application), Paragraph('PRINT SHEET SIZE', label_style), _format_job_value(job.print_sheet_size)],
         [Paragraph('UPS', label_style), _format_job_value(job.ups), Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
-        [Paragraph('ACTUAL SHEETS', label_style), _format_job_value(job.actual_sheet_required), Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
+        [Paragraph('ACTUAL SHEETS', label_style), _format_job_value(job.calculated_sheets_required), Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
         [Paragraph('PURCHASE MATERIAL', label_style), _format_job_value(job.purchase_material), Paragraph('PURCHASE SHEET SIZE', label_style), _format_job_value(job.purchase_sheet_size)],
         [Paragraph('PURCHASE SHEET UPS', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('PURCHASE REQ', label_style), _format_job_value(job.purchase_sheet_required)],
-        [Paragraph('MACHINE', label_style), _format_job_value(job.machine_name), Paragraph('TOTAL COLORS', label_style), _format_job_value(job.total_colors)],
+        [Paragraph('MACHINE', label_style), _format_job_value(job.machine_name), Paragraph('TOTAL COLORS', label_style), _format_job_value(job.number_of_colors)],
         [Paragraph('PLATE SET NO.', label_style), _format_job_value(job.plate_set_no), Paragraph('AWC NO.', label_style), _format_job_value(job.awc_no)],
         [Paragraph('AGING DAYS', label_style), _format_job_value(job.aging_days), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting)],
     ]
@@ -867,10 +891,8 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'status': 'draft',
             'repeat_flag': 'Repeat',
             'requirement': _append_unique_note_line(
-                _append_unique_note_line(
-                    _sync_new_sku_requirement(existing_job.requirement if existing_job else '', False),
-                    _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
-                ),
+                _sync_new_sku_requirement(existing_job.requirement if existing_job else '', False),
+                _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
             ),
             'material': recipe.material,
             'color_spec': recipe.color_spec,
@@ -882,7 +904,6 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'purchase_sheet_size': recipe.purchase_sheet_size,
             'purchase_sheet_ups': recipe.purchase_sheet_ups,
             'purchase_material': recipe.purchase_material,
-            'machine_name': recipe.machine_name,
             'daily_demand': recipe.daily_demand,
             'awc_no': recipe.awc_no,
             'plate_set_no': recipe.plate_set_no,
@@ -994,7 +1015,6 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'purchase_sheet_size': recipe.purchase_sheet_size,
             'purchase_sheet_ups': recipe.purchase_sheet_ups,
             'purchase_material': recipe.purchase_material,
-            'machine_name': recipe.machine_name,
             'daily_demand': recipe.daily_demand,
             'awc_no': recipe.awc_no,
             'plate_set_no': recipe.plate_set_no,
@@ -1003,10 +1023,8 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
 
         if not is_first_production:
             defaults['requirement'] = _append_unique_note_line(
-                _append_unique_note_line(
-                    defaults['requirement'],
-                    _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
-                ),
+                defaults['requirement'],
+                _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
             )
         if plan_date:
             defaults['plan_date'] = plan_date
@@ -1116,7 +1134,10 @@ def planning_welcome(request):
 @login_required
 @permission_required('can_edit_jobcard')
 def planning_home(request):
-    queryset = PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs').filter(is_active=True)
+    queryset = PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs').filter(
+        is_active=True,
+        status__in=PLANNING_ACTIVE_STATUS_SET,
+    )
 
     if request.method == 'POST':
         action = request.POST.get('action')
@@ -1129,7 +1150,7 @@ def planning_home(request):
                     continue
 
             target_status = _normalize_status(request.POST.get('target_status'), default='')
-            if target_status not in PLANNING_STATUS_SET:
+            if target_status not in {'released', 'in_production', 'completed'}:
                 messages.error(request, 'Please select a valid target status for bulk update.')
                 return redirect('planning:jobs')
 
@@ -1139,20 +1160,29 @@ def planning_home(request):
 
             updated = 0
             skipped_locked = 0
-            for job in PlanningJob.objects.filter(id__in=selected_ids):
+            status_rank = {'released': 1, 'in_production': 2, 'completed': 3}
+            for job in PlanningJob.objects.filter(id__in=selected_ids, is_active=True):
                 current_status = _normalize_status(job.status)
-                if current_status == 'approved' and target_status not in {'approved', 'reviewed'}:
+                if status_rank.get(current_status, 0) > status_rank.get(target_status, 0):
                     skipped_locked += 1
                     continue
                 if current_status == target_status:
                     continue
 
                 job.status = target_status
-                if target_status == 'approved':
-                    job.issued_to_production = True
-                elif current_status == 'approved' and target_status == 'reviewed':
-                    job.issued_to_production = False
-                job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
+                job.issued_to_production = True
+                try:
+                    job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
+                except ValidationError as exc:
+                    skipped_locked += 1
+                    error_dict = getattr(exc, 'message_dict', None)
+                    if error_dict:
+                        for field_errors in error_dict.values():
+                            for error_message in field_errors:
+                                messages.error(request, f'{job.jc_number}: {error_message}')
+                    else:
+                        messages.error(request, f'{job.jc_number}: {exc}')
+                    continue
                 updated += 1
 
             messages.success(
@@ -1251,7 +1281,7 @@ def planning_home(request):
             | Q(job_name__icontains=q)
         )
     if status_filter:
-        queryset = queryset.filter(status__iexact=status_filter)
+        queryset = queryset.filter(status__in=_planning_status_filter_values(status_filter))
     if department_filter:
         queryset = queryset.filter(department__icontains=department_filter)
     if machine_filter:
@@ -1261,15 +1291,11 @@ def planning_home(request):
     if to_date:
         queryset = queryset.filter(plan_date__lte=to_date)
 
-    status_rows = (
-        queryset.values('status')
-        .annotate(total=Count('id'))
-        .order_by('status')
-    )
-    status_counts = {
-        _normalize_status(row['status']): row['total']
-        for row in status_rows
-    }
+    status_rows = queryset.values('status').annotate(total=Count('id')).order_by('status')
+    status_counts = {}
+    for row in status_rows:
+        normalized_status = _normalize_status(row['status'])
+        status_counts[normalized_status] = status_counts.get(normalized_status, 0) + (row['total'] or 0)
 
     paginator = Paginator(queryset, 50)
     page_number = request.GET.get('page')
@@ -1280,7 +1306,11 @@ def planning_home(request):
         {
             'jobs': jobs,
             'status_counts': status_counts,
-            'status_choices': PLANNING_STATUSES,
+            'status_choices': [
+                (value, label)
+                for value, label in PLANNING_STATUSES
+                if value in PLANNING_ACTIVE_STATUS_SET
+            ],
             'can_admin_actions': _user_is_admin(request.user),
             'filters': {
                 'q': q,
@@ -1379,7 +1409,7 @@ def planning_jobs_archived(request):
             | Q(job_name__icontains=q)
         )
     if status_filter:
-        queryset = queryset.filter(status__iexact=status_filter)
+        queryset = queryset.filter(status__in=_planning_status_filter_values(status_filter))
     if department_filter:
         queryset = queryset.filter(department__icontains=department_filter)
     if machine_filter:
@@ -1389,15 +1419,11 @@ def planning_jobs_archived(request):
     if to_date:
         queryset = queryset.filter(plan_date__lte=to_date)
 
-    status_rows = (
-        queryset.values('status')
-        .annotate(total=Count('id'))
-        .order_by('status')
-    )
-    status_counts = {
-        _normalize_status(row['status']): row['total']
-        for row in status_rows
-    }
+    status_rows = queryset.values('status').annotate(total=Count('id')).order_by('status')
+    status_counts = {}
+    for row in status_rows:
+        normalized_status = _normalize_status(row['status'])
+        status_counts[normalized_status] = status_counts.get(normalized_status, 0) + (row['total'] or 0)
 
     paginator = Paginator(queryset, 50)
     page_number = request.GET.get('page')
@@ -1599,6 +1625,8 @@ def planning_job_detail(request, job_id):
             'changed_fields': job.edited_fields_list or [],
             'last_edited_by': job.last_edited_by,
             'last_edited_at': job.last_edited_at,
+            'qc_missing_fields': job.qc_missing_fields(),
+            'can_print_job_card': _normalize_status(job.status) in {'qc_approved', 'released', 'in_production', 'completed'},
         },
     )
 
@@ -1609,8 +1637,8 @@ def planning_job_edit(request, job_id):
     job = get_object_or_404(PlanningJob, id=job_id)
     current_status = _normalize_status(job.status)
 
-    if current_status == 'approved':
-        messages.error(request, 'Approved records are locked. Unlock to Reviewed before editing.')
+    if current_status in {'qc_approved', 'released', 'in_production', 'completed'}:
+        messages.error(request, 'QC approved and released records are locked. Reopen the job before editing.')
         return redirect('planning:job_detail', job_id=job.id)
 
     if request.method == 'POST':
@@ -1623,10 +1651,12 @@ def planning_job_edit(request, job_id):
             # Detect changes for repeat jobs
             if (job.repeat_flag or '').lower() == 'repeat':
                 changed_fields = []
-                edit_fields = ['plan_date', 'po_number', 'sku', 'job_name', 'material', 'color_spec', 'application',
-                               'order_qty', 'print_sheets', 'machine_name', 'department', 'destination', 'unit_cost',
-                               'daily_demand', 'remarks', 'requirement', 'status', 'print_sheet_size',
-                               'purchase_sheet_size', 'ups']
+                edit_fields = [
+                    'plan_date', 'po_number', 'sku', 'job_name', 'material', 'color_spec', 'application',
+                    'order_qty', 'print_sheets', 'wastage_sheets', 'actual_sheet_required', 'plate_set_no',
+                    'machine_name', 'department', 'destination', 'unit_cost', 'daily_demand', 'remarks',
+                    'requirement', 'status', 'print_sheet_size', 'purchase_sheet_size', 'ups',
+                ]
                 for field in edit_fields:
                     old_val = getattr(job, field, None)
                     new_val = getattr(edited, field, None)
@@ -1639,11 +1669,24 @@ def planning_job_edit(request, job_id):
                     edited.last_edited_by = request.user
                     edited.last_edited_at = timezone.now()
             
-            edited.save()
-            messages.success(request, f'Planning job {edited.jc_number} updated.')
-            if edited.has_edits_since_creation and (edited.repeat_flag or '').lower() == 'repeat':
-                messages.info(request, f'Changes detected and flagged for production team: {', '.join(edited.edited_fields_list)}')
-            return redirect('planning:job_detail', job_id=edited.id)
+            try:
+                edited.save()
+            except ValidationError as exc:
+                error_dict = getattr(exc, 'message_dict', None)
+                if error_dict:
+                    for field_name, field_errors in error_dict.items():
+                        for error_message in field_errors:
+                            if field_name == '__all__':
+                                form.add_error(None, error_message)
+                            else:
+                                form.add_error(field_name, error_message)
+                else:
+                    form.add_error(None, str(exc))
+            else:
+                messages.success(request, f'Planning job {edited.jc_number} updated.')
+                if edited.has_edits_since_creation and (edited.repeat_flag or '').lower() == 'repeat':
+                    messages.info(request, f"Changes detected and flagged for production team: {', '.join(edited.edited_fields_list)}")
+                return redirect('planning:job_detail', job_id=edited.id)
     else:
         form = PlanningJobEditForm(instance=job)
 
@@ -1662,34 +1705,50 @@ def planning_job_status_update(request, job_id):
     transition = (request.POST.get('transition') or '').strip()
 
     transitions = {
-        'submit_review': ('draft', 'reviewed'),
-        'approve': ('reviewed', 'approved'),
-        'unlock': ('approved', 'reviewed'),
-        'mark_closed': (None, 'closed'),
-        'reopen': ('closed', 'draft'),
+        'submit_review': ('draft', 'pending_qc'),
+        'submit_qc': ('draft', 'pending_qc'),
+        'approve': ('pending_qc', 'qc_approved'),
+        'approve_qc': ('pending_qc', 'qc_approved'),
+        'release': ('qc_approved', 'released'),
+        'start_production': ('released', 'in_production'),
+        'complete': ('in_production', 'completed'),
+        'mark_closed': ('in_production', 'completed'),
+        'unlock': ('qc_approved', 'pending_qc'),
+        'reopen': ('completed', 'draft'),
     }
     if transition not in transitions:
         messages.error(request, 'Unknown status transition request.')
-        return redirect('planning:job_detail', job_id=job.id)
+        return redirect(next_url) if (next_url := (request.POST.get('next') or '').strip()) else redirect('planning:job_detail', job_id=job.id)
 
     required_from, target_status = transitions[transition]
     if required_from and current_status != required_from:
         messages.error(request, f'Transition not allowed from {current_status} to {target_status}.')
-        return redirect('planning:job_detail', job_id=job.id)
+        return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
     if current_status == target_status:
         messages.info(request, f'Job already in {target_status} status.')
-        return redirect('planning:job_detail', job_id=job.id)
+        return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
     job.status = target_status
-    if target_status == 'approved':
+    if target_status in {'released', 'in_production', 'completed'}:
         job.issued_to_production = True
-    if transition == 'unlock':
+    if target_status in {'draft', 'pending_qc'}:
         job.issued_to_production = False
-    job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
+
+    try:
+        job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
+    except ValidationError as exc:
+        error_dict = getattr(exc, 'message_dict', None)
+        if error_dict:
+            for field_errors in error_dict.values():
+                for error_message in field_errors:
+                    messages.error(request, error_message)
+        else:
+            messages.error(request, str(exc))
+        return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
     messages.success(request, f'Job status updated: {current_status} -> {target_status}.')
-    return redirect('planning:job_detail', job_id=job.id)
+    return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
 
 @login_required
@@ -1699,6 +1758,16 @@ def planning_job_card_print(request, job_id):
         PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs'),
         id=job_id,
     )
+    status_now = _normalize_status(job.status)
+    if status_now not in {'qc_approved', 'released', 'in_production', 'completed'}:
+        messages.error(request, 'Job card print is available only after QC approval.')
+        return redirect('planning:job_detail', job_id=job.id)
+
+    missing_qc_fields = job.qc_missing_fields()
+    if missing_qc_fields:
+        messages.error(request, f'Job card cannot be printed until QC fields are completed: {", ".join(missing_qc_fields)}.')
+        return redirect('planning:job_detail', job_id=job.id)
+
     scan_url = request.build_absolute_uri(reverse('planning:scan_open', args=[job.jc_number]))
     is_repeat_with_changes = (
         (job.repeat_flag or '').lower() == 'repeat'
@@ -1708,7 +1777,7 @@ def planning_job_card_print(request, job_id):
     context = {
         'job': job,
         'now_ts': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'status_now': _normalize_status(job.status),
+        'status_now': status_now,
         'scan_url': scan_url,
         'qr_code_b64': _build_qr_image_base64(scan_url),
         'is_repeat_with_changes': is_repeat_with_changes,
@@ -1734,15 +1803,26 @@ def planning_report(request):
     totals = queryset.aggregate(
         total_jobs=Count('id'),
         total_order_qty=Sum('order_qty'),
-        approved_jobs=Count('id', filter=Q(status__iexact='approved')),
-        closed_jobs=Count('id', filter=Q(status__iexact='closed')),
+        released_jobs=Count('id', filter=Q(status__iexact='released')),
+        completed_jobs=Count('id', filter=Q(status__in=['completed', 'closed'])),
     )
 
-    by_status = (
-        queryset.values('status')
-        .annotate(total=Count('id'), order_qty=Sum('order_qty'))
-        .order_by('status')
-    )
+    by_status_map = {}
+    for row in queryset.values('status').annotate(total=Count('id'), order_qty=Sum('order_qty')).order_by('status'):
+        normalized_status = _normalize_status(row['status'])
+        merged_row = by_status_map.setdefault(
+            normalized_status,
+            {
+                'status': normalized_status,
+                'status_label': PLANNING_STATUS_LABELS.get(normalized_status, normalized_status.replace('_', ' ').title()),
+                'total': 0,
+                'order_qty': 0,
+            },
+        )
+        merged_row['total'] += row['total'] or 0
+        merged_row['order_qty'] += row['order_qty'] or 0
+    status_order = {value: index for index, (value, _) in enumerate(PLANNING_STATUS_CHOICES)}
+    by_status = sorted(by_status_map.values(), key=lambda item: status_order.get(item['status'], len(status_order)))
     by_department = (
         queryset.values('department')
         .annotate(total=Count('id'), order_qty=Sum('order_qty'))
@@ -2720,7 +2800,6 @@ def pending_skus(request):
         material = (request.POST.get('material') or '').strip()
         color_spec = (request.POST.get('color_spec') or '').strip()
         application = (request.POST.get('application') or '').strip()
-        machine_name = (request.POST.get('machine_name') or '').strip()
         department = (request.POST.get('department') or '').strip()
         print_sheet_size = (request.POST.get('print_sheet_size') or '').strip()
         purchase_sheet_size = (request.POST.get('purchase_sheet_size') or '').strip()
@@ -2740,8 +2819,8 @@ def pending_skus(request):
             except InvalidOperation:
                 unit_cost = None
 
-        if not job_name and not material and not machine_name:
-            messages.error(request, 'Please enter at least Job Name, Material, or Machine before saving.')
+        if not job_name and not material:
+            messages.error(request, 'Please enter at least Job Name or Material before saving.')
             return _redirect_pending()
 
         SkuRecipe.objects.update_or_create(
@@ -2751,7 +2830,6 @@ def pending_skus(request):
                 'material': material,
                 'color_spec': color_spec,
                 'application': application,
-                'machine_name': machine_name,
                 'department': department,
                 'print_sheet_size': print_sheet_size,
                 'purchase_sheet_size': purchase_sheet_size,
@@ -3195,13 +3273,104 @@ def po_inbox(request):
 
 @login_required
 @permission_required('can_edit_jobcard')
+@transaction.atomic
 def approval_queue(request):
-    """Queue page to forward planning jobs to QC then Production Manager."""
-    draft_jobs = PlanningJob.objects.filter(status__iexact='draft').order_by('-updated_at', '-id')[:300]
-    reviewed_jobs = PlanningJob.objects.filter(status__iexact='reviewed').order_by('-updated_at', '-id')[:300]
+    """JobCard approval queue for planning, QC, production manager, and release gates."""
+    planning_jobs = job_card_queue_queryset('planning')
+    qc_jobs = job_card_queue_queryset('qc')
+    pm_jobs = job_card_queue_queryset('production_manager')
+    release_jobs = job_card_queue_queryset('production')
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        job_card_id = (request.POST.get('job_card_id') or '').strip()
+        reason = (request.POST.get('reason') or request.POST.get('change_reason') or '').strip()
+
+        def _get_job_card():
+            if not job_card_id:
+                raise ValueError('Job Card is required.')
+            return get_object_or_404(JobCard, pk=job_card_id, is_active=True)
+
+        def _sync_status(job_card, transition_name):
+            if transition_name == 'approve_planning':
+                job_card.submit_to_qc(actor=request.user, reason=reason)
+            elif transition_name == 'reject_planning':
+                job_card.reject_qc(actor=request.user, reason=reason)
+            elif transition_name == 'approve_qc':
+                job_card.approve_qc(actor=request.user, reason=reason)
+            elif transition_name == 'reject_qc':
+                job_card.reject_qc(actor=request.user, reason=reason)
+            elif transition_name == 'approve_pm':
+                job_card.approve_pm(actor=request.user, reason=reason)
+            elif transition_name == 'reject_pm':
+                job_card.reject_pm(actor=request.user, reason=reason)
+            elif transition_name == 'release_for_production':
+                job_card.release_for_production(actor=request.user, reason=reason)
+            else:
+                raise ValueError('Unknown approval transition.')
+
+        profile = getattr(request.user, 'profile', None)
+        if action == 'bulk_send_qc':
+            if not profile or not profile.can_approve_planning():
+                messages.error(request, 'You do not have permission to approve planning jobs.')
+                return redirect('planning:approval_queue')
+
+            draft_jobs = planning_jobs
+            updated = 0
+            failed = 0
+            failures = []
+            for job_card in draft_jobs:
+                try:
+                    job_card.submit_to_qc(actor=request.user, reason='Bulk planning approval queue action')
+                except ValidationError as exc:
+                    failed += 1
+                    failure_text = '; '.join(str(msg) for msg in getattr(exc, 'messages', [str(exc)]))
+                    failures.append(f'{job_card.job_card_no}: {failure_text}')
+                    continue
+                updated += 1
+
+            if updated:
+                messages.success(request, f'Sent {updated} Job Card(s) to QC approval.')
+            if failed:
+                messages.error(request, f'{failed} Job Card(s) could not be moved to QC: {"; ".join(failures)}')
+            return redirect('planning:approval_queue')
+
+        if action in {'approve_planning', 'reject_planning', 'approve_qc', 'reject_qc', 'approve_pm', 'reject_pm', 'release_for_production'}:
+            job_card = _get_job_card()
+            if action in {'approve_planning', 'reject_planning'} and (not profile or not profile.can_approve_planning()):
+                messages.error(request, 'You do not have permission to approve planning jobs.')
+                return redirect('planning:approval_queue')
+            if action in {'approve_qc', 'reject_qc'} and (not profile or not profile.can_approve_qc()):
+                messages.error(request, 'You do not have permission to approve QC jobs.')
+                return redirect('planning:approval_queue')
+            if action in {'approve_pm', 'reject_pm', 'release_for_production'} and (not profile or not profile.can_approve_pm()):
+                messages.error(request, 'You do not have permission to approve production manager jobs.')
+                return redirect('planning:approval_queue')
+
+            try:
+                _sync_status(job_card, action)
+            except ValidationError as exc:
+                error_dict = getattr(exc, 'message_dict', None)
+                if error_dict:
+                    for field_errors in error_dict.values():
+                        for error_message in field_errors:
+                            messages.error(request, error_message)
+                else:
+                    messages.error(request, str(exc))
+                return redirect('planning:approval_queue')
+
+            messages.success(request, f'Job Card {job_card.job_card_no} moved successfully.')
+            return redirect('planning:approval_queue')
+
+    planning_jobs = planning_jobs.order_by('-updated_at', '-id')[:300]
+    qc_jobs = qc_jobs.order_by('-updated_at', '-id')[:300]
+    pm_jobs = pm_jobs.order_by('-updated_at', '-id')[:300]
+    release_jobs = release_jobs.order_by('-updated_at', '-id')[:300]
     context = {
-        'draft_jobs': draft_jobs,
-        'reviewed_jobs': reviewed_jobs,
+        'planning_jobs': planning_jobs,
+        'qc_jobs': qc_jobs,
+        'pm_jobs': pm_jobs,
+        'release_jobs': release_jobs,
     }
     return render(request, 'planning/approval_queue.html', context)
 
@@ -3652,7 +3821,6 @@ def po_review(request, doc_id):
                         'print_sheet_size': recipe.print_sheet_size,
                         'purchase_sheet_size': recipe.purchase_sheet_size,
                         'purchase_material': recipe.purchase_material,
-                        'machine_name': recipe.machine_name,
                     }
                     if plan_date:
                         defaults['plan_date'] = plan_date
@@ -3745,7 +3913,6 @@ def po_new_skus(request, doc_id):
             material = (request.POST.get(f"{prefix}_material") or '').strip()
             color_spec = (request.POST.get(f"{prefix}_color_spec") or '').strip()
             application = (request.POST.get(f"{prefix}_application") or '').strip()
-            machine_name = (request.POST.get(f"{prefix}_machine_name") or '').strip()
             print_sheet_size = (request.POST.get(f"{prefix}_print_sheet_size") or '').strip()
             purchase_sheet_size = (request.POST.get(f"{prefix}_purchase_sheet_size") or '').strip()
             ups = _to_optional_positive_int(request.POST.get(f"{prefix}_ups"))
@@ -3759,7 +3926,7 @@ def po_new_skus(request, doc_id):
                 except InvalidOperation:
                     unit_cost = None
 
-            if not job_name and not material and not machine_name:
+            if not job_name and not material:
                 # Keep save requirements simple, but avoid empty recipe rows.
                 continue
 
@@ -3770,7 +3937,6 @@ def po_new_skus(request, doc_id):
                     'material': material,
                     'color_spec': color_spec,
                     'application': application,
-                    'machine_name': machine_name,
                     'print_sheet_size': print_sheet_size,
                     'purchase_sheet_size': purchase_sheet_size,
                     'ups': ups,
