@@ -1533,7 +1533,7 @@ def dispatch_entry(request):
             messages.error(request, f'Error saving dispatch: {str(e)}')
 
     context = {
-        'job_cards': JobCard.objects.filter(is_active=True).order_by('-created_at')[:200],
+        'job_cards': JobCard.objects.filter(is_active=True).order_by('job_card_no'),
         'today': edit_record.dispatch_date if edit_record else timezone.now().date(),
         'edit_record': edit_record,
         'edit_lock_days': get_record_edit_lock_days(),
