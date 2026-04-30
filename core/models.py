@@ -198,6 +198,12 @@ class JobCard(models.Model):
         return self.productions.filter(is_active=True).aggregate(total=Sum('output_sheets'))['total'] or 0
 
     @property
+    def total_production_pcs(self):
+        return sum(
+            p.pcs_produced for p in self.productions.filter(is_active=True)
+        )
+
+    @property
     def total_dispatch(self):
         return self.dispatch_set.filter(is_active=True).aggregate(total=Sum('dispatch_qty'))['total'] or 0
 
@@ -583,12 +589,15 @@ class Dispatch(models.Model):
         total_after = existing_dispatch + (self.dispatch_qty or 0)
 
         if self.job_card.is_print_job:
-            # Print jobs: dispatch must not exceed total produced pieces
-            total_production = sum(
-                p.pcs_produced for p in self.job_card.productions.filter(is_active=True)
-            )
+            total_production = self.job_card.total_production_pcs
             if total_after > total_production:
-                errors['dispatch_qty'] = "Dispatch cannot exceed total produced quantity!"
+                if self.job_card.ups in (None, 0) and self.job_card.productions.filter(is_active=True).exists():
+                    errors['dispatch_qty'] = (
+                        "Dispatch cannot be validated because print job UPS is missing. "
+                        "Please set UPS on the job card before dispatching."
+                    )
+                else:
+                    errors['dispatch_qty'] = "Dispatch cannot exceed total produced quantity!"
         else:
             # Cut & Pack jobs: dispatch directly against order qty (no production entry needed)
             if total_after > self.job_card.order_qty:

@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
 from django.views.decorators.http import require_POST
-from django.db.models import Q, Sum, Min, Max
+from django.db.models import Q, Sum, Min, Max, OuterRef, Subquery, IntegerField
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
@@ -941,9 +941,19 @@ def job_card_records(request):
     if per_page not in (50, 100):
         per_page = 50
 
+    dispatch_total_sq = Dispatch.objects.filter(
+        job_card=OuterRef('pk'),
+        is_active=True,
+    ).order_by().values('job_card').annotate(total=Coalesce(Sum('dispatch_qty'), 0)).values('total')
+
+    production_total_sq = Production.objects.filter(
+        job_card=OuterRef('pk'),
+        is_active=True,
+    ).order_by().values('job_card').annotate(total=Coalesce(Sum('output_sheets'), 0)).values('total')
+
     jobcards = JobCard.objects.filter(is_active=True).select_related('material', 'machine_name', 'department', 'created_by').annotate(
-        total_dispatch_agg=Coalesce(Sum('dispatch__dispatch_qty', filter=Q(dispatch__is_active=True)), 0),
-        total_production_agg=Coalesce(Sum('productions__output_sheets', filter=Q(productions__is_active=True)), 0),
+        total_dispatch_agg=Coalesce(Subquery(dispatch_total_sq, output_field=IntegerField()), 0),
+        total_production_agg=Coalesce(Subquery(production_total_sq, output_field=IntegerField()), 0),
     ).order_by('-created_at')
 
     if query:
