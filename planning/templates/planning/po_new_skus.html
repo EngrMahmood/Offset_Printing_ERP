@@ -35,7 +35,7 @@
             <h1 style="margin:0;font-size:20px;">New SKU Recipe Setup</h1>
             <div class="muted">PO {{ payload.po_number|default:'-' }} | Configure missing SKUs to move them into planning flow.</div>
         </div>
-        <a href="{% url 'planning:po_review' po_doc.id %}" class="btn secondary">Back To PO Review</a>
+        <a href="{% url 'qc:po_review' po_doc.id %}" class="btn secondary">Back To PO Review</a>
     </div>
 
     {% if not missing_skus %}
@@ -91,7 +91,7 @@
         </table>
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
             <button type="submit" class="btn">Save SKU Recipes</button>
-            <a href="{% url 'planning:po_review' po_doc.id %}" class="btn secondary">Back Without Saving</a>
+            <a href="{% url 'qc:po_review' po_doc.id %}" class="btn secondary">Back Without Saving</a>
         </div>
         <div class="muted" style="margin-top:8px;">Saving from this screen keeps SKU master data in Draft stage. Use Pending SKUs to move Draft -> Reviewed -> Approved.</div>
     </form>

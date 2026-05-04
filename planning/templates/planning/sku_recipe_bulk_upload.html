@@ -51,8 +51,8 @@
             <div class="muted">Upload master SKU data from CSV or XLSX. All uploaded rows are saved as <strong>Draft</strong> and must go through Review → Approve before PO sync.</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">← SKU Master</a>
-            <a class="btn success" href="{% url 'planning:sku_recipe_template_download' %}">⬇ Download Template (CSV)</a>
+            <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">← SKU Master</a>
+            <a class="btn success" href="{% url 'qc:sku_recipe_template_download' %}">⬇ Download Template (CSV)</a>
             <a class="btn success" href="/static/planning/docs/sku_recipe_upload_sample.xlsx" download>⬇ Download Template (Excel)</a>
         </div>
     </div>
@@ -93,7 +93,7 @@
             </div>
             <div style="display:flex;gap:8px;justify-content:center;">
                 <button class="btn" type="submit" style="padding:9px 24px;font-size:13px;">⬆ Upload File</button>
-                <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Cancel</a>
+                <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">Cancel</a>
             </div>
         </form>
 
@@ -186,7 +186,7 @@
                 <li>Rows with a blank SKU column are skipped.</li>
                 <li><code>application</code> must be exactly: UV, Lamination Gloss, Lamination Matt, or NO.</li>
                 <li><code>purchase_material</code> must be exactly: Local or Imported.</li>
-                <li>After upload, go to <a href="{% url 'planning:sku_recipes' %}">SKU Master</a> to review and approve records.</li>
+                <li>After upload, go to <a href="{% url 'qc:sku_recipes' %}">SKU Master</a> to review and approve records.</li>
             </ul>
         </div>
     </section>

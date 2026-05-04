@@ -58,7 +58,7 @@
             <h1 style="margin:0;font-size:20px;">Pending SKU Master Data</h1>
             <div class="warning-box"><span class="icon">⚠</span><span>Complete required master fields, then send for approval. Only approved SKU data moves to Planning.</span></div>
         </div>
-        <a class="btn secondary" href="{% url 'planning:pending_skus' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To Pending SKUs</a>
+        <a class="btn secondary" href="{% url 'qc:pending_skus' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To Pending SKUs</a>
     </div>
 
     {% for msg in messages %}
@@ -96,7 +96,7 @@
         <div style="margin-bottom:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <span class="status {{ recipe_status }}">{{ recipe_status }}</span>
             <span class="hint">Job Name: <strong>{{ suggested_job_name }}</strong></span>
-            <a class="btn secondary" href="{% url 'planning:po_review' po_doc_id %}">Open PO</a>
+            <a class="btn secondary" href="{% url 'qc:po_review' po_doc_id %}">Open PO</a>
         </div>
         {% if missing_required_fields and recipe_status != 'approved' %}
             <div class="warn" style="margin-bottom:10px;">Missing required fields before approval: {{ missing_required_fields|join:', ' }}</div>

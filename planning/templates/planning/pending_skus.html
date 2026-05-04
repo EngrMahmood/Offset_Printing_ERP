@@ -17,19 +17,27 @@
         th, td { border-bottom:1px solid #e7eef5; padding:7px; text-align:left; vertical-align:top; }
         th { position:sticky; top:0; background:#f6f9fc; z-index:1; font-size:11px; text-transform:uppercase; }
         .muted { color:#5f6f82; font-size:11px; }
-        .badge { display:inline-block; padding:3px 7px; border-radius:999px; font-size:10px; border:1px solid #f1c58b; background:#fff4e6; color:#8a3f00; }
-        .route-band { margin-bottom:10px; padding:10px; border-radius:10px; border:1px solid #d8e4f1; background:#f5f9ff; display:grid; grid-template-columns: repeat(3, minmax(160px, 1fr)); gap:8px; }
-        .route-step { border:1px solid #cbdaea; border-radius:8px; background:#fff; padding:8px; }
-        .route-step .k { font-size:10px; text-transform:uppercase; color:#58718b; font-weight:700; }
-        .route-step .v { font-size:12px; color:#223d59; font-weight:700; margin-top:2px; }
-        .status { display:inline-block; padding:3px 8px; border-radius:999px; font-size:10px; border:1px solid #d3deea; background:#f3f7fb; text-transform:uppercase; }
+        .badge { display:inline-block; padding:4px 9px; border-radius:999px; font-size:10px; border:1px solid #f1c58b; background:#fff4e6; color:#8a3f00; }
+        .route-band { margin-bottom:16px; padding:14px; border-radius:14px; border:1px solid #d8e4f1; background:#eef4ff; display:grid; grid-template-columns: repeat(3, minmax(180px, 1fr)); gap:10px; }
+        .route-step { border:none; border-radius:12px; background:#fff; padding:14px; box-shadow:0 1px 4px rgba(34,61,89,0.06); }
+        .route-step .k { font-size:11px; text-transform:uppercase; color:#57708d; font-weight:700; letter-spacing:0.08em; }
+        .route-step .v { font-size:13px; color:#223d59; font-weight:700; margin-top:6px; line-height:1.3; }
+        .status { display:inline-block; padding:4px 10px; border-radius:999px; font-size:10px; border:1px solid #d3deea; background:#f3f7fb; text-transform:uppercase; }
         .status.draft { background:#fff4e6; border-color:#f1c58b; color:#8a3f00; }
         .status.reviewed { background:#fffbe8; border-color:#eed789; color:#6b4c00; }
         .status.approved { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; }
-        .msg { padding:8px 10px; border-radius:6px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; margin-bottom:8px; font-size:12px; }
+        .msg { padding:10px 12px; border-radius:8px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; margin-bottom:10px; font-size:13px; }
         .msg.warning { background:#ffe9e9; border-color:#f5c6c6; color:#9a1c1c; font-weight:700; }
-        .warning-box { display:flex; align-items:flex-start; gap:8px; padding:12px 14px; border-radius:10px; background:#ffe9e9; border:1px solid #f5c6c6; color:#9a1c1c; font-size:13px; margin-bottom:12px; }
+        .warning-box { display:flex; align-items:flex-start; gap:10px; padding:14px 16px; border-radius:14px; background:#fff5f5; border:1px solid #f5c6c6; color:#8a2424; font-size:13px; margin-bottom:14px; }
         .warning-box .icon { font-size:18px; line-height:1; margin-top:2px; }
+        .top-note { color:#5f6f82; font-size:13px; margin-top:6px; }
+        .action-group { display:flex; gap:8px; flex-wrap:wrap; }
+        .btn.warning { background:#f7b9b4; border-color:#ea9993; color:#7e2d2a; }
+        .btn.danger { background:#dc4755; border-color:#ba3241; color:#fff; }
+        .summary-bar { display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:10px; margin-bottom:16px; }
+        .summary-card { background:#fff; border:1px solid #d6e0ea; border-radius:12px; padding:14px 16px; box-shadow:0 1px 4px rgba(34,61,89,0.06); }
+        .summary-card .label { display:block; font-size:11px; font-weight:700; color:#62738c; text-transform:uppercase; margin-bottom:8px; letter-spacing:0.06em; }
+        .summary-card .value { font-size:20px; font-weight:700; color:#223d59; }
         .filters { display:flex; gap:8px; flex-wrap:wrap; margin:8px 0 10px; }
         .filters select, .filters input { border:1px solid #bfd0e2; border-radius:6px; padding:6px 8px; font-size:12px; min-width:180px; }
         .po-chip-wrap { display:flex; gap:6px; flex-wrap:wrap; margin:0 0 10px; }
@@ -50,21 +58,35 @@
 
     <div class="top">
         <div>
-            <h1 style="margin:0;font-size:20px;">Pending SKUs</h1>
-            <div class="warning-box"><span class="icon">⚠</span><span>Complete required master fields, then send for approval. Only approved SKU data moves to Planning.</span></div>
-            <div class="muted">New SKUs from PO intake that must complete Master Data and Approval before entering Planning.</div>
+            <h1 style="margin:0;font-size:24px;">Pending SKUs</h1>
+            <p class="top-note">New SKUs from PO intake must complete Master Data and Approval before moving to Planning.</p>
+            <div class="warning-box"><span class="icon">⚠</span><span>Complete required master fields, then send for approval. Only approved SKU data can be synced into Planning.</span></div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <div class="action-group">
             <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
-            <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">SKU Recipe Master</a>
-            <a class="btn secondary" href="{% url 'planning:pending_skus_ignored' %}">Ignored SKUs</a>
+            <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">SKU Recipe Master</a>
+            <a class="btn secondary" href="{% url 'qc:pending_skus_ignored' %}">Ignored SKUs</a>
         </div>
     </div>
 
-    <!-- Sub-tabs: Master / Pending SKUs -->
+    <div class="summary-bar">
+        <div class="summary-card">
+            <span class="label">Pending SKUs</span>
+            <span class="value">{{ pending_count }}</span>
+        </div>
+        <div class="summary-card">
+            <span class="label">Current Filter</span>
+            <span class="value">{{ po_filter|default:'All POs' }}</span>
+        </div>
+        <div class="summary-card">
+            <span class="label">Search</span>
+            <span class="value">{{ q|default:'All SKUs' }}</span>
+        </div>
+    </div>
+
     <div style="margin:8px 0 12px;">
-        <a class="stat-chip" href="{% url 'planning:sku_recipes' %}">Master</a>
-        <a class="stat-chip active" href="{% url 'planning:pending_skus' %}">Pending SKUs</a>
+        <a class="stat-chip" href="{% url 'qc:sku_recipes' %}">Master</a>
+        <a class="stat-chip active" href="{% url 'qc:pending_skus' %}">Pending SKUs</a>
     </div>
 
     {% for msg in messages %}
@@ -100,13 +122,13 @@
             </select>
             <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name">
             <button type="submit" class="btn secondary">Apply</button>
-            <a href="{% url 'planning:pending_skus' %}" class="btn secondary">Reset</a>
+            <a href="{% url 'qc:pending_skus' %}" class="btn secondary">Reset</a>
         </form>
 
         <div class="po-chip-wrap">
-            <a class="po-chip {% if not po_filter %}active{% endif %}" href="{% url 'planning:pending_skus' %}{% if q %}?q={{ q|urlencode }}{% endif %}">All POs</a>
+            <a class="po-chip {% if not po_filter %}active{% endif %}" href="{% url 'qc:pending_skus' %}{% if q %}?q={{ q|urlencode }}{% endif %}">All POs</a>
             {% for po in po_summary %}
-                <a class="po-chip {% if po_filter == po.po_number %}active{% endif %}" href="{% url 'planning:pending_skus' %}?po={{ po.po_number|urlencode }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ po.po_number }} ({{ po.count }})</a>
+                <a class="po-chip {% if po_filter == po.po_number %}active{% endif %}" href="{% url 'qc:pending_skus' %}?po={{ po.po_number|urlencode }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ po.po_number }} ({{ po.count }})</a>
             {% endfor %}
         </div>
 
@@ -122,7 +144,7 @@
                         <th>Master Data Stage</th>
                         <th>Missing Required</th>
                         <th>Action</th>
-                        <th>Manage</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -130,7 +152,7 @@
                     <tr>
                         <td>
                             <div>{{ row.po_number }}</div>
-                            <div class="muted"><a href="{% url 'planning:po_review' row.po_doc_id %}">Open PO</a></div>
+                            <div class="muted"><a href="{% url 'qc:po_review' row.po_doc_id %}">Open PO</a></div>
                         </td>
                         <td style="font-weight:700;color:#1f3048;">{{ row.sku }}</td>
                         <td>{{ row.job_name|default:'-' }}</td>
@@ -155,7 +177,7 @@
                             {% endif %}
                         </td>
                         <td>
-                            <a class="btn" href="{% url 'planning:pending_sku_master_entry' %}?po_doc_id={{ row.po_doc_id }}&sku={{ row.sku|urlencode }}{% if po_filter %}&return_po={{ po_filter|urlencode }}{% endif %}{% if q %}&return_q={{ q|urlencode }}{% endif %}">
+                            <a class="btn" href="{% url 'qc:pending_sku_master_entry' %}?po_doc_id={{ row.po_doc_id }}&sku={{ row.sku|urlencode }}{% if po_filter %}&return_po={{ po_filter|urlencode }}{% endif %}{% if q %}&return_q={{ q|urlencode }}{% endif %}">
                                 {% if row.recipe %}Open Master Form{% else %}Enter Master Data{% endif %}
                             </a>
                         </td>

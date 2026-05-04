@@ -1,353 +1,66 @@
+{% extends 'base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Offset Printing ERP</title>
-    <style>
-        :root {
-            --bg: #edf2f7;
-            --surface: #ffffff;
-            --text: #223246;
-            --muted: #5f6f84;
-            --line: #d6e0ea;
-            --primary: #32465d;
-            --accent: #5f6f82;
-            --primary-soft: #eef3f8;
-            --shadow: 0 4px 12px rgba(22, 37, 57, 0.08);
-        }
 
-        * {
-            box-sizing: border-box;
-        }
+{% block title %}Dashboard — Offset Printing ERP{% endblock %}
+{% block header_title %}Production Operations Workspace{% endblock %}
 
-        body {
-            margin: 0;
-            font-family: "Segoe UI", "Tahoma", sans-serif;
-            background: var(--bg);
-            color: var(--text);
-        }
-
-        .page {
-            max-width: 100%;
-            margin: 0 auto;
-            padding: 20px 14px 32px;
-        }
-
-        .utility-bar {
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-
-        .header {
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-radius: 12px;
-            box-shadow: var(--shadow);
-            overflow: hidden;
-            margin-bottom: 14px;
-        }
-
-        .header-grid {
-            display: grid;
-            grid-template-columns: 1.2fr 1fr;
-        }
-
-        .header-copy {
-            padding: 22px;
-        }
-
-        .brand-row {
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            margin-bottom: 12px;
-        }
-
-        .brand-logo {
-            width: 42px;
-            height: 42px;
-            border-radius: 10px;
-            border: 1px solid #d9cccc;
-            object-fit: contain;
-            background: #ffffff;
-            padding: 4px;
-        }
-
-        .brand-fallback {
-            width: 42px;
-            height: 42px;
-            border-radius: 10px;
-            border: 1px solid #d9cccc;
-            background: #f9f3f3;
-            display: none;
-            align-items: center;
-            justify-content: center;
-            color: var(--primary);
-            font-weight: 700;
-            font-size: 0.78rem;
-        }
-
-        .eyebrow {
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            color: var(--primary);
-            margin-bottom: 0;
-        }
-
-        h1 {
-            font-size: clamp(1.45rem, 2.5vw, 2rem);
-            margin: 0 0 6px;
-            font-weight: 700;
-            line-height: 1.2;
-        }
-
-        .header-copy p {
-            margin: 0;
-            color: var(--muted);
-            line-height: 1.5;
-            max-width: 54ch;
-            font-size: 0.95rem;
-        }
-
-        .version-label {
-            margin-top: 14px;
-            color: var(--muted);
-            font-size: 0.92rem;
-        }
-
-        .header-image {
-            min-height: 205px;
-            background: #e6edf5;
-            position: relative;
-        }
-
-        .header-image img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-            display: block;
-        }
-
-        .header-image::after {
-            content: "";
-            position: absolute;
-            inset: 0;
-            background: linear-gradient(120deg, rgba(52, 73, 102, 0.18), rgba(95, 111, 130, 0.14));
-            pointer-events: none;
-        }
-
-        .section-title {
-            margin: 0 0 8px;
-            font-size: 1.02rem;
-            font-weight: 700;
-            color: var(--primary);
-        }
-
-        .section-subtitle {
-            margin: 0 0 12px;
-            color: var(--muted);
-            font-size: 0.88rem;
-        }
-
-        .nav-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
-            gap: 10px;
-        }
-
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-left: 3px solid #b8c7d8;
-            border-radius: 9px;
-            padding: 13px;
-            text-decoration: none;
-            color: inherit;
-            box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
-            transition: border-color 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease;
-        }
-
-        .card:hover {
-            border-left-color: var(--accent);
-            transform: translateY(-2px);
-            box-shadow: 0 8px 18px rgba(52, 73, 102, 0.12);
-        }
-
-        .card h3 {
-            margin: 0 0 4px;
-            font-size: 0.95rem;
-            font-weight: 700;
-            color: var(--primary);
-        }
-
-        .card p {
-            margin: 0;
-            font-size: 0.84rem;
-            color: var(--muted);
-            line-height: 1.4;
-        }
-
-        .footer-note {
-            margin-top: 16px;
-            padding: 10px;
-            border-radius: 8px;
-            background: var(--primary-soft);
-            color: #42566e;
-            font-size: 0.83rem;
-            border: 1px solid #cedbe8;
-        }
-
-        @media (max-width: 860px) {
-            .utility-bar {
-                justify-content: center;
-            }
-
-            .header-grid {
-                grid-template-columns: 1fr;
-            }
-
-            .header-image {
-                min-height: 180px;
-            }
-        }
-    </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-    <main class="page">
-        <div class="utility-bar">
-            {% include 'includes/user_identity_chip.html' %}
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-8 fade-in">
+    <section class="bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+            <div>
+                <p class="text-xs uppercase tracking-[0.28em] text-brand-600 font-bold">Offset Printing ERP</p>
+                <h1 class="mt-4 text-3xl font-semibold text-slate-900">Production operations workspace</h1>
+                <p class="mt-4 text-slate-500 max-w-2xl">Manage daily printing operations from one place: create job cards, capture production, monitor performance, and control dispatch records.</p>
+                <div class="mt-6 flex flex-wrap gap-3">
+                    {% if user.profile.can_edit_jobcard %}
+                    <a href="{% url 'job_card_entry' %}" class="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 transition"> <i class="fas fa-plus"></i> New Job Card</a>
+                    {% endif %}
+                    <a href="{% url 'planning:home' %}" class="inline-flex items-center gap-2 px-5 py-3 rounded-2xl border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 transition"> <i class="fas fa-calendar-alt"></i> Planning Hub</a>
+                </div>
+            </div>
+            <div class="aspect-[4/3] rounded-3xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm relative">
+                <img src="{% static 'core/image/cmyk.jpg' %}" alt="CMYK production" class="w-full h-full object-cover" onerror="this.style.display='none'">
+                <div class="absolute inset-0 bg-gradient-to-r from-white/90 via-white/30 to-transparent"></div>
+            </div>
         </div>
-        <section class="header">
-            <div class="header-grid">
-                <div class="header-copy">
-                    <div class="brand-row">
-                        <img
-                            class="brand-logo"
-                            src="{% static 'core/image/logo.jpg' %}"
-                            alt="Company logo"
-                            onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-                        >
-                        <div class="brand-fallback">LOGO</div>
-                        <div class="eyebrow">Offset Printing ERP</div>
-                    </div>
-                    <h1>Production Operations Workspace</h1>
-                    <p>
-                        Manage daily printing operations from one place: create job cards,
-                        capture production, monitor OEE performance, and control dispatch records.
-                    </p>
-                    <div class="version-label">Version {{ erp_software_version }}{% if erp_software_release_date %} � Released {{ erp_software_release_date }}{% endif %}</div>
-                </div>
-                <div class="header-image">
-                    <img src="{% static 'core/image/cmyk.jpg' %}" alt="CMYK offset printing process image">
-                </div>
-            </div>
-        </section>
+    </section>
 
-        <section>
-            <h2 class="section-title">Modules</h2>
-            <p class="section-subtitle">Select a module to continue with planning, execution, analytics, or dispatch operations.</p>
-
-            <div class="nav-grid">
-                {% if user.profile.can_edit_jobcard %}
-                <a href="{% url 'job_card_entry' %}" class="card">
-                    <h3>Job Card Entry</h3>
-                    <p>Create job cards with PO details and quantities for production planning.</p>
-                </a>
-
-                <a href="{% url 'job_card_records' %}" class="card">
-                    <h3>Job Card Records</h3>
-                    <p>View all job cards and track produced and dispatched balance.</p>
-                </a>
-
-                <a href="{% url 'planning:home' %}" class="card">
-                    <h3>Planning Workspace</h3>
-                    <p>Import planning sheet, manage repeat print and dispatch logs, and issue A4 job cards.</p>
-                </a>
-                {% endif %}
-
-                {% if user.profile.can_edit_production %}
-                <a href="{% url 'production_entry' %}" class="card">
-                    <h3>Production Entry</h3>
-                    <p>Submit impressions, output, waste, and downtime from the shop floor.</p>
-                </a>
-
-                <a href="{% url 'production_records' %}" class="card">
-                    <h3>Production Records</h3>
-                    <p>Review historical production entries for machine and operator analysis.</p>
-                </a>
-                {% endif %}
-
-                {% if user.profile.can_view_analytics %}
-                <a href="{% url 'production_dashboard' %}" class="card">
-                    <h3>Production Dashboard</h3>
-                    <p>Track OEE, trends, and dispatch fulfillment for selected periods.</p>
-                </a>
-
-                <a href="{% url 'erp_readme' %}" class="card">
-                    <h3>ERP README / Guide</h3>
-                    <p>View formulas, calculated fields, tolerance rules, and dashboard KPI definitions.</p>
-                </a>
-                {% endif %}
-
-                {% if user.profile.can_approve_dispatch %}
-                <a href="{% url 'dispatch_entry' %}" class="card">
-                    <h3>Dispatch Entry</h3>
-                    <p>Post dispatch quantities against job cards with quantity controls.</p>
-                </a>
-
-                <a href="{% url 'dispatch_records' %}" class="card">
-                    <h3>Dispatch Records</h3>
-                    <p>Search dispatch history by date, DC number, and job card number.</p>
-                </a>
-                {% endif %}
-
-                {% if user.profile.can_archive_records %}
-                <a href="{% url 'archived_records' %}" class="card">
-                    <h3>Archived Records</h3>
-                    <p>Review archived entries and restore records with full audit traceability.</p>
-                </a>
-
-                <a href="{% url 'override_requests' %}" class="card">
-                    <h3>Edit Override Requests</h3>
-                    <p>Approve or reject locked-record edit requests from operational users.</p>
-                </a>
-                {% endif %}
-            </div>
-
-            {% if user.profile.role == 'admin' %}
-            <h2 class="section-title">Admin Panel</h2>
-            <p class="section-subtitle">System administration and configuration tools.</p>
-            <div class="nav-grid">
-                <a href="{% url 'manage_user_roles' %}" class="card">
-                    <h3>Manage User Roles</h3>
-                    <p>Assign roles and permissions to team members (Admin only).</p>
-                </a>
-                <a href="{% url 'machine_master_tools' %}" class="card">
-                    <h3>Master Corrections</h3>
-                    <p>Rename or deactivate wrong dropdown values (machine, operator, material, department).</p>
-                </a>
-                <a href="/admin/" class="card">
-                    <h3>Django Admin</h3>
-                    <p>Master data management: Machines, operators, materials, departments.</p>
-                </a>
-            </div>
-            {% endif %}
-
-            <div class="footer-note">
-                This home screen is operations-only and does not include full admin shortcuts.
-            </div>
-        </section>
-    </main>
-</body>
-</html>
-
-
-
+    <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+        {% if user.profile.can_edit_jobcard %}
+        <a href="{% url 'job_card_entry' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
+            <p class="text-sm font-semibold text-brand-600 uppercase tracking-[0.24em]">Job Card Entry</p>
+            <h2 class="mt-3 text-xl font-semibold text-slate-900">Create job cards</h2>
+            <p class="mt-2 text-slate-500 text-sm">Capture PO details and schedule production accurately.</p>
+        </a>
+        <a href="{% url 'job_card_records' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
+            <p class="text-sm font-semibold text-indigo-600 uppercase tracking-[0.24em]">Tracking</p>
+            <h2 class="mt-3 text-xl font-semibold text-slate-900">Job Card Records</h2>
+            <p class="mt-2 text-slate-500 text-sm">View production history, balances, and dispatch status.</p>
+        </a>
+        {% endif %}
+        <a href="{% url 'planning:home' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
+            <p class="text-sm font-semibold text-purple-600 uppercase tracking-[0.24em]">Planning</p>
+            <h2 class="mt-3 text-xl font-semibold text-slate-900">Planning Workspace</h2>
+            <p class="mt-2 text-slate-500 text-sm">Import planning sheets, manage repeat jobs, and issue A4 job cards.</p>
+        </a>
+        {% if user.profile.can_edit_production %}
+        <a href="{% url 'production_entry' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
+            <p class="text-sm font-semibold text-amber-600 uppercase tracking-[0.24em]">Production</p>
+            <h2 class="mt-3 text-xl font-semibold text-slate-900">Production Entry</h2>
+            <p class="mt-2 text-slate-500 text-sm">Submit shift outputs, waste, and downtime directly from the shop floor.</p>
+        </a>
+        <a href="{% url 'production_records' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
+            <p class="text-sm font-semibold text-orange-600 uppercase tracking-[0.24em]">Insights</p>
+            <h2 class="mt-3 text-xl font-semibold text-slate-900">Production Records</h2>
+            <p class="mt-2 text-slate-500 text-sm">Review completed runs, output metrics, and dispatch logs.</p>
+        </a>
+        {% endif %}
+        <a href="{% url 'qc:qc_home' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
+            <p class="text-sm font-semibold text-emerald-600 uppercase tracking-[0.24em]">QC</p>
+            <h2 class="mt-3 text-xl font-semibold text-slate-900">QC ;& Bulk Uploads</h2>
+            <p class="mt-2 text-slate-500 text-sm">Access quality workflows and PO extraction queues.</p>
+        </a>
+    </section>
+</div>
+{% endblock %}

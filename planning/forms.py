@@ -137,7 +137,6 @@ class PlanningJobEditForm(forms.ModelForm):
                 'plate_set_no': 'Plate Set is required before QC approval.',
                 'wastage_sheets': 'Wastage is required before QC approval.',
                 'machine_name': 'Machine Name is required before QC approval.',
-                'remarks': 'Remarks are required before QC approval.',
             }
 
             for field_name, message in required_messages.items():

@@ -169,9 +169,11 @@ class JobCard(models.Model):
 
     ups = models.IntegerField(null=True, blank=True)
     print_sheet_size = models.CharField(max_length=50, null=True, blank=True)
+    plate_set_no = models.CharField(max_length=120, null=True, blank=True)
 
-    wastage = models.IntegerField(default=0,help_text="in Sheets")
+    wastage = models.IntegerField(default=0, help_text="in Sheets")
     total_sheet_quantity = models.PositiveIntegerField(null=True, blank=True)
+    total_colors = models.PositiveIntegerField(null=True, blank=True)
 
     purchase_sheet_size = models.CharField(max_length=50, null=True, blank=True)
     purchase_sheet_ups = models.IntegerField(null=True, blank=True)
@@ -258,14 +260,16 @@ class JobCard(models.Model):
         for field_name, label in JOB_CARD_PLANNING_REQUIRED_FIELDS:
             value = getattr(self, field_name, None)
             if field_name == 'machine_name':
-                if value_id := getattr(self, 'machine_name_id', None):
+                if getattr(self, 'machine_name_id', None):
                     continue
-            if field_name in {'po_date', 'total_sheet_quantity', 'total_colors'}:
+                missing_fields.append(label)
+                continue
+            if field_name in {'po_date', 'total_sheet_quantity', 'total_colors', 'wastage'}:
                 if value is None:
                     missing_fields.append(label)
-            else:
-                if not str(value or '').strip():
-                    missing_fields.append(label)
+                continue
+            if not str(value or '').strip():
+                missing_fields.append(label)
         return missing_fields
 
     def planning_validation_errors(self):
@@ -327,41 +331,6 @@ class JobCard(models.Model):
         if update_fields is not None:
             kwargs['update_fields'] = list(update_fields)
         return super().save(*args, **kwargs)
-
-    def transition_to(self, target_status, actor=None, reason=''):
-        from .services import transition_job_card_status
-
-        return transition_job_card_status(self, target_status, actor=actor, reason=reason)
-
-    def submit_to_qc(self, actor=None, reason=''):
-        return self.transition_to('planning_approved', actor=actor, reason=reason)
-
-    def approve_qc(self, actor=None, reason=''):
-        return self.transition_to('qc_approved', actor=actor, reason=reason)
-
-    def reject_qc(self, actor=None, reason=''):
-        return self.transition_to('qc_rejected', actor=actor, reason=reason)
-
-    def send_to_pm(self, actor=None, reason=''):
-        return self.transition_to('pending_pm_approval', actor=actor, reason=reason)
-
-    def approve_pm(self, actor=None, reason=''):
-        return self.transition_to('production_approved', actor=actor, reason=reason)
-
-    def reject_pm(self, actor=None, reason=''):
-        return self.transition_to('pm_rejected', actor=actor, reason=reason)
-
-    def release_for_production(self, actor=None, reason=''):
-        return self.transition_to('released', actor=actor, reason=reason)
-
-    def start_production(self, actor=None, reason=''):
-        return self.transition_to('in_production', actor=actor, reason=reason)
-
-    def complete_job(self, actor=None, reason=''):
-        return self.transition_to('completed', actor=actor, reason=reason)
-
-    def close_job(self, actor=None, reason=''):
-        return self.transition_to('closed', actor=actor, reason=reason)
 
     # ===== ERP PROPERTIES =====
 

@@ -28,7 +28,7 @@
     }
     .wf-track {
         display: grid;
-        grid-template-columns: repeat(6, minmax(120px, 1fr));
+        grid-template-columns: repeat(5, minmax(120px, 1fr));
         gap: 6px;
         overflow-x: auto;
     }
@@ -70,15 +70,14 @@
     <div class="wf-sequence" role="navigation" aria-label="Planning workflow sequence">
     <div class="wf-sequence-header">
         <div class="wf-sequence-title">Job Card Workflow</div>
-        <div class="wf-sequence-note">PO -> Initial Job Card -> Planning Approval -> QC -> PM Approval -> Release for Production</div>
+        <div class="wf-sequence-note">PO Intake -> Master SKU -> Planning Jobs -> Job Card Approval -> Production Scan</div>
     </div>
-    <div class="wf-track">
-        <a class="wf-item {% if current_step == 'start' or current_step == 'master' %}active{% endif %}" href="{% url 'planning:sku_recipes' %}">1. Master SKU</a>
-        <a class="wf-item {% if current_step == 'po' %}active{% endif %}" href="{% url 'planning:po_inbox' %}">2. PO Intake</a>
-        <a class="wf-item {% if current_step == 'master' %}active{% endif %}" href="{% url 'planning:pending_skus' %}">3. Pending New SKU</a>
-        <a class="wf-item {% if current_step == 'planning' %}active{% endif %}" href="{% url 'planning:jobs' %}">4. Planning Jobs</a>
-        <a class="wf-item {% if current_step == 'approval' %}active{% endif %}" href="{% url 'planning:approval_queue' %}">5. Job Card Approval</a>
-        <a class="wf-item {% if current_step == 'shop' %}active{% endif %}" href="{% url 'planning:scan' %}">6. Production Scan</a>
+    <div class="wf-track" style="grid-template-columns: repeat(5, minmax(120px, 1fr));">
+        <a class="wf-item {% if current_step == 'po' or current_step == 'start' %}active{% endif %}" href="{% url 'planning:po_inbox' %}">1. PO Intake</a>
+        <a class="wf-item {% if current_step == 'master' %}active{% endif %}" href="{% url 'qc:sku_recipes' %}">2. Master SKU</a>
+        <a class="wf-item {% if current_step == 'planning' %}active{% endif %}" href="{% url 'planning:jobs' %}">3. Planning Jobs</a>
+        <a class="wf-item {% if current_step == 'approval' %}active{% endif %}" href="{% url 'qc:approval_queue' %}">4. Job Card Approval</a>
+        <a class="wf-item {% if current_step == 'shop' %}active{% endif %}" href="{% url 'planning:scan' %}">5. Production Scan</a>
     </div>
 </div>
 

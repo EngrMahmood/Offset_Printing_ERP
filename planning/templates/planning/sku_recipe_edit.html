@@ -62,7 +62,7 @@
             <h1 style="margin:0;font-size:20px;">{{ page_title }}</h1>
             <div class="muted">SKU recipe defines how a SKU should be set up when creating planning jobs from a PO.</div>
         </div>
-        <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">← Back to SKU Recipes</a>
+        <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">← Back to SKU Recipes</a>
     </div>
 
     {% if messages %}
@@ -291,7 +291,7 @@
                         <button type="submit" class="btn warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
                     {% endif %}
                 {% endif %}
-                <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Cancel</a>
+                <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">Cancel</a>
             </div>
         </form>
     </section>

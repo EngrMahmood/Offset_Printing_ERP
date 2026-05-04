@@ -1,4 +1,4 @@
-﻿import csv
+import csv
 import base64
 import io
 import json
@@ -32,9 +32,17 @@ except ImportError:
 
 from core.jc_numbering import allocate_next_jc_number
 from core.views import permission_required
-from core.models import JobCard
-from core.services import job_card_queue_queryset
 from .forms import PlanningJobEditForm, SkuRecipeForm
+from .services import (
+    _user_is_admin, _planning_status_filter_values, _parse_date_filter,
+    _build_job_card_pdf_bytes, _sku_key, _missing_required_master_fields,
+    _sync_new_sku_requirement, _build_recipe_map, _to_optional_positive_int,
+    _to_optional_decimal, _sanitize_po_payload_items, _po_payload_items,
+    _annotate_items_with_recipe, _deduplicate_po_items_by_sku,
+    _history_repeat_new_counts, _sync_repeat_jobs_from_po,
+    _sync_new_jobs_for_approved_sku, _merge_po_items_for_existing_po,
+    _collect_pending_sku_rows
+)
 from .models import (
     PLANNING_QC_GATE_STATUSES,
     PLANNING_STATUS_ALIASES,
@@ -45,12 +53,30 @@ from .models import (
     PoDocument,
     SkuRecipe,
 )
+from workflow.services import (
+    _annotate_items_with_recipe,
+    _build_cost_mismatch_note,
+    _build_recipe_map,
+    _collect_pending_sku_rows,
+    _format_decimal_string,
+    _format_display_qty,
+    _missing_required_master_fields,
+    _normalize_application_input,
+    _normalize_color_spec_input,
+    _normalize_status,
+    _parse_iso_date,
+    _po_payload_items,
+    _sanitize_po_payload_items,
+    _sku_key,
+    sync_job_card_for_planning_status,
+    _sync_new_jobs_for_approved_sku,
+    _to_decimal,
+    _to_int,
+    _to_optional_decimal,
+    _to_optional_positive_int,
+    _user_is_admin,
+)
 from .po_extractor import extract_po_from_pdf
-
-
-def _user_is_admin(user):
-    profile = getattr(user, 'profile', None)
-    return getattr(user, 'is_superuser', False) or (profile is not None and getattr(profile, 'role', None) == 'admin')
 
 
 PLANNING_STATUSES = PLANNING_STATUS_CHOICES
@@ -73,7 +99,6 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('material', 'Material'),
     ('color_spec', 'Color'),
     ('application', 'Application'),
-    ('machine_name', 'Machine'),
     ('print_sheet_size', 'Print Sheet'),
     ('purchase_sheet_size', 'Purchase Sheet'),
     ('ups', 'UPS'),
@@ -82,13 +107,6 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
 
 _COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
 _COLOR_SINGLE_RE = re.compile(r'^(\d+)\s*(?:colou?r(?:s)?)?$', re.IGNORECASE)
-
-
-def _planning_status_filter_values(status):
-    normalized_status = _normalize_status(status, default='')
-    if not normalized_status:
-        return []
-    return sorted(PLANNING_STATUS_FILTER_ALIASES.get(normalized_status, {normalized_status}))
 
 
 def build_planning_readme_text():
@@ -219,895 +237,6 @@ def download_planning_readme(request):
     return response
 
 
-def _clean_number(raw_value):
-    if raw_value is None:
-        return None
-    text = str(raw_value).strip().replace(',', '')
-    if not text:
-        return None
-    return text
-
-
-def _to_int(raw_value):
-    cleaned = _clean_number(raw_value)
-    if cleaned is None:
-        return None
-    try:
-        return int(float(cleaned))
-    except ValueError:
-        return None
-
-
-def _to_decimal(raw_value):
-    cleaned = _clean_number(raw_value)
-    if cleaned is None:
-        return None
-    try:
-        return Decimal(cleaned)
-    except (InvalidOperation, ValueError):
-        return None
-
-
-def _format_display_qty(raw_value):
-    """Render quantities without trailing decimals (e.g., 1000.0 -> 1000)."""
-    value = _to_decimal(raw_value)
-    if value is None:
-        return raw_value if raw_value not in (None, '') else '-'
-
-    if value == value.to_integral_value():
-        return str(int(value))
-
-    normalized = value.normalize()
-    text = format(normalized, 'f').rstrip('0').rstrip('.')
-    return text or '0'
-
-
-def _format_decimal_string(raw_value):
-    """Render decimals without unnecessary trailing zeros."""
-    if raw_value is None:
-        return None
-    value = _to_decimal(raw_value)
-    if value is None:
-        return None
-    if value == value.to_integral_value():
-        return str(int(value))
-    normalized = value.normalize()
-    text = format(normalized, 'f').rstrip('0').rstrip('.')
-    return text or '0'
-
-
-def _normalize_color_spec_input(raw_value):
-    raw_text = str(raw_value or '').strip()
-    if not raw_text:
-        return ''
-
-    lowered = raw_text.lower()
-    if lowered in {'no', 'none', 'n/a', 'na', 'nil'}:
-        return ''
-
-    usable = False
-    if re.search(r'color|colour|colours|colors', lowered):
-        usable = True
-    elif re.search(r'\d+\s*c\b', lowered) or ('c' in lowered and re.search(r'\d', lowered)):
-        usable = True
-    elif any(sep in lowered for sep in ['+', '/', '-']):
-        usable = True
-    elif raw_text.isdigit() or re.fullmatch(r'\d+\.\d+', raw_text):
-        usable = True
-
-    if not usable:
-        return raw_text
-
-    normalized = lowered.replace('colours', 'color').replace('colour', 'color').replace('colors', 'color')
-    normalized = normalized.replace('c/', '+').replace('c+', '+').replace('/', '+').replace('-', '+')
-    normalized = re.sub(r'[^0-9\+\s]+', '', normalized).strip()
-    normalized = re.sub(r'\s+', '+', normalized)
-    normalized = re.sub(r'\++', '+', normalized)
-
-    plus_match = _COLOR_PLUS_RE.fullmatch(normalized)
-    if plus_match:
-        return f"{int(plus_match.group(1))}+{int(plus_match.group(2))}"
-
-    single_match = _COLOR_SINGLE_RE.fullmatch(normalized)
-    if single_match:
-        return f"{int(single_match.group(1))} color"
-
-    numbers = re.findall(r'[0-9]+', normalized)
-    if len(numbers) == 1:
-        return f"{int(numbers[0])} color"
-    if len(numbers) == 2:
-        return f"{int(numbers[0])}+{int(numbers[1])}"
-
-    return value
-
-
-def _normalize_application_input(raw_value):
-    value = str(raw_value or '').strip()
-    if not value:
-        return ''
-    lowered = value.lower()
-    if lowered in {'no', 'none', 'n/a', 'na', 'nil', 'not applicable'}:
-        return 'NO'
-    if 'uv' in lowered or 'u.v' in lowered:
-        return 'UV'
-    if 'matt' in lowered or 'matte' in lowered:
-        return 'Lamination Matt'
-    if 'lamination' in lowered or 'lam' in lowered or 'lamin' in lowered:
-        return 'Lamination Gloss'
-    if 'gloss' in lowered or 'shine' in lowered:
-        return 'Lamination Gloss'
-    if 'varnish' in lowered or 'op' in lowered:
-        return 'NO'
-    return 'NO'
-
-
-def _append_unique_note_line(base_text, line):
-    text = str(base_text or '').strip()
-    line = str(line or '').strip()
-    if not line:
-        return text
-
-    lines = [part.strip() for part in text.splitlines() if part.strip()]
-    if line in lines:
-        return '\n'.join(lines)
-    return '\n'.join(lines + [line]) if lines else line
-
-
-def _build_cost_mismatch_note(master_cost, po_cost):
-    master = _to_decimal(master_cost)
-    po = _to_decimal(po_cost)
-    if master is None or po is None:
-        return ''
-    if master == po:
-        return ''
-    return f"{COST_MISMATCH_NOTE_PREFIX} PO unit cost {po} differs from master default {master}. PO cost is applied to this job."
-
-
-def _to_date(raw_value):
-    if not raw_value:
-        return None
-    text = str(raw_value).strip()
-    if not text:
-        return None
-
-    for fmt in ('%d/%m/%Y', '%m/%d/%Y', '%Y-%m-%d'):
-        try:
-            return datetime.strptime(text, fmt).date()
-        except ValueError:
-            continue
-    return None
-
-
-def _parse_iso_date(raw_value):
-    if not raw_value:
-        return None
-    try:
-        return datetime.strptime(str(raw_value).strip(), '%Y-%m-%d').date()
-    except ValueError:
-        return None
-
-
-def _normalize_status(raw_value, default='draft'):
-    value = (raw_value or '').strip().lower()
-    value = PLANNING_STATUS_ALIASES.get(value, value)
-    if value in PLANNING_STATUS_SET:
-        return value
-    return default
-
-
-def _parse_date_filter(raw_value):
-    value = (raw_value or '').strip()
-    if not value:
-        return None
-    try:
-        return datetime.strptime(value, '%Y-%m-%d').date()
-    except ValueError:
-        return None
-
-
-def _build_qr_image_base64(data):
-    if not data:
-        return ''
-    try:
-        import qrcode
-    except ImportError:
-        return ''
-
-    qr = qrcode.QRCode(border=2, box_size=3)
-    qr.add_data(data)
-    qr.make(fit=True)
-    image = qr.make_image(fill_color='black', back_color='white')
-    buffer = io.BytesIO()
-    image.save(buffer, format='PNG')
-    return base64.b64encode(buffer.getvalue()).decode('ascii')
-
-
-def _format_job_value(value):
-    if value is None:
-        return '-'
-    if isinstance(value, str):
-        return value.strip() or '-'
-    if isinstance(value, (int, float, Decimal)) and not isinstance(value, bool):
-        if isinstance(value, float):
-            return f"{value:,.2f}".rstrip('0').rstrip('.')
-        if isinstance(value, int):
-            return f"{value:,}"
-        return str(value)
-    return str(value)
-
-
-def _paragraph_text(text):
-    safe_text = str(text or '').strip().replace('\n', '<br/>')
-    if not safe_text:
-        safe_text = '-'
-    return Paragraph(safe_text, ParagraphStyle('Normal', fontName='Helvetica', fontSize=9, leading=11))
-
-
-def _build_job_card_pdf_bytes(job, scan_url):
-    if not REPORTLAB_AVAILABLE:
-        raise RuntimeError('reportlab is required to generate PDF job cards. Install reportlab and restart the server.')
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=letter,
-        leftMargin=12 * mm,
-        rightMargin=12 * mm,
-        topMargin=12 * mm,
-        bottomMargin=12 * mm,
-    )
-
-    styles = getSampleStyleSheet()
-    normal = styles['Normal']
-    normal.fontName = 'Helvetica'
-    normal.fontSize = 9
-    normal.leading = 11
-
-    title_style = ParagraphStyle('Title', parent=normal, fontName='Helvetica-Bold', fontSize=18, leading=20)
-    subtitle_style = ParagraphStyle('Subtitle', parent=normal, fontName='Helvetica-Bold', fontSize=11, leading=13)
-    section_title_style = ParagraphStyle('SectionTitle', parent=normal, fontName='Helvetica-Bold', fontSize=10.5, leading=12)
-    label_style = ParagraphStyle('Label', parent=normal, fontName='Helvetica-Bold', fontSize=8.5, leading=10)
-
-    story = [Paragraph('UTOPIA PRINTING & PACKAGING', title_style), Spacer(1, 4), Paragraph('PRODUCTION JOB CARD', subtitle_style), Spacer(1, 8)]
-
-    header_data = [
-        [Paragraph('JOB CARD #', label_style), _format_job_value(job.jc_number), Paragraph('PO #', label_style), _format_job_value(job.po_number)],
-        [Paragraph('DATE', label_style), _format_job_value(job.plan_date), Paragraph('STATUS', label_style), _format_job_value(job.workflow_status_label)],
-        [Paragraph('SKU', label_style), _format_job_value(job.sku), Paragraph('JOB NAME', label_style), _format_job_value(job.job_name)],
-        [Paragraph('REPEAT FLAG', label_style), _format_job_value(job.repeat_flag), Paragraph('DEPARTMENT', label_style), _format_job_value(job.department)],
-    ]
-    header_table = Table(header_data, colWidths=[32 * mm, 65 * mm, 32 * mm, 65 * mm], hAlign='LEFT')
-    header_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('GRID', (0, 0), (-1, -1), 0.35, colors.black),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#dedede')),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
-    ]))
-    story.extend([header_table, Spacer(1, 10)])
-
-    material_data = [
-        [Paragraph('ORDER QTY', label_style), _format_job_value(job.order_qty), Paragraph('PRINT PCS', label_style), _format_job_value(job.print_pcs)],
-        [Paragraph('MATERIAL TYPE', label_style), _format_job_value(job.material), Paragraph('COLOR', label_style), _format_job_value(job.color_spec)],
-        [Paragraph('APPLICATION', label_style), _format_job_value(job.application), Paragraph('PRINT SHEET SIZE', label_style), _format_job_value(job.print_sheet_size)],
-        [Paragraph('UPS', label_style), _format_job_value(job.ups), Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
-        [Paragraph('ACTUAL SHEETS', label_style), _format_job_value(job.calculated_sheets_required), Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
-        [Paragraph('PURCHASE MATERIAL', label_style), _format_job_value(job.purchase_material), Paragraph('PURCHASE SHEET SIZE', label_style), _format_job_value(job.purchase_sheet_size)],
-        [Paragraph('PURCHASE SHEET UPS', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('PURCHASE REQ', label_style), _format_job_value(job.purchase_sheet_required)],
-        [Paragraph('MACHINE', label_style), _format_job_value(job.machine_name), Paragraph('TOTAL COLORS', label_style), _format_job_value(job.number_of_colors)],
-        [Paragraph('PLATE SET NO.', label_style), _format_job_value(job.plate_set_no), Paragraph('AWC NO.', label_style), _format_job_value(job.awc_no)],
-        [Paragraph('AGING DAYS', label_style), _format_job_value(job.aging_days), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting)],
-    ]
-    material_table = Table(material_data, colWidths=[32 * mm, 65 * mm, 32 * mm, 65 * mm], hAlign='LEFT')
-    material_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('INNERGRID', (0, 0), (-1, -1), 0.25, colors.grey),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#eeeeee')),
-    ]))
-    story.extend([Paragraph('MATERIAL AND WORK PROCESS', section_title_style), Spacer(1, 4), material_table, Spacer(1, 10)])
-
-    application_data = [
-        [Paragraph('LAMINATION', label_style), _format_job_value(job.application), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting)],
-        [Paragraph('ART WORK NO.', label_style), '-', Paragraph('P SET NO.', label_style), _format_job_value(job.plate_set_no)],
-        [Paragraph('SPECIAL INSTRUCTIONS', label_style), _paragraph_text(job.remarks or job.requirement or '-'), '', ''],
-    ]
-    application_table = Table(application_data, colWidths=[30 * mm, 67 * mm, 30 * mm, 65 * mm], hAlign='LEFT')
-    application_table.setStyle(TableStyle([
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('INNERGRID', (0, 0), (-1, 1), 0.25, colors.grey),
-        ('BOX', (0, 0), (-1, 1), 0.5, colors.black),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f3f3f3')),
-    ]))
-    story.extend([application_table, Spacer(1, 12)])
-
-    signature_data = [
-        [Paragraph('Prepared by', label_style), '', Paragraph('Checked By', label_style), '', Paragraph('Plate Check By', label_style), '', Paragraph('Approved By', label_style), ''],
-    ]
-    signature_table = Table(signature_data, colWidths=[28 * mm, 34 * mm, 28 * mm, 34 * mm, 28 * mm, 34 * mm, 28 * mm, 34 * mm], hAlign='LEFT')
-    signature_table.setStyle(TableStyle([
-        ('LINEABOVE', (1, 0), (1, 0), 0.25, colors.black),
-        ('LINEABOVE', (3, 0), (3, 0), 0.25, colors.black),
-        ('LINEABOVE', (5, 0), (5, 0), 0.25, colors.black),
-        ('LINEABOVE', (7, 0), (7, 0), 0.25, colors.black),
-    ]))
-    story.extend([signature_table, Spacer(1, 10)])
-
-    material_issue_data = [[Paragraph('MATERIAL ISSUANCE', section_title_style), '', '', '', '', '']]
-    material_issue_data.append([Paragraph('Date', label_style), Paragraph('Machine', label_style), Paragraph('Operator', label_style), Paragraph('Shift A/B', label_style), Paragraph('Sheet Size', label_style), Paragraph('Full Sheet Qty', label_style)])
-    for _ in range(3):
-        material_issue_data.append(['-', '-', '-', '-', '-', '-'])
-    material_issue_table = Table(material_issue_data, colWidths=[24 * mm, 30 * mm, 35 * mm, 28 * mm, 35 * mm, 30 * mm], hAlign='LEFT')
-    material_issue_table.setStyle(TableStyle([
-        ('GRID', (0, 1), (-1, -1), 0.25, colors.grey),
-        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#d9d9d9')),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
-    ]))
-
-    printing_data = [[Paragraph('PRINTING', section_title_style), '', '', '', '', '', '']]
-    printing_data.append([Paragraph('Date', label_style), Paragraph('Machine', label_style), Paragraph('Operator', label_style), Paragraph('Shift A/B', label_style), Paragraph('Print Sheet Qty', label_style), Paragraph('Wastage Sheet', label_style), Paragraph('Half Good', label_style)])
-    for _ in range(4):
-        printing_data.append(['-', '-', '-', '-', '-', '-', '-'])
-    printing_table = Table(printing_data, colWidths=[24 * mm, 30 * mm, 30 * mm, 28 * mm, 34 * mm, 34 * mm, 26 * mm], hAlign='LEFT')
-    printing_table.setStyle(TableStyle([
-        ('GRID', (0, 1), (-1, -1), 0.25, colors.grey),
-        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#d9d9d9')),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
-    ]))
-
-    story.extend([material_issue_table, Spacer(1, 10), printing_table, Spacer(1, 12)])
-
-    dispatch_data = [[Paragraph('DISPATCH', section_title_style), '', '', '', '', '']]
-    dispatch_data.append([Paragraph('Delivery Date', label_style), Paragraph('DC #', label_style), Paragraph('Qty', label_style), Paragraph('Packing', label_style), Paragraph('Delivered To', label_style), ''])
-    for _ in range(6):
-        dispatch_data.append(['-', '-', '-', '-', '-', '-'])
-    dispatch_table = Table(dispatch_data, colWidths=[30 * mm, 24 * mm, 24 * mm, 30 * mm, 35 * mm, 40 * mm], hAlign='LEFT')
-    dispatch_table.setStyle(TableStyle([
-        ('GRID', (0, 1), (-1, -1), 0.25, colors.grey),
-        ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#d9d9d9')),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
-    ]))
-    story.extend([dispatch_table, Spacer(1, 10)])
-
-    cutting_data = [
-        [Paragraph('CUTTING SLIP', section_title_style), '', '', '', '', ''],
-        [Paragraph('Job Card #', label_style), _format_job_value(job.jc_number), Paragraph('Job Name', label_style), _format_job_value(job.job_name), Paragraph('Purch sheet size', label_style), _format_job_value(job.purchase_sheet_size)],
-        [Paragraph('Purch sheet Ups', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('Print sheet size', label_style), _format_job_value(job.print_sheet_size), Paragraph('Type', label_style), _format_job_value(job.material)],
-        [Paragraph('Purch sheet Qty', label_style), _format_job_value(job.purchase_sheet_required), Paragraph('Remarks', label_style), _paragraph_text(job.remarks or job.requirement or '-'), '', ''],
-    ]
-    cutting_table = Table(cutting_data, colWidths=[30 * mm, 35 * mm, 30 * mm, 35 * mm, 30 * mm, 35 * mm], hAlign='LEFT')
-    cutting_table.setStyle(TableStyle([
-        ('SPAN', (0, 0), (-1, 0)),
-        ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ('GRID', (0, 1), (-1, -1), 0.25, colors.grey),
-        ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
-        ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#f2f2f2')),
-    ]))
-    story.extend([cutting_table])
-
-    doc.build(story)
-    return buffer.getvalue()
-
-
-def _sku_key(sku):
-    return (sku or '').strip().upper()
-
-
-def _missing_required_master_fields(recipe, fallback_job_name=''):
-    missing = []
-    if not recipe:
-        fallback = (fallback_job_name or '').strip()
-        return [
-            label
-            for field, label in SKU_MASTER_APPROVAL_REQUIRED_FIELDS
-            if not (field == 'job_name' and fallback)
-        ]
-
-    for field, label in SKU_MASTER_APPROVAL_REQUIRED_FIELDS:
-        value = getattr(recipe, field, None)
-        if isinstance(value, str):
-            if not value.strip():
-                missing.append(label)
-        elif value is None:
-            missing.append(label)
-    return missing
-
-
-def _sync_new_sku_requirement(existing_requirement, is_new):
-    """Ensure NEW SKU requirement note exists only for New jobs."""
-    lines = [line.strip() for line in str(existing_requirement or '').splitlines() if line.strip()]
-    filtered_lines = [line for line in lines if line != NEW_SKU_REQUIREMENT_NOTE]
-
-    if is_new:
-        return '\n'.join([NEW_SKU_REQUIREMENT_NOTE] + filtered_lines)
-    return '\n'.join(filtered_lines)
-
-
-def _build_recipe_map(items):
-    sku_values = sorted({_sku_key(item.get('sku')) for item in items if item.get('sku')})
-    if not sku_values:
-        return {}
-
-    recipe_query = Q()
-    for sku in sku_values:
-        recipe_query |= Q(sku__iexact=sku)
-
-    recipes = SkuRecipe.objects.filter(recipe_query, master_data_status='approved')
-    return {recipe.sku.upper(): recipe for recipe in recipes}
-
-
-def _to_optional_positive_int(raw_value):
-    value = _to_int(raw_value)
-    if value is None:
-        return None
-    return value if value >= 0 else None
-
-
-def _to_optional_decimal(raw_value):
-    value = _to_decimal(raw_value)
-    if value is None:
-        return None
-    return value if value >= 0 else None
-
-
-def _sanitize_po_payload_items(payload):
-    """Normalize payload items for workflow screens.
-
-    Applies SKU-level deduplication and respects expected line count when available
-    to avoid noisy extra rows from fallback parsers.
-    """
-    items, _ = _deduplicate_po_items_by_sku((payload or {}).get('items', []))
-
-    # Merge OCR-near-duplicate SKUs when qty/date match and text is almost identical.
-    consolidated = []
-    for item in items:
-        sku = (item.get('sku') or '').strip()
-        qty = _to_int(item.get('quantity'))
-        ddate = (item.get('delivery_date') or '').strip()
-        sku_norm = ''.join(ch for ch in sku.upper() if ch.isalnum())
-        merged = False
-        for existing in consolidated:
-            ex_sku = (existing.get('sku') or '').strip()
-            ex_qty = _to_int(existing.get('quantity'))
-            ex_ddate = (existing.get('delivery_date') or '').strip()
-            ex_norm = ''.join(ch for ch in ex_sku.upper() if ch.isalnum())
-            similar = SequenceMatcher(a=sku_norm, b=ex_norm).ratio() >= 0.985
-            if similar and qty == ex_qty and ddate == ex_ddate:
-                merged = True
-                break
-        if not merged:
-            consolidated.append(item)
-    items = consolidated
-
-    expected_line_count = _to_int((payload or {}).get('expected_line_count'))
-    if expected_line_count and expected_line_count > 0 and len(items) > expected_line_count:
-        items = items[:expected_line_count]
-    return items
-
-
-def _po_payload_items(payload, exclude_ignored=True):
-    items = _sanitize_po_payload_items(payload)
-    if not exclude_ignored:
-        return items
-
-    ignored_skus = {
-        _sku_key(s)
-        for s in (payload.get('new_skus_ignored') or [])
-        if s
-    }
-    if not ignored_skus:
-        return items
-
-    return [
-        item
-        for item in items
-        if _sku_key(item.get('sku')) not in ignored_skus
-    ]
-
-
-def _annotate_items_with_recipe(items, recipe_map):
-    annotated = []
-    repeat_count = 0
-    new_count = 0
-    missing_skus = []
-
-    for item in items:
-        sku = (item.get('sku') or '').strip()
-        key = _sku_key(sku)
-        has_recipe = bool(key and key in recipe_map)
-        item_copy = dict(item)
-        item_copy['is_repeat'] = has_recipe
-        item_copy['recipe_status'] = 'Repeat' if has_recipe else 'New'
-        annotated.append(item_copy)
-
-        if has_recipe:
-            repeat_count += 1
-        else:
-            new_count += 1
-            if sku:
-                missing_skus.append(sku)
-
-    return annotated, repeat_count, new_count, sorted(set(missing_skus))
-
-
-def _deduplicate_po_items_by_sku(items):
-    """Ensure one row per SKU in a PO payload by merging duplicate SKU lines."""
-    merged = {}
-    order = []
-    duplicate_skus = set()
-
-    for item in items:
-        item_copy = dict(item)
-        sku = (item_copy.get('sku') or '').strip()
-        sku_key = _sku_key(sku)
-        if not sku_key:
-            continue
-
-        if sku_key not in merged:
-            merged[sku_key] = item_copy
-            order.append(sku_key)
-            continue
-
-        duplicate_skus.add(sku)
-        existing = merged[sku_key]
-
-        existing_qty = _to_int(existing.get('quantity'))
-        current_qty = _to_int(item_copy.get('quantity'))
-        if existing_qty is None:
-            existing['quantity'] = current_qty
-        elif current_qty is not None:
-            existing['quantity'] = existing_qty + current_qty
-
-        existing_net = _to_decimal(existing.get('net_total'))
-        current_net = _to_decimal(item_copy.get('net_total'))
-        if existing_net is None:
-            existing['net_total'] = _format_decimal_string(current_net)
-        elif current_net is not None:
-            existing['net_total'] = _format_decimal_string(existing_net + current_net)
-
-        existing_subtotal = _to_decimal(existing.get('subtotal'))
-        current_subtotal = _to_decimal(item_copy.get('subtotal'))
-        if existing_subtotal is None:
-            existing['subtotal'] = _format_decimal_string(current_subtotal)
-        elif current_subtotal is not None:
-            existing['subtotal'] = _format_decimal_string(existing_subtotal + current_subtotal)
-
-        for field in ['job_name', 'delivery_date', 'unit', 'unit_cost']:
-            if not existing.get(field) and item_copy.get(field):
-                existing[field] = item_copy.get(field)
-
-    deduped = [merged[key] for key in order]
-    for idx, item in enumerate(deduped, start=1):
-        item['line_no'] = idx
-    return deduped, sorted(duplicate_skus)
-
-
-def _history_repeat_new_counts(items):
-    """Classify Repeat/New from historical PlanningJob SKU existence."""
-    sku_keys = {_sku_key(item.get('sku')) for item in items if item.get('sku')}
-    existing_any_jobs_skus = set()
-    if sku_keys:
-        sku_any_query = Q()
-        for sku_key in sku_keys:
-            sku_any_query |= Q(sku__iexact=sku_key)
-        existing_any_jobs_skus = {
-            _sku_key(sku)
-            for sku in PlanningJob.objects.filter(sku_any_query).values_list('sku', flat=True)
-            if sku
-        }
-
-    seen_skus_in_payload = set()
-    repeat_count = 0
-    new_count = 0
-    for item in items:
-        sku_key = _sku_key(item.get('sku'))
-        is_new = bool(
-            sku_key
-            and sku_key not in existing_any_jobs_skus
-            and sku_key not in seen_skus_in_payload
-        )
-        if is_new:
-            new_count += 1
-        elif sku_key:
-            repeat_count += 1
-        if sku_key:
-            seen_skus_in_payload.add(sku_key)
-
-    return repeat_count, new_count
-
-
-def _sync_repeat_jobs_from_po(po_doc, actor=None):
-    """Create or update draft planning jobs for repeat SKUs from one PO document."""
-    payload = po_doc.extracted_payload or {}
-    items, _ = _deduplicate_po_items_by_sku(payload.get('items', []))
-    po_number = (payload.get('po_number') or '').strip()
-    po_date = _parse_iso_date(payload.get('po_date'))
-    delivery_location = payload.get('delivery_location', '')
-    department = payload.get('department', '')
-
-    if not items:
-        return {'created': 0, 'updated': 0, 'locked': 0, 'missing_recipe': 0}
-
-    item_sku_keys = {_sku_key(item.get('sku')) for item in items if item.get('sku')}
-    existing_any_jobs_skus = set()
-    if item_sku_keys:
-        sku_any_query = Q()
-        for sku_key in item_sku_keys:
-            sku_any_query |= Q(sku__iexact=sku_key)
-        existing_any_jobs_skus = {
-            _sku_key(sku)
-            for sku in PlanningJob.objects.filter(sku_any_query).values_list('sku', flat=True)
-            if sku
-        }
-
-    recipe_map = _build_recipe_map(items)
-    existing_jobs_by_sku = {}
-    if po_number and item_sku_keys:
-        existing_jobs = PlanningJob.objects.filter(po_number=po_number).order_by('-updated_at', '-id')
-        for job in existing_jobs:
-            key = _sku_key(job.sku)
-            if key in item_sku_keys and key not in existing_jobs_by_sku:
-                existing_jobs_by_sku[key] = job
-
-    created_count = 0
-    updated_count = 0
-    locked_count = 0
-    missing_recipe_count = 0
-
-    for item in items:
-        sku = (item.get('sku') or '').strip()
-        sku_key = _sku_key(sku)
-        if not sku_key:
-            continue
-
-        # Repeat means this SKU already exists in historical planning jobs.
-        if sku_key not in existing_any_jobs_skus:
-            continue
-
-        recipe = recipe_map.get(sku_key)
-        if not recipe:
-            missing_recipe_count += 1
-            continue
-
-        existing_job = existing_jobs_by_sku.get(sku_key)
-        if existing_job and _normalize_status(existing_job.status) == 'approved':
-            locked_count += 1
-            continue
-
-        delivery_date = _parse_iso_date(item.get('delivery_date'))
-        plan_date = delivery_date or po_date
-        qty = item.get('quantity')
-        order_qty = int(qty) if qty is not None else None
-        unit_cost_val = item.get('unit_cost')
-        unit_cost_dec = Decimal(str(unit_cost_val)) if unit_cost_val is not None else None
-        jc_number = existing_job.jc_number if existing_job else allocate_next_jc_number(plan_date)
-
-        defaults = {
-            'po_number': po_number,
-            'sku': sku,
-            'job_name': recipe.job_name or (item.get('job_name') or '').strip() or sku,
-            'order_qty': order_qty,
-            'department': department,
-            'destination': delivery_location,
-            'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
-            'status': 'draft',
-            'repeat_flag': 'Repeat',
-            'requirement': _append_unique_note_line(
-                _sync_new_sku_requirement(existing_job.requirement if existing_job else '', False),
-                _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
-            ),
-            'material': recipe.material,
-            'color_spec': recipe.color_spec,
-            'application': recipe.application,
-            'size_w_mm': recipe.size_w_mm,
-            'size_h_mm': recipe.size_h_mm,
-            'ups': recipe.ups,
-            'print_sheet_size': recipe.print_sheet_size,
-            'purchase_sheet_size': recipe.purchase_sheet_size,
-            'purchase_sheet_ups': recipe.purchase_sheet_ups,
-            'purchase_material': recipe.purchase_material,
-            'daily_demand': recipe.daily_demand,
-            'awc_no': recipe.awc_no,
-            'plate_set_no': recipe.plate_set_no,
-            'die_cutting': recipe.die_cutting,
-        }
-        if plan_date:
-            defaults['plan_date'] = plan_date
-        if actor:
-            defaults['created_by'] = actor
-
-        job_obj, created = PlanningJob.objects.update_or_create(
-            jc_number=jc_number,
-            defaults=defaults,
-        )
-        if created:
-            created_count += 1
-        else:
-            updated_count += 1
-        existing_jobs_by_sku[sku_key] = job_obj
-
-    payload['repeat_jobs_synced'] = True
-    payload['repeat_jobs_created_count'] = created_count
-    payload['repeat_jobs_updated_count'] = updated_count
-    payload['repeat_jobs_locked_count'] = locked_count
-    payload['repeat_jobs_missing_recipe_count'] = missing_recipe_count
-    po_doc.extracted_payload = payload
-    po_doc.save(update_fields=['extracted_payload'])
-
-    return {
-        'created': created_count,
-        'updated': updated_count,
-        'locked': locked_count,
-        'missing_recipe': missing_recipe_count,
-    }
-
-
-def _sync_new_jobs_for_approved_sku(sku, actor=None):
-    """After SKU master approval, push matching new-job PO lines into Planning Jobs."""
-    sku_key = _sku_key(sku)
-    if not sku_key:
-        return {'created': 0, 'updated': 0, 'locked': 0, 'sent': 0}
-
-    recipe = SkuRecipe.objects.filter(sku__iexact=sku, master_data_status='approved').first()
-    if not recipe:
-        return {'created': 0, 'updated': 0, 'locked': 0, 'sent': 0}
-
-    existing_any_jobs_skus = {
-        _sku_key(value)
-        for value in PlanningJob.objects.values_list('sku', flat=True)
-        if value
-    }
-
-    created_count = 0
-    updated_count = 0
-    locked_count = 0
-    sent_count = 0
-
-    po_docs = PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('created_at', 'id')
-    for po_doc in po_docs:
-        payload = po_doc.extracted_payload or {}
-        items, _ = _deduplicate_po_items_by_sku(payload.get('items', []))
-        target_item = None
-        for item in items:
-            if _sku_key(item.get('sku')) == sku_key:
-                target_item = item
-                break
-
-        if not target_item:
-            continue
-
-        po_number = (payload.get('po_number') or '').strip()
-        if not po_number:
-            continue
-
-        existing_job = PlanningJob.objects.filter(po_number=po_number, sku__iexact=sku).order_by('-updated_at', '-id').first()
-        if existing_job and _normalize_status(existing_job.status) == 'approved':
-            locked_count += 1
-            continue
-
-        delivery_date = _parse_iso_date(target_item.get('delivery_date'))
-        po_date = _parse_iso_date(payload.get('po_date'))
-        plan_date = delivery_date or po_date
-        qty = target_item.get('quantity')
-        order_qty = int(qty) if qty is not None else None
-        unit_cost_val = target_item.get('unit_cost')
-        unit_cost_dec = Decimal(str(unit_cost_val)) if unit_cost_val is not None else None
-        is_first_production = sku_key not in existing_any_jobs_skus
-        jc_number = existing_job.jc_number if existing_job else allocate_next_jc_number(plan_date)
-        current_requirement = existing_job.requirement if existing_job else ''
-
-        defaults = {
-            'po_number': po_number,
-            'sku': sku,
-            'job_name': recipe.job_name or (target_item.get('job_name') or '').strip() or sku,
-            'order_qty': order_qty,
-            'department': payload.get('department') or '',
-            'destination': payload.get('delivery_location') or '',
-            'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
-            'status': 'draft',
-            'repeat_flag': 'New' if is_first_production else 'Repeat',
-            'requirement': _sync_new_sku_requirement(current_requirement, is_first_production),
-            'material': recipe.material,
-            'color_spec': recipe.color_spec,
-            'application': recipe.application,
-            'size_w_mm': recipe.size_w_mm,
-            'size_h_mm': recipe.size_h_mm,
-            'ups': recipe.ups,
-            'print_sheet_size': recipe.print_sheet_size,
-            'purchase_sheet_size': recipe.purchase_sheet_size,
-            'purchase_sheet_ups': recipe.purchase_sheet_ups,
-            'purchase_material': recipe.purchase_material,
-            'daily_demand': recipe.daily_demand,
-            'awc_no': recipe.awc_no,
-            'plate_set_no': recipe.plate_set_no,
-            'die_cutting': recipe.die_cutting,
-        }
-
-        if not is_first_production:
-            defaults['requirement'] = _append_unique_note_line(
-                defaults['requirement'],
-                _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
-            )
-        if plan_date:
-            defaults['plan_date'] = plan_date
-        if actor and not existing_job:
-            defaults['created_by'] = actor
-
-        job_obj, created = PlanningJob.objects.update_or_create(
-            jc_number=jc_number,
-            defaults=defaults,
-        )
-        if created:
-            created_count += 1
-        else:
-            updated_count += 1
-
-        existing_any_jobs_skus.add(sku_key)
-        sent_count += 1
-
-        sent_to_planning = set(payload.get('new_skus_sent_to_planning') or [])
-        sent_to_planning.add(sku)
-        payload['new_skus_sent_to_planning'] = sorted(sent_to_planning)
-        po_doc.extracted_payload = payload
-        po_doc.save(update_fields=['extracted_payload'])
-
-    return {
-        'created': created_count,
-        'updated': updated_count,
-        'locked': locked_count,
-        'sent': sent_count,
-    }
-
-
-def _merge_po_items_for_existing_po(existing_items, incoming_items):
-    """Merge incoming PO lines into existing PO lines without creating duplicates."""
-    existing_by_sku = {}
-    merged_items = []
-
-    for item in existing_items:
-        sku = (item.get('sku') or '').strip()
-        sku_key = _sku_key(sku)
-        if not sku_key or sku_key in existing_by_sku:
-            continue
-        item_copy = dict(item)
-        existing_by_sku[sku_key] = item_copy
-        merged_items.append(item_copy)
-
-    added_skus = []
-    updated_skus = []
-    ignored_lines = []
-
-    for item in incoming_items:
-        sku = (item.get('sku') or '').strip()
-        sku_key = _sku_key(sku)
-        if not sku_key:
-            continue
-
-        incoming_qty = _to_int(item.get('quantity'))
-        existing_item = existing_by_sku.get(sku_key)
-
-        if existing_item is None:
-            item_copy = dict(item)
-            merged_items.append(item_copy)
-            existing_by_sku[sku_key] = item_copy
-            added_skus.append(sku)
-            continue
-
-        existing_qty = _to_int(existing_item.get('quantity'))
-        if existing_qty == incoming_qty:
-            ignored_lines.append({'sku': sku, 'qty': incoming_qty})
-            continue
-
-        # Same SKU but changed qty/fields: treat as correction, not duplicate row.
-        for field, value in item.items():
-            if value not in (None, ''):
-                existing_item[field] = value
-        updated_skus.append(sku)
-
-    for idx, item in enumerate(merged_items, start=1):
-        item['line_no'] = idx
-
-    return merged_items, sorted(set(added_skus)), sorted(set(updated_skus)), ignored_lines
-
-
 @login_required
 def planning_welcome(request):
     profile = getattr(request.user, 'profile', None)
@@ -1136,7 +265,6 @@ def planning_welcome(request):
 def planning_home(request):
     queryset = PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs').filter(
         is_active=True,
-        status__in=PLANNING_ACTIVE_STATUS_SET,
     )
 
     if request.method == 'POST':
@@ -1214,6 +342,26 @@ def planning_home(request):
                 archived_count += 1
 
             messages.success(request, f'Bulk archive complete. Archived {archived_count} jobs.')
+            return redirect('planning:jobs')
+
+        if action == 'bulk_delete':
+            if not _user_is_admin(request.user):
+                messages.error(request, 'Only administrators can permanently delete planning jobs.')
+                return redirect('planning:jobs')
+
+            selected_ids = []
+            for raw_id in request.POST.getlist('selected_ids'):
+                try:
+                    selected_ids.append(int(raw_id))
+                except (TypeError, ValueError):
+                    continue
+
+            if not selected_ids:
+                messages.error(request, 'Select at least one planning row to delete.')
+                return redirect('planning:jobs')
+
+            deleted_count = PlanningJob.objects.filter(id__in=selected_ids, is_active=True).delete()[0]
+            messages.success(request, f'Bulk delete complete. Deleted {deleted_count} jobs.')
             return redirect('planning:jobs')
 
         if action in {'hold', 'release_hold', 'archive', 'delete'}:
@@ -1300,6 +448,37 @@ def planning_home(request):
     paginator = Paginator(queryset, 50)
     page_number = request.GET.get('page')
     jobs = paginator.get_page(page_number)
+
+    # --- Dashboard section counts (display only, no logic change) ---
+    po_docs_qs = PoDocument.objects.all()
+    po_queue_count = po_docs_qs.count()
+    po_pending_review_count = po_docs_qs.filter(extraction_status='pending').count()
+    po_processed_count = po_docs_qs.filter(extraction_status='processed').count()
+    po_rejected_count = po_docs_qs.filter(extraction_status='failed').count()
+
+    po_docs_with_payload = po_docs_qs.exclude(extracted_payload__isnull=True)
+    sku_pending_count = len(_collect_pending_sku_rows(po_docs_with_payload))
+    sku_pending_master_entries_count = SkuRecipe.objects.filter(
+        is_active=True,
+        master_data_status__in=['draft', 'pending_review'],
+    ).count()
+    sku_approved_count = SkuRecipe.objects.filter(is_active=True, master_data_status='approved').count()
+
+    ignored_sku_keys = set()
+    for payload in po_docs_with_payload.values_list('extracted_payload', flat=True):
+        payload = payload or {}
+        ignored_values = payload.get('new_skus_ignored') or []
+        for raw_sku in ignored_values:
+            sku_key = _sku_key(raw_sku)
+            if sku_key:
+                ignored_sku_keys.add(sku_key)
+    sku_ignored_count = len(ignored_sku_keys)
+
+    planning_draft_count = PlanningJob.objects.filter(is_active=True, status='draft').count()
+    planning_pending_qc_count = PlanningJob.objects.filter(is_active=True, status='pending_qc').count()
+    planning_approved_count = PlanningJob.objects.filter(is_active=True, status='qc_approved').count()
+    planning_released_count = PlanningJob.objects.filter(is_active=True, status='released').count()
+
     return render(
         request,
         'planning/planning_home.html',
@@ -1309,7 +488,6 @@ def planning_home(request):
             'status_choices': [
                 (value, label)
                 for value, label in PLANNING_STATUSES
-                if value in PLANNING_ACTIVE_STATUS_SET
             ],
             'can_admin_actions': _user_is_admin(request.user),
             'filters': {
@@ -1320,6 +498,21 @@ def planning_home(request):
                 'from_date': request.GET.get('from_date', ''),
                 'to_date': request.GET.get('to_date', ''),
             },
+            # PO Intake section (required names)
+            'po_queue_count': po_queue_count,
+            'po_pending_review_count': po_pending_review_count,
+            'po_processed_count': po_processed_count,
+            'po_rejected_count': po_rejected_count,
+            # SKU Queue section (required names)
+            'sku_pending_count': sku_pending_count,
+            'sku_pending_master_entries_count': sku_pending_master_entries_count,
+            'sku_approved_count': sku_approved_count,
+            'sku_ignored_count': sku_ignored_count,
+            # Planning Queue section (required names)
+            'planning_draft_count': planning_draft_count,
+            'planning_pending_qc_count': planning_pending_qc_count,
+            'planning_approved_count': planning_approved_count,
+            'planning_released_count': planning_released_count,
         },
     )
 
@@ -1627,6 +820,7 @@ def planning_job_detail(request, job_id):
             'last_edited_at': job.last_edited_at,
             'qc_missing_fields': job.qc_missing_fields(),
             'can_print_job_card': _normalize_status(job.status) in {'qc_approved', 'released', 'in_production', 'completed'},
+            'can_admin_delete': _user_is_admin(request.user),
         },
     )
 
@@ -1690,7 +884,15 @@ def planning_job_edit(request, job_id):
     else:
         form = PlanningJobEditForm(instance=job)
 
-    return render(request, 'planning/planning_job_edit.html', {'job': job, 'form': form})
+    return render(
+        request,
+        'planning/planning_job_edit.html',
+        {
+            'job': job,
+            'form': form,
+            'can_admin_delete': _user_is_admin(request.user),
+        },
+    )
 
 
 @login_required
@@ -1703,22 +905,16 @@ def planning_job_status_update(request, job_id):
     job = get_object_or_404(PlanningJob, id=job_id)
     current_status = _normalize_status(job.status)
     transition = (request.POST.get('transition') or '').strip()
+    next_url = (request.POST.get('next') or '').strip()
 
     transitions = {
         'submit_review': ('draft', 'pending_qc'),
         'submit_qc': ('draft', 'pending_qc'),
-        'approve': ('pending_qc', 'qc_approved'),
-        'approve_qc': ('pending_qc', 'qc_approved'),
-        'release': ('qc_approved', 'released'),
-        'start_production': ('released', 'in_production'),
-        'complete': ('in_production', 'completed'),
-        'mark_closed': ('in_production', 'completed'),
-        'unlock': ('qc_approved', 'pending_qc'),
         'reopen': ('completed', 'draft'),
     }
     if transition not in transitions:
         messages.error(request, 'Unknown status transition request.')
-        return redirect(next_url) if (next_url := (request.POST.get('next') or '').strip()) else redirect('planning:job_detail', job_id=job.id)
+        return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
     required_from, target_status = transitions[transition]
     if required_from and current_status != required_from:
@@ -1729,14 +925,71 @@ def planning_job_status_update(request, job_id):
         messages.info(request, f'Job already in {target_status} status.')
         return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
+    if target_status == 'pending_qc':
+        approved_recipe = SkuRecipe.objects.filter(
+            sku__iexact=job.sku,
+            is_active=True,
+            master_data_status='approved',
+        ).first()
+        if not approved_recipe:
+            messages.error(request, f'SKU recipe for {job.sku or "this job"} is missing or not approved.')
+            return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
+
+        planning_required_fields = [
+            ('material', 'Material'),
+            ('color_spec', 'Color Spec'),
+            ('application', 'Application'),
+            ('ups', 'UPS'),
+            ('print_sheet_size', 'Print Sheet Size'),
+            ('purchase_sheet_size', 'Purchase Sheet Size'),
+            ('machine_name', 'Machine Name'),
+            ('wastage_sheets', 'Wastage Sheets'),
+            ('plate_set_no', 'Plate Set No'),
+        ]
+        missing_planning_fields = []
+        for field_name, field_label in planning_required_fields:
+            value = getattr(job, field_name, None)
+            if value is None:
+                missing_planning_fields.append(field_label)
+                continue
+            if isinstance(value, str) and not value.strip():
+                missing_planning_fields.append(field_label)
+
+        if missing_planning_fields:
+            messages.error(
+                request,
+                f'Complete planning fields before Submit to QC: {", ".join(missing_planning_fields)}.',
+            )
+            return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
+
+        qc_validation_errors = job.qc_validation_errors()
+        if qc_validation_errors:
+            for field_errors in qc_validation_errors.values():
+                for error_message in field_errors if isinstance(field_errors, list) else [field_errors]:
+                    messages.error(request, error_message)
+            return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
+
     job.status = target_status
-    if target_status in {'released', 'in_production', 'completed'}:
-        job.issued_to_production = True
-    if target_status in {'draft', 'pending_qc'}:
+    if target_status == 'pending_qc':
+        job.issued_to_production = False
+    if target_status == 'draft':
         job.issued_to_production = False
 
     try:
         job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
+        if target_status == 'pending_qc':
+            try:
+                sync_job_card_for_planning_status(job, target_status, request.user)
+            except ValidationError as exc:
+                transaction.set_rollback(True)
+                error_dict = getattr(exc, 'message_dict', None)
+                if error_dict:
+                    for field_errors in error_dict.values():
+                        for error_message in field_errors:
+                            messages.error(request, error_message)
+                else:
+                    messages.error(request, str(exc))
+                return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
     except ValidationError as exc:
         error_dict = getattr(exc, 'message_dict', None)
         if error_dict:
@@ -2295,19 +1548,19 @@ def sku_recipe_edit(request, recipe_id=None):
             else:
                 recipe.delete()
                 messages.success(request, f'SKU Recipe "{recipe.sku}" deleted.')
-            return redirect('planning:sku_recipes')
+            return redirect('qc:sku_recipes')
 
         if recipe and action == 'archive':
             if recipe.master_data_status == 'approved' and not is_admin_user:
                 messages.error(request, 'Approved records can only be archived by admin users.')
-                return redirect('planning:sku_recipes')
+                return redirect('qc:sku_recipes')
             recipe.is_active = False
             recipe.archived_by = request.user
             recipe.archived_at = timezone.now()
             recipe.archive_reason = (request.POST.get('archive_reason') or '').strip()
             recipe.save(update_fields=['is_active', 'archived_by', 'archived_at', 'archive_reason', 'updated_at'])
             messages.success(request, f'SKU Recipe "{recipe.sku}" archived.')
-            return redirect('planning:sku_recipes')
+            return redirect('qc:sku_recipes')
 
         if recipe and recipe.master_data_status == 'approved' and not is_admin_user:
             messages.error(request, 'Approved master records can only be changed by admin users.')
@@ -2337,7 +1590,6 @@ def sku_recipe_edit(request, recipe_id=None):
                 elif action == 'review' and current_status == 'pending_review':
                     obj.master_data_status = 'reviewed'
                     obj.reviewed_by = request.user
-                    from django.utils import timezone
                     obj.reviewed_at = timezone.now()
                     obj.approved_by = None
                     obj.approved_at = None
@@ -2349,7 +1601,6 @@ def sku_recipe_edit(request, recipe_id=None):
                         return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
                     obj.master_data_status = 'approved'
                     obj.approved_by = request.user
-                    from django.utils import timezone
                     obj.approved_at = timezone.now()
                     # Will sync to planning after save
                     _do_sync_on_approve = True
@@ -2387,11 +1638,11 @@ def sku_recipe_edit(request, recipe_id=None):
                     sync_result = _sync_new_jobs_for_approved_sku(obj.sku, actor=request.user)
                     messages.success(
                         request,
-                        f'Sent to Planning: {sync_result["sent"]} PO line(s), created {sync_result["created"]}, updated {sync_result["updated"]}, locked {sync_result["locked"]}.',
+                        f'Planning jobs refreshed for approved SKU: updated {sync_result["updated"]}, locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.',
                     )
                 except Exception:
                     messages.error(request, 'Error while sending approved SKU to Planning; check logs.')
-            return redirect('planning:sku_recipes')
+            return redirect('qc:sku_recipes')
         else:
             # Surface a clear top-level message so users notice validation errors
             messages.error(request, 'There are errors in the form. Please correct the highlighted fields and try again.')
@@ -2415,7 +1666,7 @@ def sku_recipe_bulk_upload(request):
         upload_file = request.FILES.get('upload_file')
         if not upload_file:
             messages.error(request, 'Please choose a CSV or XLSX file to upload.')
-            return redirect('planning:sku_recipe_bulk_upload')
+            return redirect('qc:sku_recipe_bulk_upload')
 
 
         name = (upload_file.name or '').lower()
@@ -2467,7 +1718,7 @@ def sku_recipe_bulk_upload(request):
                     import openpyxl
                 except ImportError:
                     messages.error(request, 'openpyxl is required for XLSX upload.')
-                    return redirect('planning:sku_recipe_bulk_upload')
+                    return redirect('qc:sku_recipe_bulk_upload')
                 wb = openpyxl.load_workbook(upload_file, data_only=True)
                 ws = wb.active
                 # Find header row: look for row with 'SKU' and 'JOB NAME'
@@ -2480,7 +1731,7 @@ def sku_recipe_bulk_upload(request):
                         break
                 if not header_row_idx:
                     messages.error(request, 'Could not find header row in Excel file. Make sure it matches the template.')
-                    return redirect('planning:sku_recipe_bulk_upload')
+                    return redirect('qc:sku_recipe_bulk_upload')
                 for values in ws.iter_rows(min_row=header_row_idx+1, values_only=True):
                     row = {}
                     for idx, key in enumerate(header):
@@ -2489,14 +1740,14 @@ def sku_recipe_bulk_upload(request):
                     rows.append(row)
             else:
                 messages.error(request, 'Unsupported file type. Please upload CSV or XLSX.')
-                return redirect('planning:sku_recipe_bulk_upload')
+                return redirect('qc:sku_recipe_bulk_upload')
         except Exception as exc:
             messages.error(request, f'Could not read upload file: {exc}')
-            return redirect('planning:sku_recipe_bulk_upload')
+            return redirect('qc:sku_recipe_bulk_upload')
 
         if not rows:
             messages.error(request, 'No rows found in upload file.')
-            return redirect('planning:sku_recipe_bulk_upload')
+            return redirect('qc:sku_recipe_bulk_upload')
 
         created = 0
         updated = 0
@@ -2596,7 +1847,7 @@ def sku_recipe_bulk_upload(request):
         if failed and sample_errors:
             messages.error(request, 'Sample row errors: ' + ' | '.join(sample_errors))
 
-        return redirect('planning:sku_recipes')
+        return redirect('qc:sku_recipes')
 
     return render(request, 'planning/sku_recipe_bulk_upload.html')
 
@@ -2625,51 +1876,6 @@ def sku_recipe_template_download(request):
     return response
 
 
-def _collect_pending_sku_rows(po_docs):
-    """Build pending SKU rows from PO documents where SKU recipe is missing."""
-    rows = []
-    for po_doc in po_docs:
-        payload = po_doc.extracted_payload or {}
-        items = _po_payload_items(payload)
-        if not items:
-            continue
-
-        recipe_map = _build_recipe_map(items)
-        _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map)
-        if not missing_skus:
-            continue
-
-        item_map = {}
-        for item in items:
-            key = _sku_key(item.get('sku'))
-            if key and key not in item_map:
-                item_map[key] = item
-
-        po_number = payload.get('po_number') or '-'
-        ignored_skus = {
-            _sku_key(s)
-            for s in (payload.get('new_skus_ignored') or [])
-            if s
-        }
-        for sku in missing_skus:
-            if _sku_key(sku) in ignored_skus:
-                continue
-            item = item_map.get(_sku_key(sku), {})
-            rows.append(
-                {
-                    'po_doc_id': po_doc.id,
-                    'po_number': po_number,
-                    'sku': sku,
-                    'job_name': (item.get('job_name') or '').strip() or sku,
-                    'qty': _format_display_qty(item.get('quantity')),
-                    'delivery_date': item.get('delivery_date') or '-',
-                    'uploaded_at': po_doc.created_at,
-                }
-            )
-
-    return rows
-
-
 @login_required
 @permission_required('can_edit_jobcard')
 @transaction.atomic
@@ -2689,7 +1895,7 @@ def pending_skus(request):
                 params['po'] = return_po
             if return_q:
                 params['q'] = return_q
-            url = reverse('planning:pending_skus')
+            url = reverse('qc:pending_skus')
             return redirect(f'{url}?{urlencode(params)}' if params else url)
 
         if action in {'delete', 'archive'}:
@@ -2779,7 +1985,7 @@ def pending_skus(request):
                 sync_result = _sync_new_jobs_for_approved_sku(sku, actor=request.user)
                 messages.success(
                     request,
-                    f'SKU {sku} approved for master data usage. Sent to Planning: {sync_result["sent"]} PO line(s), created {sync_result["created"]}, updated {sync_result["updated"]}, locked {sync_result["locked"]}.',
+                    f'SKU {sku} approved for master data usage. Planning jobs refreshed: updated {sync_result["updated"]}, locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.',
                 )
                 return _redirect_pending()
 
@@ -2955,7 +2161,7 @@ def pending_skus_ignored(request):
 
             if not po_doc or not sku:
                 messages.error(request, 'Invalid PO or SKU for unignore action.')
-                return redirect('planning:pending_skus_ignored')
+                return redirect('qc:pending_skus_ignored')
 
             payload = po_doc.extracted_payload or {}
             ignored = [s for s in (payload.get('new_skus_ignored') or []) if s]
@@ -2965,7 +2171,7 @@ def pending_skus_ignored(request):
             po_doc.extracted_payload = payload
             po_doc.save(update_fields=['extracted_payload'])
             messages.success(request, f'SKU {sku} restored to the pending queue.')
-            return redirect('planning:pending_skus_ignored')
+            return redirect('qc:pending_skus_ignored')
 
     po_filter = (request.GET.get('po') or '').strip()
     q = (request.GET.get('q') or '').strip()
@@ -3038,7 +2244,7 @@ def pending_sku_master_entry(request):
             params['po'] = return_po
         if return_q:
             params['q'] = return_q
-        url = reverse('planning:pending_skus')
+        url = reverse('qc:pending_skus')
         return redirect(f'{url}?{urlencode(params)}' if params else url)
 
     try:
@@ -3205,6 +2411,10 @@ def po_inbox(request):
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         if action == 'delete_po_intake':
+            if not _user_is_admin(request.user):
+                messages.error(request, 'Only administrators can delete PO intake records.')
+                return redirect('planning:po_inbox')
+
             po_number = (request.POST.get('po_number') or '').strip()
             if not po_number:
                 messages.error(request, 'Invalid PO number for delete action.')
@@ -3268,111 +2478,9 @@ def po_inbox(request):
             }
         )
 
-    return render(request, 'planning/po_inbox.html', {'rows': rows})
+    return render(request, 'planning/po_inbox.html', {'rows': rows, 'can_admin_actions': _user_is_admin(request.user)})
 
 
-@login_required
-@permission_required('can_edit_jobcard')
-@transaction.atomic
-def approval_queue(request):
-    """JobCard approval queue for planning, QC, production manager, and release gates."""
-    planning_jobs = job_card_queue_queryset('planning')
-    qc_jobs = job_card_queue_queryset('qc')
-    pm_jobs = job_card_queue_queryset('production_manager')
-    release_jobs = job_card_queue_queryset('production')
-
-    if request.method == 'POST':
-        action = (request.POST.get('action') or '').strip()
-        job_card_id = (request.POST.get('job_card_id') or '').strip()
-        reason = (request.POST.get('reason') or request.POST.get('change_reason') or '').strip()
-
-        def _get_job_card():
-            if not job_card_id:
-                raise ValueError('Job Card is required.')
-            return get_object_or_404(JobCard, pk=job_card_id, is_active=True)
-
-        def _sync_status(job_card, transition_name):
-            if transition_name == 'approve_planning':
-                job_card.submit_to_qc(actor=request.user, reason=reason)
-            elif transition_name == 'reject_planning':
-                job_card.reject_qc(actor=request.user, reason=reason)
-            elif transition_name == 'approve_qc':
-                job_card.approve_qc(actor=request.user, reason=reason)
-            elif transition_name == 'reject_qc':
-                job_card.reject_qc(actor=request.user, reason=reason)
-            elif transition_name == 'approve_pm':
-                job_card.approve_pm(actor=request.user, reason=reason)
-            elif transition_name == 'reject_pm':
-                job_card.reject_pm(actor=request.user, reason=reason)
-            elif transition_name == 'release_for_production':
-                job_card.release_for_production(actor=request.user, reason=reason)
-            else:
-                raise ValueError('Unknown approval transition.')
-
-        profile = getattr(request.user, 'profile', None)
-        if action == 'bulk_send_qc':
-            if not profile or not profile.can_approve_planning():
-                messages.error(request, 'You do not have permission to approve planning jobs.')
-                return redirect('planning:approval_queue')
-
-            draft_jobs = planning_jobs
-            updated = 0
-            failed = 0
-            failures = []
-            for job_card in draft_jobs:
-                try:
-                    job_card.submit_to_qc(actor=request.user, reason='Bulk planning approval queue action')
-                except ValidationError as exc:
-                    failed += 1
-                    failure_text = '; '.join(str(msg) for msg in getattr(exc, 'messages', [str(exc)]))
-                    failures.append(f'{job_card.job_card_no}: {failure_text}')
-                    continue
-                updated += 1
-
-            if updated:
-                messages.success(request, f'Sent {updated} Job Card(s) to QC approval.')
-            if failed:
-                messages.error(request, f'{failed} Job Card(s) could not be moved to QC: {"; ".join(failures)}')
-            return redirect('planning:approval_queue')
-
-        if action in {'approve_planning', 'reject_planning', 'approve_qc', 'reject_qc', 'approve_pm', 'reject_pm', 'release_for_production'}:
-            job_card = _get_job_card()
-            if action in {'approve_planning', 'reject_planning'} and (not profile or not profile.can_approve_planning()):
-                messages.error(request, 'You do not have permission to approve planning jobs.')
-                return redirect('planning:approval_queue')
-            if action in {'approve_qc', 'reject_qc'} and (not profile or not profile.can_approve_qc()):
-                messages.error(request, 'You do not have permission to approve QC jobs.')
-                return redirect('planning:approval_queue')
-            if action in {'approve_pm', 'reject_pm', 'release_for_production'} and (not profile or not profile.can_approve_pm()):
-                messages.error(request, 'You do not have permission to approve production manager jobs.')
-                return redirect('planning:approval_queue')
-
-            try:
-                _sync_status(job_card, action)
-            except ValidationError as exc:
-                error_dict = getattr(exc, 'message_dict', None)
-                if error_dict:
-                    for field_errors in error_dict.values():
-                        for error_message in field_errors:
-                            messages.error(request, error_message)
-                else:
-                    messages.error(request, str(exc))
-                return redirect('planning:approval_queue')
-
-            messages.success(request, f'Job Card {job_card.job_card_no} moved successfully.')
-            return redirect('planning:approval_queue')
-
-    planning_jobs = planning_jobs.order_by('-updated_at', '-id')[:300]
-    qc_jobs = qc_jobs.order_by('-updated_at', '-id')[:300]
-    pm_jobs = pm_jobs.order_by('-updated_at', '-id')[:300]
-    release_jobs = release_jobs.order_by('-updated_at', '-id')[:300]
-    context = {
-        'planning_jobs': planning_jobs,
-        'qc_jobs': qc_jobs,
-        'pm_jobs': pm_jobs,
-        'release_jobs': release_jobs,
-    }
-    return render(request, 'planning/approval_queue.html', context)
 
 
 @login_required
@@ -3490,13 +2598,13 @@ def upload_po(request):
                     msg += f" Duplicate SKU lines merged: {', '.join(sorted(set(duplicate_skus)))}."
             if sync_result['created'] or sync_result['updated']:
                 msg += (
-                    f" Repeat jobs sent to Planning: created {sync_result['created']}, "
+                    f" Draft planning jobs synced from PO lines: created {sync_result['created']}, "
                     f"updated {sync_result['updated']}."
                 )
             if sync_result['missing_recipe']:
-                msg += f" Repeat SKU(s) missing approved master data: {sync_result['missing_recipe']}."
+                msg += f" SKU(s) pending approved master data: {sync_result['missing_recipe']}."
             messages.success(request, msg)
-        return redirect('planning:po_review', doc_id=po_doc.id)
+        return redirect('qc:po_review', doc_id=po_doc.id)
 
     return render(request, 'planning/po_upload.html')
 
@@ -3582,12 +2690,12 @@ def manual_po_entry(request):
         if sync_result['created'] or sync_result['updated']:
             messages.success(
                 request,
-                f'Repeat jobs sent to Planning: created {sync_result["created"]}, updated {sync_result["updated"]}.',
+                f'Draft planning jobs synced from PO lines: created {sync_result["created"]}, updated {sync_result["updated"]}.',
             )
         if sync_result['missing_recipe']:
-            messages.warning(request, f'Repeat SKU(s) missing approved master data: {sync_result["missing_recipe"]}.')
+            messages.warning(request, f'SKU(s) pending approved master data: {sync_result["missing_recipe"]}.')
 
-        return redirect('planning:po_review', doc_id=po_doc.id)
+        return redirect('qc:po_review', doc_id=po_doc.id)
 
     return render(request, 'planning/manual_po_entry.html')
 
@@ -3663,7 +2771,7 @@ def po_review(request, doc_id):
             sku = (request.POST.get('sku') or '').strip()
             if not sku:
                 messages.error(request, 'SKU is required for ignore action.')
-                return redirect('planning:po_review', doc_id=po_doc.id)
+                return redirect('qc:po_review', doc_id=po_doc.id)
 
             ignored = {
                 _sku_key(s)
@@ -3675,36 +2783,36 @@ def po_review(request, doc_id):
             po_doc.extracted_payload = payload
             po_doc.save(update_fields=['extracted_payload'])
             messages.success(request, f'SKU {sku} ignored and removed from PO intake review.')
-            return redirect('planning:po_review', doc_id=po_doc.id)
+            return redirect('qc:po_review', doc_id=po_doc.id)
 
         if action == 'update_po_number':
             manual_po_number = (request.POST.get('manual_po_number') or '').strip()
             if not manual_po_number:
                 messages.error(request, 'PO number is required to update the PO intake record.')
-                return redirect('planning:po_review', doc_id=po_doc.id)
+                return redirect('qc:po_review', doc_id=po_doc.id)
 
             payload['po_number'] = manual_po_number
             po_doc.extracted_payload = payload
             po_doc.save(update_fields=['extracted_payload'])
             messages.success(request, f'PO number updated to {manual_po_number}.')
-            return redirect('planning:po_review', doc_id=po_doc.id)
+            return redirect('qc:po_review', doc_id=po_doc.id)
 
         if action == 'add_manual_item':
             sku = (request.POST.get('manual_sku') or '').strip()
             if not sku:
                 messages.error(request, 'SKU is required to add a manual PO line.')
-                return redirect('planning:po_review', doc_id=po_doc.id)
+                return redirect('qc:po_review', doc_id=po_doc.id)
 
             sku_key = _sku_key(sku)
             existing_skus = {_sku_key(item.get('sku')) for item in payload.get('items', []) if item.get('sku')}
             if sku_key in existing_skus:
                 messages.error(request, f'SKU {sku} is already present on this PO. Duplicate SKUs are not allowed.')
-                return redirect('planning:po_review', doc_id=po_doc.id)
+                return redirect('qc:po_review', doc_id=po_doc.id)
 
             quantity = _to_int(request.POST.get('manual_quantity'))
             if quantity is None:
                 messages.error(request, 'Quantity must be a valid number to add a manual PO line.')
-                return redirect('planning:po_review', doc_id=po_doc.id)
+                return redirect('qc:po_review', doc_id=po_doc.id)
 
             unit_cost_value = _to_decimal(request.POST.get('manual_unit_cost'))
             net_total_value = _to_decimal(request.POST.get('manual_net_total'))
@@ -3726,7 +2834,7 @@ def po_review(request, doc_id):
             po_doc.extracted_payload = payload
             po_doc.save(update_fields=['extracted_payload'])
             messages.success(request, f'Manual PO line for SKU {sku} added.')
-            return redirect('planning:po_review', doc_id=po_doc.id)
+            return redirect('qc:po_review', doc_id=po_doc.id)
 
         if action == 'create_jobs':
             sku_counts = {}
@@ -3742,7 +2850,7 @@ def po_review(request, doc_id):
                     request,
                     'Duplicate SKUs are not allowed in the same PO. Remove duplicate lines before creating jobs.',
                 )
-                return redirect('planning:po_review', doc_id=po_doc.id)
+                return redirect('qc:po_review', doc_id=po_doc.id)
 
             with transaction.atomic():
                 created_count = 0
@@ -3779,7 +2887,6 @@ def po_review(request, doc_id):
                         sku_key
                         and sku_key not in existing_any_jobs_skus
                     )
-                    forward_as_new = is_first_production
 
                     delivery_date = _parse_iso_date(item.get('delivery_date'))
                     plan_date = delivery_date or po_date
@@ -3789,8 +2896,15 @@ def po_review(request, doc_id):
                         if _normalize_status(existing_job.status) == 'approved':
                             locked_count += 1
                             continue
+                        existing_repeat_flag = (existing_job.repeat_flag or '').strip().lower()
+                        if existing_repeat_flag in {'new', 'repeat'}:
+                            forward_as_new = existing_repeat_flag == 'new'
+                        else:
+                            prior_jobs_exist = PlanningJob.objects.filter(sku__iexact=sku).exclude(id=existing_job.id).exists()
+                            forward_as_new = not prior_jobs_exist
                         jc_number = existing_job.jc_number
                     else:
+                        forward_as_new = is_first_production
                         jc_number = allocate_next_jc_number(plan_date)
 
                     current_requirement = existing_job.requirement if existing_job else ''
@@ -3844,14 +2958,14 @@ def po_review(request, doc_id):
                 if missing_recipe_count > 0:
                     messages.warning(
                         request,
-                        'This PO contains only new SKUs. Configure them in master data before sending to planning.',
+                        'This PO contains only new SKUs with missing master data. Please configure them in Pending SKUs before sending to planning.',
                     )
-                    return redirect('planning:po_new_skus', doc_id=po_doc.id)
+                    return redirect('qc:pending_skus')
                 messages.warning(
                     request,
                     f'No jobs created. Skipped {skipped_count}, missing-recipe {missing_recipe_count}, locked-skip {locked_count}. Add missing SKU master data from Pending SKUs and run create again.',
                 )
-                return redirect('planning:pending_skus')
+                return redirect('qc:pending_skus')
 
             messages.success(
                 request,
@@ -3862,7 +2976,7 @@ def po_review(request, doc_id):
                     request,
                     f'{missing_recipe_count} SKU(s) are still pending master data. Open Pending SKUs tab to configure them.',
                 )
-            return redirect('planning:approval_queue')
+            return redirect('qc:approval_queue')
 
     context = {
         'po_doc': po_doc,
@@ -3964,7 +3078,7 @@ def po_new_skus(request, doc_id):
             request,
             f'SKU recipes saved: {created_count}. These SKU jobs will be forwarded as NEW for production shade/setup checks.',
         )
-        return redirect('planning:po_review', doc_id=po_doc.id)
+        return redirect('qc:po_review', doc_id=po_doc.id)
 
     return render(
         request,

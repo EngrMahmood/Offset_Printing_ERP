@@ -1,269 +1,182 @@
+{% extends 'base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planning Workspace</title>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
-    <style>
-        .wrap { max-width: 100%; margin: 0 auto; }
-        .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
-        .btn { display: inline-block; padding: 7px 11px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; }
-        .btn.secondary { background: #fff; color: #445366; }
-        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 10px; }
-        .filters { display:grid; grid-template-columns: repeat(6, minmax(140px, 1fr)); gap: 8px; margin-bottom: 8px; }
-        .filters input, .filters select { width: 100%; border: 1px solid #bfd0e2; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
-        .stats { display:flex; gap:6px; flex-wrap: wrap; margin-bottom: 8px; }
-        .table-shell { overflow: auto; max-height: calc(100vh - 230px); border: 1px solid #d6e0ea; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1380px; }
-        th, td { border-bottom: 1px solid #e7eef5; padding: 7px; text-align: left; vertical-align: top; }
-        th { position: sticky; top: 0; background: #f6f9fc; z-index: 1; }
-        .muted { color: #5f6f82; font-size: 11px; }
-        .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; font-size: 10px; border: 1px solid #d3deea; background: #f3f7fb; }
-        .badge.draft { background:#eef5ff; border-color:#c8daf7; }
-        .badge.reviewed { background:#fff7e6; border-color:#f0d79a; }
-        .badge.pending_qc { background:#fff7e6; border-color:#f0d79a; }
-        .badge.qc_approved { background:#e6f6ea; border-color:#bde4c7; }
-        .badge.released { background:#eaf7ff; border-color:#b8dcef; }
-        .badge.in_production { background:#f3f4f6; border-color:#d2d6dc; }
-        .badge.completed { background:#edf7ef; border-color:#c7e2cc; }
-        .row-released { background: #f8fffb; }
-        .row-completed { background: #f4f6f8; }
-        .bulk-row { display:flex; gap:8px; align-items:center; margin-bottom: 8px; flex-wrap:wrap; }
-        .bulk-row select { border: 1px solid #bfd0e2; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
-        .route-shell { margin-bottom:10px; padding:10px; border-radius:10px; border:1px solid #d8e4f1; background:#f5f9ff; display:grid; grid-template-columns: repeat(3, minmax(200px, 1fr)); gap:8px; }
-        .route-card { border:1px solid #c9d9ea; border-radius:8px; background:#fff; padding:8px; }
-        .route-card .k { font-size:10px; text-transform:uppercase; color:#55708a; font-weight:700; }
-        .route-card .v { font-size:12px; color:#223f5b; font-weight:700; margin-top:3px; }
-        @media (max-width: 1080px) {
-            .filters { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
-            .route-shell { grid-template-columns: 1fr; }
-        }
-    </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<main class="wrap page-container">
-    {% with current_step='planning' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
-    {% endwith %}
 
-    <div class="top">
+{% block title %}Planning Workspace — Offset Printing ERP{% endblock %}
+{% block header_title %}Planning Hub{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-6 fade-in">
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-            <h1 style="margin:0;font-size:20px;">Planning Workspace</h1>
-            <div class="muted">Upload planning sheet, manage jobs, release QC-approved work, and issue A4 job cards for production.</div>
+            <h1 class="text-2xl font-semibold text-slate-900">Planning Workspace</h1>
+            <p class="text-slate-500 mt-1">Upload planning sheets, manage job flow, and release QC-approved work for production.</p>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <a class="btn secondary" href="{% url 'planning:approval_queue' %}">Approval Queue</a>
-            <a class="btn secondary" href="{% url 'planning:jobs_archived' %}">Archived</a>
-            <a class="btn" href="{% url 'planning:import_sheet' %}">Import Sheet</a>
+        <div class="flex flex-wrap gap-3">
+            <a href="{% url 'qc:approval_queue' %}" class="px-4 py-2 rounded-2xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition">Approval Queue</a>
+            <a href="{% url 'planning:jobs_archived' %}" class="px-4 py-2 rounded-2xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition">Archived</a>
+            <a href="{% url 'planning:import_sheet' %}" class="px-4 py-2 rounded-2xl bg-brand-600 text-white hover:bg-brand-700 transition">Import Sheet</a>
         </div>
     </div>
 
-    <section class="panel">
-        {% for msg in messages %}
-            <div style="margin-bottom:8px;padding:8px 10px;border-radius:6px;border:1px solid #c8d7e7;background:#f5f9ff;color:#2e3f53;font-size:12px;">{{ msg }}</div>
-        {% endfor %}
-
-        <div class="route-shell">
-            <div class="route-card">
-                <div class="k">Input Source</div>
-                <div class="v">Repeat from PO intake and Approved New SKUs</div>
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="h-10 w-10 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center font-semibold">1</div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.28em] text-brand-600 font-semibold">PO Intake Queue</p>
+                    <p class="text-sm text-slate-500">Review uploaded purchase orders and prepare them for planning.</p>
+                </div>
             </div>
-            <div class="route-card">
-                <div class="k">Step 4</div>
-                <div class="v">Plan, validate, and prepare jobs</div>
+            <div class="space-y-3 text-sm text-slate-700">
+                <div class="flex justify-between"><span>Uploaded POs</span><span class="font-semibold">{{ po_queue_count|default:0 }}</span></div>
+                <div class="flex justify-between"><span>Pending Review</span><span class="font-semibold text-amber-600">{{ po_pending_review_count|default:0 }}</span></div>
+                <div class="flex justify-between"><span>Processed</span><span class="font-semibold text-emerald-600">{{ po_processed_count|default:0 }}</span></div>
             </div>
-            <div class="route-card">
-                <div class="k">Next Step</div>
-                <div class="v">Release QC-approved jobs and print the job card</div>
+            <div class="mt-5 flex flex-wrap gap-2">
+                <a href="{% url 'planning:upload_po' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-brand-600 border border-slate-200 text-xs font-semibold">Upload PO</a>
+                <a href="{% url 'planning:po_inbox' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-brand-600 border border-slate-200 text-xs font-semibold">Open Inbox</a>
             </div>
         </div>
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="h-10 w-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-semibold">2</div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.28em] text-amber-600 font-semibold">SKU Queue</p>
+                    <p class="text-sm text-slate-500">Track pending SKUs and master data requirements before planning.</p>
+                </div>
+            </div>
+            <div class="space-y-3 text-sm text-slate-700">
+                <div class="flex justify-between"><span>Pending New SKUs</span><span class="font-semibold text-amber-600">{{ sku_pending_count|default:0 }}</span></div>
+                <div class="flex justify-between"><span>Pending Masters</span><span class="font-semibold">{{ sku_pending_master_entries_count|default:0 }}</span></div>
+                <div class="flex justify-between"><span>Approved Masters</span><span class="font-semibold text-emerald-600">{{ sku_approved_count|default:0 }}</span></div>
+            </div>
+            <div class="mt-5 flex flex-wrap gap-2">
+                <a href="{% url 'qc:pending_skus' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-amber-600 border border-slate-200 text-xs font-semibold">Pending SKUs</a>
+                <a href="{% url 'qc:sku_recipes' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-amber-600 border border-slate-200 text-xs font-semibold">Master List</a>
+            </div>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition">
+            <div class="flex items-center gap-3 mb-4">
+                <div class="h-10 w-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-semibold">3</div>
+                <div>
+                    <p class="text-xs uppercase tracking-[0.28em] text-emerald-600 font-semibold">Planning Queue</p>
+                    <p class="text-sm text-slate-500">Validate jobs, confirm QC status, then release for production.</p>
+                </div>
+            </div>
+            <div class="space-y-3 text-sm text-slate-700">
+                <div class="flex justify-between"><span>Draft Jobs</span><span class="font-semibold">{{ planning_draft_count|default:0 }}</span></div>
+                <div class="flex justify-between"><span>Pending QC</span><span class="font-semibold text-amber-600">{{ planning_pending_qc_count|default:0 }}</span></div>
+                <div class="flex justify-between"><span>Released Jobs</span><span class="font-semibold text-brand-600">{{ planning_released_count|default:0 }}</span></div>
+            </div>
+            <div class="mt-5 flex flex-wrap gap-2">
+                <a href="{% url 'planning:jobs' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-emerald-600 border border-slate-200 text-xs font-semibold">Open Jobs</a>
+            </div>
+        </div>
+    </div>
 
-        <form method="get" class="filters">
-            <input type="text" name="q" placeholder="Search JC/PO/SKU/Job" value="{{ filters.q }}">
-            <select name="status">
-                <option value="">All status</option>
+    <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-end mb-6">
+            <div>
+                <h2 class="text-lg font-semibold text-slate-900">Search & Filter Valid Active Jobs</h2>
+                <p class="text-sm text-slate-500 mt-1">Use filters to narrow down jobs by status, department or machine.</p>
+            </div>
+            <div class="flex flex-wrap gap-3">
+                <a href="{% url 'planning:jobs' %}" class="px-4 py-2 rounded-2xl bg-slate-50 text-slate-700 border border-slate-200 text-sm font-semibold hover:bg-slate-100 transition">Reset</a>
+            </div>
+        </div>
+        <div class="mb-6">
+            <nav class="flex flex-wrap gap-2">
+                {% with current_status=filters.status %}
+                <a href="{% url 'planning:jobs' %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if not current_status %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">All <span class="ml-2 text-slate-500">({{ jobs.paginator.count }})</span></a>
+                <a href="?status=draft{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if current_status == 'draft' %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">Draft <span class="ml-2 text-slate-500">({{ planning_draft_count }})</span></a>
+                <a href="?status=pending_qc{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if current_status == 'pending_qc' %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">Pending QC <span class="ml-2 text-slate-500">({{ planning_pending_qc_count }})</span></a>
+                <a href="?status=qc_approved{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if current_status == 'qc_approved' %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">QC Approved <span class="ml-2 text-slate-500">({{ planning_approved_count }})</span></a>
+                <a href="?status=released{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if current_status == 'released' %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">Released <span class="ml-2 text-slate-500">({{ planning_released_count }})</span></a>
+                {% endwith %}
+            </nav>
+        </div>
+        <form method="get" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            <input type="text" name="q" placeholder="Search..." value="{{ filters.q }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+            <select name="status" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+                <option value="">All Status</option>
                 {% for value, label in status_choices %}
-                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
-            <input type="text" name="department" placeholder="Department" value="{{ filters.department }}">
-            <input type="text" name="machine" placeholder="Machine" value="{{ filters.machine }}">
-            <input type="date" name="from_date" value="{{ filters.from_date }}">
-            <input type="date" name="to_date" value="{{ filters.to_date }}">
-            <div style="grid-column: 1 / -1; display:flex; gap:8px;">
-                <button class="btn" type="submit">Apply Filters</button>
-                <a class="btn secondary" href="{% url 'planning:jobs' %}">Reset</a>
-            </div>
+            <input type="text" name="department" placeholder="Department" value="{{ filters.department }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+            <input type="text" name="machine" placeholder="Machine" value="{{ filters.machine }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+            <input type="date" name="from_date" value="{{ filters.from_date }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+            <input type="date" name="to_date" value="{{ filters.to_date }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+            <button type="submit" class="lg:col-span-3 w-full px-4 py-3 rounded-2xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 transition">Apply Filters</button>
         </form>
 
-        <div class="stats">
-            <span class="badge">Total: {{ jobs.paginator.count }}</span>
-            <span class="badge released">Released: {{ status_counts.released|default:0 }}</span>
-            <span class="badge in_production">In Production: {{ status_counts.in_production|default:0 }}</span>
-            <span class="badge completed">Completed: {{ status_counts.completed|default:0 }}</span>
-        </div>
-
-        <form method="post">
-            {% csrf_token %}
-            <input type="hidden" name="archive_reason" value="">
-            <div class="bulk-row">
-                <span class="muted">Bulk actions for selected rows:</span>
-                <select name="target_status" required>
-                    <option value="">Choose status</option>
-                    {% for value, label in status_choices %}
-                        <option value="{{ value }}">{{ label }}</option>
-                    {% endfor %}
-                </select>
-                <button class="btn" type="submit" name="action" value="bulk_update_status">Update Selected</button>
-                <button class="btn warning" type="button" onclick="submitBulkArchive(this);">Archive Selected</button>
-                <span class="muted">Released and completed rows are locked for direct edits and most bulk transitions.</span>
+        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm mt-6">
+            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900">Open Planning Jobs</h2>
+                    <p class="text-sm text-slate-500 mt-1">Filtered list of active planning jobs.</p>
+                </div>
+                <div class="text-sm text-slate-500">Showing {{ jobs.paginator.count }} job{{ jobs.paginator.count|pluralize }}</div>
             </div>
-
-        <div class="table-shell">
-            <table>
-                <thead>
-                    <tr>
-                        <th><input type="checkbox" id="check_all"></th>
-                        <th>JC</th>
-                        <th>PO</th>
-                        <th>SKU</th>
-                        <th>Job Name</th>
-                        <th>Order Qty</th>
-                        <th>Flag</th>
-                        <th>Total Sheets</th>
-                        <th>Machine</th>
-                        <th>Department</th>
-                        <th>Status</th>
-                        <th>Print Logs</th>
-                        <th>Dispatch Logs</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for job in jobs %}
-                    <tr class="{% if job.workflow_status == 'released' %}row-released{% elif job.workflow_status == 'completed' %}row-completed{% endif %}">
-                        <td><input type="checkbox" name="selected_ids" value="{{ job.id }}"></td>
-                        <td><strong>{{ job.jc_number }}</strong><div class="muted">{{ job.plan_date|default:"" }}</div></td>
-                        <td>{{ job.po_number|default:"-" }}</td>
-                        <td>{{ job.sku|default:"-" }}</td>
-                        <td>{{ job.job_name|default:"-" }}</td>
-                        <td>{{ job.order_qty|default:"-" }}</td>
-                        <td>
-                            <span class="badge {% if job.repeat_flag|lower == 'new' %}reviewed{% else %}draft{% endif %}">{{ job.repeat_flag|default:"-" }}</span>
-                            {% if job.is_on_hold %}
-                                <div class="badge" style="background:#fdecea;border-color:#f5c2c0;color:#842029;margin-top:4px;">On Hold</div>
-                            {% endif %}
-                        </td>
-                        <td>{{ job.calculated_sheets_required|default:"-" }}</td>
-                        <td>{{ job.machine_name|default:"-" }}</td>
-                        <td>{{ job.department|default:"-" }}</td>
-                        <td><span class="badge {{ job.workflow_status }}">{{ job.workflow_status_label }}</span></td>
-                        <td>{{ job.print_runs.count }}</td>
-                        <td>{{ job.dispatch_runs.count }}</td>
-                        <td style="display:grid; gap:4px;">
-                            <a class="btn secondary" href="{% url 'planning:job_detail' job.id %}">View</a>
-                            <a class="btn secondary" href="{% url 'planning:job_edit' job.id %}">Edit</a>
-                            <a class="btn" href="{% url 'planning:job_card_print' job.id %}" target="_blank" rel="noopener">A4 Print</a>
-                            {% if job.is_on_hold %}
-                                <form method="post" onsubmit="return true;">
+            {% if jobs %}
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm text-left border-separate border-spacing-0">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-4 py-3 font-semibold text-slate-700">JC Number</th>
+                            <th class="px-4 py-3 font-semibold text-slate-700">PO Number</th>
+                            <th class="px-4 py-3 font-semibold text-slate-700">SKU</th>
+                            <th class="px-4 py-3 font-semibold text-slate-700">Job Name</th>
+                            <th class="px-4 py-3 font-semibold text-slate-700">Status</th>
+                            <th class="px-4 py-3 font-semibold text-slate-700">Plan Date</th>
+                            <th class="px-4 py-3 font-semibold text-slate-700">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in jobs %}
+                        <tr class="border-t border-slate-200">
+                            <td class="px-4 py-3"><a href="{% url 'planning:job_detail' job.id %}" class="font-medium text-slate-900 hover:text-brand-700">{{ job.jc_number }}</a></td>
+                            <td class="px-4 py-3">{{ job.po_number|default:'-' }}</td>
+                            <td class="px-4 py-3">{{ job.sku|default:'-' }}</td>
+                            <td class="px-4 py-3">{{ job.job_name|default:'-' }}</td>
+                            <td class="px-4 py-3">
+                                <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold {% if job.status == 'draft' %}bg-slate-100 text-slate-800{% elif job.status == 'pending_qc' %}bg-amber-100 text-amber-800{% elif job.status == 'qc_approved' %}bg-emerald-100 text-emerald-800{% elif job.status == 'released' %}bg-brand-100 text-brand-800{% else %}bg-slate-100 text-slate-800{% endif %}">{{ job.workflow_status_label }}</span>
+                            </td>
+                            <td class="px-4 py-3">{{ job.plan_date|date:'Y-m-d' }}</td>
+                            <td class="px-4 py-3 space-y-2">
+                                <a href="{% url 'planning:job_detail' job.id %}" class="inline-flex items-center px-3 py-1 rounded-full border border-slate-200 bg-slate-50 text-brand-600 hover:bg-slate-100 text-sm font-semibold">View</a>
+                                {% if job.status == 'draft' %}
+                                <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="inline">
                                     {% csrf_token %}
-                                    <input type="hidden" name="action" value="release_hold">
-                                    <input type="hidden" name="job_id" value="{{ job.id }}">
-                                    <button type="submit" class="btn secondary">Release Hold</button>
+                                    <input type="hidden" name="transition" value="submit_qc">
+                                    <input type="hidden" name="next" value="{% url 'planning:jobs' %}">
+                                    <button type="submit" class="inline-flex items-center px-3 py-1 rounded-full bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">Send to QC</button>
                                 </form>
-                            {% else %}
-                                <form method="post" data-reason-prompt="Hold reason for {{ job.jc_number }}?">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="action" value="hold">
-                                    <input type="hidden" name="job_id" value="{{ job.id }}">
-                                    <input type="hidden" name="reason" value="">
-                                    <button type="button" class="btn secondary" onclick="submitWithPrompt(this);">Hold</button>
-                                </form>
-                            {% endif %}
-                            <form method="post" data-reason-prompt="Archive reason for {{ job.jc_number }} (optional):">
-                                {% csrf_token %}
-                                <input type="hidden" name="action" value="archive">
-                                <input type="hidden" name="job_id" value="{{ job.id }}">
-                                <input type="hidden" name="reason" value="">
-                                <button type="button" class="btn warning" onclick="submitWithPrompt(this);">Archive</button>
-                            </form>
-                            {% if can_admin_actions %}
-                                <form method="post" onsubmit="return confirm('Delete this Planning job and all related planning runs?');">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="job_id" value="{{ job.id }}">
-                                    <button type="submit" class="btn danger">Delete</button>
-                                </form>
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="14">No planning jobs yet. Import the planning sheet first.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-        </form>
-
-        {% if jobs.has_other_pages %}
-            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
-                {% if jobs.has_previous %}<a class="btn secondary" href="?page={{ jobs.previous_page_number }}">Previous</a>{% endif %}
-                <span class="muted" style="align-self:center;">Page {{ jobs.number }} / {{ jobs.paginator.num_pages }}</span>
-                {% if jobs.has_next %}<a class="btn secondary" href="?page={{ jobs.next_page_number }}">Next</a>{% endif %}
+                                {% elif job.status == 'pending_qc' %}
+                                <a href="{% url 'planning:job_detail' job.id %}" class="inline-flex items-center px-3 py-1 rounded-full bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600">Open QC</a>
+                                {% elif job.status == 'qc_approved' %}
+                                <a href="{% url 'planning:job_card_print' job.id %}" class="inline-flex items-center px-3 py-1 rounded-full bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">Print Job Card</a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
             </div>
-        {% endif %}
-    </section>
-</main>
-<script>
-document.getElementById('check_all')?.addEventListener('change', function (event) {
-    const checked = event.target.checked;
-    document.querySelectorAll('input[name="selected_ids"]').forEach(function (box) {
-        box.checked = checked;
-    });
-});
-
-function submitWithPrompt(button) {
-    const form = button.closest('form');
-    if (!form) {
-        return false;
-    }
-    const promptText = form.dataset.reasonPrompt || 'Provide a reason:';
-    const reasonInput = form.querySelector('input[name="reason"]');
-    if (!reasonInput) {
-        return true;
-    }
-    const value = prompt(promptText, reasonInput.value || '');
-    if (value === null) {
-        return false;
-    }
-    reasonInput.value = value.trim();
-    form.submit();
-    return true;
-}
-function submitBulkArchive(button) {
-    const form = button.closest('form');
-    if (!form) {
-        return false;
-    }
-    const reasonInput = form.querySelector('input[name="archive_reason"]');
-    const value = prompt('Archive reason for selected jobs (optional):', reasonInput.value || '');
-    if (value === null) {
-        return false;
-    }
-    reasonInput.value = value.trim();
-    const actionInput = document.createElement('input');
-    actionInput.type = 'hidden';
-    actionInput.name = 'action';
-    actionInput.value = 'bulk_archive';
-    form.appendChild(actionInput);
-    form.submit();
-    return true;
-}
-</script>
-</body>
-</html>
-
-
+            <div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-slate-500">
+                <div>Page {{ jobs.number }} of {{ jobs.paginator.num_pages }}</div>
+                <div class="flex flex-wrap gap-2">
+                    {% if jobs.has_previous %}
+                    <a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-3 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50">Previous</a>
+                    {% endif %}
+                    {% if jobs.has_next %}
+                    <a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-3 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50">Next</a>
+                    {% endif %}
+                </div>
+            </div>
+            {% else %}
+            <div class="rounded-3xl border border-slate-200 bg-slate-50 p-6 text-slate-600">No planning jobs found. Use the filters or upload PO documents to populate the queue.</div>
+            {% endif %}
+        </div>
+    </div>
+{% endblock %}

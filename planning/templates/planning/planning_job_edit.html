@@ -52,9 +52,17 @@
                 </div>
                 {% endfor %}
             </div>
-            <div style="display:flex;gap:8px;margin-top:12px;">
+            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;align-items:center;">
                 <button class="btn" type="submit">Save Changes</button>
                 <a class="btn secondary" href="{% url 'planning:job_detail' job.id %}">Cancel</a>
+                {% if can_admin_delete %}
+                <form method="post" action="{% url 'planning:jobs' %}" style="margin:0;">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="job_id" value="{{ job.id }}">
+                    <button class="btn warn" type="submit" onclick="return confirm('Permanently delete this planning job? This cannot be undone.');">Delete Job</button>
+                </form>
+                {% endif %}
             </div>
         </form>
     </section>

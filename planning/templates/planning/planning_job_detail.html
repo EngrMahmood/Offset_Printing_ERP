@@ -1,197 +1,96 @@
+{% extends 'base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planning Job {{ job.jc_number }}</title>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
-    <style>
-        .wrap { max-width: 100%; margin: 0 auto; }
-        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .card { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 10px; }
-        .table-shell { overflow: auto; border: 1px solid #d6e0ea; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        th, td { border-bottom: 1px solid #e7eef5; padding: 7px; text-align: left; }
-        th { background: #f6f9fc; }
-        .muted { color: #5f6f82; font-size: 11px; }
-        .btn { display: inline-block; padding: 7px 11px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; }
-        .btn.secondary { background: #fff; color: #445366; }
-        .btn.warn { background: #8a6c1f; border-color: #8a6c1f; }
-        .btn.good { background: #206a3c; border-color: #206a3c; }
-        .btn.danger { background: #8c3244; border-color: #8c3244; }
-        .workflow { display:flex; gap:8px; flex-wrap:wrap; margin-top: 8px; }
-        .workflow form { margin: 0; }
-        .note { background:#fff9e8; border:1px solid #f0d38b; color:#6b4b00; border-radius:6px; padding:8px 10px; font-size:12px; }
-        .badge { display:inline-block; padding:3px 7px; border-radius:999px; font-size:11px; border:1px solid #d3deea; background:#f3f7fb; }
-        .badge.new { background:#fff1e5; border-color:#f3c79d; color:#8a3f00; font-weight:700; }
-        .badge.repeat { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; font-weight:700; }
-        .alert-new { margin-top:10px; border:1px solid #b15a00; background:#fff1e5; color:#7a2f00; border-radius:6px; padding:8px 10px; font-size:12px; font-weight:700; }
-        @media (max-width: 900px){ .grid { grid-template-columns: 1fr; } }
-    </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<main class="wrap page-container">
+
+{% block title %}Job {{ job.jc_number }} — Offset Printing ERP{% endblock %}
+{% block header_title %}Job Detail — {{ job.jc_number }}{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6 fade-in">
     {% with current_step='planning' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
-    {% if messages %}
-    <div style="margin-bottom:12px;">
-        {% for msg in messages %}
-        <div style="margin-bottom:8px;padding:10px;border-radius:8px;border:1px solid #c8d7e7;background:#f5f9ff;color:#2e3f53;font-size:12px;">{{ msg }}</div>
-        {% endfor %}
-    </div>
-    {% endif %}
-
-    <div style="display:flex;justify-content:space-between;gap:8px;align-items:center;flex-wrap:wrap;">
+    <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
         <div>
-            <h1 style="margin:0;font-size:20px;">{{ job.jc_number }}</h1>
-            <div class="muted">PO: {{ job.po_number|default:"-" }} | SKU: {{ job.sku|default:"-" }} | Status: {{ job.workflow_status_label }}</div>
-            {% if job.restored_at %}
-            <div class="muted" style="margin-top:4px;">
-                Restored {{ job.restored_at|date:"Y-m-d H:i" }}{% if job.restored_by %} by {{ job.restored_by.get_full_name|default:job.restored_by.username }}{% endif %}{% if job.restore_reason %} — Reason: {{ job.restore_reason }}{% endif %}
-            </div>
-            {% endif %}
-            <div style="margin-top:6px;">
-                <span class="badge {% if job.repeat_flag|lower == 'new' %}new{% else %}repeat{% endif %}">Flag: {{ job.repeat_flag|default:'Repeat' }}</span>
-            </div>
+            <h1 class="text-2xl font-semibold text-slate-900">{{ job.jc_number }}</h1>
+            <p class="text-sm text-slate-500 mt-1">PO: {{ job.po_number|default:'-' }} | SKU: {{ job.sku|default:'-' }} | Status: {{ job.workflow_status_label }}</p>
         </div>
-        <div>
-            <a class="btn secondary" href="{% url 'planning:home' %}">Back</a>
-            <a class="btn secondary" href="{% url 'planning:report' %}">Report</a>
-            {% if status_now != 'qc_approved' and status_now != 'released' and status_now != 'in_production' and status_now != 'completed' %}
-            <a class="btn secondary" href="{% url 'planning:job_edit' job.id %}">Edit</a>
-            {% endif %}
+        <div class="flex flex-wrap gap-3">
+            <a href="{% url 'planning:home' %}" class="px-4 py-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Back</a>
+            <a href="{% url 'planning:report' %}" class="px-4 py-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Report</a>
             {% if can_print_job_card %}
-            <a class="btn" target="_blank" rel="noopener" href="{% url 'planning:job_card_print' job.id %}">A4 Print</a>
+            <a href="{% url 'planning:job_card_print' job.id %}" target="_blank" rel="noopener" class="px-4 py-2 rounded-2xl bg-brand-600 text-white hover:bg-brand-700 transition">A4 Print</a>
             {% endif %}
         </div>
     </div>
 
     {% if job.repeat_flag|lower == 'new' %}
-    <div class="alert-new">NEW SKU ALERT: Shade matching and setup verification required before production run.</div>
-    {% endif %}
-
-    {% if is_repeat_with_changes %}
-    <div style="margin-top:10px; border:2px solid #d97706; background:#fef3c7; color:#78350f; border-radius:6px; padding:10px; font-weight:700;">
-        <div style="font-size:13px; margin-bottom:6px;">⚠ CHANGES DETECTED IN REPEAT JOB</div>
-        <div style="font-size:11px; margin-bottom:6px;">This repeat job has been modified from original. Production team must review changes before proceeding.</div>
-        <div style="font-size:11px; margin-bottom:6px;">
-            <strong>Modified Fields:</strong>
-            {% for field in changed_fields %}
-                <span style="display:inline-block; background:#fed7aa; padding:2px 6px; margin:2px 2px 2px 0; border-radius:3px;">{{ field }}</span>
-            {% endfor %}
-        </div>
-        {% if last_edited_by %}
-        <div style="font-size:10px; color:#92400e;">Edited by {{ last_edited_by.username }} on {{ last_edited_at|date:'d M Y H:i' }}</div>
-        {% endif %}
+    <div class="rounded-2xl border border-amber-200 bg-amber-50 text-amber-900 p-4 shadow-sm">
+        <strong class="font-semibold">NEW SKU ALERT:</strong> Shade matching and setup verification required before production run.
     </div>
     {% endif %}
 
-    {% if job.requirement %}
-    <div class="note" style="margin-top:10px;"><strong>Requirement:</strong> {{ job.requirement|linebreaksbr }}</div>
-    {% endif %}
-
-    {% if qc_missing_fields %}
-    <div class="note" style="margin-top:10px; background:#fff4e8; border-color:#efc28e; color:#7d4500;">
-        <strong>QC readiness:</strong> {{ qc_missing_fields|join:", " }} must be completed before QC approval.
-    </div>
-    {% endif %}
-
-    {% if status_now == 'qc_approved' or status_now == 'released' or status_now == 'in_production' or status_now == 'completed' %}
-    <div class="note" style="margin-top:10px;">This record is QC approved or later and locked for editing.</div>
-    {% endif %}
-
-    <div class="workflow">
-        {% if status_now == 'draft' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="submit_qc"><button class="btn warn" type="submit">Send To QC Queue</button></form>
-        {% endif %}
-        {% if status_now == 'pending_qc' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="approve_qc"><button class="btn good" type="submit">Mark QC Approved</button></form>
-        {% endif %}
-        {% if status_now == 'qc_approved' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="release"><button class="btn good" type="submit">Release For Production</button></form>
-        {% endif %}
-        {% if status_now == 'released' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="start_production"><button class="btn warn" type="submit">Start Production</button></form>
-        {% endif %}
-        {% if status_now == 'in_production' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="complete"><button class="btn danger" type="submit">Mark Completed</button></form>
-        {% endif %}
-        {% if status_now == 'completed' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="reopen"><button class="btn warn" type="submit">Reopen To Draft</button></form>
-        {% endif %}
-        {% if status_now == 'qc_approved' %}
-        <form method="post" action="{% url 'planning:job_status_update' job.id %}">{% csrf_token %}<input type="hidden" name="transition" value="unlock"><button class="btn secondary" type="submit">Unlock To QC Review</button></form>
-        {% endif %}
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 class="text-sm font-semibold uppercase tracking-[0.28em] text-slate-500 mb-4">Specifications</h2>
+            <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm text-slate-600">
+                <div class="font-semibold text-slate-800">Job Name</div><div>{{ job.job_name|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">PO Received</div><div>{{ job.po_received_date|date:'d M Y'|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Material</div><div>{{ job.material|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Color</div><div>{{ job.color_spec|default:'-' }}</div>
+                <div class="font-semibold text-slate-800"># Colors</div><div>{{ job.number_of_colors|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Size (mm)</div><div>{{ job.size_w_mm|default:'-' }} x {{ job.size_h_mm|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Order Qty</div><div>{{ job.order_qty|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Print Sheets</div><div>{{ job.print_sheets|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Wastage Sheets</div><div>{{ job.wastage_sheets|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Machine</div><div>{{ job.machine_name|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Department</div><div>{{ job.department|default:'-' }}</div>
+            </div>
+        </div>
+        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+            <h2 class="text-sm font-semibold uppercase tracking-[0.28em] text-slate-500 mb-4">Progress Snapshot</h2>
+            <div class="grid grid-cols-2 gap-3 text-sm text-slate-600">
+                <div class="font-semibold text-slate-800">Print Logs</div><div>{{ job.print_runs.count }}</div>
+                <div class="font-semibold text-slate-800">Dispatch Logs</div><div>{{ job.dispatch_runs.count }}</div>
+                <div class="font-semibold text-slate-800">Remaining Sheet</div><div>{{ job.remaining_sheet|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Rejected Qty</div><div class="text-red-700 font-semibold">{{ job.rejected_qty|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Balance Qty</div><div>{{ job.balance_qty|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Daily Demand</div><div>{{ job.daily_demand|default:'-' }}</div>
+            </div>
+        </div>
     </div>
 
-    <section class="grid" style="margin-top:10px;">
-        <div class="card">
-            <h3 style="margin-top:0;">Header</h3>
-            <div><strong>Job Name:</strong> {{ job.job_name|default:"-" }}</div>
-            <div><strong>PO Received Date:</strong> {{ job.po_received_date|date:"d M Y"|default:"-" }}</div>
-            <div><strong>Material:</strong> {{ job.material|default:"-" }}</div>
-            <div><strong>Color:</strong> {{ job.color_spec|default:"-" }}</div>
-            <div><strong>Number of Colors:</strong> {{ job.number_of_colors|default:"-" }}</div>
-            <div><strong>Size:</strong> {{ job.size_w_mm|default:"-" }} x {{ job.size_h_mm|default:"-" }} mm</div>
-            <div><strong>Order Qty:</strong> {{ job.order_qty|default:"-" }}</div>
-            <div><strong>Print Sheets:</strong> {{ job.print_sheets|default:"-" }}</div>
-            <div><strong>Wastage Sheets:</strong> {{ job.wastage_sheets|default:"-" }}</div>
-            <div><strong>Total Sheets Required:</strong> {{ job.calculated_sheets_required|default:"-" }}</div>
-            <div><strong>Plate Set:</strong> {{ job.plate_set_no|default:"-" }}</div>
-            <div><strong>Machine:</strong> {{ job.machine_name|default:"-" }}</div>
-            <div><strong>Department:</strong> {{ job.department|default:"-" }}</div>
-            <div><strong>Aging:</strong> {{ job.aging_days|default:"-" }}</div>
-            <div><strong>Die cutting:</strong> {{ job.die_cutting|default:"-" }}</div>
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div class="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div class="bg-slate-50 p-4 border-b border-slate-200"><h3 class="text-sm font-semibold text-slate-800 uppercase tracking-[0.24em]">Printing Events</h3></div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm text-left">
+                    <thead class="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-[0.16em] font-semibold"><tr><th class="p-3">#</th><th class="p-3">Date</th><th class="p-3">Print Qty</th><th class="p-3">Wastage</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for row in job.print_runs.all %}
+                        <tr class="hover:bg-slate-50 transition-colors"><td class="p-3 text-slate-600">{{ row.run_index }}</td><td class="p-3 text-slate-600">{{ row.print_date|default:'-' }}</td><td class="p-3 text-slate-800 font-semibold">{{ row.print_qty|default:'-' }}</td><td class="p-3 text-slate-600">{{ row.wastage_qty|default:'-' }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="p-6 text-center text-slate-400 italic">No print events tracked yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
-
-        <div class="card">
-            <h3 style="margin-top:0;">Progress Snapshot</h3>
-            <div><strong>Print Logs:</strong> {{ job.print_runs.count }}</div>
-            <div><strong>Dispatch Logs:</strong> {{ job.dispatch_runs.count }}</div>
-            <div><strong>Remaining Sheet:</strong> {{ job.remaining_sheet|default:"-" }}</div>
-            <div><strong>Rejected Qty:</strong> {{ job.rejected_qty|default:"-" }}</div>
-            <div><strong>Balance Qty:</strong> {{ job.balance_qty|default:"-" }}</div>
-            <div><strong>Daily Demand:</strong> {{ job.daily_demand|default:"-" }}</div>
+        <div class="rounded-3xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+            <div class="bg-slate-50 p-4 border-b border-slate-200"><h3 class="text-sm font-semibold text-slate-800 uppercase tracking-[0.24em]">Dispatch Events</h3></div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full text-sm text-left">
+                    <thead class="bg-slate-100 text-slate-500 uppercase text-[10px] tracking-[0.16em] font-semibold"><tr><th class="p-3">#</th><th class="p-3">Date</th><th class="p-3">DC No</th><th class="p-3">Delivered Qty</th></tr></thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% for row in job.dispatch_runs.all %}
+                        <tr class="hover:bg-slate-50 transition-colors"><td class="p-3 text-slate-600">{{ row.dispatch_index }}</td><td class="p-3 text-slate-600">{{ row.delivery_date|default:'-' }}</td><td class="p-3 text-slate-800">{{ row.dc_no|default:'-' }}</td><td class="p-3 text-emerald-600 font-semibold">{{ row.delivered_qty|default:'-' }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="4" class="p-6 text-center text-slate-400 italic">No dispatch events logged yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
         </div>
-    </section>
-
-    <section class="card" style="margin-top:10px;">
-        <h3 style="margin-top:0;">Printing Events</h3>
-        <div class="table-shell">
-            <table>
-                <thead><tr><th>#</th><th>Date</th><th>Print Qty</th><th>Wastage</th></tr></thead>
-                <tbody>
-                {% for row in job.print_runs.all %}
-                    <tr><td>{{ row.run_index }}</td><td>{{ row.print_date|default:"-" }}</td><td>{{ row.print_qty|default:"-" }}</td><td>{{ row.wastage_qty|default:"-" }}</td></tr>
-                {% empty %}
-                    <tr><td colspan="4">No print events imported yet.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </section>
-
-    <section class="card" style="margin-top:10px;">
-        <h3 style="margin-top:0;">Dispatch Events</h3>
-        <div class="table-shell">
-            <table>
-                <thead><tr><th>#</th><th>Date</th><th>DC</th><th>Delivered Qty</th></tr></thead>
-                <tbody>
-                {% for row in job.dispatch_runs.all %}
-                    <tr><td>{{ row.dispatch_index }}</td><td>{{ row.delivery_date|default:"-" }}</td><td>{{ row.dc_no|default:"-" }}</td><td>{{ row.delivered_qty|default:"-" }}</td></tr>
-                {% empty %}
-                    <tr><td colspan="4">No dispatch events imported yet.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </section>
-</main>
-</body>
-</html>
-
-
+    </div>
+</div>
+{% endblock %}

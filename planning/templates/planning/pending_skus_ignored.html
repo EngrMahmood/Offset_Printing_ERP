@@ -41,8 +41,8 @@
             <div class="muted">Review SKUs that were ignored from the pending master-to-planning workflow.</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <a class="btn secondary" href="{% url 'planning:pending_skus' %}">Pending SKUs</a>
-            <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">SKU Recipe Master</a>
+            <a class="btn secondary" href="{% url 'qc:pending_skus' %}">Pending SKUs</a>
+            <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">SKU Recipe Master</a>
             <a class="btn" href="{% url 'planning:home' %}">Planning Home</a>
         </div>
     </div>
@@ -61,7 +61,7 @@
             </select>
             <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name">
             <button type="submit" class="btn secondary">Apply</button>
-            <a class="btn secondary" href="{% url 'planning:pending_skus_ignored' %}">Reset</a>
+            <a class="btn secondary" href="{% url 'qc:pending_skus_ignored' %}">Reset</a>
         </form>
 
         <div class="table-shell">
@@ -94,7 +94,7 @@
                                 {% endif %}
                             </span>
                         </td>
-                        <td>{% if row.recipe %}<a class="btn secondary" href="{% url 'planning:pending_sku_master_entry' %}?po_doc_id={{ row.po_doc_id }}&sku={{ row.sku|urlencode }}">Open Recipe</a>{% else %}-{% endif %}</td>
+                        <td>{% if row.recipe %}<a class="btn secondary" href="{% url 'qc:pending_sku_master_entry' %}?po_doc_id={{ row.po_doc_id }}&sku={{ row.sku|urlencode }}">Open Recipe</a>{% else %}-{% endif %}</td>
                         <td class="muted">{{ row.uploaded_at|date:'d M Y H:i' }}</td>
                         <td>
                             <form method="post" action="" style="display:inline;">

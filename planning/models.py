@@ -232,8 +232,6 @@ class PlanningJob(models.Model):
             errors['wastage_sheets'] = 'Wastage is required before QC approval.'
         if not str(self.machine_name or '').strip():
             errors['machine_name'] = 'Machine Name is required before QC approval.'
-        if not str(self.remarks or '').strip():
-            errors['remarks'] = 'Remarks are required before QC approval.'
         return errors
 
     def qc_missing_fields(self):
@@ -242,9 +240,6 @@ class PlanningJob(models.Model):
 
     def clean(self):
         super().clean()
-        errors = self.qc_validation_errors()
-        if errors:
-            raise ValidationError(errors)
 
     def save(self, *args, **kwargs):
         update_fields = kwargs.get('update_fields')
@@ -271,14 +266,6 @@ class PlanningJob(models.Model):
         if update_fields is not None:
             kwargs['update_fields'] = list(update_fields)
         result = super().save(*args, **kwargs)
-
-        if self.sku and self.order_qty is not None:
-            try:
-                from core.services import ensure_job_card_from_planning_job
-
-                ensure_job_card_from_planning_job(self, actor=self.last_edited_by or self.created_by)
-            except Exception:
-                raise
 
         return result
 
@@ -352,6 +339,7 @@ class SkuRecipe(models.Model):
     material = models.CharField(max_length=120, blank=True)
     color_spec = models.CharField(max_length=60, blank=True)
     application = models.CharField(max_length=120, blank=True)
+    machine_name = models.CharField(max_length=120, blank=True)
 
     size_w_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     size_h_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)

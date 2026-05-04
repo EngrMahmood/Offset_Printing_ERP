@@ -1,0 +1,260 @@
+import csv
+import base64
+import io
+import json
+import re
+from difflib import SequenceMatcher
+from datetime import datetime
+from decimal import Decimal, InvalidOperation
+from urllib.parse import urlencode
+
+from django.contrib import messages
+from django.contrib.auth.decorators import login_required
+from django.core.exceptions import ValidationError
+from django.core.files.base import ContentFile
+from django.core.paginator import Paginator
+from django.db import transaction
+from django.db.models import Count, Q, Sum
+from django.http import Http404, HttpResponse
+from django.utils import timezone
+from django.shortcuts import get_object_or_404, redirect, render
+from django.urls import reverse
+
+try:
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+    from reportlab.lib.units import mm
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    REPORTLAB_AVAILABLE = True
+except ImportError:
+    REPORTLAB_AVAILABLE = False
+
+from core.jc_numbering import allocate_next_jc_number
+from core.views import permission_required
+from core.models import JobCard, JOB_CARD_PLANNING_EDITABLE_STATUSES
+from core.services import ensure_job_card_from_planning_job, job_card_queue_queryset
+from .forms import PlanningJobEditForm, SkuRecipeForm
+from .models import (
+    PLANNING_QC_GATE_STATUSES,
+    PLANNING_STATUS_ALIASES,
+    PLANNING_STATUS_CHOICES,
+    PlanningDispatchRun,
+    PlanningJob,
+    PlanningPrintRun,
+    PoDocument,
+    SkuRecipe,
+)
+from workflow.services import (
+    _annotate_items_with_recipe,
+    _build_cost_mismatch_note,
+    _build_recipe_map,
+    _collect_pending_sku_rows,
+    _format_display_qty,
+    _missing_required_master_fields,
+    _normalize_application_input,
+    _normalize_color_spec_input,
+    _normalize_status,
+    _po_payload_items,
+    _sanitize_po_payload_items,
+    _sku_key,
+    _sync_job_card_for_planning_status,
+    _sync_new_jobs_for_approved_sku,
+    _to_decimal,
+    _to_int,
+    _to_optional_decimal,
+    _to_optional_positive_int,
+    _user_is_admin,
+)
+from .po_extractor import extract_po_from_pdf
+
+
+def _user_is_admin(user):
+    profile = getattr(user, 'profile', None)
+    return getattr(user, 'is_superuser', False) or (profile is not None and getattr(profile, 'role', None) == 'admin')
+
+
+PLANNING_STATUSES = PLANNING_STATUS_CHOICES
+PLANNING_STATUS_SET = {value for value, _ in PLANNING_STATUSES}
+PLANNING_ACTIVE_STATUS_SET = {'released', 'in_production', 'completed', 'closed'}
+PLANNING_QUEUE_STATUS_SET = {'draft', 'pending_qc', 'qc_approved'}
+PLANNING_STATUS_LABELS = dict(PLANNING_STATUSES)
+PLANNING_STATUS_FILTER_ALIASES = {
+    'draft': {'draft', 'open', 'pending'},
+    'pending_qc': {'pending_qc', 'reviewed'},
+    'qc_approved': {'qc_approved', 'approved'},
+    'released': {'released'},
+    'in_production': {'in_production'},
+    'completed': {'completed', 'closed'},
+}
+NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
+COST_MISMATCH_NOTE_PREFIX = 'COST ALERT:'
+SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
+    ('job_name', 'Job Name'),
+    ('material', 'Material'),
+    ('color_spec', 'Color'),
+    ('application', 'Application'),
+    ('print_sheet_size', 'Print Sheet'),
+    ('purchase_sheet_size', 'Purchase Sheet'),
+    ('ups', 'UPS'),
+    ('purchase_material', 'Purchase Material Origin'),
+]
+
+_COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
+_COLOR_SINGLE_RE = re.compile(r'^(\d+)\s*(?:colou?r(?:s)?)?$', re.IGNORECASE)
+
+
+def _planning_status_filter_values(status):
+    normalized_status = _normalize_status(status, default='')
+    if not normalized_status:
+        return []
+    return sorted(PLANNING_STATUS_FILTER_ALIASES.get(normalized_status, {normalized_status}))
+
+
+def _sync_job_card_for_planning_status(job, target_status, actor):
+    if target_status != 'pending_qc':
+        return None
+
+    job_card, _created = ensure_job_card_from_planning_job(job, actor=actor)
+    if job_card.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES:
+        job_card.submit_to_qc(actor=actor, reason='Planning job sent to QC')
+    return job_card
+
+
+def build_planning_readme_text():
+    return """Offset ERP - Planning Module Easy Guide
+
+Last Updated: 2026-04-19
+
+=============================
+1) MASTER SKU (STEP 1)
+=============================
+Purpose:
+- Keep approved SKU master data ready before routing PO jobs.
+
+How to use:
+- Create or bulk upload SKU master data.
+- Save as Draft first.
+- Move Draft -> Reviewed -> Approved.
+- Only approved recipes are used as final master data.
+
+Required fields for approval:
+- Job Name, Material, Color, Application, Machine
+- Print Sheet, Purchase Sheet, UPS, Purchase Material Origin
+
+=============================
+2) PO INTAKE (STEP 2)
+=============================
+Purpose:
+- Upload PO and split lines into Repeat and New.
+
+Routing rule:
+- Repeat lines -> Planning Jobs
+- New lines -> Pending SKU Master Data
+
+Important notes:
+- Duplicate SKU lines in one PO are merged.
+- Qty display is normalized (trailing decimals removed).
+
+=============================
+3) PENDING NEW SKU (STEP 3)
+=============================
+Purpose:
+- Complete missing master data for new SKU lines from PO.
+
+Rules:
+- Job Name comes from PO and is not manual.
+- Department and unit cost can prefill from PO when available.
+- Application must be one of: UV, Lamination Gloss, Lamination Matt, NO.
+- Purchase Material Origin must be Local or Imported.
+
+Approval path:
+- Save Draft -> Send For Approval -> Approved
+- Approved new SKU records auto-sync to planning jobs.
+
+=============================
+4) PLANNING JOBS (STEP 4)
+=============================
+Purpose:
+- Create/update, review, and manage production planning jobs.
+
+Input source:
+- Repeat jobs from PO intake
+- Approved new SKUs after master approval
+
+Operational controls:
+- Filter by PO/SKU/status/department/machine/date.
+- Bulk status update for selected rows.
+- Open detail, edit, print A4 job card.
+
+=============================
+5) APPROVAL QUEUE (STEP 5)
+=============================
+Purpose:
+- Release jobs through QC and Production Manager checkpoints.
+
+Status transitions:
+- Draft -> Pending Review
+- Pending Review -> Pending Approval (Manager)
+
+After approval:
+- Print job card and run shop-floor execution flow.
+
+=============================
+6) SHOP FLOOR EXECUTION (STEP 6)
+=============================
+Purpose:
+- Use QR scan and A4 card for execution traceability.
+
+Use:
+- Open job via scan.
+- Track run/dispatch logs from planning-linked records.
+
+=============================
+7) CHANGE & MISMATCH ALERTS
+=============================
+Repeat route behavior:
+- If PO cost differs from master cost, a COST ALERT note is attached.
+- If PO department differs from master department, a DEPARTMENT ALERT note is attached.
+
+New route behavior:
+- New SKU records must complete master approval before planning sync.
+
+=============================
+8) DAILY DISCIPLINE
+=============================
+- Keep master records clean and approved.
+- Route every PO through intake queue.
+- Resolve pending SKUs same day.
+- Complete approvals before production release.
+"""
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planning_readme(request):
+    return render(
+        request,
+        'planning/planning_readme.html',
+        {'generated_on': timezone.now()},
+    )
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def download_planning_readme(request):
+    content = build_planning_readme_text()
+    response = HttpResponse(content, content_type='text/plain; charset=utf-8')
+    response['Content-Disposition'] = 'attachment; filename="planning_workflow_guide.txt"'
+    return response
+
+
+
+
+    styles = getSampleStyleSheet()
+    normal = styles['Normal']
+    normal.fontName = 'Helvetica'
+    normal.fontSize = 9
+    normal.leading = 11
+
+    title_style = ParagraphStyle('Title', parent=normal, fontName='Helvetica-Bold', fontSize=18, leading=20)

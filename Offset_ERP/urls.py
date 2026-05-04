@@ -9,7 +9,8 @@ urlpatterns = [
     path('login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     path('', home, name='home'),
-    path('planning/', include('planning.urls')),
+    path('planning/', include('planning.urls', namespace='planning')),
+    path('qc/', include('qc.urls', namespace='qc')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),
 
