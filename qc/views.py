@@ -30,9 +30,9 @@ from workflow.services import (
     _missing_required_master_fields,
     _normalize_application_input,
     _normalize_color_spec_input,
+    _normalize_status,
     _po_payload_items,
     _sku_key,
-    sync_job_card_for_planning_status,
     _sync_new_jobs_for_approved_sku,
     _to_decimal,
     _to_optional_decimal,
@@ -188,6 +188,7 @@ def planning_job_status_update(request, job_id):
     job = get_object_or_404(PlanningJob, id=job_id)
     current_status = _normalize_status(job.status)
     transition = (request.POST.get('transition') or '').strip()
+    reason = (request.POST.get('reason') or request.POST.get('change_reason') or '').strip()
     next_url = (request.POST.get('next') or '').strip()
 
     transitions = {
@@ -248,19 +249,6 @@ def planning_job_status_update(request, job_id):
 
     try:
         job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
-        if target_status == 'pending_qc':
-            try:
-                sync_job_card_for_planning_status(job, target_status, request.user)
-            except ValidationError as exc:
-                transaction.set_rollback(True)
-                error_dict = getattr(exc, 'message_dict', None)
-                if error_dict:
-                    for field_errors in error_dict.values():
-                        for error_message in field_errors:
-                            messages.error(request, error_message)
-                else:
-                    messages.error(request, str(exc))
-                return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
     except ValidationError as exc:
         error_dict = getattr(exc, 'message_dict', None)
         if error_dict:

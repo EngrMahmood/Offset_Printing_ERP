@@ -24,7 +24,7 @@
             font-family: "Segoe UI", Tahoma, sans-serif;
             background: var(--brand-bg);
             color: var(--brand-text);
-            padding: 20px;
+            
         }
 
         .container {
@@ -186,7 +186,7 @@
             color: #2f4a4a;
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    {% include 'includes/ui/theme_colors.html' %}
 </head>
 <body>
     {% include 'includes/page_header.html' %}

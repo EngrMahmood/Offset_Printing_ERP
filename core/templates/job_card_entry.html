@@ -3,12 +3,13 @@
 <html>
 <head>
     <title>{% if edit_record %}Edit Job Card{% else %}Job Card Entry{% endif %} - Offset ERP</title>
+    {% include 'includes/ui/theme_colors.html' %}
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'IBM Plex Sans', Arial, sans-serif;
             margin: 0;
-            padding: 12px;
-            background-color: #f3f6f9;
+            
+            background: var(--erp-bg-soft, #f3f5f8);
             overflow-x: hidden;
         }
 
@@ -155,7 +156,7 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    
 </head>
 <body>
     {% include 'includes/page_header.html' %}

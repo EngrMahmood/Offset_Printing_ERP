@@ -158,7 +158,7 @@ Rules:
 
 Approval path:
 - Save Draft -> Send For Approval -> Approved
-- Approved new SKU records auto-sync to planning jobs.
+- Approved new SKU records refresh matching draft planning jobs.
 
 =============================
 4) PLANNING JOBS (STEP 4)
@@ -2752,18 +2752,18 @@ def po_review(request, doc_id):
             and sku_key not in existing_any_jobs_skus
             and sku_key not in seen_skus_in_payload
         )
-        # Force first-ever job of an SKU as NEW; subsequent entries are REPEAT.
+        # Keep existing planning-job forward flags for internal create/update logic.
         item['forward_flag'] = 'New' if is_first_production else 'Repeat'
         item['is_first_production'] = is_first_production
         existing_job = existing_jobs_by_sku.get(sku_key)
         item['existing_job_id'] = existing_job.id if existing_job else None
         item['existing_jc_number'] = existing_job.jc_number if existing_job else ''
-        recipe = recipe_map.get(sku_key)
         if sku_key:
             seen_skus_in_payload.add(sku_key)
 
-    repeat_count = sum(1 for item in annotated_items if item.get('forward_flag') == 'Repeat')
-    new_count = sum(1 for item in annotated_items if item.get('forward_flag') == 'New')
+    # Display counts based on approved SKU master data availability, not existing PlanningJob history.
+    repeat_count = sum(1 for item in annotated_items if item.get('is_repeat'))
+    new_count = sum(1 for item in annotated_items if not item.get('is_repeat'))
 
     if request.method == 'POST':
         action = request.POST.get('action', '')
@@ -2893,7 +2893,7 @@ def po_review(request, doc_id):
 
                     existing_job = existing_jobs_by_sku.get(sku_key)
                     if existing_job:
-                        if _normalize_status(existing_job.status) == 'approved':
+                        if _normalize_status(existing_job.status) != 'draft':
                             locked_count += 1
                             continue
                         existing_repeat_flag = (existing_job.repeat_flag or '').strip().lower()
@@ -3076,7 +3076,7 @@ def po_new_skus(request, doc_id):
 
         messages.success(
             request,
-            f'SKU recipes saved: {created_count}. These SKU jobs will be forwarded as NEW for production shade/setup checks.',
+            f'SKU recipes saved: {created_count}. Planning jobs remain in draft until SKU master approval unlocks refresh.',
         )
         return redirect('qc:po_review', doc_id=po_doc.id)
 

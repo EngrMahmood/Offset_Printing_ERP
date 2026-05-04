@@ -501,7 +501,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             missing_job_count += 1
             continue
 
-        if existing_job and _normalize_status(existing_job.status) == 'approved':
+        if existing_job and _normalize_status(existing_job.status) != 'draft':
             locked_count += 1
             continue
 

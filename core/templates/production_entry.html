@@ -3,12 +3,13 @@
 <html>
 <head>
     <title>{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %} - Offset ERP</title>
+    {% include 'includes/ui/theme_colors.html' %}
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'IBM Plex Sans', Arial, sans-serif;
             margin: 0;
-            padding: 12px;
-            background-color: #f5f5f5;
+            
+            background: var(--erp-bg-soft, #f3f5f8);
             overflow-x: hidden;
         }
 
@@ -222,7 +223,7 @@
             }
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    
 </head>
 <body>
     {% include 'includes/page_header.html' %}

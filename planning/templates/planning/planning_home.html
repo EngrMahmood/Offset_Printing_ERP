@@ -1,182 +1,200 @@
-{% extends 'base.html' %}
+{% extends 'includes/ui/base_theme.html' %}
 {% load static %}
 
 {% block title %}Planning Workspace — Offset Printing ERP{% endblock %}
 {% block header_title %}Planning Hub{% endblock %}
+{% block header_subtitle %}Queue visibility for PO intake, SKU readiness, and active planning jobs.{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto space-y-6 fade-in">
-    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+<div class="erp-page-stack">
+    <section class="erp-page-intro">
         <div>
-            <h1 class="text-2xl font-semibold text-slate-900">Planning Workspace</h1>
-            <p class="text-slate-500 mt-1">Upload planning sheets, manage job flow, and release QC-approved work for production.</p>
+            <h1 class="erp-page-title">Planning Workspace</h1>
+            <p class="erp-page-subtitle">Upload planning sheets, manage job flow, and release QC-approved work for production.</p>
         </div>
-        <div class="flex flex-wrap gap-3">
-            <a href="{% url 'qc:approval_queue' %}" class="px-4 py-2 rounded-2xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition">Approval Queue</a>
-            <a href="{% url 'planning:jobs_archived' %}" class="px-4 py-2 rounded-2xl border border-slate-200 text-slate-700 bg-white hover:bg-slate-50 transition">Archived</a>
-            <a href="{% url 'planning:import_sheet' %}" class="px-4 py-2 rounded-2xl bg-brand-600 text-white hover:bg-brand-700 transition">Import Sheet</a>
+        <div class="erp-actions">
+            <a href="{% url 'qc:approval_queue' %}" class="erp-btn erp-btn-secondary">Approval Queue</a>
+            <a href="{% url 'planning:jobs_archived' %}" class="erp-btn erp-btn-secondary">Archived</a>
+            <a href="{% url 'planning:import_sheet' %}" class="erp-btn erp-btn-primary">Import Sheet</a>
         </div>
-    </div>
+    </section>
 
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="h-10 w-10 rounded-2xl bg-brand-50 text-brand-600 flex items-center justify-center font-semibold">1</div>
-                <div>
-                    <p class="text-xs uppercase tracking-[0.28em] text-brand-600 font-semibold">PO Intake Queue</p>
-                    <p class="text-sm text-slate-500">Review uploaded purchase orders and prepare them for planning.</p>
+    <section class="erp-dashboard-grid">
+        <article class="erp-queue-card">
+            <div class="erp-card-header">
+                <div class="erp-actions">
+                    <span class="erp-queue-card-accent">1</span>
+                    <div class="erp-card-title-stack">
+                        <div class="erp-eyebrow">PO Intake Queue</div>
+                        <h2 class="erp-section-title">Purchase Order Intake</h2>
+                    </div>
                 </div>
+                <div class="erp-kpi-value">{{ po_queue_count|default:0 }}</div>
             </div>
-            <div class="space-y-3 text-sm text-slate-700">
-                <div class="flex justify-between"><span>Uploaded POs</span><span class="font-semibold">{{ po_queue_count|default:0 }}</span></div>
-                <div class="flex justify-between"><span>Pending Review</span><span class="font-semibold text-amber-600">{{ po_pending_review_count|default:0 }}</span></div>
-                <div class="flex justify-between"><span>Processed</span><span class="font-semibold text-emerald-600">{{ po_processed_count|default:0 }}</span></div>
+            <p class="erp-card-subtitle">Review uploaded purchase orders and prepare them for planning.</p>
+            <div class="erp-metric-list">
+                <div class="erp-metric-row"><span>Uploaded POs</span><strong>{{ po_queue_count|default:0 }}</strong></div>
+                <div class="erp-metric-row"><span>Pending Review</span><strong>{{ po_pending_review_count|default:0 }}</strong></div>
+                <div class="erp-metric-row"><span>Processed</span><strong>{{ po_processed_count|default:0 }}</strong></div>
             </div>
-            <div class="mt-5 flex flex-wrap gap-2">
-                <a href="{% url 'planning:upload_po' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-brand-600 border border-slate-200 text-xs font-semibold">Upload PO</a>
-                <a href="{% url 'planning:po_inbox' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-brand-600 border border-slate-200 text-xs font-semibold">Open Inbox</a>
+            <div class="erp-actions">
+                <a href="{% url 'planning:upload_po' %}" class="erp-btn erp-btn-secondary">Upload PO</a>
+                <a href="{% url 'planning:po_inbox' %}" class="erp-btn erp-btn-secondary">Open Inbox</a>
             </div>
-        </div>
-        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="h-10 w-10 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center font-semibold">2</div>
-                <div>
-                    <p class="text-xs uppercase tracking-[0.28em] text-amber-600 font-semibold">SKU Queue</p>
-                    <p class="text-sm text-slate-500">Track pending SKUs and master data requirements before planning.</p>
-                </div>
-            </div>
-            <div class="space-y-3 text-sm text-slate-700">
-                <div class="flex justify-between"><span>Pending New SKUs</span><span class="font-semibold text-amber-600">{{ sku_pending_count|default:0 }}</span></div>
-                <div class="flex justify-between"><span>Pending Masters</span><span class="font-semibold">{{ sku_pending_master_entries_count|default:0 }}</span></div>
-                <div class="flex justify-between"><span>Approved Masters</span><span class="font-semibold text-emerald-600">{{ sku_approved_count|default:0 }}</span></div>
-            </div>
-            <div class="mt-5 flex flex-wrap gap-2">
-                <a href="{% url 'qc:pending_skus' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-amber-600 border border-slate-200 text-xs font-semibold">Pending SKUs</a>
-                <a href="{% url 'qc:sku_recipes' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-amber-600 border border-slate-200 text-xs font-semibold">Master List</a>
-            </div>
-        </div>
-        <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition">
-            <div class="flex items-center gap-3 mb-4">
-                <div class="h-10 w-10 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-semibold">3</div>
-                <div>
-                    <p class="text-xs uppercase tracking-[0.28em] text-emerald-600 font-semibold">Planning Queue</p>
-                    <p class="text-sm text-slate-500">Validate jobs, confirm QC status, then release for production.</p>
-                </div>
-            </div>
-            <div class="space-y-3 text-sm text-slate-700">
-                <div class="flex justify-between"><span>Draft Jobs</span><span class="font-semibold">{{ planning_draft_count|default:0 }}</span></div>
-                <div class="flex justify-between"><span>Pending QC</span><span class="font-semibold text-amber-600">{{ planning_pending_qc_count|default:0 }}</span></div>
-                <div class="flex justify-between"><span>Released Jobs</span><span class="font-semibold text-brand-600">{{ planning_released_count|default:0 }}</span></div>
-            </div>
-            <div class="mt-5 flex flex-wrap gap-2">
-                <a href="{% url 'planning:jobs' %}" class="px-3 py-2 rounded-2xl bg-slate-50 text-emerald-600 border border-slate-200 text-xs font-semibold">Open Jobs</a>
-            </div>
-        </div>
-    </div>
+        </article>
 
-    <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-end mb-6">
-            <div>
-                <h2 class="text-lg font-semibold text-slate-900">Search & Filter Valid Active Jobs</h2>
-                <p class="text-sm text-slate-500 mt-1">Use filters to narrow down jobs by status, department or machine.</p>
+        <article class="erp-queue-card">
+            <div class="erp-card-header">
+                <div class="erp-actions">
+                    <span class="erp-queue-card-accent">2</span>
+                    <div class="erp-card-title-stack">
+                        <div class="erp-eyebrow">SKU Queue</div>
+                        <h2 class="erp-section-title">Master SKU Readiness</h2>
+                    </div>
+                </div>
+                <div class="erp-kpi-value">{{ sku_pending_count|default:0 }}</div>
             </div>
-            <div class="flex flex-wrap gap-3">
-                <a href="{% url 'planning:jobs' %}" class="px-4 py-2 rounded-2xl bg-slate-50 text-slate-700 border border-slate-200 text-sm font-semibold hover:bg-slate-100 transition">Reset</a>
+            <p class="erp-card-subtitle">Track pending SKUs and master data requirements before planning.</p>
+            <div class="erp-metric-list">
+                <div class="erp-metric-row"><span>Pending New SKUs</span><strong>{{ sku_pending_count|default:0 }}</strong></div>
+                <div class="erp-metric-row"><span>Pending Masters</span><strong>{{ sku_pending_master_entries_count|default:0 }}</strong></div>
+                <div class="erp-metric-row"><span>Approved Masters</span><strong>{{ sku_approved_count|default:0 }}</strong></div>
+            </div>
+            <div class="erp-actions">
+                <a href="{% url 'qc:pending_skus' %}" class="erp-btn erp-btn-secondary">Pending SKUs</a>
+                <a href="{% url 'qc:sku_recipes' %}" class="erp-btn erp-btn-secondary">Master List</a>
+            </div>
+        </article>
+
+        <article class="erp-queue-card">
+            <div class="erp-card-header">
+                <div class="erp-actions">
+                    <span class="erp-queue-card-accent">3</span>
+                    <div class="erp-card-title-stack">
+                        <div class="erp-eyebrow">Planning Queue</div>
+                        <h2 class="erp-section-title">Active Planning Jobs</h2>
+                    </div>
+                </div>
+                <div class="erp-kpi-value">{{ planning_draft_count|default:0 }}</div>
+            </div>
+            <p class="erp-card-subtitle">Validate jobs, confirm QC status, then release for production.</p>
+            <div class="erp-metric-list">
+                <div class="erp-metric-row"><span>Draft Jobs</span><strong>{{ planning_draft_count|default:0 }}</strong></div>
+                <div class="erp-metric-row"><span>Pending QC</span><strong>{{ planning_pending_qc_count|default:0 }}</strong></div>
+                <div class="erp-metric-row"><span>Released Jobs</span><strong>{{ planning_released_count|default:0 }}</strong></div>
+            </div>
+            <div class="erp-actions">
+                <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-secondary">Open Jobs</a>
+            </div>
+        </article>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Job Search</div>
+                <h2 class="erp-section-title">Search and Filter Active Jobs</h2>
+                <p class="erp-card-subtitle">Use filters to narrow down jobs by status, department, machine, or date range.</p>
+            </div>
+            <div class="erp-actions">
+                <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-secondary">Reset</a>
             </div>
         </div>
-        <div class="mb-6">
-            <nav class="flex flex-wrap gap-2">
-                {% with current_status=filters.status %}
-                <a href="{% url 'planning:jobs' %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if not current_status %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">All <span class="ml-2 text-slate-500">({{ jobs.paginator.count }})</span></a>
-                <a href="?status=draft{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if current_status == 'draft' %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">Draft <span class="ml-2 text-slate-500">({{ planning_draft_count }})</span></a>
-                <a href="?status=pending_qc{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if current_status == 'pending_qc' %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">Pending QC <span class="ml-2 text-slate-500">({{ planning_pending_qc_count }})</span></a>
-                <a href="?status=qc_approved{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if current_status == 'qc_approved' %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">QC Approved <span class="ml-2 text-slate-500">({{ planning_approved_count }})</span></a>
-                <a href="?status=released{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-4 py-2 rounded-full text-sm font-semibold transition {% if current_status == 'released' %}bg-brand-600 text-white{% else %}bg-slate-100 text-slate-700 hover:bg-slate-200{% endif %}">Released <span class="ml-2 text-slate-500">({{ planning_released_count }})</span></a>
-                {% endwith %}
-            </nav>
+
+        <div class="erp-tab-strip" style="margin-bottom:12px;">
+            {% with current_status=filters.status %}
+            <a href="{% url 'planning:jobs' %}" class="erp-tab-button {% if not current_status %}is-active{% endif %}">All ({{ jobs.paginator.count }})</a>
+            <a href="?status=draft{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-tab-button {% if current_status == 'draft' %}is-active{% endif %}">Draft ({{ planning_draft_count }})</a>
+            <a href="?status=pending_qc{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-tab-button {% if current_status == 'pending_qc' %}is-active{% endif %}">Pending QC ({{ planning_pending_qc_count }})</a>
+            <a href="?status=qc_approved{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-tab-button {% if current_status == 'qc_approved' %}is-active{% endif %}">QC Approved ({{ planning_approved_count }})</a>
+            <a href="?status=released{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-tab-button {% if current_status == 'released' %}is-active{% endif %}">Released ({{ planning_released_count }})</a>
+            {% endwith %}
         </div>
-        <form method="get" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            <input type="text" name="q" placeholder="Search..." value="{{ filters.q }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-            <select name="status" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
+
+        <form method="get" class="erp-filter-bar">
+            <input type="text" name="q" placeholder="Search..." value="{{ filters.q }}" class="erp-input">
+            <select name="status" class="erp-select">
                 <option value="">All Status</option>
                 {% for value, label in status_choices %}
                 <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
                 {% endfor %}
             </select>
-            <input type="text" name="department" placeholder="Department" value="{{ filters.department }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-            <input type="text" name="machine" placeholder="Machine" value="{{ filters.machine }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-            <input type="date" name="from_date" value="{{ filters.from_date }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-            <input type="date" name="to_date" value="{{ filters.to_date }}" class="w-full px-4 py-3 border border-slate-200 rounded-2xl bg-slate-50 focus:outline-none focus:ring-2 focus:ring-brand-500/20">
-            <button type="submit" class="lg:col-span-3 w-full px-4 py-3 rounded-2xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 transition">Apply Filters</button>
+            <input type="text" name="department" placeholder="Department" value="{{ filters.department }}" class="erp-input">
+            <input type="text" name="machine" placeholder="Machine" value="{{ filters.machine }}" class="erp-input">
+            <input type="date" name="from_date" value="{{ filters.from_date }}" class="erp-input">
+            <input type="date" name="to_date" value="{{ filters.to_date }}" class="erp-input">
+            <button type="submit" class="erp-btn erp-btn-primary">Apply Filters</button>
         </form>
 
-        <div class="bg-white rounded-3xl border border-slate-200 p-6 shadow-sm mt-6">
-            <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4 mb-4">
-                <div>
-                    <h2 class="text-lg font-semibold text-slate-900">Open Planning Jobs</h2>
-                    <p class="text-sm text-slate-500 mt-1">Filtered list of active planning jobs.</p>
+        <div class="erp-section-shell" style="margin-top:14px;">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Planning Queue</div>
+                    <h2 class="erp-section-title">Open Planning Jobs</h2>
+                    <p class="erp-card-subtitle">Filtered list of active planning jobs.</p>
                 </div>
-                <div class="text-sm text-slate-500">Showing {{ jobs.paginator.count }} job{{ jobs.paginator.count|pluralize }}</div>
+                <div class="erp-table-meta-text">Showing {{ jobs.paginator.count }} job{{ jobs.paginator.count|pluralize }}</div>
             </div>
             {% if jobs %}
-            <div class="overflow-x-auto">
-                <table class="min-w-full text-sm text-left border-separate border-spacing-0">
-                    <thead class="bg-slate-50">
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
+                    <thead>
                         <tr>
-                            <th class="px-4 py-3 font-semibold text-slate-700">JC Number</th>
-                            <th class="px-4 py-3 font-semibold text-slate-700">PO Number</th>
-                            <th class="px-4 py-3 font-semibold text-slate-700">SKU</th>
-                            <th class="px-4 py-3 font-semibold text-slate-700">Job Name</th>
-                            <th class="px-4 py-3 font-semibold text-slate-700">Status</th>
-                            <th class="px-4 py-3 font-semibold text-slate-700">Plan Date</th>
-                            <th class="px-4 py-3 font-semibold text-slate-700">Actions</th>
+                            <th>JC Number</th>
+                            <th>PO Number</th>
+                            <th>SKU</th>
+                            <th>Job Name</th>
+                            <th>Status</th>
+                            <th>Plan Date</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for job in jobs %}
-                        <tr class="border-t border-slate-200">
-                            <td class="px-4 py-3"><a href="{% url 'planning:job_detail' job.id %}" class="font-medium text-slate-900 hover:text-brand-700">{{ job.jc_number }}</a></td>
-                            <td class="px-4 py-3">{{ job.po_number|default:'-' }}</td>
-                            <td class="px-4 py-3">{{ job.sku|default:'-' }}</td>
-                            <td class="px-4 py-3">{{ job.job_name|default:'-' }}</td>
-                            <td class="px-4 py-3">
-                                <span class="inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold {% if job.status == 'draft' %}bg-slate-100 text-slate-800{% elif job.status == 'pending_qc' %}bg-amber-100 text-amber-800{% elif job.status == 'qc_approved' %}bg-emerald-100 text-emerald-800{% elif job.status == 'released' %}bg-brand-100 text-brand-800{% else %}bg-slate-100 text-slate-800{% endif %}">{{ job.workflow_status_label }}</span>
+                        <tr>
+                            <td><a href="{% url 'planning:job_detail' job.id %}" class="erp-table-link">{{ job.jc_number }}</a></td>
+                            <td>{{ job.po_number|default:'-' }}</td>
+                            <td>{{ job.sku|default:'-' }}</td>
+                            <td>{{ job.job_name|default:'-' }}</td>
+                            <td>
+                                <span class="erp-badge {% if job.status == 'draft' %}erp-badge-draft{% elif job.status == 'pending_qc' %}erp-badge-pending{% elif job.status == 'qc_approved' %}erp-badge-approved{% elif job.status == 'released' %}erp-badge-released{% else %}erp-badge-draft{% endif %}">{{ job.workflow_status_label }}</span>
                             </td>
-                            <td class="px-4 py-3">{{ job.plan_date|date:'Y-m-d' }}</td>
-                            <td class="px-4 py-3 space-y-2">
-                                <a href="{% url 'planning:job_detail' job.id %}" class="inline-flex items-center px-3 py-1 rounded-full border border-slate-200 bg-slate-50 text-brand-600 hover:bg-slate-100 text-sm font-semibold">View</a>
-                                {% if job.status == 'draft' %}
-                                <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="inline">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="transition" value="submit_qc">
-                                    <input type="hidden" name="next" value="{% url 'planning:jobs' %}">
-                                    <button type="submit" class="inline-flex items-center px-3 py-1 rounded-full bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">Send to QC</button>
-                                </form>
-                                {% elif job.status == 'pending_qc' %}
-                                <a href="{% url 'planning:job_detail' job.id %}" class="inline-flex items-center px-3 py-1 rounded-full bg-amber-500 text-white text-sm font-semibold hover:bg-amber-600">Open QC</a>
-                                {% elif job.status == 'qc_approved' %}
-                                <a href="{% url 'planning:job_card_print' job.id %}" class="inline-flex items-center px-3 py-1 rounded-full bg-emerald-600 text-white text-sm font-semibold hover:bg-emerald-700">Print Job Card</a>
-                                {% endif %}
+                            <td>{{ job.plan_date|date:'Y-m-d' }}</td>
+                            <td>
+                                <div class="erp-actions">
+                                    <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-secondary">View</a>
+                                    {% if job.status == 'draft' %}
+                                    <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="erp-inline-form">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="transition" value="submit_qc">
+                                        <input type="hidden" name="next" value="{% url 'planning:jobs' %}">
+                                        <button type="submit" class="erp-btn erp-btn-success">Send to QC</button>
+                                    </form>
+                                    {% elif job.status == 'pending_qc' %}
+                                    <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-warning">Open QC</a>
+                                    {% elif job.status == 'qc_approved' %}
+                                    <a href="{% url 'planning:job_card_print' job.id %}" class="erp-btn erp-btn-success">Print Job Card</a>
+                                    {% endif %}
+                                </div>
                             </td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
-            <div class="mt-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 text-sm text-slate-500">
-                <div>Page {{ jobs.number }} of {{ jobs.paginator.num_pages }}</div>
-                <div class="flex flex-wrap gap-2">
-                    {% if jobs.has_previous %}
-                    <a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-3 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50">Previous</a>
-                    {% endif %}
-                    {% if jobs.has_next %}
-                    <a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="px-3 py-2 rounded-2xl border border-slate-200 bg-white hover:bg-slate-50">Next</a>
-                    {% endif %}
-                </div>
+            <div class="erp-pagination">
+                <div class="erp-table-meta-text">Page {{ jobs.number }} of {{ jobs.paginator.num_pages }}</div>
+                {% if jobs.has_previous %}
+                <a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-secondary">Previous</a>
+                {% endif %}
+                {% if jobs.has_next %}
+                <a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-secondary">Next</a>
+                {% endif %}
             </div>
             {% else %}
-            <div class="rounded-3xl border border-slate-200 bg-slate-50 p-6 text-slate-600">No planning jobs found. Use the filters or upload PO documents to populate the queue.</div>
+            <div class="erp-alert erp-alert-info">No planning jobs found. Use the filters or upload PO documents to populate the queue.</div>
             {% endif %}
         </div>
-    </div>
+    </section>
+</div>
 {% endblock %}

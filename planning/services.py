@@ -8,7 +8,7 @@ from django.db.models import Sum, Q
 from django.utils import timezone
 from core.models import Machine, Department, Material
 from .models import PlanningJob, PoDocument, SkuRecipe
-from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note
+from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note, _normalize_status, _to_int, _to_decimal
 from core.jc_numbering import allocate_next_jc_number
 
 NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
@@ -386,35 +386,20 @@ def _deduplicate_po_items_by_sku(items):
 
 
 def _history_repeat_new_counts(items):
-    """Classify Repeat/New from historical PlanningJob SKU existence."""
-    sku_keys = {_sku_key(item.get('sku')) for item in items if item.get('sku')}
-    existing_any_jobs_skus = set()
-    if sku_keys:
-        sku_any_query = Q()
-        for sku_key in sku_keys:
-            sku_any_query |= Q(sku__iexact=sku_key)
-        existing_any_jobs_skus = {
-            _sku_key(sku)
-            for sku in PlanningJob.objects.filter(sku_any_query).values_list('sku', flat=True)
-            if sku
-        }
+    """Classify Repeat/New from approved SKU recipes, not historical PlanningJobs."""
+    recipe_map = _build_recipe_map(items)
 
-    seen_skus_in_payload = set()
     repeat_count = 0
     new_count = 0
     for item in items:
-        sku_key = _sku_key(item.get('sku'))
-        is_new = bool(
-            sku_key
-            and sku_key not in existing_any_jobs_skus
-            and sku_key not in seen_skus_in_payload
-        )
-        if is_new:
-            new_count += 1
-        elif sku_key:
+        sku = item.get('sku')
+        sku_key = _sku_key(sku)
+        if not sku_key:
+            continue
+        if sku_key in recipe_map:
             repeat_count += 1
-        if sku_key:
-            seen_skus_in_payload.add(sku_key)
+        else:
+            new_count += 1
 
     return repeat_count, new_count
 
@@ -470,7 +455,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             missing_recipe_count += 1
 
         existing_job = existing_jobs_by_sku.get(sku_key)
-        if existing_job and _normalize_status(existing_job.status) == 'approved':
+        if existing_job and _normalize_status(existing_job.status) != 'draft':
             locked_count += 1
             continue
 
@@ -634,7 +619,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             missing_job_count += 1
             continue
 
-        if existing_job and _normalize_status(existing_job.status) == 'approved':
+        if existing_job and _normalize_status(existing_job.status) != 'draft':
             locked_count += 1
             continue
 

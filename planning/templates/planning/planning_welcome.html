@@ -27,8 +27,8 @@
 
         body {
             margin: 0;
-            font-family: "Segoe UI", Tahoma, sans-serif;
-            background: var(--bg);
+            font-family: 'IBM Plex Sans', Arial, sans-serif;
+            background: var(--erp-bg-soft, #f3f5f8);
             color: var(--text);
         }
 
@@ -320,7 +320,7 @@
             .top-nav-wrap { justify-content: center; }
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    {% include 'includes/ui/theme_colors.html' %}
 </head>
 <body>
     {% include 'includes/page_header.html' %}

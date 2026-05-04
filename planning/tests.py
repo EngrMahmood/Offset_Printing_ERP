@@ -196,3 +196,84 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(response.status_code, 302)
 		self.assertEqual(job.status, 'draft')
 		self.assertFalse(JobCard.objects.filter(planning_job=job).exists())
+
+	def test_repeat_flag_preserved_after_approved_sku_refresh(self):
+		po_doc = self._create_po_document(sku='REP-SKU-001', po_number='PO-REP-1')
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		job = PlanningJob.objects.get(po_number='PO-REP-1', sku='REP-SKU-001')
+		job.repeat_flag = 'Repeat'
+		job.save(update_fields=['repeat_flag', 'updated_at'])
+		self._create_approved_recipe('REP-SKU-001')
+
+		result = _sync_new_jobs_for_approved_sku('REP-SKU-001', actor=self.user)
+
+		job.refresh_from_db()
+		self.assertEqual(result['created'], 0)
+		self.assertEqual(result['updated'], 1)
+		self.assertEqual(job.repeat_flag, 'Repeat')
+
+	def test_po_review_counts_use_master_data_not_existing_planning_jobs(self):
+		po_doc = self._create_po_document(sku='NEW-SKU-006', po_number='PO-NEW-6')
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		job = PlanningJob.objects.filter(po_number='PO-NEW-6', sku='NEW-SKU-006').first()
+		self.assertIsNotNone(job)
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('qc:po_review', args=[po_doc.id]))
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.context['repeat_count'], 0)
+		self.assertEqual(response.context['new_count'], 1)
+		self.assertContains(response, 'Repeat SKUs: 0')
+		self.assertContains(response, 'New SKUs: 1')
+
+	def test_po_inbox_counts_use_master_data_not_existing_planning_jobs(self):
+		po_doc = self._create_po_document(sku='INBOX-SKU-001', po_number='PO-INBOX-1')
+		self._create_approved_recipe('INBOX-SKU-001')
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('planning:po_inbox'))
+		self.assertEqual(response.status_code, 200)
+		rows = response.context['rows']
+		self.assertTrue(any(row['po_number'] == 'PO-INBOX-1' for row in rows))
+		row = next(row for row in rows if row['po_number'] == 'PO-INBOX-1')
+		self.assertEqual(row['repeat_count'], 1)
+		self.assertEqual(row['new_count'], 0)
+		self.assertEqual(row['missing_count'], 0)
+
+	def test_job_card_created_only_on_submit_to_qc(self):
+		po_doc = self._create_po_document(sku='NEW-SKU-005', po_number='PO-NEW-5')
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		self._create_approved_recipe('NEW-SKU-005')
+		_sync_new_jobs_for_approved_sku('NEW-SKU-005', actor=self.user)
+
+		job = PlanningJob.objects.get(po_number='PO-NEW-5', sku='NEW-SKU-005')
+		job.machine_name = 'Machine A'
+		job.wastage_sheets = 12
+		job.save(update_fields=['machine_name', 'wastage_sheets', 'updated_at'])
+		self.assertFalse(JobCard.objects.filter(planning_job=job).exists())
+
+		self.client.force_login(self.user)
+		response = self.client.post(
+			reverse('planning:job_status_update', args=[job.id]),
+			{'transition': 'submit_qc'},
+		)
+
+		job.refresh_from_db()
+		self.assertEqual(response.status_code, 302)
+		self.assertEqual(job.status, 'pending_qc')
+		self.assertEqual(JobCard.objects.filter(planning_job=job).count(), 1)
+
+	def test_approved_sku_refresh_skips_non_draft_jobs(self):
+		po_doc = self._create_po_document(sku='NEW-SKU-006', po_number='PO-NEW-6')
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		job = PlanningJob.objects.get(po_number='PO-NEW-6', sku='NEW-SKU-006')
+		job.status = 'pending_qc'
+		job.save(update_fields=['status', 'updated_at'])
+		self._create_approved_recipe('NEW-SKU-006')
+
+		result = _sync_new_jobs_for_approved_sku('NEW-SKU-006', actor=self.user)
+
+		job.refresh_from_db()
+		self.assertEqual(result['updated'], 0)
+		self.assertEqual(result['locked'], 1)
+		self.assertEqual(job.status, 'pending_qc')

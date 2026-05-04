@@ -3,8 +3,9 @@
 <html>
 <head>
     <title>ERP README - Offset ERP</title>
+    {% include 'includes/ui/theme_colors.html' %}
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; color: #223; }
+        body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); color: #223; }
         .container { max-width: 980px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
         .top-actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
         .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; display: inline-block; }
@@ -18,7 +19,7 @@
         .meta { color: #667085; font-size: 13px; margin-bottom: 12px; }
         .note { background: #fff8e1; border: 1px solid #f3de9a; color: #7a5d1a; padding: 10px 12px; border-radius: 8px; margin-top: 14px; }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    
 </head>
 <body>
     {% include 'includes/page_header.html' %}
