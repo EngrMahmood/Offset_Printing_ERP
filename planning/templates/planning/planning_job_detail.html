@@ -15,11 +15,16 @@
             <h1 class="text-2xl font-semibold text-slate-900">{{ job.jc_number }}</h1>
             <p class="text-sm text-slate-500 mt-1">PO: {{ job.po_number|default:'-' }} | SKU: {{ job.sku|default:'-' }} | Status: {{ job.workflow_status_label }}</p>
         </div>
-        <div class="flex flex-wrap gap-3">
+        <div class="flex flex-wrap gap-3 items-center">
             <a href="{% url 'planning:home' %}" class="px-4 py-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Back</a>
             <a href="{% url 'planning:report' %}" class="px-4 py-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Report</a>
+            {% if can_edit_job %}
+            <a href="{% url 'planning:job_edit' job.id %}" class="px-4 py-2 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 transition">Finalize Job</a>
+            {% endif %}
             {% if can_print_job_card %}
             <a href="{% url 'planning:job_card_print' job.id %}" target="_blank" rel="noopener" class="px-4 py-2 rounded-2xl bg-brand-600 text-white hover:bg-brand-700 transition">A4 Print</a>
+            {% endif %}
+            {% if can_edit_job %}
             {% endif %}
         </div>
     </div>
@@ -33,19 +38,29 @@
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 class="text-sm font-semibold uppercase tracking-[0.28em] text-slate-500 mb-4">Specifications</h2>
+            {% with recipe=job.sku_recipe %}
             <div class="grid grid-cols-2 gap-x-4 gap-y-3 text-sm text-slate-600">
                 <div class="font-semibold text-slate-800">Job Name</div><div>{{ job.job_name|default:'-' }}</div>
                 <div class="font-semibold text-slate-800">PO Received</div><div>{{ job.po_received_date|date:'d M Y'|default:'-' }}</div>
-                <div class="font-semibold text-slate-800">Material</div><div>{{ job.material|default:'-' }}</div>
-                <div class="font-semibold text-slate-800">Color</div><div>{{ job.color_spec|default:'-' }}</div>
-                <div class="font-semibold text-slate-800"># Colors</div><div>{{ job.number_of_colors|default:'-' }}</div>
-                <div class="font-semibold text-slate-800">Size (mm)</div><div>{{ job.size_w_mm|default:'-' }} x {{ job.size_h_mm|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">PR Reference</div><div>{{ job.pr_reference|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Material Type</div><div>{{ job.material_display|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Color</div><div>{{ job.color_spec_display|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Application</div><div>{{ job.application_display|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Size (mm)</div><div>{{ job.size_w_mm_display|default:'-' }} x {{ job.size_h_mm_display|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Print Sheet</div><div>{{ job.print_sheet_size_display|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Total Sheets</div><div>{{ job.total_sheet_quantity|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Purchase Sheet</div><div>{{ job.purchase_sheet_size_display|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">UPS</div><div>{{ job.ups_display|default:'-' }}</div>
                 <div class="font-semibold text-slate-800">Order Qty</div><div>{{ job.order_qty|default:'-' }}</div>
-                <div class="font-semibold text-slate-800">Print Sheets</div><div>{{ job.print_sheets|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Delivery Date</div><div>{{ job.delivery_date|default:'-' }}</div>
                 <div class="font-semibold text-slate-800">Wastage Sheets</div><div>{{ job.wastage_sheets|default:'-' }}</div>
                 <div class="font-semibold text-slate-800">Machine</div><div>{{ job.machine_name|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Purchase Origin</div><div>{{ job.purchase_material_origin|default:'-' }}</div>
                 <div class="font-semibold text-slate-800">Department</div><div>{{ job.department|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">AWC No.</div><div>{{ job.awc_no_display|default:'-' }}</div>
+                <div class="font-semibold text-slate-800">Die Cutting</div><div>{{ job.die_cutting_display|default:'-' }}</div>
             </div>
+            {% endwith %}
         </div>
         <div class="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
             <h2 class="text-sm font-semibold uppercase tracking-[0.28em] text-slate-500 mb-4">Progress Snapshot</h2>

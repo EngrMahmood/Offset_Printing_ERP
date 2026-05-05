@@ -16,6 +16,7 @@
                         <a href="{% url 'planning:po_inbox' %}" class="{% if request.resolver_match.url_name == 'po_inbox' %}is-active{% endif %}">PO Intake</a>
                         <a href="{% url 'planning:import_sheet' %}" class="{% if request.resolver_match.url_name == 'import_sheet' %}is-active{% endif %}">Import Sheet</a>
                         <a href="{% url 'planning:jobs_archived' %}" class="{% if request.resolver_match.url_name == 'jobs_archived' %}is-active{% endif %}">Archived Jobs</a>
+                        <a href="{% url 'planning:job_card_layout_builder' %}">Job Card Builder</a>
                     </div>
                 </div>
 

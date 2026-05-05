@@ -170,7 +170,7 @@
                     onclick="return confirm('Archive selected SKUs? Archived recipes will be hidden from the active master list.');">Archive selected</button>
             <button class="btn danger" type="submit" name="action" value="bulk_delete"
                     onclick="return confirm('Permanently delete selected SKUs? This cannot be undone.');">Delete selected</button>
-            <span class="muted">Approved recipes can only be archived or deleted by admin users.</span>
+            <span class="muted">Approved recipes require the "Reopen SKU" action before editing. Archive/Delete requires admin.</span>
         </form>
 
         <div class="table-shell">
@@ -233,8 +233,8 @@
                         </td>
                         <td>
                             <div class="action-group">
-                                {% if recipe.master_data_status == 'approved' and not can_edit_approved %}
-                                    <span class="btn sm secondary" style="opacity:0.6;cursor:not-allowed;">Admin only</span>
+                                {% if False %}
+                                    {# Admin-only gate removed: all users can reopen approved SKUs via the edit page #}
                                 {% else %}
                                     <a class="btn sm" href="{% url 'qc:sku_recipe_edit' recipe.id %}">Edit</a>
                                     <form method="post" action="" style="display:inline;">

@@ -219,7 +219,7 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('print_sheet_size', 'Print Sheet'),
     ('purchase_sheet_size', 'Purchase Sheet'),
     ('ups', 'UPS'),
-    ('purchase_material', 'Purchase Material Origin'),
+    ('die_cutting', 'Die Cutting'),
 ]
 
 
@@ -543,11 +543,8 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'print_sheet_size': recipe.print_sheet_size,
             'purchase_sheet_size': recipe.purchase_sheet_size,
             'purchase_sheet_ups': recipe.purchase_sheet_ups,
-            'purchase_material': recipe.purchase_material,
             'daily_demand': recipe.daily_demand,
-            'awc_no': recipe.awc_no,
             'plate_set_no': recipe.plate_set_no,
-            'die_cutting': recipe.die_cutting,
         }
 
         if not forward_as_new:

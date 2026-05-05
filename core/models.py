@@ -111,7 +111,6 @@ JOB_CARD_PLANNING_REQUIRED_FIELDS = (
     ('plate_set_no', 'Plate Set'),
     ('wastage', 'Wastage'),
     ('machine_name', 'Machine Name'),
-    ('remarks', 'Remarks'),
 )
 
 # =========================
@@ -241,6 +240,30 @@ class JobCard(models.Model):
         return labels.get(normalized_status, normalized_status.replace('_', ' ').title())
 
     @property
+    def machine_name_display(self):
+        if self.machine_name_id:
+            return str(self.machine_name)
+        if self.planning_job and str(self.planning_job.machine_name or '').strip():
+            return self.planning_job.machine_name
+        return ''
+
+    @property
+    def total_sheet_quantity_display(self):
+        if self.total_sheet_quantity is not None:
+            return self.total_sheet_quantity
+        if self.planning_job and self.planning_job.total_sheet_quantity is not None:
+            return self.planning_job.total_sheet_quantity
+        return None
+
+    @property
+    def total_colors_display(self):
+        if self.total_colors is not None:
+            return self.total_colors
+        if self.planning_job and self.planning_job.number_of_colors is not None:
+            return self.planning_job.number_of_colors
+        return None
+
+    @property
     def is_planning_editable(self):
         return self.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES
 
@@ -258,16 +281,36 @@ class JobCard(models.Model):
 
         missing_fields = []
         for field_name, label in JOB_CARD_PLANNING_REQUIRED_FIELDS:
-            value = getattr(self, field_name, None)
             if field_name == 'machine_name':
                 if getattr(self, 'machine_name_id', None):
                     continue
+                if self.planning_job and str(self.planning_job.machine_name or '').strip():
+                    continue
                 missing_fields.append(label)
                 continue
-            if field_name in {'po_date', 'total_sheet_quantity', 'total_colors', 'wastage'}:
-                if value is None:
+
+            if field_name == 'total_sheet_quantity':
+                if getattr(self, 'total_sheet_quantity', None) is not None:
+                    continue
+                if self.planning_job and self.planning_job.total_sheet_quantity is not None:
+                    continue
+                missing_fields.append(label)
+                continue
+
+            if field_name == 'total_colors':
+                if getattr(self, 'total_colors', None) is not None:
+                    continue
+                if self.planning_job and self.planning_job.number_of_colors is not None:
+                    continue
+                missing_fields.append(label)
+                continue
+
+            if field_name in {'po_date', 'wastage'}:
+                if getattr(self, field_name, None) is None:
                     missing_fields.append(label)
                 continue
+
+            value = getattr(self, field_name, None)
             if not str(value or '').strip():
                 missing_fields.append(label)
         return missing_fields

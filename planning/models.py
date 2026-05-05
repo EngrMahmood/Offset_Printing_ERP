@@ -31,11 +31,18 @@ PLANNING_QC_GATE_STATUSES = {
     'completed',
 }
 
+PURCHASE_MATERIAL_ORIGIN_CHOICES = [
+    ('', 'Select Origin'),
+    ('local', 'Local'),
+    ('import', 'Import'),
+]
+
 
 class PlanningJob(models.Model):
     jc_number = models.CharField(max_length=50, unique=True)
     plan_month = models.CharField(max_length=20, blank=True)
     plan_date = models.DateField(null=True, blank=True)
+    delivery_date = models.DateField(null=True, blank=True)
 
     po_number = models.CharField(max_length=120, blank=True)
     sku = models.CharField(max_length=255, blank=True)
@@ -92,15 +99,13 @@ class PlanningJob(models.Model):
     stock_bag = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     machine_name = models.CharField(max_length=120, blank=True)
-    purchase_material = models.CharField(max_length=120, blank=True)
+    purchase_material_origin = models.CharField(max_length=20, choices=PURCHASE_MATERIAL_ORIGIN_CHOICES, blank=True)
     stock_qty = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     daily_demand = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
 
     department = models.CharField(max_length=120, blank=True)
     plate_set_no = models.CharField(max_length=120, blank=True)
-    awc_no = models.CharField(max_length=120, blank=True)
     aging_days = models.PositiveIntegerField(null=True, blank=True)
-    die_cutting = models.CharField(max_length=120, blank=True)
 
     issued_to_production = models.BooleanField(default=False)
     is_active = models.BooleanField(default=True)
@@ -185,15 +190,164 @@ class PlanningJob(models.Model):
         return self.plan_date
 
     @property
+    def net_print_qty(self):
+        """Net production qty after stock absorption; negative values are clamped to zero."""
+        if self.order_qty is None:
+            return None
+        stock_consumption = int(self.stock_qty or 0)
+        return max((self.order_qty or 0) - stock_consumption, 0)
+
+    @property
+    def ups_value(self):
+        if self.ups is not None:
+            return self.ups
+        recipe = self.sku_recipe
+        if recipe and recipe.ups is not None:
+            return recipe.ups
+        return None
+
+    @property
     def calculated_sheets_required(self):
-        """Auto-calculate total sheets required from order qty, UPS and wastage."""
-        if self.order_qty is not None and self.ups:
-            return math.ceil(self.order_qty / self.ups) + (self.wastage_sheets or 0)
+        """Auto-calculate total sheets required from net print qty, UPS and wastage."""
+        net_qty = self.net_print_qty
+        ups_value = self.ups_value
+        if net_qty is not None and ups_value:
+            return math.ceil(net_qty / ups_value) + (self.wastage_sheets or 0)
         if self.print_sheets is not None:
             return self.print_sheets + (self.wastage_sheets or 0)
         if self.actual_sheet_required is not None:
             return self.actual_sheet_required
         return None
+
+    @property
+    def calculated_purchase_sheet_required(self):
+        sheets_required = self.calculated_sheets_required
+        if sheets_required is None:
+            return None
+        purchase_sheet_ups_value = self.purchase_sheet_ups_display
+        if not purchase_sheet_ups_value:
+            return None
+        return math.ceil(sheets_required / purchase_sheet_ups_value)
+
+    @property
+    def calculated_pkt_value(self):
+        sheets_required = self.calculated_sheets_required
+        if sheets_required is None:
+            return None
+        return round(sheets_required / 100, 2)
+
+    @property
+    def sku_recipe(self):
+        if not (self.sku or '').strip():
+            return None
+        return SkuRecipe.objects.filter(sku__iexact=self.sku).order_by('-updated_at').first()
+
+    @property
+    def awc_no_display(self):
+        recipe = self.sku_recipe
+        if recipe and (recipe.awc_no or '').strip():
+            return recipe.awc_no
+        return ''
+
+    @property
+    def die_cutting_display(self):
+        recipe = self.sku_recipe
+        if recipe and (recipe.die_cutting or '').strip():
+            return recipe.die_cutting
+        return ''
+
+    @property
+    def material_display(self):
+        recipe = self.sku_recipe
+        if (self.material or '').strip():
+            return self.material
+        if recipe and (recipe.material or '').strip():
+            return recipe.material
+        return ''
+
+    @property
+    def color_spec_display(self):
+        recipe = self.sku_recipe
+        if (self.color_spec or '').strip():
+            return self.color_spec
+        if recipe and (recipe.color_spec or '').strip():
+            return recipe.color_spec
+        return ''
+
+    @property
+    def application_display(self):
+        recipe = self.sku_recipe
+        if (self.application or '').strip():
+            return self.application
+        if recipe and (recipe.application or '').strip():
+            return recipe.application
+        return ''
+
+    @property
+    def size_w_mm_display(self):
+        recipe = self.sku_recipe
+        if self.size_w_mm is not None:
+            return self.size_w_mm
+        if recipe and recipe.size_w_mm is not None:
+            return recipe.size_w_mm
+        return None
+
+    @property
+    def size_h_mm_display(self):
+        recipe = self.sku_recipe
+        if self.size_h_mm is not None:
+            return self.size_h_mm
+        if recipe and recipe.size_h_mm is not None:
+            return recipe.size_h_mm
+        return None
+
+    @property
+    def print_sheet_size_display(self):
+        recipe = self.sku_recipe
+        if (self.print_sheet_size or '').strip():
+            return self.print_sheet_size
+        if recipe and (recipe.print_sheet_size or '').strip():
+            return recipe.print_sheet_size
+        return ''
+
+    @property
+    def purchase_sheet_size_display(self):
+        recipe = self.sku_recipe
+        if (self.purchase_sheet_size or '').strip():
+            return self.purchase_sheet_size
+        if recipe and (recipe.purchase_sheet_size or '').strip():
+            return recipe.purchase_sheet_size
+        return ''
+
+    @property
+    def ups_display(self):
+        recipe = self.sku_recipe
+        if self.ups is not None:
+            return self.ups
+        if recipe and recipe.ups is not None:
+            return recipe.ups
+        return None
+
+    @property
+    def purchase_sheet_ups_display(self):
+        recipe = self.sku_recipe
+        if self.purchase_sheet_ups is not None:
+            return self.purchase_sheet_ups
+        if recipe and recipe.purchase_sheet_ups is not None:
+            return recipe.purchase_sheet_ups
+        return None
+
+    @property
+    def purchase_sheet_required_display(self):
+        if self.purchase_sheet_required is not None:
+            return self.purchase_sheet_required
+        return self.calculated_purchase_sheet_required
+
+    @property
+    def actual_sheet_required_display(self):
+        if self.actual_sheet_required is not None:
+            return self.actual_sheet_required
+        return self.calculated_sheets_required
 
     @property
     def number_of_colors(self):
@@ -202,7 +356,7 @@ class PlanningJob(models.Model):
         if self.front_colors is not None or self.back_colors is not None:
             return (self.front_colors or 0) + (self.back_colors or 0)
 
-        raw_value = (self.color_spec or '').strip()
+        raw_value = (self.color_spec_display or '').strip()
         if not raw_value:
             return None
 
@@ -232,6 +386,8 @@ class PlanningJob(models.Model):
             errors['wastage_sheets'] = 'Wastage is required before QC approval.'
         if not str(self.machine_name or '').strip():
             errors['machine_name'] = 'Machine Name is required before QC approval.'
+        if not str(self.purchase_material_origin or '').strip():
+            errors['purchase_material_origin'] = 'Purchase Material Origin is required before QC approval.'
         return errors
 
     def qc_missing_fields(self):
@@ -255,6 +411,24 @@ class PlanningJob(models.Model):
             self.actual_sheet_required = calculated_total_sheet_quantity
             if update_fields is not None:
                 update_fields.add('actual_sheet_required')
+
+        calculated_purchase_sheet_required = self.calculated_purchase_sheet_required
+        if calculated_purchase_sheet_required is not None:
+            self.purchase_sheet_required = calculated_purchase_sheet_required
+            if update_fields is not None:
+                update_fields.add('purchase_sheet_required')
+
+        calculated_pkt_value = self.calculated_pkt_value
+        if calculated_pkt_value is not None:
+            self.pkt_value = calculated_pkt_value
+            if update_fields is not None:
+                update_fields.add('pkt_value')
+
+        delivered_qty_sum = self.dispatch_runs.aggregate(total= models.Sum('delivered_qty'))['total'] if self.pk else None
+        if self.order_qty is not None:
+            self.balance_qty = max((self.order_qty or 0) - int(delivered_qty_sum or 0), 0)
+            if update_fields is not None:
+                update_fields.add('balance_qty')
 
         calculated_number_of_colors = self.number_of_colors
         if calculated_number_of_colors is not None:
@@ -292,6 +466,26 @@ class PlanningDispatchRun(models.Model):
     class Meta:
         unique_together = ('planning_job', 'dispatch_index')
         ordering = ['dispatch_index']
+
+
+class JobCardLayout(models.Model):
+    name = models.CharField(max_length=120, default='Job Card Layout')
+    layout = models.JSONField(blank=True, default=list)
+    is_active = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-is_active', '-updated_at']
+        verbose_name = 'Job Card Layout'
+        verbose_name_plural = 'Job Card Layouts'
+
+    def __str__(self):
+        return self.name
+
+    @classmethod
+    def get_active_layout(cls):
+        return cls.objects.filter(is_active=True).order_by('-updated_at').first()
 
 
 class PoDocument(models.Model):
@@ -339,7 +533,6 @@ class SkuRecipe(models.Model):
     material = models.CharField(max_length=120, blank=True)
     color_spec = models.CharField(max_length=60, blank=True)
     application = models.CharField(max_length=120, blank=True)
-    machine_name = models.CharField(max_length=120, blank=True)
 
     size_w_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     size_h_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
@@ -348,12 +541,10 @@ class SkuRecipe(models.Model):
     print_sheet_size = models.CharField(max_length=80, blank=True)
     purchase_sheet_size = models.CharField(max_length=80, blank=True)
     purchase_sheet_ups = models.PositiveIntegerField(null=True, blank=True)
-    purchase_material = models.CharField(max_length=120, blank=True)
 
     default_unit_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     daily_demand = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     awc_no = models.CharField(max_length=120, blank=True)
-    plate_set_no = models.CharField(max_length=120, blank=True)
     die_cutting = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)

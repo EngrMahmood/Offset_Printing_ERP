@@ -47,12 +47,20 @@
     {% endfor %}
 
     <section class="panel">
+        <div class="msg" style="background:#f0f7ff;border-color:#b8d4f0;color:#1e3a5f;">
+            <strong>PO / PR Intake:</strong> Enter a PO Number, a PR Number, or both.
+            PR-only jobs can be created for urgent work; a PO must be linked before dispatch.
+        </div>
         <form method="post" id="manual_po_form">
             {% csrf_token %}
             <div class="field-group">
                 <div>
-                    <label for="po_number">PO Number</label>
-                    <input id="po_number" name="po_number" type="text" required>
+                    <label for="po_number">PO Number <span class="muted">(optional if PR provided)</span></label>
+                    <input id="po_number" name="po_number" type="text">
+                </div>
+                <div>
+                    <label for="pr_number">PR Number <span class="muted">(optional if PO provided)</span></label>
+                    <input id="pr_number" name="pr_number" type="text" placeholder="e.g. PR-2026-001">
                 </div>
                 <div>
                     <label for="po_date">PO Date</label>

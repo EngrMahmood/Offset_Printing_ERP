@@ -53,13 +53,12 @@
                     <th>SKU</th>
                     <th>Current Stage</th>
                     <th>Job Name</th>
-                    <th>Material</th>
+                    <th>Material Type</th>
                     <th>Color</th>
                     <th>Application</th>
                     <th>Print Sheet Size</th>
                     <th>Purchase Sheet Size</th>
                     <th>UPS</th>
-                    <th>Purchase Material</th>
                     <th>Default Unit Cost</th>
                 </tr>
             </thead>
@@ -83,7 +82,7 @@
                     <td><input type="text" name="sku_{{ row.sku }}_print_sheet_size" value="{% if row.recipe %}{{ row.recipe.print_sheet_size }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_purchase_sheet_size" value="{% if row.recipe %}{{ row.recipe.purchase_sheet_size }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_ups" value="{% if row.recipe %}{{ row.recipe.ups }}{% endif %}"></td>
-                    <td><input type="text" name="sku_{{ row.sku }}_purchase_material" value="{% if row.recipe %}{{ row.recipe.purchase_material }}{% endif %}"></td>
+
                     <td><input type="text" name="sku_{{ row.sku }}_default_unit_cost" value="{% if row.recipe %}{{ row.recipe.default_unit_cost }}{% endif %}" placeholder="0.00"></td>
                 </tr>
                 {% endfor %}

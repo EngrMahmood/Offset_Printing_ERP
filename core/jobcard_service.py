@@ -75,6 +75,14 @@ def _resolve_by_name(model_class, raw_value):
     if exact_match:
         return exact_match
 
+    startswith_matches = model_class.objects.filter(name__istartswith=normalized_value)
+    if startswith_matches.count() == 1:
+        return startswith_matches.first()
+
+    contains_matches = model_class.objects.filter(name__icontains=normalized_value)
+    if contains_matches.count() == 1:
+        return contains_matches.first()
+
     return model_class.objects.filter(name__iexact=raw_value).first()
 
 
@@ -115,7 +123,7 @@ def ensure_job_card_from_planning_job(planning_job, actor=None):
             'destination': planning_job.destination or '',
             'machine_name': machine,
             'department': department,
-            'die_cutting': planning_job.die_cutting or '',
+            'die_cutting': getattr(planning_job, 'die_cutting_display', '') or '',
             'total_colors': planning_job.number_of_colors,
             'created_by': planning_job.created_by or actor,
             'status': 'pending_data',

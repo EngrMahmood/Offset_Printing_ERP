@@ -7,7 +7,7 @@ from django.db import transaction
 from django.db.models import Sum, Q
 from django.utils import timezone
 from core.models import Machine, Department, Material
-from .models import PlanningJob, PoDocument, SkuRecipe
+from .models import PLANNING_STATUS_ALIASES, PlanningJob, PoDocument, SkuRecipe
 from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note, _normalize_status, _to_int, _to_decimal
 from core.jc_numbering import allocate_next_jc_number
 
@@ -23,7 +23,7 @@ def _planning_status_filter_values(status):
     normalized_status = _normalize_status(status, default='')
     if not normalized_status:
         return []
-    return sorted(PLANNING_STATUS_FILTER_ALIASES.get(normalized_status, {normalized_status}))
+    return sorted(PLANNING_STATUS_ALIASES.get(normalized_status, {normalized_status}))
 
 
 
@@ -84,11 +84,11 @@ def _build_job_card_pdf_bytes(job, scan_url):
         [Paragraph('APPLICATION', label_style), _format_job_value(job.application), Paragraph('PRINT SHEET SIZE', label_style), _format_job_value(job.print_sheet_size)],
         [Paragraph('UPS', label_style), _format_job_value(job.ups), Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
         [Paragraph('ACTUAL SHEETS', label_style), _format_job_value(job.calculated_sheets_required), Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
-        [Paragraph('PURCHASE MATERIAL', label_style), _format_job_value(job.purchase_material), Paragraph('PURCHASE SHEET SIZE', label_style), _format_job_value(job.purchase_sheet_size)],
+        [Paragraph('PURCHASE ORIGIN', label_style), _format_job_value(job.purchase_material_origin), Paragraph('PURCHASE SHEET SIZE', label_style), _format_job_value(job.purchase_sheet_size)],
         [Paragraph('PURCHASE SHEET UPS', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('PURCHASE REQ', label_style), _format_job_value(job.purchase_sheet_required)],
         [Paragraph('MACHINE', label_style), _format_job_value(job.machine_name), Paragraph('TOTAL COLORS', label_style), _format_job_value(job.number_of_colors)],
-        [Paragraph('PLATE SET NO.', label_style), _format_job_value(job.plate_set_no), Paragraph('AWC NO.', label_style), _format_job_value(job.awc_no)],
-        [Paragraph('AGING DAYS', label_style), _format_job_value(job.aging_days), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting)],
+        [Paragraph('PLATE SET NO.', label_style), _format_job_value(job.plate_set_no), Paragraph('AWC NO.', label_style), _format_job_value(job.awc_no_display)],
+        [Paragraph('AGING DAYS', label_style), _format_job_value(job.aging_days), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting_display)],
     ]
     material_table = Table(material_data, colWidths=[32 * mm, 65 * mm, 32 * mm, 65 * mm], hAlign='LEFT')
     material_table.setStyle(TableStyle([
@@ -100,7 +100,7 @@ def _build_job_card_pdf_bytes(job, scan_url):
     story.extend([Paragraph('MATERIAL AND WORK PROCESS', section_title_style), Spacer(1, 4), material_table, Spacer(1, 10)])
 
     application_data = [
-        [Paragraph('LAMINATION', label_style), _format_job_value(job.application), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting)],
+        [Paragraph('LAMINATION', label_style), _format_job_value(job.application), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting_display)],
         [Paragraph('ART WORK NO.', label_style), '-', Paragraph('P SET NO.', label_style), _format_job_value(job.plate_set_no)],
         [Paragraph('SPECIAL INSTRUCTIONS', label_style), _paragraph_text(job.remarks or job.requirement or '-'), '', ''],
     ]
@@ -410,6 +410,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
     payload = po_doc.extracted_payload or {}
     items, _ = _deduplicate_po_items_by_sku(payload.get('items', []))
     po_number = (payload.get('po_number') or '').strip()
+    pr_number = (payload.get('pr_number') or '').strip()
     po_date = _parse_iso_date(payload.get('po_date'))
     delivery_location = payload.get('delivery_location', '')
     department = payload.get('department', '')
@@ -501,11 +502,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
         print_sheet_size_value = recipe.print_sheet_size if recipe else (existing_job.print_sheet_size if existing_job else '')
         purchase_sheet_size_value = recipe.purchase_sheet_size if recipe else (existing_job.purchase_sheet_size if existing_job else '')
         purchase_sheet_ups_value = recipe.purchase_sheet_ups if recipe else (existing_job.purchase_sheet_ups if existing_job else None)
-        purchase_material_value = recipe.purchase_material if recipe else (existing_job.purchase_material if existing_job else '')
         daily_demand_value = recipe.daily_demand if recipe else (existing_job.daily_demand if existing_job else None)
-        awc_no_value = recipe.awc_no if recipe else (existing_job.awc_no if existing_job else '')
-        plate_set_no_value = recipe.plate_set_no if recipe else (existing_job.plate_set_no if existing_job else '')
-        die_cutting_value = recipe.die_cutting if recipe else (existing_job.die_cutting if existing_job else '')
         unit_cost_value = unit_cost_dec if unit_cost_dec is not None else (recipe.default_unit_cost if recipe else (existing_job.unit_cost if existing_job else None))
 
         requirement_value = _sync_new_sku_requirement(current_requirement, forward_as_new)
@@ -517,11 +514,13 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
 
         defaults = {
             'po_number': po_number,
+            'pr_reference': pr_number,
             'sku': sku,
             'job_name': job_name_value,
             'order_qty': order_qty,
             'department': department,
             'destination': delivery_location,
+            'delivery_date': delivery_date,
             'unit_cost': unit_cost_value,
             'status': 'draft',
             'repeat_flag': 'New' if forward_as_new else 'Repeat',
@@ -535,11 +534,8 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'print_sheet_size': print_sheet_size_value,
             'purchase_sheet_size': purchase_sheet_size_value,
             'purchase_sheet_ups': purchase_sheet_ups_value,
-            'purchase_material': purchase_material_value,
             'daily_demand': daily_demand_value,
-            'awc_no': awc_no_value,
-            'plate_set_no': plate_set_no_value,
-            'die_cutting': die_cutting_value,
+            'plate_set_no': existing_job.plate_set_no if existing_job else '',
         }
         if plan_date:
             defaults['plan_date'] = plan_date
@@ -647,6 +643,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'order_qty': order_qty,
             'department': payload.get('department') or '',
             'destination': payload.get('delivery_location') or '',
+            'delivery_date': delivery_date,
             'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
             'status': 'draft',
             'repeat_flag': 'New' if forward_as_new else 'Repeat',
@@ -660,11 +657,8 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'print_sheet_size': recipe.print_sheet_size,
             'purchase_sheet_size': recipe.purchase_sheet_size,
             'purchase_sheet_ups': recipe.purchase_sheet_ups,
-            'purchase_material': recipe.purchase_material,
             'daily_demand': recipe.daily_demand,
-            'awc_no': recipe.awc_no,
-            'plate_set_no': recipe.plate_set_no,
-            'die_cutting': recipe.die_cutting,
+            'plate_set_no': existing_job.plate_set_no,
         }
 
         if not forward_as_new:

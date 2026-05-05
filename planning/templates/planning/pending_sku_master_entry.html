@@ -125,7 +125,7 @@
                     <input type="text" value="{{ suggested_job_name }}" readonly>
                 </div>
                 <div class="field">
-                    <label for="{{ form.material.id_for_label }}">Material <span class="req">*</span></label>
+                    <label for="{{ form.material.id_for_label }}">Material Type <span class="req">*</span></label>
                     {{ form.material }}
                     {% if form.material.errors %}<div class="error">{{ form.material.errors.0 }}</div>{% endif %}
                 </div>
@@ -171,11 +171,6 @@
                     {{ form.ups }}
                     {% if form.ups.errors %}<div class="error">{{ form.ups.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
-                    <label for="{{ form.purchase_material.id_for_label }}">Purchase Material Origin <span class="req">*</span></label>
-                    {{ form.purchase_material }}
-                    {% if form.purchase_material.errors %}<div class="error">{{ form.purchase_material.errors.0 }}</div>{% endif %}
-                </div>
 
                 <div class="field">
                     <label for="{{ form.default_unit_cost.id_for_label }}">Unit Cost</label>
@@ -194,12 +189,7 @@
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.plate_set_no.id_for_label }}">Plate Set No</label>
-                    {{ form.plate_set_no }}
-                    {% if form.plate_set_no.errors %}<div class="error">{{ form.plate_set_no.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="field">
-                    <label for="{{ form.die_cutting.id_for_label }}">Die</label>
+                    <label for="{{ form.die_cutting.id_for_label }}">Die Cutting <span class="req">*</span></label>
                     {{ form.die_cutting }}
                     {% if form.die_cutting.errors %}<div class="error">{{ form.die_cutting.errors.0 }}</div>{% endif %}
                 </div>

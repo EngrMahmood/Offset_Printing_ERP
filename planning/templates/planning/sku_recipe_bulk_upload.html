@@ -145,10 +145,6 @@
                     <div class="fname">purchase_sheet_ups</div>
                     <div class="fdesc">Purchase Sheet Ups</div>
                 </div>
-                <div class="field-chip required">
-                    <div class="fname">purchase_material</div>
-                    <div class="fdesc">Local or Imported only</div>
-                </div>
                 <div class="field-chip">
                     <div class="fname">default_unit_cost</div>
                     <div class="fdesc">Alias: Unit Cost</div>
@@ -185,7 +181,6 @@
                 <li>If a SKU code already exists it will be <strong>updated</strong> and reset to Draft for re-approval.</li>
                 <li>Rows with a blank SKU column are skipped.</li>
                 <li><code>application</code> must be exactly: UV, Lamination Gloss, Lamination Matt, or NO.</li>
-                <li><code>purchase_material</code> must be exactly: Local or Imported.</li>
                 <li>After upload, go to <a href="{% url 'qc:sku_recipes' %}">SKU Master</a> to review and approve records.</li>
             </ul>
         </div>

@@ -1040,6 +1040,8 @@ def dispatch_entry(request):
                 raise ValueError('Dispatch quantity must be greater than 0')
 
             job_card = get_active_record_or_404(JobCard, job_card_id)
+            if not (job_card.PO_No or '').strip():
+                raise ValueError('PO number is required before dispatch. Link PO to this job first.')
             dispatch_date = datetime.strptime(dispatch_date_raw, "%Y-%m-%d").date() if dispatch_date_raw else timezone.now().date()
 
             payload = {
