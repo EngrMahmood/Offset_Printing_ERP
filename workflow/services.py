@@ -23,6 +23,7 @@ from core.jobcard_service import (
     complete_production as _complete_production,
     close_job_card as _close_job_card,
 )
+from core.models import JOB_CARD_PLANNING_EDITABLE_STATUSES
 from planning.models import (
     PLANNING_STATUS_ALIASES,
     PLANNING_STATUS_CHOICES,
@@ -453,8 +454,15 @@ def sync_job_card_for_planning_status(job, target_status, actor):
         return None
 
     job_card, _created = ensure_job_card_from_planning_job(job, actor=actor)
-    if job_card.workflow_status in getattr(job_card, 'JOB_CARD_PLANNING_EDITABLE_STATUSES', []):
+    if job_card.workflow_status == 'pm_rejected':
+        execute_job_card_action(job_card, 'reopen', actor=actor, reason='Reopening rejected job card for QC resubmit')
+        submit_to_qc(job_card, actor=actor, reason='Planning job sent to QC after reopen')
+        return job_card
+
+    if job_card.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES:
         submit_to_qc(job_card, actor=actor, reason='Planning job sent to QC')
+    elif job_card.workflow_status == 'qc_rejected':
+        submit_to_qc(job_card, actor=actor, reason='Reopened QC rejected job card for QC resubmit')
     return job_card
 
 
@@ -509,9 +517,9 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
         po_date = _parse_iso_date(payload.get('po_date'))
         plan_date = delivery_date or po_date
         qty = target_item.get('quantity')
-        order_qty = int(qty) if qty is not None else None
+        order_qty = _to_int(qty)
         unit_cost_val = target_item.get('unit_cost')
-        unit_cost_dec = Decimal(str(unit_cost_val)) if unit_cost_val is not None else None
+        unit_cost_dec = _to_decimal(unit_cost_val)
         is_first_production = sku_key not in existing_any_jobs_skus
         jc_number = existing_job.jc_number
         current_requirement = existing_job.requirement

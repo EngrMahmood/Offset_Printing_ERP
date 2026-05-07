@@ -1,5 +1,6 @@
 import csv
 import io
+import logging
 import re
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
@@ -40,15 +41,15 @@ from workflow.services import (
     _sanitize_po_payload_items,
     _user_is_admin,
     execute_job_card_action,
-    submit_to_qc,
 )
+
+logger = logging.getLogger(__name__)
 
 # MOVED TO QC APP (temporary compatibility layer)
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_approval_queue')
 def approval_queue(request):
-    """JobCard approval queue for planning, QC, production manager, and release gates."""
-    planning_jobs = job_card_queue_queryset('planning')
+    """JobCard approval queue for QC, production manager, and release gates."""
     qc_jobs = job_card_queue_queryset('qc')
     pm_jobs = job_card_queue_queryset('production_manager')
     release_jobs = job_card_queue_queryset('production')
@@ -67,31 +68,6 @@ def approval_queue(request):
             return execute_job_card_action(job_card, transition_name, actor=request.user, reason=reason)
 
         profile = getattr(request.user, 'profile', None)
-        if action == 'bulk_send_qc':
-            if not profile or not profile.can_approve_planning():
-                messages.error(request, 'You do not have permission to approve planning jobs.')
-                return redirect('qc:approval_queue')
-
-            draft_jobs = planning_jobs
-            updated = 0
-            failed = 0
-            failures = []
-            for job_card in draft_jobs:
-                try:
-                    submit_to_qc(job_card, actor=request.user, reason='Bulk planning approval queue action')
-                except ValidationError as exc:
-                    failed += 1
-                    failure_text = '; '.join(str(msg) for msg in getattr(exc, 'messages', [str(exc)]))
-                    failures.append(f'{job_card.job_card_no}: {failure_text}')
-                    continue
-                updated += 1
-
-            if updated:
-                messages.success(request, f'Sent {updated} Job Card(s) to QC approval.')
-            if failed:
-                messages.error(request, f'{failed} Job Card(s) could not be moved to QC: {"; ".join(failures)}')
-            return redirect('qc:approval_queue')
-
         if action == 'delete_job_card':
             if not _user_is_admin(request.user):
                 messages.error(request, 'Only administrators can delete job cards from the approval queue.')
@@ -118,11 +94,11 @@ def approval_queue(request):
                 messages.error(request, 'No valid Job Cards were selected for deletion.')
             return redirect('qc:approval_queue')
 
-        if action in {'approve_planning', 'reject_planning', 'approve_qc', 'reject_qc', 'approve_pm', 'reject_pm', 'release_for_production'}:
-            job_card = _get_job_card()
-            if action in {'approve_planning', 'reject_planning'} and (not profile or not profile.can_approve_planning()):
-                messages.error(request, 'You do not have permission to approve planning jobs.')
+        if action in {'approve_qc', 'reject_qc', 'approve_pm', 'reject_pm', 'release_for_production'}:
+            if action in {'reject_qc', 'reject_pm'} and not reason:
+                messages.error(request, 'Rejection reason is required.')
                 return redirect('qc:approval_queue')
+            job_card = _get_job_card()
             if action in {'approve_qc', 'reject_qc'} and (not profile or not profile.can_approve_qc()):
                 messages.error(request, 'You do not have permission to approve QC jobs.')
                 return redirect('qc:approval_queue')
@@ -145,14 +121,13 @@ def approval_queue(request):
             messages.success(request, f'Job Card {job_card.job_card_no} moved successfully.')
             return redirect('qc:approval_queue')
 
-    planning_jobs = planning_jobs.order_by('-updated_at', '-id')[:300]
     qc_jobs = qc_jobs.order_by('-updated_at', '-id')[:300]
     pm_jobs = pm_jobs.order_by('-updated_at', '-id')[:300]
     release_jobs = release_jobs.order_by('-updated_at', '-id')[:300]
 
     # Dashboard counters (display only)
+    profile = getattr(request.user, 'profile', None)
     pending_qc_jobs_count = qc_jobs.count()
-    approved_qc_jobs_count = pm_jobs.count()
     pending_pm_jobs_count = pm_jobs.count()
     released_jobs_count = JobCard.objects.filter(is_active=True, status='released').count()
     pending_sku_approval_count = SkuRecipe.objects.filter(is_active=True, master_data_status='pending_review').count()
@@ -161,17 +136,17 @@ def approval_queue(request):
     sku_approved_count = SkuRecipe.objects.filter(is_active=True, master_data_status='approved').count()
 
     context = {
-        'planning_jobs': planning_jobs,
         'qc_jobs': qc_jobs,
         'pm_jobs': pm_jobs,
         'release_jobs': release_jobs,
         'pending_qc_jobs_count': pending_qc_jobs_count,
-        'approved_qc_jobs_count': approved_qc_jobs_count,
         'pending_pm_jobs_count': pending_pm_jobs_count,
         'released_jobs_count': released_jobs_count,
         'pending_sku_approval_count': pending_sku_approval_count,
         'sku_reviewed_count': sku_reviewed_count,
         'sku_approved_count': sku_approved_count,
+        'user_can_approve_qc': profile.can_approve_qc() if profile else False,
+        'user_can_approve_pm': profile.can_approve_pm() if profile else False,
     }
     context['can_admin_actions'] = _user_is_admin(request.user)
     return render(request, 'qc/approval_queue.html', context)
@@ -204,12 +179,12 @@ def planning_job_status_update(request, job_id):
         return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
     required_from, target_status = transitions[transition]
-    if required_from and current_status != required_from:
-        messages.error(request, f'Transition not allowed from {current_status} to {target_status}.')
-        return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
-
     if current_status == target_status:
         messages.info(request, f'Job already in {target_status} status.')
+        return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
+
+    if required_from and current_status != required_from:
+        messages.error(request, f'Transition not allowed from {current_status} to {target_status}.')
         return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
     if transition in {'reject', 'reject_qc'} and not reason:
@@ -1250,6 +1225,7 @@ def sku_recipe_edit(request, recipe_id=None):
                         f'Planning jobs refreshed for approved SKU: updated {sync_result["updated"]}, locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.',
                     )
                 except Exception:
+                    logger.exception('Approved SKU sync to planning failed for %s', obj.sku)
                     messages.error(request, 'Error while sending approved SKU to Planning; check logs.')
             return redirect('qc:sku_recipes')
         else:

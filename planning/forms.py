@@ -101,7 +101,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             'destination',
             'remarks',
             'requirement',
-            'status',
         ]
         widgets = {
             'delivery_date': forms.DateInput(attrs={'type': 'date'}),
@@ -125,7 +124,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             'purchase_material_origin',
             'destination',
             'requirement',
-            'status',
         ]
         for field_name in required_fields:
             if field_name in self.fields:
@@ -148,7 +146,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             'purchase_material_origin': 'Purchase Material Origin is required.',
             'destination': 'Destination is required.',
             'requirement': 'Special Instructions is required.',
-            'status': 'Status is required.',
         }
 
         for field_name, message in required_messages.items():

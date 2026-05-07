@@ -148,6 +148,7 @@
                         <td class="px-3 py-2">
                             <div class="flex flex-nowrap items-center gap-1 overflow-x-auto">
                                 <a href="{% url 'planning:job_detail' job.id %}" class="rounded-2xl border border-slate-200 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition leading-5">View</a>
+                                {% if user_can_plan %}
                                 {% if job.effective_status == 'draft' or job.effective_status == 'pending_qc' %}
                                 <a href="{% url 'planning:job_edit' job.id %}" class="rounded-2xl bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-800 transition leading-5">Finalize Job</a>
                                 {% endif %}
@@ -162,6 +163,7 @@
                                 <a href="{% url 'qc:approval_queue' %}" class="rounded-2xl bg-amber-100 px-2.5 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-200 transition leading-5">Open QC</a>
                                 {% elif job.effective_status == 'qc_approved' or job.effective_status == 'released' %}
                                 <a href="{% url 'planning:job_card_print' job.id %}" class="rounded-2xl bg-emerald-600 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-emerald-700 transition leading-5">Print Job Card</a>
+                                {% endif %}
                                 {% endif %}
                             </div>
                         </td>

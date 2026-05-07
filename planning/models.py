@@ -1,5 +1,6 @@
 ﻿import math
 import re
+from decimal import Decimal, ROUND_HALF_UP
 
 from django.conf import settings
 from django.core.exceptions import ValidationError
@@ -231,10 +232,10 @@ class PlanningJob(models.Model):
 
     @property
     def calculated_pkt_value(self):
-        sheets_required = self.calculated_sheets_required
-        if sheets_required is None:
+        purchase_sheets = self.purchase_sheet_required_display
+        if purchase_sheets is None:
             return None
-        return round(sheets_required / 100, 2)
+        return (Decimal(purchase_sheets) / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
 
     @property
     def sku_recipe(self):

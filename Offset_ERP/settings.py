@@ -58,7 +58,7 @@ ROOT_URLCONF = 'Offset_ERP.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'core/templates'],
+        'DIRS': [BASE_DIR / 'core/templates', BASE_DIR / 'Job_card_html'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

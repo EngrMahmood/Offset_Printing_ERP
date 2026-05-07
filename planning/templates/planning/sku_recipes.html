@@ -140,13 +140,13 @@
             <a class="stat-chip {% if not status_filter %}active{% endif %}"
                href="{% url 'qc:sku_recipes' %}{% if q %}?q={{ q }}{% endif %}">All</a>
             <a class="stat-chip {% if status_filter == 'draft' %}active{% endif %}"
-               href="?status=draft{% if q %}&q={{ q }}{% endif %}">● Draft (Planner)</a>
+               href="?status=draft{% if q %}&q={{ q }}{% endif %}">● Draft (Planner) ({{ draft_count }})</a>
             <a class="stat-chip {% if status_filter == 'pending_review' %}active{% endif %}"
-               href="?status=pending_review{% if q %}&q={{ q }}{% endif %}">● Pending Review (QC)</a>
+               href="?status=pending_review{% if q %}&q={{ q }}{% endif %}">● Pending Review (QC) ({{ pending_review_count }})</a>
             <a class="stat-chip {% if status_filter == 'reviewed' %}active{% endif %}"
-               href="?status=reviewed{% if q %}&q={{ q }}{% endif %}">● Pending Approval (Manager)</a>
+               href="?status=reviewed{% if q %}&q={{ q }}{% endif %}">● Pending Approval (Manager) ({{ reviewed_count }})</a>
             <a class="stat-chip {% if status_filter == 'approved' %}active{% endif %}"
-               href="?status=approved{% if q %}&q={{ q }}{% endif %}">● Approved (Manager)</a>
+               href="?status=approved{% if q %}&q={{ q }}{% endif %}">● Approved (Manager) ({{ approved_count }})</a>
         </div>
 
         <!-- Search -->

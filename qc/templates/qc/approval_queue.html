@@ -1,8 +1,8 @@
 {% extends 'includes/ui/base_theme.html' %}
 
 {% block title %}Job Card Approval Queue - ERP{% endblock %}
-{% block header_title %}QC Approval Queue{% endblock %}
-{% block header_subtitle %}Queue status for job card review, quality approval, and production release.{% endblock %}
+{% block header_title %}Approval Queue{% endblock %}
+{% block header_subtitle %}QC review, production manager approval, and release checkpoints for job cards.{% endblock %}
 
 {% block content %}
 <div class="erp-page-stack">
@@ -52,7 +52,7 @@
     <section class="erp-banner">
         <div>
             <h2 class="erp-banner-title">Approval Workflow</h2>
-            <p class="erp-banner-copy">Move reviewed jobs through planner, QC, production manager, and release checkpoints without changing the existing approval logic.</p>
+            <p class="erp-banner-copy">Planners submit job cards directly to QC. QC inspectors review and approve, then the Production Manager gives final sign-off before release.</p>
         </div>
         <div class="erp-actions">
             <a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_inbox' %}">PO Intake</a>
@@ -61,63 +61,29 @@
         </div>
     </section>
 
+    {% if not user_can_approve_qc and not user_can_approve_pm %}
+    <section class="erp-section-shell">
+        <div class="erp-alert erp-alert-info">
+            <strong>View Only</strong> — You can view job cards in the queue but do not have approval permissions. Contact your administrator if you need action rights.
+        </div>
+    </section>
+    {% endif %}
+
     <section class="erp-section-shell">
         <div class="erp-tab-strip">
-            <button type="button" class="erp-tab-button is-active tab-link" data-target="planning-panel">Planning Approval{% if planning_jobs %} ({{ planning_jobs|length }}){% endif %}</button>
-            <button type="button" class="erp-tab-button tab-link" data-target="qc-panel">QC Approval{% if qc_jobs %} ({{ qc_jobs|length }}){% endif %}</button>
+            <button type="button" class="erp-tab-button is-active tab-link" data-target="qc-panel">QC Approval{% if qc_jobs %} ({{ qc_jobs|length }}){% endif %}</button>
             <button type="button" class="erp-tab-button tab-link" data-target="pm-panel">PM Approval{% if pm_jobs %} ({{ pm_jobs|length }}){% endif %}</button>
             <button type="button" class="erp-tab-button tab-link" data-target="release-panel">Release{% if release_jobs %} ({{ release_jobs|length }}){% endif %}</button>
         </div>
     </section>
 
-    <section id="planning-panel" class="tab-panel">
-        <div class="erp-section-shell">
-            <div class="erp-card-header">
-                <div class="erp-card-title-stack">
-                    <div class="erp-eyebrow">Job Card Approval Queue</div>
-                    <h3 class="erp-section-title">Planning Approval Queue</h3>
-                </div>
-                <span class="erp-status-chip warning"><span class="erp-status-dot"></span>Pending Review</span>
-            </div>
-            {% if planning_jobs %}
-            <div class="erp-table-wrap">
-                <table class="erp-table erp-table-dense">
-                    <thead><tr><th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th><th>Status</th><th>Sheets</th><th>Colors</th><th>Machine</th><th>Action</th></tr></thead>
-                    <tbody>
-                    {% for job in planning_jobs %}
-                        <tr>
-                            <td><a href="{% if job.planning_job %}{% url 'planning:job_detail' job.planning_job.id %}{% else %}#{% endif %}" class="erp-table-link">{{ job.job_card_no }}</a></td>
-                            <td>{{ job.PO_No|default:'-' }}</td>
-                            <td>{{ job.SKU|default:'-' }}</td>
-                            <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
-                            <td><span class="erp-badge erp-badge-pending">{{ job.workflow_status_label }}</span></td>
-                            <td>{{ job.total_sheet_quantity_display|default:job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
-                            <td>{{ job.total_colors_display|default:job.number_of_colors|default:'-' }}</td>
-                            <td>{{ job.machine_name_display|default:'-' }}</td>
-                            <td>
-                                <div class="erp-actions">
-                                    {% if job.planning_job %}<a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>{% endif %}
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_planning"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success">Approve</button></form>
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="reject_planning"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-warning">Send Back</button></form>
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="erp-alert erp-alert-info">No Job Cards are waiting for planning approval.</div>
-            {% endif %}
-        </div>
-    </section>
-
-    <section id="qc-panel" class="tab-panel" hidden>
+    <section id="qc-panel" class="tab-panel">
         <div class="erp-section-shell">
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
                     <div class="erp-eyebrow">Quality Check Queue</div>
                     <h3 class="erp-section-title">QC Approval Queue</h3>
+                    <p class="erp-section-desc">Job cards submitted by planners awaiting QC inspector review.</p>
                 </div>
                 <span class="erp-status-chip warning"><span class="erp-status-dot"></span>In Quality Review</span>
             </div>
@@ -137,9 +103,14 @@
                             <td>
                                 <div class="erp-actions">
                                     {% if job.planning_job %}<a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>{% endif %}
+                                    {% if user_can_approve_qc %}
                                     <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_qc"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success">Approve QC</button></form>
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="reject_qc"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-danger">Reject QC</button></form>
+                                    <button type="button" class="erp-btn erp-btn-danger" onclick="openRejectModal('reject_qc', '{{ job.id }}', '{{ job.job_card_no }}')">Reject QC</button>
+                                    {% endif %}
                                 </div>
+                                {% if job.latest_rejection_reason %}
+                                    <div class="erp-note">Reason: {{ job.latest_rejection_reason }}</div>
+                                {% endif %}
                             </td>
                         </tr>
                     {% endfor %}
@@ -157,26 +128,34 @@
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
                     <div class="erp-eyebrow">Production Manager Queue</div>
-                    <h3 class="erp-section-title">Production Manager Queue</h3>
+                    <h3 class="erp-section-title">Production Manager Approval</h3>
+                    <p class="erp-section-desc">QC-approved job cards awaiting Production Manager sign-off.</p>
                 </div>
                 <span class="erp-status-chip info"><span class="erp-status-dot"></span>Manager Review</span>
             </div>
             {% if pm_jobs %}
             <div class="erp-table-wrap">
                 <table class="erp-table erp-table-dense">
-                    <thead><tr><th>JC</th><th>PO</th><th>SKU</th><th>Status</th><th>Action</th></tr></thead>
+                    <thead><tr><th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th><th>Status</th><th>Action</th></tr></thead>
                     <tbody>
                     {% for job in pm_jobs %}
                         <tr>
-                            <td>{{ job.job_card_no }}</td>
+                            <td><a href="{% if job.planning_job %}{% url 'planning:job_detail' job.planning_job.id %}{% else %}#{% endif %}" class="erp-table-link">{{ job.job_card_no }}</a></td>
                             <td>{{ job.PO_No|default:'-' }}</td>
                             <td>{{ job.SKU|default:'-' }}</td>
+                            <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
                             <td><span class="erp-badge erp-badge-pending">{{ job.workflow_status_label }}</span></td>
                             <td>
                                 <div class="erp-actions">
+                                    {% if job.planning_job %}<a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>{% endif %}
+                                    {% if user_can_approve_pm %}
                                     <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_pm"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success">Approve PM</button></form>
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="reject_pm"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-danger">Reject PM</button></form>
+                                    <button type="button" class="erp-btn erp-btn-danger" onclick="openRejectModal('reject_pm', '{{ job.id }}', '{{ job.job_card_no }}')">Reject PM</button>
+                                    {% endif %}
                                 </div>
+                                {% if job.latest_rejection_reason %}
+                                    <div class="erp-note">Reason: {{ job.latest_rejection_reason }}</div>
+                                {% endif %}
                             </td>
                         </tr>
                     {% endfor %}
@@ -194,25 +173,29 @@
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
                     <div class="erp-eyebrow">Release Queue</div>
-                    <h3 class="erp-section-title">Release Queue</h3>
+                    <h3 class="erp-section-title">Release for Production</h3>
+                    <p class="erp-section-desc">PM-approved job cards ready to be released to the production floor.</p>
                 </div>
                 <span class="erp-status-chip success"><span class="erp-status-dot"></span>Ready for Production</span>
             </div>
             {% if release_jobs %}
             <div class="erp-table-wrap">
                 <table class="erp-table erp-table-dense">
-                    <thead><tr><th>JC</th><th>PO</th><th>SKU</th><th>Status</th><th>Action</th></tr></thead>
+                    <thead><tr><th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th><th>Status</th><th>Action</th></tr></thead>
                     <tbody>
                     {% for job in release_jobs %}
                         <tr>
                             <td>{{ job.job_card_no }}</td>
                             <td>{{ job.PO_No|default:'-' }}</td>
                             <td>{{ job.SKU|default:'-' }}</td>
+                            <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
                             <td><span class="erp-badge erp-badge-approved">{{ job.workflow_status_label }}</span></td>
                             <td>
                                 <div class="erp-actions">
                                     {% if job.planning_job %}<a href="{% url 'planning:job_card_print' job.planning_job.id %}" class="erp-btn erp-btn-print" target="_blank" rel="noopener">A4 Print</a>{% endif %}
+                                    {% if user_can_approve_pm %}
                                     <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="release_for_production"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-info">Release</button></form>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -226,19 +209,53 @@
         </div>
     </section>
 </div>
+
+<div class="modal-overlay" id="rejectModal" hidden>
+    <div class="modal-box">
+        <h3>Reject / Send Back Job Card</h3>
+        <p id="rejectModalLabel">Provide a reason for the rejection so the planner can correct it.</p>
+        <form method="post" action="{% url 'qc:approval_queue' %}" id="rejectForm">
+            {% csrf_token %}
+            <input type="hidden" name="action" id="rejectAction" value="">
+            <input type="hidden" name="job_card_id" id="rejectJobCardId" value="">
+            <textarea name="reason" id="rejectReason" required placeholder="Enter the reason for rejecting this job card..."></textarea>
+            <div class="erp-actions" style="margin-top:12px; gap:10px; display:flex; flex-wrap:wrap;">
+                <button type="button" class="erp-btn erp-btn-secondary" onclick="closeRejectModal()">Cancel</button>
+                <button type="submit" class="erp-btn erp-btn-warning">Submit Reason</button>
+            </div>
+        </form>
+    </div>
+</div>
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    function openRejectModal(action, jobId, jobCardNo) {
+        document.getElementById('rejectAction').value = action;
+        document.getElementById('rejectJobCardId').value = jobId;
+        document.getElementById('rejectModalLabel').textContent =
+            'Job Card: ' + jobCardNo + ' — Provide a reason for rejecting.';
+        document.getElementById('rejectReason').value = '';
+        document.getElementById('rejectModal').hidden = false;
+        setTimeout(() => document.getElementById('rejectReason').focus(), 80);
+    }
+    function closeRejectModal() {
+        document.getElementById('rejectModal').hidden = true;
+    }
+    document.addEventListener('click', function(event) {
+        const modal = document.getElementById('rejectModal');
+        if (!modal.hidden && event.target === modal) {
+            closeRejectModal();
+        }
+    });
     document.addEventListener('DOMContentLoaded', function() {
         const tabs = document.querySelectorAll('.tab-link');
         const panels = document.querySelectorAll('.tab-panel');
         tabs.forEach(tab => {
             tab.addEventListener('click', function() {
                 tabs.forEach(button => button.classList.remove('is-active'));
-                panels.forEach(panel => {
-                    panel.hidden = true;
-                });
+                panels.forEach(panel => panel.hidden = true);
                 this.classList.add('is-active');
                 const panel = document.getElementById(this.dataset.target);
                 if (panel) {
@@ -249,3 +266,6 @@
     });
 </script>
 {% endblock %}
+
+
+

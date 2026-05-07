@@ -1,4 +1,5 @@
 import csv
+import logging
 import base64
 import io
 import json
@@ -25,6 +26,8 @@ from urllib.parse import urlencode
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+
+logger = logging.getLogger(__name__)
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
@@ -46,6 +49,7 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
 
 from core.jc_numbering import allocate_next_jc_number
+from core.models import ChangeLog
 from core.views import permission_required
 from .forms import JobCardLayoutForm, PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeForm
 from .services import (
@@ -165,6 +169,12 @@ def _effective_planning_status(job):
         elif card_status in status_rank:
             job_card_status = card_status
 
+    if planning_status == 'draft':
+        return 'draft'
+    if planning_status == 'draft':
+        return 'draft'
+    if card_status in {'qc_rejected', 'pm_rejected'}:
+        return 'draft'
     if planning_status not in status_rank:
         return job_card_status or planning_status or 'draft'
     if not job_card_status:
@@ -188,6 +198,23 @@ def _effective_planning_status_label(job, effective_status):
         if card_status in {'released', 'in_production', 'completed', 'closed'}:
             return 'Released'
     return PLANNING_STATUS_LABELS.get(effective_status, effective_status.replace('_', ' ').title())
+
+
+def _repair_rejected_job_status(job):
+    if _normalize_status(job.status) != 'pending_qc':
+        return False
+    job_card = getattr(job, 'job_card', None)
+    if not job_card:
+        return False
+    try:
+        card_status = (job_card.workflow_status or '').strip().lower()
+    except Exception:
+        return False
+    if card_status in {'draft', 'pending_data', 'qc_rejected', 'pm_rejected'}:
+        job.status = 'draft'
+        job.save(update_fields=['status', 'updated_at'])
+        return True
+    return False
 
 
 def _job_card_layout_field_labels():
@@ -526,14 +553,18 @@ def planning_welcome(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
 def planning_home(request):
+    _user_can_plan = getattr(getattr(request.user, 'profile', None), 'can_plan', lambda: False)()
     queryset = PlanningJob.objects.select_related('job_card').prefetch_related('print_runs', 'dispatch_runs').filter(
         is_active=True,
     )
 
     if request.method == 'POST':
         action = request.POST.get('action')
+        if not _user_can_plan:
+            messages.error(request, 'You do not have permission to modify planning jobs.')
+            return redirect('planning:jobs')
+
         if action == 'bulk_update_status':
             selected_ids = []
             for raw_id in request.POST.getlist('selected_ids'):
@@ -714,6 +745,7 @@ def planning_home(request):
     page_number = request.GET.get('page')
     jobs = paginator.get_page(page_number)
     for job in jobs:
+        _repair_rejected_job_status(job)
         job.effective_status = _effective_planning_status(job)
         job.effective_status_label = _effective_planning_status_label(job, job.effective_status)
 
@@ -763,6 +795,7 @@ def planning_home(request):
                 for value, label in PLANNING_STATUSES
             ],
             'can_admin_actions': _user_is_admin(request.user),
+            'user_can_plan': _user_can_plan,
             'filters': {
                 'q': q,
                 'status': status_filter,
@@ -1069,7 +1102,6 @@ def import_planning_sheet(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
 def planning_job_detail(request, job_id):
     job = get_object_or_404(
         PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs'),
@@ -1099,14 +1131,16 @@ def planning_job_detail(request, job_id):
             'qc_missing_fields': job.qc_missing_fields(),
             'can_print_job_card': can_print_from_job or can_print_from_card,
             'can_admin_delete': _user_is_admin(request.user),
+            'user_can_plan': getattr(getattr(request.user, 'profile', None), 'can_plan', lambda: False)(),
         },
     )
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_plan')
 def planning_job_edit(request, job_id):
     job = get_object_or_404(PlanningJob, id=job_id)
+    _repair_rejected_job_status(job)
     current_status = _normalize_status(job.status)
 
     if current_status in {'qc_approved', 'released', 'in_production', 'completed'}:
@@ -1147,7 +1181,7 @@ def planning_job_edit(request, job_id):
                 if error_dict:
                     for field_name, field_errors in error_dict.items():
                         for error_message in field_errors:
-                            if field_name == '__all__':
+                            if field_name == '__all__' or field_name not in form.fields:
                                 form.add_error(None, error_message)
                             else:
                                 form.add_error(field_name, error_message)
@@ -1178,7 +1212,7 @@ def planning_job_edit(request, job_id):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_plan')
 @transaction.atomic
 def planning_job_status_update(request, job_id):
     if request.method != 'POST':
@@ -1199,12 +1233,12 @@ def planning_job_status_update(request, job_id):
         return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
     required_from, target_status = transitions[transition]
-    if required_from and current_status != required_from:
-        messages.error(request, f'Transition not allowed from {current_status} to {target_status}.')
-        return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
-
     if current_status == target_status:
         messages.info(request, f'Job already in {target_status} status.')
+        return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
+
+    if required_from and current_status != required_from:
+        messages.error(request, f'Transition not allowed from {current_status} to {target_status}.')
         return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
     if target_status == 'pending_qc':
@@ -1301,25 +1335,116 @@ def planning_job_card_print(request, job_id):
         messages.error(request, f'Job card cannot be printed until QC fields are completed: {", ".join(missing_qc_fields)}.')
         return redirect('planning:job_detail', job_id=job.id)
 
-    scan_url = request.build_absolute_uri(reverse('planning:scan_open', args=[job.jc_number]))
-    is_repeat_with_changes = (
-        (job.repeat_flag or '').lower() == 'repeat'
-        and job.has_edits_since_creation
-        and job.edited_fields_list
+    recipe = SkuRecipe.objects.filter(sku=job.sku).first()
+
+    def _display_user_identity(user):
+        if not user:
+            return ''
+        full_name = (user.get_full_name() or '').strip()
+        if full_name:
+            return full_name
+        return (user.username or '').strip()
+
+    def _workflow_actor_for_status(target_status):
+        if not job_card:
+            return ''
+        logs = ChangeLog.objects.filter(
+            entity_type='job_card',
+            record_id=job_card.pk,
+        ).select_related('changed_by').order_by('-created_at')
+        for log in logs:
+            field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
+            status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
+            if not isinstance(status_change, dict):
+                continue
+            to_status = str(status_change.get('to') or '').strip().lower()
+            if to_status == target_status and log.changed_by:
+                return _display_user_identity(log.changed_by)
+        return ''
+
+    def _workflow_date_for_status(target_status):
+        if not job_card:
+            return None
+        logs = ChangeLog.objects.filter(
+            entity_type='job_card',
+            record_id=job_card.pk,
+        ).order_by('-created_at')
+        for log in logs:
+            field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
+            status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
+            if not isinstance(status_change, dict):
+                continue
+            to_status = str(status_change.get('to') or '').strip().lower()
+            if to_status == target_status and log.created_at:
+                return log.created_at.date()
+        return None
+
+    def _mm_int_string(value):
+        if value is None:
+            return None
+        try:
+            return str(int(Decimal(str(value))))
+        except Exception:
+            return str(value)
+
+    repeat_flag = (job.repeat_flag or '').strip().lower()
+    if 'repeat' in repeat_flag or repeat_flag in {'r', 'old', 'existing'}:
+        production_type_tag = 'REPEAT'
+    else:
+        production_type_tag = 'NEW'
+
+    recipe_material = (getattr(recipe, 'material', '') or '').strip() if recipe else ''
+    material_type_clean = (job.material_display or '').strip() or recipe_material or '-'
+    color_spec_clean = (job.color_spec_display or '').strip() or '-'
+
+    special_notes = []
+    if recipe:
+        recipe_special = (getattr(recipe, 'special_instructions', '') or '').strip()
+        recipe_notes = (getattr(recipe, 'notes', '') or '').strip()
+        if recipe_special:
+            special_notes.append(recipe_special)
+        if recipe_notes and recipe_notes not in special_notes:
+            special_notes.append(recipe_notes)
+    requirement_note = (job.requirement or '').strip()
+    if requirement_note and requirement_note not in special_notes:
+        special_notes.append(requirement_note)
+    special_instructions_text = ' | '.join(special_notes) if special_notes else '-'
+
+    po_approval_date = (
+        _workflow_date_for_status('production_approved')
+        or _workflow_date_for_status('qc_approved')
+        or job.delivery_date
     )
-    context = {
-        'job': job,
-        'now_ts': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-        'status_now': status_now,
-        'scan_url': scan_url,
-        'qr_code_b64': _build_qr_image_base64(scan_url),
-        'is_repeat_with_changes': is_repeat_with_changes,
-        'changed_fields': job.edited_fields_list or [],
-        'last_edited_by': job.last_edited_by,
-        'last_edited_at': job.last_edited_at,
-    }
-    context.update(_build_job_card_layout_context(job))
-    return render(request, 'planning/planning_job_card_print.html', context)
+
+    prepared_by_display = _display_user_identity(job.last_edited_by or job.created_by)
+    checked_by_display = _workflow_actor_for_status('qc_approved')
+    approved_by_display = _workflow_actor_for_status('production_approved')
+
+    job_scan_url = request.build_absolute_uri(reverse('planning:job_detail', kwargs={'job_id': job.id}))
+    qr_base64 = _build_qr_image_base64(job_scan_url)
+    job_qr_data_uri = f'data:image/png;base64,{qr_base64}' if qr_base64 else None
+
+    return render(
+        request,
+        'Job Card.html',
+        {
+            'job': job,
+            'recipe': recipe,
+            'job_scan_url': job_scan_url,
+            'job_qr_data_uri': job_qr_data_uri,
+            'production_type_tag': production_type_tag,
+            'po_received_date_display': job.po_received_date,
+            'po_approval_date_display': po_approval_date,
+            'material_type_clean': material_type_clean,
+            'color_spec_clean': color_spec_clean,
+            'size_w_mm_int': _mm_int_string(job.size_w_mm_display),
+            'size_h_mm_int': _mm_int_string(job.size_h_mm_display),
+            'special_instructions_text': special_instructions_text,
+            'prepared_by_display': prepared_by_display,
+            'checked_by_display': checked_by_display,
+            'approved_by_display': approved_by_display,
+        },
+    )
 
 
 @login_required
@@ -1661,6 +1786,11 @@ def sku_recipes_list(request):
     paginator = Paginator(qs, 50)
     recipes = paginator.get_page(request.GET.get('page'))
 
+    draft_count = SkuRecipe.objects.filter(is_active=True, master_data_status='draft').count()
+    pending_review_count = SkuRecipe.objects.filter(is_active=True, master_data_status='pending_review').count()
+    reviewed_count = SkuRecipe.objects.filter(is_active=True, master_data_status='reviewed').count()
+    approved_count = SkuRecipe.objects.filter(is_active=True, master_data_status='approved').count()
+
     bulk_highlights = request.session.pop('sku_recipe_bulk_highlights', {})
     for recipe in recipes:
         meta = bulk_highlights.get(str(recipe.id), {})
@@ -1671,6 +1801,10 @@ def sku_recipes_list(request):
         'recipes': recipes,
         'q': q,
         'status_filter': status_filter,
+        'draft_count': draft_count,
+        'pending_review_count': pending_review_count,
+        'reviewed_count': reviewed_count,
+        'approved_count': approved_count,
         'can_edit_approved': True,
         'can_admin_actions': is_admin_user,
     })
@@ -1934,6 +2068,7 @@ def sku_recipe_edit(request, recipe_id=None):
                         f'Planning jobs refreshed for approved SKU: updated {sync_result["updated"]}, locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.',
                     )
                 except Exception:
+                    logger.exception('Approved SKU sync to planning failed for %s', obj.sku)
                     messages.error(request, 'Error while sending approved SKU to Planning; check logs.')
             return redirect('qc:sku_recipes')
         else:

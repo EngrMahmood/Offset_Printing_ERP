@@ -18,13 +18,11 @@
         <div class="flex flex-wrap gap-3 items-center">
             <a href="{% url 'planning:home' %}" class="px-4 py-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Back</a>
             <a href="{% url 'planning:report' %}" class="px-4 py-2 rounded-2xl border border-slate-200 bg-white text-slate-700 hover:bg-slate-50 transition">Report</a>
-            {% if can_edit_job %}
+            {% if can_edit_job and user_can_plan %}
             <a href="{% url 'planning:job_edit' job.id %}" class="px-4 py-2 rounded-2xl bg-slate-900 text-white hover:bg-slate-800 transition">Finalize Job</a>
             {% endif %}
             {% if can_print_job_card %}
             <a href="{% url 'planning:job_card_print' job.id %}" target="_blank" rel="noopener" class="px-4 py-2 rounded-2xl bg-brand-600 text-white hover:bg-brand-700 transition">A4 Print</a>
-            {% endif %}
-            {% if can_edit_job %}
             {% endif %}
         </div>
     </div>

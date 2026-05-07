@@ -49,8 +49,8 @@ def normalize_job_card_status(raw_value, default='pending_data'):
 
 def job_card_queue_statuses(queue_name):
     queue_map = {
-        'planning': {'draft', 'pending_data', 'qc_rejected'},
-        'qc': {'planning_approved'},
+        'planning': {'draft', 'pending_data'},
+        'qc': {'planning_approved', 'pending_qc'},
         'production_manager': {'qc_approved'},
         'production': {'production_approved'},
     }
@@ -184,24 +184,66 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
     if not target_status:
         raise ValidationError({'status': 'Unknown Job Card workflow status.'})
 
+    planning_status_map = {
+        'draft': ('draft', False),
+        'planning_approved': ('pending_qc', False),
+        'pending_qc': ('pending_qc', False),
+        'qc_rejected': ('draft', False),
+        'qc_approved': ('qc_approved', False),
+        'pending_pm_approval': ('qc_approved', False),
+        'pm_rejected': ('draft', False),
+        'production_approved': ('qc_approved', False),
+        'released': ('released', True),
+        'in_production': ('in_production', True),
+        'completed': ('completed', True),
+        'closed': ('completed', True),
+    }
+
+    def _sync_linked_planning_job(status_value):
+        if not job_card.planning_job_id or status_value not in planning_status_map:
+            return False
+        job = job_card.planning_job
+        planning_status, issued_to_production = planning_status_map[status_value]
+        updates = []
+        if job.status != planning_status:
+            job.status = planning_status
+            updates.append('status')
+        if getattr(job, 'issued_to_production', False) != issued_to_production:
+            job.issued_to_production = issued_to_production
+            updates.append('issued_to_production')
+        if not updates:
+            return False
+        updates.append('updated_at')
+        job.save(update_fields=updates)
+        return True
+
     current_status = job_card.workflow_status
     if current_status == target_status:
+        _sync_linked_planning_job(target_status)
         return job_card
 
     allowed_transitions = {
         ('draft', 'planning_approved'),
         ('pending_data', 'planning_approved'),
+        ('pending_data', 'draft'),
         ('qc_rejected', 'planning_approved'),
+        ('qc_rejected', 'draft'),
         ('planning_approved', 'pending_qc'),
         ('planning_approved', 'qc_approved'),
         ('planning_approved', 'qc_rejected'),
+        ('planning_approved', 'draft'),
         ('pending_qc', 'qc_approved'),
         ('pending_qc', 'qc_rejected'),
+        ('pending_qc', 'draft'),
         ('qc_approved', 'pending_pm_approval'),
         ('qc_approved', 'production_approved'),
         ('qc_approved', 'pm_rejected'),
+        ('qc_approved', 'draft'),
         ('pending_pm_approval', 'production_approved'),
         ('pending_pm_approval', 'pm_rejected'),
+        ('pending_pm_approval', 'draft'),
+        ('production_approved', 'draft'),
+        ('pm_rejected', 'draft'),
         ('production_approved', 'released'),
         ('released', 'in_production'),
         ('in_production', 'completed'),
@@ -220,6 +262,7 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         before_status = current_status
         job_card.status = target_status
         job_card.save(update_fields=['status'])
+        _sync_linked_planning_job(target_status)
         log_job_card_workflow_change(
             job_card,
             actor,
@@ -235,12 +278,13 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
 def execute_job_card_action(job_card, action, actor=None, reason=''):
     mapping = {
         'approve_planning': 'planning_approved',
-        'reject_planning': 'qc_rejected',
+        'reject_planning': 'draft',
         'approve_qc': 'qc_approved',
         'reject_qc': 'qc_rejected',
         'approve_pm': 'production_approved',
         'reject_pm': 'pm_rejected',
         'release_for_production': 'released',
+        'reopen': 'draft',
     }
     if action not in mapping:
         raise ValueError('Unknown approval transition.')

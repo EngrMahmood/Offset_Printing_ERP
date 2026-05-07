@@ -268,6 +268,22 @@ class JobCard(models.Model):
         return self.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES
 
     @property
+    def latest_rejection_reason(self):
+        log = ChangeLog.objects.filter(
+            entity_type='job_card',
+            record_id=self.pk,
+            action='reject',
+        ).order_by('-created_at').first()
+        if not log:
+            return ''
+        if log.change_reason:
+            return log.change_reason
+        note = log.field_changes.get('note') if isinstance(log.field_changes, dict) else None
+        if isinstance(note, dict):
+            return note.get('to') or ''
+        return ''
+
+    @property
     def po_received_date(self):
         if self.po_date:
             return self.po_date
@@ -957,6 +973,14 @@ class UserProfile(models.Model):
 
     def can_view_pm_queue(self):
         return self.role in ('admin', 'manager', 'production_manager')
+
+    def can_plan(self):
+        """Can create, edit, and manage planning jobs (planner role)."""
+        return self.role in ('admin', 'manager', 'planner')
+
+    def can_view_approval_queue(self):
+        """Can access the approval queue page (view-only or with actions)."""
+        return self.role in ('admin', 'manager', 'planner', 'qc', 'production_manager')
     
     def can_manage_operators(self):
         """Can assign operators to shifts/jobs"""
