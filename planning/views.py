@@ -1420,9 +1420,23 @@ def planning_job_card_print(request, job_id):
     checked_by_display = _workflow_actor_for_status('qc_approved')
     approved_by_display = _workflow_actor_for_status('production_approved')
 
+    def _pdf_filename(jc_number):
+        if not jc_number:
+            return 'JOB-CARD'
+        normalized = str(jc_number).strip().upper()
+        parts = [part for part in normalized.split('-') if part]
+        if 'UPP' in parts:
+            return '-'.join(parts)
+        if len(parts) == 4 and parts[0] == 'JC':
+            return '-'.join([parts[0], parts[1], parts[2], 'UPP', parts[3]])
+        if len(parts) >= 4 and parts[0] == 'JC' and parts[-2] != 'UPP':
+            return '-'.join(parts[:-1] + ['UPP', parts[-1]])
+        return normalized
+
     job_scan_url = request.build_absolute_uri(reverse('planning:job_detail', kwargs={'job_id': job.id}))
     qr_base64 = _build_qr_image_base64(job_scan_url)
     job_qr_data_uri = f'data:image/png;base64,{qr_base64}' if qr_base64 else None
+    pdf_filename = _pdf_filename(job.jc_number)
 
     return render(
         request,
@@ -1443,6 +1457,7 @@ def planning_job_card_print(request, job_id):
             'prepared_by_display': prepared_by_display,
             'checked_by_display': checked_by_display,
             'approved_by_display': approved_by_display,
+            'pdf_filename': pdf_filename,
         },
     )
 
