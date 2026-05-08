@@ -1,8 +1,12 @@
-{% extends 'includes/ui/base_theme.html' %}
+{% extends 'theme/base.html' %}
 {% load static %}
 
 {% block title %}Job Card Layout Builder — Planning{% endblock %}
 {% block header_title %}Job Card Layout Builder{% endblock %}
+{% block header_subtitle %}Arrange active job-card print fields in the shared planning workspace shell.{% endblock %}
+{% block header_actions %}
+<a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
 
 {% block content %}
 <div class="max-w-6xl mx-auto space-y-6 fade-in">

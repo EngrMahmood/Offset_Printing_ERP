@@ -1,8 +1,13 @@
-{% extends 'includes/ui/base_theme.html' %}
+{% extends 'theme/base.html' %}
 
 {% block title %}Job Card Approval Queue - ERP{% endblock %}
 {% block header_title %}Approval Queue{% endblock %}
 {% block header_subtitle %}QC review, production manager approval, and release checkpoints for job cards.{% endblock %}
+{% block header_actions %}
+<a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
+<a class="erp-btn erp-btn-secondary" href="{% url 'planning:jobs' %}">All Planning Jobs</a>
+<a class="erp-btn erp-btn-secondary" href="{% url 'erp_readme' %}">Guide</a>
+{% endblock %}
 
 {% block content %}
 <div class="erp-page-stack">
@@ -46,18 +51,6 @@
                 </div>
                 <span class="erp-kpi-icon">R</span>
             </div>
-        </div>
-    </section>
-
-    <section class="erp-banner">
-        <div>
-            <h2 class="erp-banner-title">Approval Workflow</h2>
-            <p class="erp-banner-copy">Planners submit job cards directly to QC. QC inspectors review and approve, then the Production Manager gives final sign-off before release.</p>
-        </div>
-        <div class="erp-actions">
-            <a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_inbox' %}">PO Intake</a>
-            <a class="erp-btn erp-btn-secondary" href="{% url 'planning:jobs' %}">Planning Jobs</a>
-            <a class="erp-btn erp-btn-warning" href="{% url 'qc:pending_skus' %}">SKU Queue</a>
         </div>
     </section>
 

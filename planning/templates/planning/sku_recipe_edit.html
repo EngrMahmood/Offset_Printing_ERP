@@ -1,110 +1,64 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ page_title }}</title>
-    {% include 'includes/ui/theme_colors.html' %}
-    <style>
-        .wrap { max-width: 760px; margin: 0 auto; padding: 20px 14px 32px; }
-        .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 8px; flex-wrap: wrap; }
-        .btn { display: inline-block; padding: 7px 14px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 13px; cursor: pointer; }
-        .btn.secondary { background: #fff; color: #445366; }
-        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 20px; }
-        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-        .form-grid .full-width { grid-column: 1 / -1; }
-        .field { display: flex; flex-direction: column; gap: 4px; }
-        .field label { font-size: 12px; font-weight: 600; color: #32465d; }
-        .field input, .field textarea, .field select {
-            border: 1px solid #bfd0e2;
-            border-radius: 6px;
-            padding: 7px 10px;
-            font-size: 13px;
-            font-family: inherit;
-            color: #1f3048;
-            background: #fafcff;
-            transition: border-color 0.15s;
-        }
-        .field input:focus, .field textarea:focus {
-            outline: none;
-            border-color: #5f8ab8;
-            background: #fff;
-        }
-        .field .help { font-size: 11px; color: #7a8fa6; }
-        .field .error {
-            font-size: 12px;
-            color: #b5282a;
-            background: #fff3f3;
-            border: 1px solid #e03a3a;
-            border-radius: 5px;
-            padding: 5px 10px;
-            margin-top: 2px;
-        }
-        .muted { color: #5f6f82; font-size: 11px; }
-        .section-sep { grid-column: 1 / -1; border: none; border-top: 1px solid #e6eef5; margin: 4px 0; }
-        .section-label { grid-column: 1 / -1; font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: #8fa8be; margin-bottom: -6px; }
-        .actions { margin-top: 18px; display: flex; gap: 8px; }
-        .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 12px; font-size: 12px; border: 1px solid #c8d7e7; background: #f5f9ff; color: #2e3f53; }
-        @media (max-width: 600px) { .form-grid { grid-template-columns: 1fr; } .form-grid .full-width { grid-column: 1; } }
-    </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<main class="wrap">
 
+{% block title %}{{ page_title }}{% endblock %}
+{% block header_title %}{{ page_title }}{% endblock %}
+{% block header_subtitle %}SKU recipe defines how a SKU should be set up when creating planning jobs from a PO.{% endblock %}
+{% block header_actions %}
+    <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">&#8592; Back to SKU Recipes</a>
+{% endblock %}
+
+{% block content %}
     {% with current_step='master' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
-    <div class="top">
-        <div>
-            <h1 style="margin:0;font-size:20px;">{{ page_title }}</h1>
-            <div class="muted">SKU recipe defines how a SKU should be set up when creating planning jobs from a PO.</div>
-        </div>
-        <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">← Back to SKU Recipes</a>
-    </div>
-
     {% if messages %}
         {% for msg in messages %}
             {% if msg.level == DEFAULT_MESSAGE_LEVELS.ERROR or 'error' in msg.tags %}
-                <div class="error" style="margin-bottom:14px; font-size:14px; color:#b5282a; background:#fff3f3; border:2px solid #e03a3a; border-radius:7px; padding:10px 16px; font-weight:600;">
-                    {{ msg }}
-                </div>
+                <div class="erp-alert is-error">{{ msg }}</div>
             {% else %}
-                <div class="msg">{{ msg }}</div>
+                <div class="erp-alert is-info">{{ msg }}</div>
             {% endif %}
         {% endfor %}
     {% endif %}
 
     {% if recipe %}
-    <div style="margin-bottom:12px;padding:10px 14px;border-radius:8px;border:1px solid #d0dcea;background:#f8fafc;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
-        <div>
-            <span style="font-size:11px;text-transform:uppercase;color:#55708a;font-weight:700;">Current Status</span><br>
-            {% if recipe.master_data_status == 'approved' %}
-                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#e7f6ec;color:#1b7f45;font-weight:700;font-size:12px;">● Approved (Manager)</span>
-            {% elif recipe.master_data_status == 'reviewed' %}
-                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fff7e0;color:#8a5e00;font-weight:700;font-size:12px;">● Pending Approval (Manager)</span>
-            {% elif recipe.master_data_status == 'pending_review' %}
-                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#fff4e9;color:#c76f1e;font-weight:700;font-size:12px;">● Pending Review (QC)</span>
-            {% else %}
-                <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 10px;border-radius:12px;background:#eef2f7;color:#42556e;font-weight:700;font-size:12px;">● Draft (Planner)</span>
-            {% endif %}
+    <div class="erp-status-card">
+        <div class="erp-status-card__block">
+            <div class="erp-status-card__eyebrow">Current Status</div>
+            <div class="erp-status-card__indicator">
+                {% if recipe.master_data_status == 'approved' %}
+                    <span class="erp-status-card__dot erp-status-card__dot--approved"></span>
+                    <span>Approved (Manager)</span>
+                {% elif recipe.master_data_status == 'reviewed' %}
+                    <span class="erp-status-card__dot erp-status-card__dot--pending"></span>
+                    <span>Pending Approval (Manager)</span>
+                {% elif recipe.master_data_status == 'pending_review' %}
+                    <span class="erp-status-card__dot erp-status-card__dot--review"></span>
+                    <span>Pending Review (QC)</span>
+                {% else %}
+                    <span class="erp-status-card__dot erp-status-card__dot--draft"></span>
+                    <span>Draft (Planner)</span>
+                {% endif %}
+            </div>
         </div>
-        <div style="font-size:12px;color:#32465d;">
-            <span style="font-weight:700;">Created by:</span>
-            {% if recipe.created_by %}{{ recipe.created_by.get_full_name|default:recipe.created_by.username }}{% else %}Unknown{% endif %}
+        <div class="erp-status-card__block">
+            <div class="erp-status-card__eyebrow">Created by</div>
+            <div class="erp-status-card__meta">
+                {% if recipe.created_by %}{{ recipe.created_by.get_full_name|default:recipe.created_by.username }}{% else %}Unknown{% endif %}
+            </div>
         </div>
-        {% if recipe and recipe.master_data_status == 'draft' %}
-        <div style="font-size:11px;color:#7a8fa6;">
-            Saving this form keeps the record in Draft status.
+        {% if recipe.master_data_status == 'draft' %}
+        <div class="erp-status-card__block">
+            <div class="erp-status-card__hint">Saving this form keeps the record in Draft status.</div>
         </div>
         {% endif %}
         {% if recipe.rejection_comment %}
-        <div style="flex:1;background:#fff8ec;border:1px solid #f0d890;border-radius:6px;padding:7px 10px;font-size:12px;color:#7a5700;">
+        <div class="erp-status-card__reject-note">
             <strong>↩ Rejection note:</strong> {{ recipe.rejection_comment }}
             {% if recipe.last_rejected_by %}
-                — <em>{{ recipe.last_rejected_by.get_full_name|default:recipe.last_rejected_by.username }}
+                &mdash; <em>{{ recipe.last_rejected_by.get_full_name|default:recipe.last_rejected_by.username }}
                 {% if recipe.last_rejected_at %}on {{ recipe.last_rejected_at|date:"d M Y H:i" }}{% endif %}</em>
             {% endif %}
         </div>
@@ -112,180 +66,187 @@
     </div>
     {% endif %}
 
-    <section class="panel">
+    <section class="erp-panel">
         <form id="skuRecipeForm" method="post" novalidate>
             {% csrf_token %}
             {% if form.non_field_errors %}
-                <div class="error" style="margin-bottom:12px; font-size:14px; color:#b5282a; background:#fff3f3; border:2px solid #e03a3a; border-radius:7px; padding:10px 16px; font-weight:600;">
+                <div class="erp-form-error">
                     {{ form.non_field_errors.0 }}
                 </div>
             {% endif %}
-            <div class="muted" style="margin-bottom:12px;">Fields marked <span style="color:#b5282a;">*</span> are required for SKU master approval.</div>
-            <div class="form-grid">
+            <p class="erp-form-required-note">Fields marked <span>*</span> are required for SKU master approval.</p>
+            <div class="erp-form-grid">
 
                 <!-- Identity -->
-                <div class="section-label">Identity</div>
+                <div class="erp-form-section">Identity</div>
 
-                <div class="field full-width">
-                    <label for="{{ form.sku.id_for_label }}">SKU <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field erp-form-grid__full">
+                    <label for="{{ form.sku.id_for_label }}">SKU <span>*</span></label>
                     {{ form.sku }}
-                    {% if form.sku.errors %}<div class="error">{{ form.sku.errors.0 }}</div>{% endif %}
-                    <div class="help">Exact SKU code as it appears in the PO PDF (case-sensitive).</div>
+                    {% if form.sku.errors %}<div class="erp-form-error">{{ form.sku.errors.0 }}</div>{% endif %}
+                    <div class="erp-form-help">Exact SKU code as it appears in the PO PDF (case-sensitive).</div>
                 </div>
 
-                <div class="field full-width">
+                <div class="erp-form-field erp-form-grid__full">
                     <label for="{{ form.job_name.id_for_label }}">Job Name</label>
                     {{ form.job_name }}
-                    {% if form.job_name.errors %}<div class="error">{{ form.job_name.errors.0 }}</div>{% endif %}
+                    {% if form.job_name.errors %}<div class="erp-form-error">{{ form.job_name.errors.0 }}</div>{% endif %}
                 </div>
 
-                <hr class="section-sep">
+                <hr class="erp-form-sep erp-form-grid__full">
 
                 <!-- Material & Spec -->
-                <div class="section-label">Material &amp; Specification</div>
+                <div class="erp-form-section">Material &amp; Specification</div>
 
-                <div class="field">
-                    <label for="{{ form.material.id_for_label }}">Material Type <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.material.id_for_label }}">Material Type <span>*</span></label>
                     {{ form.material }}
-                    {% if form.material.errors %}<div class="error">{{ form.material.errors.0 }}</div>{% endif %}
+                    {% if form.material.errors %}<div class="erp-form-error">{{ form.material.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field">
-                    <label for="{{ form.color_spec.id_for_label }}">Color (e.g. 4 color or 1+1) <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.color_spec.id_for_label }}">Color (e.g. 4 color or 1+1) <span>*</span></label>
                     {{ form.color_spec }}
-                    {% if form.color_spec.errors %}<div class="error">{{ form.color_spec.errors.0 }}</div>{% endif %}
+                    {% if form.color_spec.errors %}<div class="erp-form-error">{{ form.color_spec.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field">
-                    <label for="{{ form.application.id_for_label }}">Application (UV / Lamination Gloss / Lamination Matt / NO) <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.application.id_for_label }}">Application (UV / Lamination Gloss / Lamination Matt / NO) <span>*</span></label>
                     {{ form.application }}
-                    {% if form.application.errors %}<div class="error">{{ form.application.errors.0 }}</div>{% endif %}
+                    {% if form.application.errors %}<div class="erp-form-error">{{ form.application.errors.0 }}</div>{% endif %}
                 </div>
 
-                <hr class="section-sep">
+                <hr class="erp-form-sep erp-form-grid__full">
 
                 <!-- Dimensions -->
-                <div class="section-label">Dimensions &amp; Layout</div>
+                <div class="erp-form-section">Dimensions &amp; Layout</div>
 
-                <div class="field">
-                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm) <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm) <span>*</span></label>
                     {{ form.size_w_mm }}
-                    {% if form.size_w_mm.errors %}<div class="error">{{ form.size_w_mm.errors.0 }}</div>{% endif %}
+                    {% if form.size_w_mm.errors %}<div class="erp-form-error">{{ form.size_w_mm.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field">
-                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm) <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm) <span>*</span></label>
                     {{ form.size_h_mm }}
-                    {% if form.size_h_mm.errors %}<div class="error">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
+                    {% if form.size_h_mm.errors %}<div class="erp-form-error">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field">
-                    <label for="{{ form.ups.id_for_label }}">Ups <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.ups.id_for_label }}">Ups <span>*</span></label>
                     {{ form.ups }}
-                    {% if form.ups.errors %}<div class="error">{{ form.ups.errors.0 }}</div>{% endif %}
+                    {% if form.ups.errors %}<div class="erp-form-error">{{ form.ups.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field">
-                    <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet Size <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet Size <span>*</span></label>
                     {{ form.print_sheet_size }}
-                    {% if form.print_sheet_size.errors %}<div class="error">{{ form.print_sheet_size.errors.0 }}</div>{% endif %}
+                    {% if form.print_sheet_size.errors %}<div class="erp-form-error">{{ form.print_sheet_size.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field full-width">
-                    <label for="{{ form.purchase_sheet_size.id_for_label }}">Purchase Sheet Size <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field erp-form-grid__full">
+                    <label for="{{ form.purchase_sheet_size.id_for_label }}">Purchase Sheet Size <span>*</span></label>
                     {{ form.purchase_sheet_size }}
-                    {% if form.purchase_sheet_size.errors %}<div class="error">{{ form.purchase_sheet_size.errors.0 }}</div>{% endif %}
+                    {% if form.purchase_sheet_size.errors %}<div class="erp-form-error">{{ form.purchase_sheet_size.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field">
-                    <label for="{{ form.purchase_sheet_ups.id_for_label }}">Purchase Sheet Ups <span style="color:#b5282a;">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.purchase_sheet_ups.id_for_label }}">Purchase Sheet Ups <span>*</span></label>
                     {{ form.purchase_sheet_ups }}
-                    {% if form.purchase_sheet_ups.errors %}<div class="error">{{ form.purchase_sheet_ups.errors.0 }}</div>{% endif %}
+                    {% if form.purchase_sheet_ups.errors %}<div class="erp-form-error">{{ form.purchase_sheet_ups.errors.0 }}</div>{% endif %}
                 </div>
 
-                <hr class="section-sep">
+                <hr class="erp-form-sep erp-form-grid__full">
 
                 <!-- Routing -->
-                <div class="section-label">Routing &amp; Cost</div>
+                <div class="erp-form-section">Routing &amp; Cost</div>
 
-                <div class="field">
+                <div class="erp-form-field">
                     <label for="{{ form.default_unit_cost.id_for_label }}">Default Unit Cost</label>
                     {{ form.default_unit_cost }}
-                    {% if form.default_unit_cost.errors %}<div class="error">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
+                    {% if form.default_unit_cost.errors %}<div class="erp-form-error">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field">
+                <div class="erp-form-field">
                     <label for="{{ form.daily_demand.id_for_label }}">Daily Demand</label>
                     {{ form.daily_demand }}
-                    {% if form.daily_demand.errors %}<div class="error">{{ form.daily_demand.errors.0 }}</div>{% endif %}
+                    {% if form.daily_demand.errors %}<div class="erp-form-error">{{ form.daily_demand.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field">
+                <div class="erp-form-field">
                     <label for="{{ form.awc_no.id_for_label }}">AWC No.</label>
                     {{ form.awc_no }}
-                    {% if form.awc_no.errors %}<div class="error">{{ form.awc_no.errors.0 }}</div>{% endif %}
+                    {% if form.awc_no.errors %}<div class="erp-form-error">{{ form.awc_no.errors.0 }}</div>{% endif %}
                 </div>
 
-                <div class="field">
+                <div class="erp-form-field">
                     <label for="{{ form.die_cutting.id_for_label }}">Die</label>
                     {{ form.die_cutting }}
-                    {% if form.die_cutting.errors %}<div class="error">{{ form.die_cutting.errors.0 }}</div>{% endif %}
+                    {% if form.die_cutting.errors %}<div class="erp-form-error">{{ form.die_cutting.errors.0 }}</div>{% endif %}
                 </div>
 
-                <hr class="section-sep">
+                <hr class="erp-form-sep erp-form-grid__full">
 
                 <!-- Notes -->
-                <div class="field full-width">
+                <div class="erp-form-field erp-form-grid__full">
                     <label for="{{ form.notes.id_for_label }}">Notes</label>
                     {{ form.notes }}
-                    {% if form.notes.errors %}<div class="error">{{ form.notes.errors.0 }}</div>{% endif %}
+                    {% if form.notes.errors %}<div class="erp-form-error">{{ form.notes.errors.0 }}</div>{% endif %}
                 </div>
 
             </div><!-- /form-grid -->
 
             {% if recipe %}
                 {% if recipe.master_data_status == 'pending_review' or recipe.master_data_status == 'reviewed' or recipe.master_data_status == 'approved' %}
-                <div class="field full-width">
+                <div class="erp-form-field erp-form-grid__full">
                     <label for="rejection_comment">Rejection comment</label>
                     <textarea name="rejection_comment" id="rejection_comment" placeholder="Enter the reason for returning this SKU to Draft. This helps the planner correct the issue."></textarea>
-                    <div class="muted">Required when sending the SKU back to Draft.</div>
+                    <div class="erp-form-help">Required when sending the SKU back to Draft.</div>
                 </div>
                 {% endif %}
             {% endif %}
 
-            <div class="actions">
-                {% if recipe and recipe.master_data_status == 'approved' and not can_edit_approved %}
-                <div class="note" style="margin-bottom:10px;color:#b5282a;">
+            <div class="erp-form-actions">
+                {% if recipe.master_data_status == 'approved' and not can_edit_approved %}
+                <div class="erp-form-lock-notice">
                     Approved SKU is locked. Use Reopen SKU to move it back to Draft before editing.
                 </div>
                 {% endif %}
                 {% if not recipe or recipe.master_data_status == 'draft' %}
-                    <button type="submit" class="btn">{% if recipe %}Save Changes{% else %}Save as Draft{% endif %}</button>
+                    <button type="submit" class="erp-btn erp-btn-primary">{% if recipe %}Save Changes{% else %}Save as Draft{% endif %}</button>
                 {% endif %}
                 {% if recipe %}
                     {% if recipe.master_data_status == 'draft' %}
-                        <button type="submit" class="btn secondary" name="action" value="submit_review">Submit for Review</button>
+                        <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="submit_review">Submit for Review</button>
                     {% elif recipe.master_data_status == 'pending_review' %}
-                        <button type="submit" class="btn secondary" name="action" value="review">Review and Submit for Approval</button>
-                        <button type="submit" class="btn secondary" name="action" value="back_to_draft">Back to Draft</button>
+                        <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="review">Review and Submit for Approval</button>
+                        <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="back_to_draft">Back to Draft</button>
                     {% elif recipe.master_data_status == 'reviewed' %}
-                        <button type="submit" class="btn secondary" name="action" value="approve">Approve</button>
-                        <button type="submit" class="btn secondary" name="action" value="back_to_draft">Back to Draft</button>
+                        <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="approve">Approve</button>
+                        <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="back_to_draft">Back to Draft</button>
                     {% elif recipe.master_data_status == 'approved' %}
-                        <button type="submit" class="btn secondary" name="action" value="reopen_sku">Reopen SKU</button>
+                        <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="reopen_sku">Reopen SKU</button>
                     {% endif %}
                     {% if recipe.master_data_status != 'approved' or can_admin_actions %}
-                        <button type="submit" class="btn danger" name="action" value="delete" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
-                        <button type="submit" class="btn warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
+                        <button type="submit" class="erp-btn erp-btn-danger" name="action" value="delete" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
+                        <button type="submit" class="erp-btn erp-btn-warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
                     {% endif %}
                 {% endif %}
-                <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">Cancel</a>
+                <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">Cancel</a>
             </div>
         </form>
     </section>
 
+{% endblock %}
+
+{% block extra_js %}
     <script>
         (function() {
+            // Autofocus first meaningful field on page load
+            var skuField = document.getElementById('{{ form.sku.id_for_label }}');
+            if (skuField && !skuField.value) { skuField.focus(); }
+
             var form = document.getElementById('skuRecipeForm');
             if (!form) {
                 return;
@@ -305,8 +266,6 @@
             });
         })();
     </script>
-</main>
-</body>
-</html>
+{% endblock %}
 
 

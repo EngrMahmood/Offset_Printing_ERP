@@ -1,11 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manual PO Entry</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Manual PO Entry{% endblock %}
+{% block extra_head %}
     <style>
         .wrap { max-width: 100%; margin: 0 auto; }
         .btn { display:inline-block; padding:7px 11px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
@@ -27,9 +24,13 @@
         .form-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
         .remove-button { border:1px solid #c7414f; background:#fff2f0; color:#8a2f23; border-radius:6px; padding:6px 10px; cursor:pointer; }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Manual PO Entry{% endblock %}
+{% block header_subtitle %}Create PO intake rows manually when orders arrive without a PDF source file.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
 <main class="wrap page-container">
     <div class="info-row">
         <div>
@@ -131,7 +132,8 @@
         </form>
     </section>
 </main>
-
+{% endblock %}
+{% block extra_js %}
 <script>
 let nextLineIndex = 2;
 
@@ -209,7 +211,6 @@ function removeLine(button) {
     updateGrandTotal();
 }
 </script>
-</body>
-</html>
+{% endblock %}
 
 

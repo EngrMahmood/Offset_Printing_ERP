@@ -1,11 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Scan Job Card QR</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Scan Job Card QR{% endblock %}
+{% block extra_head %}
     <style>
         .wrap { max-width: 680px; margin: 0 auto; }
         .card { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:14px; }
@@ -15,9 +12,13 @@
         .muted { color:#5f6f82; font-size:12px; }
         .alert { border-radius:6px; padding:8px 10px; margin-bottom:10px; font-size:12px; background:#fce8e6; border:1px solid #f2c3c3; color:#8a1f1f; }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Scan Job Card QR{% endblock %}
+{% block header_subtitle %}Open a planning record directly from a scanned job-card QR or pasted code value.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
 <main class="wrap page-container">
     {% with current_step='shop' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
@@ -47,7 +48,6 @@
         </form>
     </section>
 </main>
-</body>
-</html>
+{% endblock %}
 
 

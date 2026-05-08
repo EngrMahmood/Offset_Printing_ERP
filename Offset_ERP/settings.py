@@ -41,6 +41,7 @@ INSTALLED_APPS = [
     'planning',
     'qc',
     'workflow',
+    'theme',
 ]
 
 MIDDLEWARE = [

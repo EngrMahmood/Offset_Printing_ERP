@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Production Records - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Production Records - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         .records-page-shell {
             max-width: 100%;
@@ -17,9 +16,18 @@
             white-space: nowrap;
         }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Production Records{% endblock %}
+{% block header_subtitle %}High-density production record view with efficiency, variance, and history tracking.{% endblock %}
+{% block header_actions %}
+    {% if user.profile.can_edit_production %}
+    <a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> Add Production</a>
+    {% endif %}
+    {% if user.profile.can_view_analytics %}
+    <a href="{% url 'production_dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
+    {% endif %}
+{% endblock %}
+{% block content %}
     <div class="records-page-shell">
         <div class="erp-page-stack">
             <div class="erp-actions">
@@ -234,7 +242,6 @@
             });
         }
     </script>
-</body>
-</html>
+{% endblock %}
 
 

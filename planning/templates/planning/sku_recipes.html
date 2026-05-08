@@ -1,183 +1,76 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SKU Recipe Master</title>
-    {% include 'includes/ui/theme_colors.html' %}
-    <style>
-        .wrap { max-width: 100%; margin: 0 auto; }
-        .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
-        .btn { display: inline-block; padding: 7px 12px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; font-family: inherit; transition: background 0.14s; }
-        .btn:hover { background: #32465d; }
-        .btn.secondary { background: #fff; color: #445366; }
-        .btn.secondary:hover { background: #f0f5fb; }
-        .btn.success { background: #1b7f45; border-color: #1b7f45; }
-        .btn.success:hover { background: #166337; }
-        .btn.warning { background: #e67e00; border-color: #e67e00; color: #fff; }
-        .btn.warning:hover { background: #c46e00; }
-        .btn.danger { background: #fff; color: #b5282a; border-color: #b5282a; }
-        .btn.danger:hover { background: #b5282a; color: #fff; }
-        .btn.sm { padding: 3px 8px; font-size: 11px; }
-        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 10px; }
-        .search-row { display: flex; gap: 8px; margin-bottom: 10px; align-items: center; flex-wrap: wrap; }
-        .search-row input[type="text"] { flex: 1; min-width: 200px; border: 1px solid #bfd0e2; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
-        .table-shell { overflow: auto; max-height: calc(100vh - 260px); border: 1px solid #d6e0ea; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1200px; }
-        th, td { border-bottom: 1px solid #e7eef5; padding: 7px 9px; text-align: left; vertical-align: middle; }
-        th { position: sticky; top: 0; background: #f6f9fc; z-index: 1; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }
-        tr:hover td { background: #f7fafd; }
-        .muted { color: #5f6f82; font-size: 11px; }
-        .empty-state { padding: 32px; text-align: center; color: #7a8fa6; }
-        .pagination { margin-top: 10px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 12px; }
-        .pagination a, .pagination span { padding: 4px 10px; border-radius: 5px; border: 1px solid #d0dcea; text-decoration: none; color: #32465d; }
-        .pagination .current { background: #445366; color: #fff; border-color: #445366; }
-        .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 12px; border: 1px solid #c8d7e7; background: #f5f9ff; color: #2e3f53; }
-        .msg.error { background: #fff5f5; border-color: #f5c6c6; color: #7a1a1a; }
-        .msg.warning { background: #fff8ec; border-color: #f0d890; color: #7a5700; }
-        /* Workflow info bar */
-        .workflow-bar { margin-bottom: 10px; padding: 10px 12px; border-radius: 10px; border: 1px solid #d8e4f1; background: #f5f9ff; display: flex; gap: 6px; align-items: stretch; flex-wrap: wrap; }
-        .wf-step { flex: 1; min-width: 150px; border: 1px solid #c9d9ea; border-radius: 8px; background: #fff; padding: 8px 10px; }
-        .wf-step .k { font-size: 10px; text-transform: uppercase; color: #55708a; font-weight: 700; margin-bottom: 2px; }
-        .wf-step .v { font-size: 12px; color: #223f5b; font-weight: 700; }
-        .wf-step .sub { font-size: 11px; color: #5f6f82; margin-top: 2px; }
-        /* Status badges */
-        .badge { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border-radius: 12px; font-size: 11px; font-weight: 700; }
-        .badge.draft { background: #eef2f7; color: #42556e; }
-        .badge.pending_review { background: #fff4e9; color: #c76f1e; }
-        .badge.reviewed { background: #fff7e0; color: #8a5e00; }
-        .badge.approved { background: #e7f6ec; color: #1b7f45; }
-        .badge .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
-        /* Rejection note row */
-        .reject-band { background: #fff8ec; }
-        .reject-band td { color: #7a5700; font-size: 11px; padding: 5px 9px 5px 28px; border-top: none; }
-        .bulk-row-created td { background: #e8f5ff; }
-        .bulk-row-created td:first-child { background: #d6ecff; }
-        .bulk-cell-highlight { background: #fff7d6; border-left: 2px solid #ffb74d; }
-        /* Action group */
-        .action-group { display: flex; gap: 4px; flex-wrap: wrap; align-items: center; }
-        /* Modal */
-        .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(20,30,45,0.45); z-index: 9999; align-items: center; justify-content: center; }
-        .modal-overlay.open { display: flex; }
-        .modal-box { background: #fff; border-radius: 12px; padding: 20px 22px 18px; width: 480px; max-width: 96vw; box-shadow: 0 8px 40px rgba(0,0,0,0.22); }
-        .modal-box h3 { margin: 0 0 6px; font-size: 16px; color: #1f3048; }
-        .modal-box p { margin: 0 0 12px; font-size: 13px; color: #445366; }
-        .modal-box textarea { width: 100%; box-sizing: border-box; border: 1px solid #bfd0e2; border-radius: 6px; padding: 8px 10px; font-size: 13px; font-family: inherit; resize: vertical; min-height: 80px; }
-        .modal-actions { display: flex; gap: 8px; margin-top: 12px; justify-content: flex-end; }
-        /* Stats chips */
-        .stats-strip { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; align-items: center; }
-        .stat-chip { padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; border: 1px solid #d0dcea; cursor: pointer; text-decoration: none; color: #445366; background: #fff; }
-        .stat-chip:hover { background: #f0f5fb; }
-        .stat-chip.active { border-color: #445366; background: #445366; color: #fff; }
-        @media (max-width: 980px) { .workflow-bar { flex-direction: column; } }
-    </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<main class="wrap page-container">
 
+{% block title %}SKU Recipe Master{% endblock %}
+{% block header_title %}SKU Recipe Master{% endblock %}
+{% block header_subtitle %}All saved SKU master records used when routing PO jobs to planning. Only <strong>Approved</strong> records are used for PO matching.{% endblock %}
+{% block header_actions %}
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:home' %}">Planning Home</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes_archived' %}">Archived Recipes</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipe_bulk_upload' %}">&#8679; Bulk Upload</a>
+    <a class="erp-btn erp-btn-primary" href="{% url 'qc:sku_recipe_add' %}">+ Add SKU Recipe</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'erp_readme' %}">Guide</a>
+{% endblock %}
+
+{% block content %}
     {% with current_step='master' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
-    <div class="top">
-        <div>
-            <h1 style="margin:0;font-size:20px;">SKU Recipe Master</h1>
-            <div class="muted">All saved SKU master records used when routing PO jobs to planning. Only <strong>Approved</strong> records are used for PO matching.</div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
-            <a class="btn secondary" href="{% url 'qc:sku_recipes_archived' %}">Archived Recipes</a>
-            <a class="btn secondary" href="{% url 'qc:sku_recipe_bulk_upload' %}">⬆ Bulk Upload</a>
-            <a class="btn" href="{% url 'qc:sku_recipe_add' %}">+ Add SKU Recipe</a>
-        </div>
-    </div>
-
     {% for msg in messages %}
-        <div class="msg {% if 'error' in msg.tags %}error{% elif 'warning' in msg.tags %}warning{% endif %}">{{ msg }}</div>
+        <div class="erp-alert {% if 'error' in msg.tags %}is-error{% elif 'warning' in msg.tags %}is-warning{% else %}is-info{% endif %}">{{ msg }}</div>
     {% endfor %}
 
     <!-- Sub-tabs: Master / Pending SKUs -->
-    <div style="margin:8px 0 12px;">
-        <a class="stat-chip active" href="{% url 'qc:sku_recipes' %}">Master</a>
-        <a class="stat-chip" href="{% url 'qc:pending_skus' %}">Pending SKUs</a>
+    <div class="erp-tab-strip">
+        <a class="erp-tab is-active" href="{% url 'qc:sku_recipes' %}">Master</a>
+        <a class="erp-tab" href="{% url 'qc:pending_skus' %}">Pending SKUs</a>
     </div>
 
-    <!-- End-to-end workflow guide -->
-    <div class="workflow-bar">
-        <div class="wf-step">
-            <div class="k">Step 1 — Planner</div>
-            <div class="v">Draft</div>
-            <div class="sub">Planner creates or updates SKU master data as a Draft.</div>
-        </div>
-        <div class="wf-step">
-            <div class="k" style="color:#8a5e00;">Step 2 — QC Review</div>
-            <div class="v" style="color:#8a5e00;">Pending Review</div>
-            <div class="sub">Planner submits the record for QC review and validation.</div>
-        </div>
-        <div class="wf-step">
-            <div class="k" style="color:#d48b15;">Step 3 — QC Approval</div>
-            <div class="v" style="color:#d48b15;">Pending Approval</div>
-            <div class="sub">QC approves the SKU and forwards it to the manager.</div>
-        </div>
-        <div class="wf-step">
-            <div class="k" style="color:#1b7f45;">Step 4 — Manager Approval</div>
-            <div class="v" style="color:#1b7f45;">Approved</div>
-            <div class="sub">Manager approves the reviewed SKU as final master data.</div>
-        </div>
-        <div class="wf-step">
-            <div class="k" style="color:#b5282a;">Rejection Path</div>
-            <div class="v" style="color:#b5282a;">↩ Back to Draft</div>
-            <div class="sub">Any reviewer or approver can reject and add a comment for correction.</div>
-        </div>
+    <div class="erp-section-divider">
+        SKU Recipes
+        <span class="erp-badge is-count">{{ recipes.paginator.count }} recipe{{ recipes.paginator.count|pluralize }}</span>
     </div>
-
-    <section class="panel">
-        <!-- Status filter chips -->
-        <div class="stats-strip">
-            <span class="muted" style="align-self:center;">Filter:</span>
-            <a class="stat-chip {% if not status_filter %}active{% endif %}"
-               href="{% url 'qc:sku_recipes' %}{% if q %}?q={{ q }}{% endif %}">All</a>
-            <a class="stat-chip {% if status_filter == 'draft' %}active{% endif %}"
-               href="?status=draft{% if q %}&q={{ q }}{% endif %}">● Draft (Planner) ({{ draft_count }})</a>
-            <a class="stat-chip {% if status_filter == 'pending_review' %}active{% endif %}"
-               href="?status=pending_review{% if q %}&q={{ q }}{% endif %}">● Pending Review (QC) ({{ pending_review_count }})</a>
-            <a class="stat-chip {% if status_filter == 'reviewed' %}active{% endif %}"
-               href="?status=reviewed{% if q %}&q={{ q }}{% endif %}">● Pending Approval (Manager) ({{ reviewed_count }})</a>
-            <a class="stat-chip {% if status_filter == 'approved' %}active{% endif %}"
-               href="?status=approved{% if q %}&q={{ q }}{% endif %}">● Approved (Manager) ({{ approved_count }})</a>
-        </div>
-
-        <!-- Search -->
-        <form method="get" class="search-row">
-            {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
-            <input type="text" name="q" placeholder="Search SKU, job name, material, machine…" value="{{ q }}">
-            <button class="btn" type="submit">Search</button>
-            {% if q or status_filter %}<a class="btn secondary" href="{% url 'qc:sku_recipes' %}">Clear All</a>{% endif %}
-        </form>
-
-        <div class="muted" style="margin-bottom:8px;">
-            {{ recipes.paginator.count }} recipe{{ recipes.paginator.count|pluralize }}
-            {% if status_filter %} — status: <strong>{{ status_filter }}</strong>{% endif %}
-            {% if q %} — search: "{{ q }}"{% endif %}
-        </div>
-
-        <form method="post" id="sku_bulk_actions_form" class="search-row" style="align-items:center; gap:10px; margin-bottom:12px;">
-            {% csrf_token %}
-            <span class="muted">Bulk actions for selected rows:</span>
-            <button class="btn warning" type="submit" name="action" value="bulk_archive"
-                    onclick="return confirm('Archive selected SKUs? Archived recipes will be hidden from the active master list.');">Archive selected</button>
-            <button class="btn danger" type="submit" name="action" value="bulk_delete"
-                    onclick="return confirm('Permanently delete selected SKUs? This cannot be undone.');">Delete selected</button>
-            <span class="muted">Approved recipes require the "Reopen SKU" action before editing. Archive/Delete requires admin.</span>
-        </form>
-
-        <div class="table-shell">
-            <table>
+    <div class="erp-split-layout">
+        <aside class="erp-filter-sidebar">
+            <div class="erp-filter-sidebar__title">Status</div>
+            <div class="erp-filter-sidebar__nav">
+                <a class="{% if not status_filter %}is-active{% endif %}" href="{% url 'qc:sku_recipes' %}{% if q %}?q={{ q }}{% endif %}">All</a>
+                <a class="{% if status_filter == 'draft' %}is-active{% endif %}" href="?status=draft{% if q %}&amp;q={{ q }}{% endif %}">Draft ({{ draft_count }})</a>
+                <a class="{% if status_filter == 'pending_review' %}is-active{% endif %}" href="?status=pending_review{% if q %}&amp;q={{ q }}{% endif %}">Pending Review ({{ pending_review_count }})</a>
+                <a class="{% if status_filter == 'reviewed' %}is-active{% endif %}" href="?status=reviewed{% if q %}&amp;q={{ q }}{% endif %}">Pending Approval ({{ reviewed_count }})</a>
+                <a class="{% if status_filter == 'approved' %}is-active{% endif %}" href="?status=approved{% if q %}&amp;q={{ q }}{% endif %}">Approved ({{ approved_count }})</a>
+            </div>
+            <div class="erp-filter-sidebar__title">Search</div>
+            <form method="get">
+                {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
+                <div class="erp-form-field">
+                    <input type="text" name="q" placeholder="SKU, job name, material…" value="{{ q }}">
+                </div>
+                <div class="erp-form-actions">
+                    <button class="erp-btn erp-btn-primary erp-btn-block" type="submit">Search</button>
+                    {% if q or status_filter %}<a class="erp-btn erp-btn-secondary erp-btn-block" href="{% url 'qc:sku_recipes' %}">Clear All</a>{% endif %}
+                </div>
+            </form>
+        </aside>
+        <section class="erp-data-pane">
+            <form method="post" id="sku_bulk_actions_form" class="erp-bulk-bar">
+                {% csrf_token %}
+                <span class="muted">Bulk:</span>
+                <button class="erp-btn erp-btn-warning" type="submit" name="action" value="bulk_archive"
+                        onclick="return confirm('Archive selected SKUs? Archived recipes will be hidden from the active master list.');">Archive selected</button>
+                <button class="erp-btn erp-btn-danger" type="submit" name="action" value="bulk_delete"
+                        onclick="return confirm('Permanently delete selected SKUs? This cannot be undone.');">Delete selected</button>
+                <span class="muted">Approved recipes require "Reopen SKU" before editing.</span>
+            </form>
+            <div class="erp-table-toolbar">
+                <span class="erp-table-meta">{{ recipes.paginator.count }} recipe{{ recipes.paginator.count|pluralize }}{% if status_filter %} &mdash; {{ status_filter }}{% endif %}{% if q %} &mdash; "{{ q }}"{% endif %}</span>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table>
                 <thead>
                     <tr>
-                        <th style="width:1%;"><input type="checkbox" id="check_all" form="sku_bulk_actions_form"></th>
+                        <th><input type="checkbox" id="check_all" form="sku_bulk_actions_form"></th>
                         <th>#</th>
                         <th>SKU</th>
                         <th>Created By</th>
@@ -192,15 +85,15 @@
                         <th>Unit Cost</th>
                         <th>Status</th>
                         <th>Reviewed / Approved By</th>
-                        <th style="min-width:200px;">Actions</th>
+                        <th class="erp-col-actions">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for recipe in recipes %}
-                    <tr{% if recipe.bulk_highlight_type == 'created' %} class="bulk-row-created"{% endif %}{% if updated_ts and now_ts|add:'-300' < updated_ts %} style="background:#fffbe6;"{% endif %}>
+                    <tr{% if recipe.bulk_highlight_type == 'created' %} class="bulk-row-created"{% endif %}{% if updated_ts and now_ts|add:'-300' < updated_ts %}{% endif %}>
                         <td><input type="checkbox" name="selected_ids" value="{{ recipe.id }}" form="sku_bulk_actions_form"></td>
                         <td class="muted">{{ forloop.counter }}</td>
-                        <td class="{% if 'sku' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}" style="font-weight:700;color:#1f3048;white-space:nowrap;">{{ recipe.sku }}</td>
+                        <td class="{% if 'sku' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.sku }}</td>
                         <td>{% if recipe.created_by %}{{ recipe.created_by.get_full_name|default:recipe.created_by.username }}{% else %}-{% endif %}</td>
                         <td class="{% if 'job_name' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.job_name|default:"-" }}</td>
                         <td class="{% if 'material' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.material|default:"-" }}</td>
@@ -216,45 +109,41 @@
                         <td class="{% if 'purchase_sheet_size' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.purchase_sheet_size|default:"-" }}</td>
                         <td class="{% if 'default_unit_cost' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.default_unit_cost|default:"-" }}</td>
                         <td>
-                            <span class="badge {{ recipe.master_data_status }}">
-                                <span class="dot"></span>
-                                {% if recipe.master_data_status == 'pending_review' %}
-                                    Pending Review
-                                {% elif recipe.master_data_status == 'reviewed' %}
-                                    Pending Approval (Manager)
-                                {% else %}
-                                    {{ recipe.master_data_status|title }}
-                                {% endif %}
-                            </span>
+                            {% if recipe.master_data_status == 'pending_review' %}
+                                <span class="erp-badge is-review"><span class="erp-dot"></span>Pending Review</span>
+                            {% elif recipe.master_data_status == 'reviewed' %}
+                                <span class="erp-badge is-pending"><span class="erp-dot"></span>Pending Approval</span>
+                            {% elif recipe.master_data_status == 'approved' %}
+                                <span class="erp-badge is-approved"><span class="erp-dot"></span>Approved</span>
+                            {% else %}
+                                <span class="erp-badge is-draft"><span class="erp-dot"></span>{{ recipe.master_data_status|title }}</span>
+                            {% endif %}
                         </td>
                         <td>
                             {% if recipe.reviewed_by %}<span class="muted">Reviewed:</span> {{ recipe.reviewed_by }}<br>{% endif %}
                             {% if recipe.approved_by %}<span class="muted">Approved:</span> {{ recipe.approved_by }}{% endif %}
                         </td>
-                        <td>
-                            <div class="action-group">
-                                {% if False %}
-                                    {# Admin-only gate removed: all users can reopen approved SKUs via the edit page #}
-                                {% else %}
-                                    <a class="btn sm" href="{% url 'qc:sku_recipe_edit' recipe.id %}">Edit</a>
-                                    <form method="post" action="" style="display:inline;">
+                        <td class="erp-col-actions">
+                            <div class="erp-actions erp-actions--compact">
+                                {# Admin-only gate removed: all users can reopen approved SKUs via the edit page #}
+                                <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipe_edit' recipe.id %}">Edit</a>
+                                <form method="post" action="">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="delete">
                                         <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
-                                        <button class="btn sm danger" type="submit" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
+                                        <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
                                     </form>
-                                    <form method="post" action="" style="display:inline;">
+                                    <form method="post" action="">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="archive">
                                         <input type="hidden" name="recipe_id" value="{{ recipe.id }}">
-                                        <button class="btn sm warning" type="submit" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
+                                        <button class="erp-btn erp-btn-warning" type="submit" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
                                     </form>
-                                {% endif %}
                             </div>
                         </td>
                     </tr>
                     {% if recipe.master_data_status == 'draft' and recipe.rejection_comment %}
-                    <tr class="reject-band">
+                    <tr class="erp-reject-row">
                         <td colspan="18">
                             <strong>↩ Rejection note:</strong> {{ recipe.rejection_comment }}
                             {% if recipe.last_rejected_by %}
@@ -266,9 +155,12 @@
                     {% endif %}
 
                     {% empty %}
-                    <tr><td colspan="18" class="empty-state">
-                        No SKU recipes found{% if q %} matching "{{ q }}"{% endif %}{% if status_filter %} with status "{{ status_filter }}"{% endif %}.
-                        <a href="{% url 'qc:sku_recipe_add' %}">Add one now.</a>
+                    <tr><td colspan="18">
+                        <div class="erp-empty">
+                            <div class="erp-empty__icon">📚</div>
+                            <div class="erp-empty__title">No SKU recipes found{% if q %} matching “{{ q }}”{% endif %}{% if status_filter %} with status “{{ status_filter }}”{% endif %}</div>
+                            <div class="erp-empty__body"><a href="{% url 'qc:sku_recipe_add' %}">Add your first SKU recipe</a> to get started.</div>
+                        </div>
                     </td></tr>
                     {% endfor %}
                 </tbody>
@@ -276,47 +168,54 @@
         </div>
 
         {% if recipes.has_other_pages %}
-        <div class="pagination">
-            <span>Page {{ recipes.number }} of {{ recipes.paginator.num_pages }}</span>
+        <div class="erp-pager">
+            <span class="erp-pager__info">Page {{ recipes.number }} of {{ recipes.paginator.num_pages }}</span>
             {% if recipes.has_previous %}
-                <a href="?page={{ recipes.previous_page_number }}{% if q %}&q={{ q }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">‹ Prev</a>
+                <a class="erp-btn erp-btn-secondary" href="?page={{ recipes.previous_page_number }}{% if q %}&amp;q={{ q }}{% endif %}{% if status_filter %}&amp;status={{ status_filter }}{% endif %}">&#8249; Prev</a>
             {% endif %}
             {% for num in recipes.paginator.page_range %}
                 {% if num == recipes.number %}
-                    <span class="current">{{ num }}</span>
+                    <span class="erp-pager__current">{{ num }}</span>
                 {% elif num >= recipes.number|add:"-3" and num <= recipes.number|add:"3" %}
-                    <a href="?page={{ num }}{% if q %}&q={{ q }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">{{ num }}</a>
+                    <a class="erp-btn erp-btn-secondary" href="?page={{ num }}{% if q %}&amp;q={{ q }}{% endif %}{% if status_filter %}&amp;status={{ status_filter }}{% endif %}">{{ num }}</a>
                 {% endif %}
             {% endfor %}
             {% if recipes.has_next %}
-                <a href="?page={{ recipes.next_page_number }}{% if q %}&q={{ q }}{% endif %}{% if status_filter %}&status={{ status_filter }}{% endif %}">Next ›</a>
+                <a class="erp-btn erp-btn-secondary" href="?page={{ recipes.next_page_number }}{% if q %}&amp;q={{ q }}{% endif %}{% if status_filter %}&amp;status={{ status_filter }}{% endif %}">Next &#8250;</a>
             {% endif %}
         </div>
         {% endif %}
-    </section>
-
-</main>
+        </section>
+    </div>
 
 <!-- Reject / Send Back to Draft Modal -->
-<div class="modal-overlay" id="rejectModal">
-    <div class="modal-box">
-        <h3>↩ Send Back to Draft</h3>
-        <p id="rejectModalLabel">Provide a reason so the record owner knows what to correct.</p>
-        <form method="post" id="rejectForm">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="back_to_draft">
-            <input type="hidden" name="recipe_id" id="rejectRecipeId" value="">
-            <textarea name="rejection_comment" id="rejectComment" required
-                      placeholder="e.g. Material spec is incorrect, please update purchase sheet size and UPS…"></textarea>
-            <div class="muted" style="margin-top:5px;">Please provide a reason when sending a SKU back to Draft.</div>
-            <div class="modal-actions">
-                <button type="button" class="btn secondary" onclick="closeRejectModal()">Cancel</button>
-                <button type="submit" class="btn warning">↩ Send Back to Draft</button>
-            </div>
-        </form>
+<div class="erp-modal" id="rejectModal" aria-hidden="true">
+    <div class="erp-modal-backdrop" onclick="closeRejectModal()"></div>
+    <div class="erp-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="rejectModalTitle">
+        <div class="erp-modal-header">
+            <h3 id="rejectModalTitle">↩ Send Back to Draft</h3>
+            <p id="rejectModalLabel">Provide a reason so the record owner knows what to correct.</p>
+        </div>
+        <div class="erp-modal-body">
+            <form method="post" id="rejectForm">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="back_to_draft">
+                <input type="hidden" name="recipe_id" id="rejectRecipeId" value="">
+                <textarea name="rejection_comment" id="rejectComment" required
+                          placeholder="e.g. Material spec is incorrect, please update purchase sheet size and UPS…"></textarea>
+                <div class="muted">Please provide a reason when sending a SKU back to Draft.</div>
+                <div class="erp-modal-footer">
+                    <button type="button" class="erp-btn erp-btn-secondary" onclick="closeRejectModal()">Cancel</button>
+                    <button type="submit" class="erp-btn erp-btn-warning">↩ Send Back to Draft</button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
 
+{% endblock %}
+
+{% block extra_js %}
 <script>
 function openRejectModal(recipeId, sku) {
     document.getElementById('rejectRecipeId').value = recipeId;
@@ -346,7 +245,6 @@ if (bulkSelectAll) {
     });
 }
 </script>
-</body>
-</html>
+{% endblock %}
 
 

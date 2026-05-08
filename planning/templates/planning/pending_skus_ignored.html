@@ -1,11 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ignored SKUs | Planning</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Ignored SKUs | Planning{% endblock %}
+{% block extra_head %}
     <style>
         .wrap { max-width: 100%; margin: 0 auto; }
         .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
@@ -27,9 +24,13 @@
         .badge.approved { background:#e7f6ec; color:#1b7f45; }
         .msg { padding:8px 12px; border-radius:6px; margin-bottom:10px; font-size:12px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Ignored Pending SKUs{% endblock %}
+{% block header_subtitle %}Review ignored PO intake lines and restore any SKU that should return to pending master-data processing.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
 <main class="wrap page-container">
     {% with current_step='master' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
@@ -114,7 +115,6 @@
         </div>
     </section>
 </main>
-</body>
-</html>
+{% endblock %}
 
 

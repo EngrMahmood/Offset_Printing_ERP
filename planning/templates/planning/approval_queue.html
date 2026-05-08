@@ -1,504 +1,438 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Job Card Approval Queue</title>
-    {% include 'includes/ui/theme_colors.html' %}
-    <style>
-        html, body { min-height: 100%; overflow-x: auto; overflow-y: auto; }
-        main.page-container { min-height: 100vh; overflow-x: auto; }
-        .wrap { max-width: 100%; margin: 0 auto; }
-        .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-        .btn { display:inline-block; padding:6px 10px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
-        .btn.secondary { background:#fff; color:#445366; }
-        .btn.good { background:#206a3c; border-color:#206a3c; }
-        .btn.warn { background:#8a6c1f; border-color:#8a6c1f; }
-        .panel { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:10px; margin-bottom:10px; }
-        .route-shell { margin-bottom:10px; padding:10px; border-radius:10px; border:1px solid #d8e4f1; background:#f5f9ff; display:grid; grid-template-columns:repeat(4, minmax(220px, 1fr)); gap:8px; }
-        .route-card { border:1px solid #c9d9ea; border-radius:8px; background:#fff; padding:8px; }
-        .route-card .k { font-size:10px; text-transform:uppercase; color:#55708a; font-weight:700; }
-        .route-card .v { font-size:12px; color:#223f5b; font-weight:700; margin-top:3px; }
-        .tab-nav { display:flex; gap:6px; flex-wrap:wrap; margin-bottom:12px; }
-        .tab-link { appearance:none; border:1px solid #d6e0ea; border-radius:8px; background:#f7fafc; color:#2f4a65; padding:8px 14px; cursor:pointer; font-size:13px; }
-        .tab-link.active { background:#445366; color:#fff; border-color:#445366; }
-        .tab-panel { display:none; }
-        .tab-panel.active { display:block; }
-        table { width:100%; border-collapse:collapse; font-size:12px; }
-        th, td { border-bottom:1px solid #e7eef5; padding:7px; text-align:left; vertical-align:top; }
-        th { background:#f6f9fc; }
-        .muted { color:#5f6f82; font-size:11px; }
-        .status-pill { display:inline-block; padding:3px 8px; border-radius:999px; background:#edf4fa; color:#36506d; font-size:11px; font-weight:700; }
-        @media (max-width: 980px) {
-            .route-shell { grid-template-columns: 1fr; }
-        }
-        /* SKU Approval section */
-        .sku-alert { border:1px solid #f0d8a8; background:#fffbf2; border-radius:10px; padding:12px 14px; margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; }
-        .sku-alert.clear { border-color:#b8e4cf; background:#f0fdf6; }
-        .sku-alert-left { display:flex; flex-direction:column; gap:3px; }
-        .sku-alert-title { font-size:14px; font-weight:700; color:#4a3000; }
-        .sku-alert.clear .sku-alert-title { color:#0b5e35; }
-        .sku-alert-sub { font-size:12px; color:#7a5500; }
-        .sku-alert.clear .sku-alert-sub { color:#1e7a50; }
-        .sku-counts { display:flex; gap:14px; flex-wrap:wrap; }
-        .sku-count-item { display:flex; flex-direction:column; align-items:center; border:1px solid #e8d8b0; background:#fff; border-radius:8px; padding:6px 14px; min-width:80px; }
-        .sku-count-item.warn { border-color:#f0c060; }
-        .sku-count-item .cv { font-size:20px; font-weight:700; color:#1a2f46; }
-        .sku-count-item .cl { font-size:10px; color:#7a6030; text-transform:uppercase; font-weight:700; }
-        .sku-actions { display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
-        /* Section divider */
-        .section-divider { font-size:12px; font-weight:700; text-transform:uppercase; color:#4a6680; letter-spacing:0.05em; padding:8px 0 6px; border-bottom:2px solid #d0dcea; margin-bottom:10px; display:flex; align-items:center; gap:8px; }
-        .section-divider .step-badge { background:#2d608f; color:#fff; font-size:10px; border-radius:999px; padding:2px 8px; font-weight:700; }
-    </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<main class="wrap page-container">
-    {% with current_step='approval' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
-    {% endwith %}
 
-    <div class="top">
-        <div>
-            <h1 style="margin:0;font-size:20px;">Job Card Approval Queue</h1>
-            <div class="muted">Planning approval creates the approval trail, QC validates the card, PM authorizes release, and production starts only after release.</div>
-        </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <a class="btn secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
-            <a class="btn secondary" href="{% url 'planning:jobs' %}">All Planning Jobs</a>
-        </div>
-    </div>
+{% block title %}Job Card Approval Queue — ERP{% endblock %}
+{% block header_title %}Job Card Approval Queue{% endblock %}
+{% block header_subtitle %}Planning approval creates the approval trail, QC validates the card, PM authorizes release, and production starts only after release.{% endblock %}
 
-    <div class="route-shell">
-        <div class="route-card">
-            <div class="k">Step 4a — Planning Approval</div>
-            <div class="v">Planner signs off on job card details</div>
-        </div>
-        <div class="route-card">
-            <div class="k">Step 4b — QC Approval</div>
-            <div class="v">QC team validates spec and colour</div>
-        </div>
-        <div class="route-card">
-            <div class="k">Step 4c — PM Approval</div>
-            <div class="v">Production manager authorises the run</div>
-        </div>
-        <div class="route-card">
-            <div class="k">Step 4d — Release</div>
-            <div class="v">Job card released to shop floor</div>
-        </div>
-    </div>
+{% block header_actions %}
+<a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
+<a class="erp-btn erp-btn-secondary" href="{% url 'planning:jobs' %}">All Planning Jobs</a>
+{% endblock %}
 
-    {% if messages %}
-        <div style="margin:0 0 12px; display:flex; flex-direction:column; gap:8px;">
-            {% for msg in messages %}
-                <div style="padding:10px 12px; border-radius:8px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; font-size:12px;">{{ msg }}</div>
-            {% endfor %}
-        </div>
-    {% endif %}
+{% block content %}
+{% with current_step='approval' %}
+    {% include 'planning/includes/workflow_sequence_bar.html' %}
+{% endwith %}
 
-    <!-- ══════════════════════════════════════════════════
-         SECTION A — SKU APPROVAL QUEUE
-         New SKUs from PO intake must be approved in master
-         data before planning jobs can be created for them.
-    ═══════════════════════════════════════════════════ -->
-    <div class="section-divider">
-        <span class="step-badge">Step 2</span>
-        SKU Approval Queue
+<!-- Approval Workflow Steps -->
+<div class="erp-wf-guide">
+    <div class="erp-wf-step">
+        <div class="erp-wf-step__key">Step 4a — Planning Approval</div>
+        <div class="erp-wf-step__value">Planner signs off on job card details</div>
     </div>
-    {% if pending_sku_approval_count or sku_reviewed_count %}
-    <div class="sku-alert">
-        <div class="sku-alert-left">
-            <div class="sku-alert-title">New SKUs Awaiting Approval</div>
-            <div class="sku-alert-sub">Approve SKU master data before planning jobs can be created for those SKUs.</div>
-        </div>
-        <div class="sku-counts">
-            {% if pending_sku_approval_count %}
-            <div class="sku-count-item warn">
-                <span class="cv">{{ pending_sku_approval_count }}</span>
-                <span class="cl">Pending Approval</span>
-            </div>
-            {% endif %}
-            {% if sku_reviewed_count %}
-            <div class="sku-count-item warn">
-                <span class="cv">{{ sku_reviewed_count }}</span>
-                <span class="cl">Reviewed</span>
-            </div>
-            {% endif %}
-            {% if sku_approved_count %}
-            <div class="sku-count-item">
-                <span class="cv">{{ sku_approved_count }}</span>
-                <span class="cl">Approved</span>
-            </div>
-            {% endif %}
-        </div>
-        <div class="sku-actions">
-            <a class="btn warn" href="{% url 'qc:pending_skus' %}">Open SKU Queue</a>
-            <a class="btn secondary" href="{% url 'qc:sku_recipes_pending_review' %}">Open SKU Review</a>
-        </div>
+    <div class="erp-wf-step">
+        <div class="erp-wf-step__key">Step 4b — QC Approval</div>
+        <div class="erp-wf-step__value">QC team validates spec and colour</div>
     </div>
-    {% else %}
-    <div class="sku-alert clear">
-        <div class="sku-alert-left">
-            <div class="sku-alert-title">SKU Queue is Clear</div>
-            <div class="sku-alert-sub">All incoming SKUs have been reviewed and approved. No action needed.</div>
-        </div>
-        <div class="sku-actions">
-            <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">View SKU Master</a>
-        </div>
+    <div class="erp-wf-step">
+        <div class="erp-wf-step__key">Step 4c — PM Approval</div>
+        <div class="erp-wf-step__value">Production manager authorises the run</div>
     </div>
-    {% endif %}
+    <div class="erp-wf-step">
+        <div class="erp-wf-step__key">Step 4d — Release</div>
+        <div class="erp-wf-step__value">Job card released to shop floor</div>
+    </div>
+</div>
 
-    <!-- ══════════════════════════════════════════════════
-         SECTION B — JOB CARD APPROVAL QUEUE
-         Planning → QC → PM → Release
-    ═══════════════════════════════════════════════════ -->
-    <div class="section-divider" style="margin-top:16px;">
-        <span class="step-badge">Step 4</span>
-        Job Card Approval Queue
-    </div>
+{% if messages %}
+    {% for msg in messages %}
+        <div class="erp-alert is-notice">{{ msg }}</div>
+    {% endfor %}
+{% endif %}
 
-    <div class="route-shell" style="margin-bottom:12px; grid-template-columns:repeat(4, minmax(180px, 1fr));">
-        <div class="route-card">
-            <div class="k">Pending QC Jobs</div>
-            <div class="v">{{ pending_qc_jobs_count }}</div>
-        </div>
-        <div class="route-card">
-            <div class="k">QC Approved Jobs</div>
-            <div class="v">{{ approved_qc_jobs_count }}</div>
-        </div>
-        <div class="route-card">
-            <div class="k">PM Pending Jobs</div>
-            <div class="v">{{ pending_pm_jobs_count }}</div>
-        </div>
-        <div class="route-card">
-            <div class="k">Released Jobs</div>
-            <div class="v">{{ released_jobs_count }}</div>
-        </div>
-    </div>
+<!-- ─── SECTION A: SKU Approval Queue ─────────────────────── -->
+<div class="erp-section-divider">
+    <span class="erp-badge is-count">Step 2</span>
+    SKU Approval Queue
+</div>
 
-    <div class="tab-nav">
-        <button type="button" class="tab-link active" data-target="planning-panel">Planning Approval{% if planning_jobs %} ({{ planning_jobs|length }}){% endif %}</button>
-        <button type="button" class="tab-link" data-target="qc-panel">QC Approval{% if qc_jobs %} ({{ qc_jobs|length }}){% endif %}</button>
-        <button type="button" class="tab-link" data-target="pm-panel">PM Approval{% if pm_jobs %} ({{ pm_jobs|length }}){% endif %}</button>
-        <button type="button" class="tab-link" data-target="release-panel">Release{% if release_jobs %} ({{ release_jobs|length }}){% endif %}</button>
+{% if pending_sku_approval_count or sku_reviewed_count %}
+<div class="erp-action-strip">
+    <div class="erp-action-strip__left">
+        <div class="erp-action-strip__title">New SKUs Awaiting Approval</div>
+        <div class="erp-action-strip__sub">Approve SKU master data before planning jobs can be created for those SKUs.</div>
     </div>
+    <div class="erp-action-strip__counts">
+        {% if pending_sku_approval_count %}
+        <div class="erp-kpi-pill is-warn">
+            <span class="erp-kpi-pill__value">{{ pending_sku_approval_count }}</span>
+            <span class="erp-kpi-pill__label">Pending Approval</span>
+        </div>
+        {% endif %}
+        {% if sku_reviewed_count %}
+        <div class="erp-kpi-pill is-warn">
+            <span class="erp-kpi-pill__value">{{ sku_reviewed_count }}</span>
+            <span class="erp-kpi-pill__label">Reviewed</span>
+        </div>
+        {% endif %}
+        {% if sku_approved_count %}
+        <div class="erp-kpi-pill">
+            <span class="erp-kpi-pill__value">{{ sku_approved_count }}</span>
+            <span class="erp-kpi-pill__label">Approved</span>
+        </div>
+        {% endif %}
+    </div>
+    <div class="erp-action-strip__actions">
+        <a class="erp-btn erp-btn-warning" href="{% url 'qc:pending_skus' %}">Open SKU Queue</a>
+        <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes_pending_review' %}">Open SKU Review</a>
+    </div>
+</div>
+{% else %}
+<div class="erp-action-strip is-clear">
+    <div class="erp-action-strip__left">
+        <div class="erp-action-strip__title">SKU Queue is Clear</div>
+        <div class="erp-action-strip__sub">All incoming SKUs have been reviewed and approved. No action needed.</div>
+    </div>
+    <div class="erp-action-strip__actions">
+        <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">View SKU Master</a>
+    </div>
+</div>
+{% endif %}
 
-    <section id="planning-panel" class="panel tab-panel active">
-        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-            <h3 style="margin:0;">Planning Approval Queue</h3>
+<!-- ─── SECTION B: Job Card Approval Queue ─────────────────── -->
+<div class="erp-section-divider">
+    <span class="erp-badge is-count">Step 4</span>
+    Job Card Approval Queue
+</div>
+
+<div class="erp-route-grid erp-route-grid--4">
+    <div class="erp-route-card">
+        <div class="erp-route-card__key">Pending QC Jobs</div>
+        <div class="erp-route-card__value">{{ pending_qc_jobs_count }}</div>
+    </div>
+    <div class="erp-route-card">
+        <div class="erp-route-card__key">QC Approved Jobs</div>
+        <div class="erp-route-card__value">{{ approved_qc_jobs_count }}</div>
+    </div>
+    <div class="erp-route-card">
+        <div class="erp-route-card__key">PM Pending Jobs</div>
+        <div class="erp-route-card__value">{{ pending_pm_jobs_count }}</div>
+    </div>
+    <div class="erp-route-card">
+        <div class="erp-route-card__key">Released Jobs</div>
+        <div class="erp-route-card__value">{{ released_jobs_count }}</div>
+    </div>
+</div>
+
+<div class="erp-tab-strip">
+    <button type="button" class="erp-tab is-active" data-target="planning-panel">Planning Approval{% if planning_jobs %} ({{ planning_jobs|length }}){% endif %}</button>
+    <button type="button" class="erp-tab" data-target="qc-panel">QC Approval{% if qc_jobs %} ({{ qc_jobs|length }}){% endif %}</button>
+    <button type="button" class="erp-tab" data-target="pm-panel">PM Approval{% if pm_jobs %} ({{ pm_jobs|length }}){% endif %}</button>
+    <button type="button" class="erp-tab" data-target="release-panel">Release{% if release_jobs %} ({{ release_jobs|length }}){% endif %}</button>
+</div>
+
+<!-- Planning Approval Tab Panel -->
+<section id="planning-panel" class="erp-tab-panel is-active">
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <h3 class="erp-panel__title">Planning Approval Queue</h3>
             {% if planning_jobs %}
-            <div style="display:flex;align-items:center;gap:10px;">
-                <span class="muted">{{ planning_jobs|length }} card(s) waiting</span>
-                <form method="post" style="margin:0;">
+            <div class="erp-actions">
+                <span class="erp-muted">{{ planning_jobs|length }} card(s) waiting</span>
+                <form method="post" class="m-0">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="bulk_send_qc">
-                    <button type="submit" class="btn warn">Approve All</button>
+                    <button type="submit" class="erp-btn erp-btn-warning">Approve All</button>
                 </form>
                 {% if can_admin_actions %}
-                <form id="bulk-delete-planning-form" method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
+                <form id="bulk-delete-planning-form" method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="bulk_delete_job_cards">
-                    <button type="submit" class="btn danger" onclick="return confirm('Delete selected Job Cards from the planning queue? This cannot be undone.');">Delete Selected</button>
+                    <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete selected Job Cards from the planning queue? This cannot be undone.');">Delete Selected</button>
                 </form>
                 {% endif %}
             </div>
             {% endif %}
         </div>
-        <table>
-            <thead>
-                <tr>
-                    <th>JC</th>
-                    <th>PO</th>
-                    <th>SKU</th>
-                    <th>Job Name</th>
-                    <th>Status</th>
-                    <th>Sheets</th>
-                    <th>Colors</th>
-                    <th>Machine</th>
-                    <th>Updated</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for job in planning_jobs %}
-                <tr>
-                    <td><strong>{{ job.job_card_no }}</strong></td>
-                    <td>{{ job.PO_No|default:'-' }}</td>
-                    <td>{{ job.SKU|default:'-' }}</td>
-                    <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
-                    <td><span class="status-pill">{{ job.workflow_status_label }}</span></td>
-                    <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
-                    <td>{{ job.number_of_colors|default:'-' }}</td>
-                    <td>{{ job.machine_name|default:'-' }}</td>
-                    <td class="muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
-                    <td style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                        {% if can_admin_actions %}
-                        <input form="bulk-delete-planning-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="planning" style="margin-right:6px;">
-                        {% endif %}
-                        {% if job.planning_job %}
-                            <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="btn secondary">View</a>
-                            <a href="{% url 'planning:job_edit' job.planning_job.id %}" class="btn secondary">Edit Planning</a>
-                        {% endif %}
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="approve_planning">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn good">Approve Planning</button>
-                        </form>
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="reject_planning">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn warn">Send Back</button>
-                        </form>
-                        {% if can_admin_actions %}
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="delete_job_card">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn danger" onclick="return confirm('Delete Job Card {{ job.job_card_no }}? This cannot be undone.');">Delete</button>
-                        </form>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="10">No Job Cards are waiting for planning approval.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </section>
+        <div class="erp-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
+                        <th>Status</th><th>Sheets</th><th>Colors</th><th>Machine</th>
+                        <th>Updated</th><th class="erp-col-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in planning_jobs %}
+                    <tr>
+                        <td><strong>{{ job.job_card_no }}</strong></td>
+                        <td>{{ job.PO_No|default:'-' }}</td>
+                        <td>{{ job.SKU|default:'-' }}</td>
+                        <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
+                        <td><span class="erp-badge">{{ job.workflow_status_label }}</span></td>
+                        <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
+                        <td>{{ job.number_of_colors|default:'-' }}</td>
+                        <td>{{ job.machine_name|default:'-' }}</td>
+                        <td class="erp-muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
+                        <td class="erp-col-actions aq-action-cell">
+                            {% if can_admin_actions %}
+                            <input form="bulk-delete-planning-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="planning" aria-label="Select {{ job.job_card_no }}">
+                            {% endif %}
+                            {% if job.planning_job %}
+                                <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>
+                                <a href="{% url 'planning:job_edit' job.planning_job.id %}" class="erp-btn erp-btn-secondary">Edit</a>
+                            {% endif %}
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="approve_planning">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-success">Approve</button>
+                            </form>
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="reject_planning">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-warning">Send Back</button>
+                            </form>
+                            {% if can_admin_actions %}
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_job_card">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete Job Card {{ job.job_card_no }}? This cannot be undone.');">Delete</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="10" style="padding:24px;text-align:center;color:#7a8fa6;">No Job Cards are waiting for planning approval.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
 
-    <section id="qc-panel" class="panel tab-panel">
-        <h3 style="margin:0 0 8px 0;">QC Approval Queue</h3>
-        {% if qc_jobs and can_admin_actions %}
-        <form id="bulk-delete-qc-form" method="post" action="{% url 'qc:approval_queue' %}" style="margin:0 0 10px 0; display:inline-block;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="bulk_delete_job_cards">
-            <button type="submit" class="btn danger" onclick="return confirm('Delete selected Job Cards from the QC queue? This cannot be undone.');">Delete Selected</button>
-        </form>
-        {% endif %}
-        <table>
-            <thead>
-                <tr>
-                    <th>JC</th>
-                    <th>PO</th>
-                    <th>SKU</th>
-                    <th>Job Name</th>
-                    <th>Status</th>
-                    <th>Sheets</th>
-                    <th>Colors</th>
-                    <th>Machine</th>
-                    <th>Updated</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for job in qc_jobs %}
-                <tr>
-                    <td><strong>{{ job.job_card_no }}</strong></td>
-                    <td>{{ job.PO_No|default:'-' }}</td>
-                    <td>{{ job.SKU|default:'-' }}</td>
-                    <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
-                    <td><span class="status-pill">{{ job.workflow_status_label }}</span></td>
-                    <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
-                    <td>{{ job.number_of_colors|default:'-' }}</td>
-                    <td>{{ job.machine_name|default:'-' }}</td>
-                    <td class="muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
-                    <td style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                        {% if can_admin_actions %}
-                        <input form="bulk-delete-qc-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="qc" style="margin-right:6px;">
-                        {% endif %}
-                        {% if job.planning_job %}
-                            <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="btn secondary">View</a>
-                            <a href="{% url 'planning:job_edit' job.planning_job.id %}" class="btn secondary">Edit</a>
-                        {% endif %}
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="approve_qc">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn good">Approve QC</button>
-                        </form>
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="reject_qc">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn warn">Reject QC</button>
-                        </form>
-                        {% if can_admin_actions %}
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="delete_job_card">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn danger" onclick="return confirm('Delete Job Card {{ job.job_card_no }}? This cannot be undone.');">Delete</button>
-                        </form>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="10">No Job Cards are waiting for QC approval.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </section>
+<!-- QC Approval Tab Panel -->
+<section id="qc-panel" class="erp-tab-panel">
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <h3 class="erp-panel__title">QC Approval Queue</h3>
+            {% if qc_jobs and can_admin_actions %}
+            <form id="bulk-delete-qc-form" method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="bulk_delete_job_cards">
+                <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete selected Job Cards from the QC queue? This cannot be undone.');">Delete Selected</button>
+            </form>
+            {% endif %}
+        </div>
+        <div class="erp-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
+                        <th>Status</th><th>Sheets</th><th>Colors</th><th>Machine</th>
+                        <th>Updated</th><th class="erp-col-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in qc_jobs %}
+                    <tr>
+                        <td><strong>{{ job.job_card_no }}</strong></td>
+                        <td>{{ job.PO_No|default:'-' }}</td>
+                        <td>{{ job.SKU|default:'-' }}</td>
+                        <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
+                        <td><span class="erp-badge">{{ job.workflow_status_label }}</span></td>
+                        <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
+                        <td>{{ job.number_of_colors|default:'-' }}</td>
+                        <td>{{ job.machine_name|default:'-' }}</td>
+                        <td class="erp-muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
+                        <td class="erp-col-actions aq-action-cell">
+                            {% if can_admin_actions %}
+                            <input form="bulk-delete-qc-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="qc" aria-label="Select {{ job.job_card_no }}">
+                            {% endif %}
+                            {% if job.planning_job %}
+                                <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>
+                                <a href="{% url 'planning:job_edit' job.planning_job.id %}" class="erp-btn erp-btn-secondary">Edit</a>
+                            {% endif %}
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="approve_qc">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-success">Approve QC</button>
+                            </form>
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="reject_qc">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-danger">Reject QC</button>
+                            </form>
+                            {% if can_admin_actions %}
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_job_card">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete Job Card {{ job.job_card_no }}? This cannot be undone.');">Delete</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="10" style="padding:24px;text-align:center;color:#7a8fa6;">No Job Cards are waiting for QC approval.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
 
-    <section id="pm-panel" class="panel tab-panel">
-        <h3 style="margin:0 0 8px 0;">Production Manager Approval Queue</h3>
-        {% if pm_jobs and can_admin_actions %}
-        <form id="bulk-delete-pm-form" method="post" action="{% url 'qc:approval_queue' %}" style="margin:0 0 10px 0; display:inline-block;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="bulk_delete_job_cards">
-            <button type="submit" class="btn danger" onclick="return confirm('Delete selected Job Cards from the PM queue? This cannot be undone.');">Delete Selected</button>
-        </form>
-        {% endif %}
-        <table>
-            <thead>
-                <tr>
-                    <th>JC</th>
-                    <th>PO</th>
-                    <th>SKU</th>
-                    <th>Job Name</th>
-                    <th>Status</th>
-                    <th>Sheets</th>
-                    <th>Colors</th>
-                    <th>Machine</th>
-                    <th>Updated</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for job in pm_jobs %}
-                <tr>
-                    <td><strong>{{ job.job_card_no }}</strong></td>
-                    <td>{{ job.PO_No|default:'-' }}</td>
-                    <td>{{ job.SKU|default:'-' }}</td>
-                    <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
-                    <td><span class="status-pill">{{ job.workflow_status_label }}</span></td>
-                    <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
-                    <td>{{ job.number_of_colors|default:'-' }}</td>
-                    <td>{{ job.machine_name|default:'-' }}</td>
-                    <td class="muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
-                    <td style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                        {% if can_admin_actions %}
-                        <input form="bulk-delete-pm-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="pm" style="margin-right:6px;">
-                        {% endif %}
-                        {% if job.planning_job %}
-                            <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="btn secondary">View</a>
-                        {% endif %}
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="approve_pm">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn good">Approve PM</button>
-                        </form>
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="reject_pm">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn warn">Reject PM</button>
-                        </form>
-                        {% if can_admin_actions %}
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="delete_job_card">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn danger" onclick="return confirm('Delete Job Card {{ job.job_card_no }}? This cannot be undone.');">Delete</button>
-                        </form>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="10">No Job Cards are waiting for production manager approval.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </section>
+<!-- PM Approval Tab Panel -->
+<section id="pm-panel" class="erp-tab-panel">
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <h3 class="erp-panel__title">Production Manager Approval Queue</h3>
+            {% if pm_jobs and can_admin_actions %}
+            <form id="bulk-delete-pm-form" method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="bulk_delete_job_cards">
+                <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete selected Job Cards from the PM queue? This cannot be undone.');">Delete Selected</button>
+            </form>
+            {% endif %}
+        </div>
+        <div class="erp-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
+                        <th>Status</th><th>Sheets</th><th>Colors</th><th>Machine</th>
+                        <th>Updated</th><th class="erp-col-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in pm_jobs %}
+                    <tr>
+                        <td><strong>{{ job.job_card_no }}</strong></td>
+                        <td>{{ job.PO_No|default:'-' }}</td>
+                        <td>{{ job.SKU|default:'-' }}</td>
+                        <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
+                        <td><span class="erp-badge">{{ job.workflow_status_label }}</span></td>
+                        <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
+                        <td>{{ job.number_of_colors|default:'-' }}</td>
+                        <td>{{ job.machine_name|default:'-' }}</td>
+                        <td class="erp-muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
+                        <td class="erp-col-actions aq-action-cell">
+                            {% if can_admin_actions %}
+                            <input form="bulk-delete-pm-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="pm" aria-label="Select {{ job.job_card_no }}">
+                            {% endif %}
+                            {% if job.planning_job %}
+                                <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>
+                            {% endif %}
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="approve_pm">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-success">Approve PM</button>
+                            </form>
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="reject_pm">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-danger">Reject PM</button>
+                            </form>
+                            {% if can_admin_actions %}
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_job_card">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete Job Card {{ job.job_card_no }}? This cannot be undone.');">Delete</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="10" style="padding:24px;text-align:center;color:#7a8fa6;">No Job Cards are waiting for production manager approval.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
 
-    <section id="release-panel" class="panel tab-panel">
-        <h3 style="margin:0 0 8px 0;">Release for Production</h3>
-        {% if release_jobs and can_admin_actions %}
-        <form id="bulk-delete-release-form" method="post" action="{% url 'qc:approval_queue' %}" style="margin:0 0 10px 0; display:inline-block;">
-            {% csrf_token %}
-            <input type="hidden" name="action" value="bulk_delete_job_cards">
-            <button type="submit" class="btn danger" onclick="return confirm('Delete selected Job Cards from the release queue? This cannot be undone.');">Delete Selected</button>
-        </form>
-        {% endif %}
-        <table>
-            <thead>
-                <tr>
-                    <th>JC</th>
-                    <th>PO</th>
-                    <th>SKU</th>
-                    <th>Job Name</th>
-                    <th>Status</th>
-                    <th>Sheets</th>
-                    <th>Colors</th>
-                    <th>Machine</th>
-                    <th>Updated</th>
-                    <th>Action</th>
-                </tr>
-            </thead>
-            <tbody>
-            {% for job in release_jobs %}
-                <tr>
-                    <td><strong>{{ job.job_card_no }}</strong></td>
-                    <td>{{ job.PO_No|default:'-' }}</td>
-                    <td>{{ job.SKU|default:'-' }}</td>
-                    <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
-                    <td><span class="status-pill">{{ job.workflow_status_label }}</span></td>
-                    <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
-                    <td>{{ job.number_of_colors|default:'-' }}</td>
-                    <td>{{ job.machine_name|default:'-' }}</td>
-                    <td class="muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
-                    <td style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
-                        {% if can_admin_actions %}
-                        <input form="bulk-delete-release-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="release" style="margin-right:6px;">
-                        {% endif %}
-                        {% if job.planning_job %}
-                            <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="btn secondary">View</a>
-                            <a href="{% url 'planning:job_card_print' job.planning_job.id %}" class="btn secondary" target="_blank" rel="noopener">A4 Print</a>
-                        {% endif %}
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="release_for_production">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn good">Release</button>
-                        </form>
-                        {% if can_admin_actions %}
-                        <form method="post" action="{% url 'qc:approval_queue' %}" style="margin:0;">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="delete_job_card">
-                            <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                            <button type="submit" class="btn danger" onclick="return confirm('Delete Job Card {{ job.job_card_no }}? This cannot be undone.');">Delete</button>
-                        </form>
-                        {% endif %}
-                    </td>
-                </tr>
-            {% empty %}
-                <tr><td colspan="10">No Job Cards are ready to release for production.</td></tr>
-            {% endfor %}
-            </tbody>
-        </table>
-    </section>
-</main>
+<!-- Release Tab Panel -->
+<section id="release-panel" class="erp-tab-panel">
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <h3 class="erp-panel__title">Release for Production</h3>
+            {% if release_jobs and can_admin_actions %}
+            <form id="bulk-delete-release-form" method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="bulk_delete_job_cards">
+                <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete selected Job Cards from the release queue? This cannot be undone.');">Delete Selected</button>
+            </form>
+            {% endif %}
+        </div>
+        <div class="erp-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
+                        <th>Status</th><th>Sheets</th><th>Colors</th><th>Machine</th>
+                        <th>Updated</th><th class="erp-col-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in release_jobs %}
+                    <tr>
+                        <td><strong>{{ job.job_card_no }}</strong></td>
+                        <td>{{ job.PO_No|default:'-' }}</td>
+                        <td>{{ job.SKU|default:'-' }}</td>
+                        <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
+                        <td><span class="erp-badge">{{ job.workflow_status_label }}</span></td>
+                        <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
+                        <td>{{ job.number_of_colors|default:'-' }}</td>
+                        <td>{{ job.machine_name|default:'-' }}</td>
+                        <td class="erp-muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
+                        <td class="erp-col-actions aq-action-cell">
+                            {% if can_admin_actions %}
+                            <input form="bulk-delete-release-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="release" aria-label="Select {{ job.job_card_no }}">
+                            {% endif %}
+                            {% if job.planning_job %}
+                                <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>
+                                <a href="{% url 'planning:job_card_print' job.planning_job.id %}" class="erp-btn erp-btn-secondary" target="_blank" rel="noopener">A4 Print</a>
+                            {% endif %}
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="release_for_production">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-success">Release</button>
+                            </form>
+                            {% if can_admin_actions %}
+                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="delete_job_card">
+                                <input type="hidden" name="job_card_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete Job Card {{ job.job_card_no }}? This cannot be undone.');">Delete</button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="10" style="padding:24px;text-align:center;color:#7a8fa6;">No Job Cards are ready to release for production.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+{% endblock %}
+
+{% block extra_js %}
 <script>
-    document.addEventListener('DOMContentLoaded', function() {
-        const tabs = document.querySelectorAll('.tab-link');
-        const panels = document.querySelectorAll('.tab-panel');
-        tabs.forEach(tab => {
-            tab.addEventListener('click', function() {
-                tabs.forEach(t => t.classList.remove('active'));
-                panels.forEach(panel => panel.classList.remove('active'));
-                this.classList.add('active');
-                const target = this.dataset.target;
-                const panel = document.getElementById(target);
-                if (panel) {
-                    panel.classList.add('active');
-                }
+    document.addEventListener('DOMContentLoaded', function () {
+        var tabs = document.querySelectorAll('.erp-tab[data-target]');
+        var panels = document.querySelectorAll('.erp-tab-panel');
+        tabs.forEach(function (tab) {
+            tab.addEventListener('click', function () {
+                tabs.forEach(function (t) { t.classList.remove('is-active'); });
+                panels.forEach(function (p) { p.classList.remove('is-active'); });
+                tab.classList.add('is-active');
+                var panel = document.getElementById(tab.dataset.target);
+                if (panel) { panel.classList.add('is-active'); }
             });
         });
     });
 </script>
-</body>
-</html>
-
+{% endblock %}

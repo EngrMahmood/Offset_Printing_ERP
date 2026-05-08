@@ -1,153 +1,114 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Phase 4 Finalization — {{ job.jc_number }}</title>
-    {% include 'includes/ui/theme_colors.html' %}
-    <style>
-        .wrap { max-width: 1000px; margin: 0 auto; }
-        .card { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:14px; margin-bottom:12px; }
-        .card-title { font-size:11px; font-weight:700; text-transform:uppercase; letter-spacing:0.05em; color:#445366; margin-bottom:10px; border-bottom:1px solid #e7eef5; padding-bottom:6px; }
-        .grid { display:grid; grid-template-columns:repeat(2, minmax(240px, 1fr)); gap:10px; }
-        .grid-3 { display:grid; grid-template-columns:repeat(3, 1fr); gap:8px; }
-        label { display:block; font-size:11px; font-weight:700; color:#445366; margin-bottom:4px; text-transform:uppercase; }
-        input, select, textarea { width:100%; border:1px solid #bfd0e2; border-radius:6px; padding:7px 9px; font-size:12px; box-sizing:border-box; }
-        input[readonly], input[disabled] { background:#f6f9fc; color:#7a8c9e; cursor:default; }
-        .ro-value { font-size:13px; color:#1f2f43; padding:7px 0; }
-        .ro-label { font-size:11px; font-weight:700; color:#6a8099; text-transform:uppercase; margin-bottom:2px; }
-        .ro-item { margin-bottom:8px; }
-        .btn { display:inline-block; padding:8px 14px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
-        .btn.secondary { background:#fff; color:#445366; }
-        .btn.warn { background:#8d3040; border-color:#8d3040; color:#fff; }
-        .errors { background:#fdeceb; border:1px solid #f3c8c5; color:#8e2222; border-radius:6px; padding:8px 10px; font-size:12px; margin-bottom:10px; }
-        .field-error label { color:#d4351c; }
-        .field-error input, .field-error select, .field-error textarea { border-color:#d4351c; box-shadow:0 0 0 3px rgba(212,53,28,0.08); }
-        .field-error .field-error-text { color:#d4351c; font-size:11px; margin-top:4px; }
-        .field-error .field-error-text::before { content: "⚠ "; }
-        .badge { display:inline-block; padding:2px 8px; border-radius:4px; font-size:11px; font-weight:700; }
-        .badge-draft { background:#e8f0fa; color:#2a4c8a; }
-        .badge-pending_qc { background:#fff3cd; color:#7a5a00; }
-        .lock-notice { background:#fff8e1; border:1px solid #ffe082; border-radius:6px; padding:9px 12px; font-size:12px; color:#5a4000; margin-bottom:10px; }
-        @media (max-width: 900px){ .grid, .grid-3 { grid-template-columns:1fr; } }
-    </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<main class="wrap page-container">
+
+{% block title %}Phase 4 Finalization — {{ job.jc_number }}{% endblock %}
+{% block header_title %}Phase 4 Finalization — {{ job.jc_number }}{% endblock %}
+
+{% block header_subtitle %}{{ job.sku }} &nbsp;|&nbsp; {{ job.job_name }} &nbsp;|&nbsp; Status: <span class="erp-badge is-{{ job.status }}">{{ job.get_status_display }}</span>{% if job.pr_reference %} &nbsp;|&nbsp; PR: {{ job.pr_reference }}{% endif %}{% endblock %}
+
+{% block header_actions %}
+<a class="erp-btn erp-btn-secondary" href="{% url 'planning:job_detail' job.id %}">Back to Detail</a>
+{% endblock %}
+
+{% block content %}
     {% with current_step='planning' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-        <div>
-            <h1 style="margin:0;font-size:20px;">Phase 4 Finalization — {{ job.jc_number }}</h1>
-            <div style="font-size:12px;color:#5f6f82;margin-top:3px;">
-                {{ job.sku }} &nbsp;|&nbsp; {{ job.job_name }}
-                &nbsp;|&nbsp; Status: <span class="badge badge-{{ job.status }}">{{ job.get_status_display }}</span>
-                {% if job.pr_reference %}&nbsp;|&nbsp; PR: {{ job.pr_reference }}{% endif %}
-            </div>
-        </div>
-        <a class="btn secondary" href="{% url 'planning:job_detail' job.id %}">Back</a>
-    </div>
-
-    <div class="card">
-        <div class="card-title">PO Intake / Planning Job Reference</div>
-        <div class="grid-3">
-            <div class="ro-item"><div class="ro-label">PO Number</div><div class="ro-value">{{ job.po_number|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">PR Reference</div><div class="ro-value">{{ job.pr_reference|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Order Quantity</div><div class="ro-value">{{ job.order_qty|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">PO Received Date</div><div class="ro-value">{{ job.po_received_date|date:'d-m-Y'|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Planned Date</div><div class="ro-value">{{ job.plan_date|date:'d-m-Y'|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Delivery Location</div><div class="ro-value">{{ job.destination|default:'-' }}</div></div>
+    <div class="erp-panel">
+        <div class="erp-panel__header"><h3 class="erp-panel__title">PO Intake / Planning Job Reference</h3></div>
+        <div class="erp-info-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Order Quantity</div><div class="erp-info-item__value">{{ job.order_qty|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PO Received Date</div><div class="erp-info-item__value">{{ job.po_received_date|date:'d-m-Y'|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Planned Date</div><div class="erp-info-item__value">{{ job.plan_date|date:'d-m-Y'|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Delivery Location</div><div class="erp-info-item__value">{{ job.destination|default:'-' }}</div></div>
         </div>
     </div>
 
     {# ── Phase 3 read-only reference ─────────────────────────────── #}
-    <div class="card">
-        <div class="card-title">Phase 3 — SKU Master Data (Read Only)</div>
+    <div class="erp-panel">
+        <div class="erp-panel__header"><h3 class="erp-panel__title">Phase 3 — SKU Master Data (Read Only)</h3></div>
         {% if recipe %}
-        <div class="grid-3">
-            <div class="ro-item"><div class="ro-label">Material Type</div><div class="ro-value">{{ recipe.material|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Color</div><div class="ro-value">{{ recipe.color_spec|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Application</div><div class="ro-value">{{ recipe.application|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Size W mm</div><div class="ro-value">{{ job.size_w_mm_display|floatformat:"-2"|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Size H mm</div><div class="ro-value">{{ job.size_h_mm_display|floatformat:"-2"|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Print Sheet Size</div><div class="ro-value">{{ recipe.print_sheet_size|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Purchase Sheet Size</div><div class="ro-value">{{ recipe.purchase_sheet_size|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Purchase Sheet UPS</div><div class="ro-value">{{ job.purchase_sheet_ups_display|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">UPS</div><div class="ro-value">{{ job.ups_display|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">AWC No.</div><div class="ro-value">{{ job.awc_no_display|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Die Cutting</div><div class="ro-value">{{ job.die_cutting_display|default:'-' }}</div></div>
+        <div class="erp-info-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ recipe.material|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Color</div><div class="erp-info-item__value">{{ recipe.color_spec|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Application</div><div class="erp-info-item__value">{{ recipe.application|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Size W mm</div><div class="erp-info-item__value">{{ job.size_w_mm_display|floatformat:"-2"|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Size H mm</div><div class="erp-info-item__value">{{ job.size_h_mm_display|floatformat:"-2"|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Print Sheet Size</div><div class="erp-info-item__value">{{ recipe.print_sheet_size|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Size</div><div class="erp-info-item__value">{{ recipe.purchase_sheet_size|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet UPS</div><div class="erp-info-item__value">{{ job.purchase_sheet_ups_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">UPS</div><div class="erp-info-item__value">{{ job.ups_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">AWC No.</div><div class="erp-info-item__value">{{ job.awc_no_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Die Cutting</div><div class="erp-info-item__value">{{ job.die_cutting_display|default:'-' }}</div></div>
         </div>
-        <div style="margin-top:8px;font-size:11px;color:#7a8c9e;">
-            SKU is locked. To change master data: <a href="{% url 'qc:sku_recipe_edit' recipe.id %}">Reopen SKU</a> → edit → re-approve.
+        <div class="erp-muted" style="margin-top:6px;">
+            SKU is locked. To change master data: <a href="{% url 'qc:sku_recipe_edit' recipe.id %}">Reopen SKU</a> &rarr; edit &rarr; re-approve.
         </div>
         {% else %}
-        <div style="font-size:12px;color:#8a6020;">No approved SKU master found for <strong>{{ job.sku }}</strong>. Create and approve a SKU recipe before finalizing this job.</div>
+        <div class="erp-alert is-warning">No approved SKU master found for <strong>{{ job.sku }}</strong>. Create and approve a SKU recipe before finalizing this job.</div>
         {% endif %}
     </div>
 
-    <div class="card">
-        <div class="card-title">Computed Planning Values</div>
-        <div class="grid-3">
-            <div class="ro-item"><div class="ro-label">Net Print Qty (pcs)</div><div class="ro-value">{{ job.net_print_qty|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Total Print Sheets Required (sheets)</div><div class="ro-value">{{ job.calculated_sheets_required|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Purchase Sheet Required</div><div class="ro-value">{{ job.purchase_sheet_required_display|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">PKT Value</div><div class="ro-value">{{ job.calculated_pkt_value|floatformat:"-2"|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Balance Qty (pcs)</div><div class="ro-value">{{ job.balance_qty|default:'-' }}</div></div>
-            <div class="ro-item"><div class="ro-label">Stock Qty</div><div class="ro-value">{{ job.stock_qty|floatformat:"-2"|default:'-' }}</div></div>
+    <div class="erp-panel">
+        <div class="erp-panel__header"><h3 class="erp-panel__title">Computed Planning Values</h3></div>
+        <div class="erp-info-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">Net Print Qty (pcs)</div><div class="erp-info-item__value">{{ job.net_print_qty|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Total Print Sheets Required</div><div class="erp-info-item__value">{{ job.calculated_sheets_required|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Required</div><div class="erp-info-item__value">{{ job.purchase_sheet_required_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value">{{ job.calculated_pkt_value|floatformat:"-2"|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Balance Qty (pcs)</div><div class="erp-info-item__value">{{ job.balance_qty|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Stock Qty</div><div class="erp-info-item__value">{{ job.stock_qty|floatformat:"-2"|default:'-' }}</div></div>
         </div>
     </div>
 
     {# ── Phase 4 editable fields ─────────────────────────────────── #}
-    <div class="card">
-        <div class="card-title">Phase 4 — Job Finalization Fields</div>
+    <div class="erp-panel">
+        <div class="erp-panel__header"><h3 class="erp-panel__title">Phase 4 — Job Finalization Fields</h3></div>
         {% if form.non_field_errors %}
-        <div class="errors">{{ form.non_field_errors|striptags }}</div>
+        <div class="erp-alert is-warning">{{ form.non_field_errors|striptags }}</div>
         {% elif form.errors %}
-        <div class="errors">Please correct the highlighted fields before saving.</div>
+        <div class="erp-alert is-warning">Please correct the highlighted fields before saving.</div>
         {% endif %}
         <form method="post">
             {% csrf_token %}
-            <div class="grid">
+            <div class="erp-form-grid">
                 {% for field in form %}
-                <div class="{% if field.errors %}field-error{% endif %}" {% if field.name == 'remarks' or field.name == 'requirement' %}style="grid-column:1 / -1;"{% endif %}>
-                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                <div class="erp-form-field{% if field.errors %} has-error{% endif %}{% if field.name == 'remarks' or field.name == 'requirement' %} erp-form-grid__full{% endif %}">
+                    <label class="erp-form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                     {{ field }}
                     {% if field.errors %}
-                        <div class="field-error-text">{{ field.errors|striptags }}</div>
+                        <div class="erp-form-error">{{ field.errors|striptags }}</div>
                     {% endif %}
                 </div>
                 {% endfor %}
             </div>
-            <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap;align-items:center;">
-                <button class="btn" type="submit">Save Changes</button>
-                <a class="btn secondary" href="{% url 'planning:job_detail' job.id %}">Cancel</a>
+            <div class="erp-form-actions">
+                <button class="erp-btn erp-btn-primary" type="submit">Save Changes</button>
+                <a class="erp-btn erp-btn-secondary" href="{% url 'planning:job_detail' job.id %}">Cancel</a>
             </div>
         </form>
-        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;">
+        <div class="erp-actions" style="margin-top:10px;">
             {% if job.status == 'draft' %}
-            <form method="post" action="{% url 'planning:job_status_update' job.id %}" style="margin:0;">
+            <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="m-0">
                 {% csrf_token %}
                 <input type="hidden" name="transition" value="submit_qc">
                 <input type="hidden" name="next" value="{% url 'planning:job_edit' job.id %}">
-                <button class="btn secondary" type="submit">Send to QC Approval</button>
+                <button class="erp-btn erp-btn-secondary" type="submit">Send to QC Approval</button>
             </form>
             {% endif %}
             {% if can_admin_delete %}
-            <form method="post" action="{% url 'planning:jobs' %}" style="margin:0;">
+            <form method="post" action="{% url 'planning:jobs' %}" class="m-0">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="job_id" value="{{ job.id }}">
-                <button class="btn warn" type="submit" onclick="return confirm('Permanently delete this planning job? This cannot be undone.');">Delete Job</button>
+                <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Permanently delete this planning job? This cannot be undone.');">Delete Job</button>
             </form>
             {% endif %}
         </div>
     </div>
-</main>
-</body>
-</html>
+{% endblock %}
 
 

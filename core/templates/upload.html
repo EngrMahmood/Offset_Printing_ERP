@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Bulk Upload Job Cards - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Bulk Upload Job Cards - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body {
             font-family: 'IBM Plex Sans', Arial, sans-serif;
@@ -151,10 +150,13 @@
             }
         }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Bulk Upload Job Cards{% endblock %}
+{% block header_subtitle %}Import job cards from CSV or Excel using the validated ERP upload template.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
     <div class="container">
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
@@ -227,7 +229,6 @@
         </div>
         {% endif %}
     </div>
-</body>
-</html>
+{% endblock %}
 
 

@@ -1,173 +1,205 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>ERP README - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
-    <style>
-        body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); color: #223; }
-        .container { max-width: 980px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
-        .top-actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
-        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; display: inline-block; }
-        .btn:hover { background: #2f5b73; }
-        .btn-green { background: #198754; }
-        .btn-green:hover { background: #136a42; }
-        h1 { margin: 0 0 8px; color: #1f2d3d; }
-        h2 { margin: 22px 0 8px; color: #355; font-size: 1.05rem; }
-        p, li { line-height: 1.6; }
-        code { background: #f1f5f9; padding: 2px 6px; border-radius: 4px; }
-        .meta { color: #667085; font-size: 13px; margin-bottom: 12px; }
-        .note { background: #fff8e1; border: 1px solid #f3de9a; color: #7a5d1a; padding: 10px 12px; border-radius: 8px; margin-top: 14px; }
-    </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<div class="container">
-    <div class="top-actions">
-        <a href="/" class="btn">Home</a>
-        <a href="javascript:history.back()" class="btn">Back</a>
-        <a href="{% url 'download_erp_readme' %}" class="btn btn-green">Download Guide</a>
+
+{% block title %}ERP Guide — Offset Printing ERP{% endblock %}
+{% block header_title %}ERP Guide{% endblock %}
+{% block header_subtitle %}Centralized user guide for planning, production, QC, dispatch, and admin workflows.{% endblock %}
+{% block header_actions %}
+<a href="{% url 'home' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-home"></i> Home</a>
+<a href="{% url 'download_erp_readme' %}" class="erp-btn erp-btn-primary"><i class="fas fa-file-download"></i> Download Guide</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-panel">
+    <div class="erp-panel__header">
+        <div>
+            <div class="erp-eyebrow">Offset ERP Guide</div>
+            <h2 class="erp-section-title">Full ERP user guide</h2>
+            <p class="erp-card-subtitle">Read this page for consistent instructions and workflow guidance across every module.</p>
+        </div>
     </div>
 
-    <h1>Offset ERP - Full Easy Guide</h1>
-    <div class="meta">Generated on: {{ generated_on|date:'Y-m-d H:i' }}</div>
-    <div class="meta">Version: {{ erp_software_version }}{% if erp_software_release_date %} · Released {{ erp_software_release_date }}{% endif %}</div>
+    <div style="padding-top:14px;">
+        <div class="erp-wf-guide" style="flex-direction:column;gap:12px;margin-bottom:18px;padding:0;background:transparent;border:none;">
+            <div class="erp-wf-step">
+                <div class="erp-wf-step__key">Purpose</div>
+                <div class="erp-wf-step__value">Single source guide</div>
+                <div class="erp-wf-step__desc">All instructions and process notes are centralized here so pages stay clean.</div>
+            </div>
+            <div class="erp-wf-step">
+                <div class="erp-wf-step__key">Navigation</div>
+                <div class="erp-wf-step__value">Quick access</div>
+                <div class="erp-wf-step__desc">Use the main menu and guide links at the top of pages for module help.</div>
+            </div>
+            <div class="erp-wf-step">
+                <div class="erp-wf-step__key">Updates</div>
+                <div class="erp-wf-step__value">Always current</div>
+                <div class="erp-wf-step__desc">Keep this guide updated whenever formulas, validations, or workflow rules change.</div>
+            </div>
+        </div>
 
-    <p>
-        This guide explains every major ERP section in simple language for planner, production, dispatch, manager, and admin users.
-        If you are new, read section by section in order.
-    </p>
+        <p class="erp-card-subtitle">Generated on: {{ generated_on|date:'Y-m-d H:i' }} • Version: {{ erp_software_version }}{% if erp_software_release_date %} • Released {{ erp_software_release_date }}{% endif %}</p>
 
-    <h2>0. Quick Access For Wrong Dropdown Values</h2>
-    <ul>
-        <li>If a wrong dropdown value is added (machine/operator/material/department), open <a href="{% url 'machine_master_tools' %}">Master Corrections</a>.</li>
-        <li>Use Rename to correct spelling/name.</li>
-        <li>Use Deactivate for machine/operator when you want to stop future use.</li>
-        <li>Old records remain safe for audit.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem; margin-top:20px;">0. Quick Access for Dropdown Corrections</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>If a wrong dropdown value is added (machine/operator/material/department), open <a href="{% url 'machine_master_tools' %}">Master Corrections</a>.</li>
+            <li>Use Rename to correct spelling/name.</li>
+            <li>Use Deactivate for machine/operator when you want to stop future use.</li>
+            <li>Old records remain safe for audit.</li>
+        </ul>
 
-    <h2>1. Job Card Entry (Planning Stage)</h2>
-    <ul>
-        <li>Job Card No: unique order number for tracking.</li>
-        <li>SKU: product code.</li>
-        <li>PO Number/Date: customer order reference.</li>
-        <li>Material: paper or board used.</li>
-        <li>Colours: print colors (for example 4 or 1+1).</li>
-        <li>Order Qty: customer required finished pieces.</li>
-        <li>UPS: pieces per sheet.</li>
-        <li>Wastage: planned setup/loss sheets.</li>
-        <li>Machine: planned machine for this job.</li>
-        <li>Production Tolerance %: allowed extra sheets over planned quantity.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">1. Job Card Entry (Planning Stage)</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Job Card No: unique order number for tracking.</li>
+            <li>SKU: product code.</li>
+            <li>PO Number/Date: customer order reference.</li>
+            <li>Material: paper or board used.</li>
+            <li>Colours: print colors (for example 4 or 1+1).</li>
+            <li>Order Qty: customer required finished pieces.</li>
+            <li>UPS: pieces per sheet.</li>
+            <li>Wastage: planned setup/loss sheets.</li>
+            <li>Machine: planned machine for this job.</li>
+            <li>Production Tolerance %: allowed extra sheets over planned quantity.</li>
+        </ul>
 
-    <h2>2. Job Card Auto Calculations</h2>
-    <ul>
-        <li>Required Sheets = Order Qty / UPS</li>
-        <li>Total Planned Sheets = Required Sheets + Wastage</li>
-        <li>Tolerance Sheets = Planned Sheets × Production Tolerance %</li>
-        <li>Allowed Sheets = Planned Sheets + Tolerance Sheets</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">2. Job Card Auto Calculations</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Required Sheets = Order Qty / UPS</li>
+            <li>Total Planned Sheets = Required Sheets + Wastage</li>
+            <li>Tolerance Sheets = Planned Sheets × Production Tolerance %</li>
+            <li>Allowed Sheets = Planned Sheets + Tolerance Sheets</li>
+        </ul>
 
-    <h2>3. Planned Time Calculations (Auto)</h2>
-    <ul>
-        <li>Estimated Run Time (min) = (Total Impressions Required / Machine Speed per hour) × 60</li>
-        <li>Estimated Setup Time (min) = Total Colors × Machine Setup Minutes per Color</li>
-        <li>Estimated Total Planned Time = Run Time + Setup Time</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">3. Planned Time Calculations (Auto)</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Estimated Run Time (min) = (Total Impressions Required / Machine Speed per hour) × 60</li>
+            <li>Estimated Setup Time (min) = Total Colors × Machine Setup Minutes per Color</li>
+            <li>Estimated Total Planned Time = Run Time + Setup Time</li>
+        </ul>
 
-    <h2>4. Production Entry (Execution Stage)</h2>
-    <ul>
-        <li>Job Card: choose which job is running.</li>
-        <li>Machine: auto-picked from job card, but override can be used when needed.</li>
-        <li>Operator, Shift, Date: who worked and when.</li>
-        <li>Impressions: total machine impressions done.</li>
-        <li>Output Sheets: good sheets produced.</li>
-        <li>Waste Sheets + Waste Reason: reject sheets and reason.</li>
-        <li>Run, Setup, Downtime minutes: actual consumed time.</li>
-        <li>Downtime Breakdown: add multiple downtime categories with minutes for one production entry.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">4. Production Entry (Execution Stage)</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Job Card: choose which job is running.</li>
+            <li>Machine: auto-picked from job card, but override can be used when needed.</li>
+            <li>Operator, Shift, Date: who worked and when.</li>
+            <li>Impressions: total machine impressions done.</li>
+            <li>Output Sheets: good sheets produced.</li>
+            <li>Waste Sheets + Waste Reason: reject sheets and reason.</li>
+            <li>Run, Setup, Downtime minutes: actual consumed time.</li>
+            <li>Downtime Breakdown: add multiple downtime categories with minutes for one production entry.</li>
+        </ul>
 
-    <h2>5. Repeated Production Entries (Same Job Card)</h2>
-    <ul>
-        <li>Planned minutes are auto-allocated from remaining planned time.</li>
-        <li>Remaining Planned Time = Job Planned Total - Sum(previous active production planned times)</li>
-        <li>Total impressions are cumulative across production entries for the same job card.</li>
-        <li>Total impressions are validated against Total Impressions Required plus Production Tolerance %.</li>
-        <li>If extra allocation is needed beyond remaining planned time, overrun reason is mandatory.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">5. Repeated Production Entries (Same Job Card)</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Planned minutes are auto-allocated from remaining planned time.</li>
+            <li>Remaining Planned Time = Job Planned Total - Sum(previous active production planned times)</li>
+            <li>Total impressions are cumulative across production entries for the same job card.</li>
+            <li>Total impressions are validated against Total Impressions Required plus Production Tolerance %.</li>
+            <li>If extra allocation is needed beyond remaining planned time, overrun reason is mandatory.</li>
+        </ul>
 
-    <h2>6. Dispatch Entry (Delivery Stage)</h2>
-    <ul>
-        <li>Job Card: select the job being delivered.</li>
-        <li>Dispatch Date and Dispatch Qty: what was delivered and when.</li>
-        <li>DC No: optional dispatch challan reference.</li>
-        <li>Job completion threshold is 95% dispatch ratio.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">6. Dispatch Entry (Delivery Stage)</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Job Card: select the job being delivered.</li>
+            <li>Dispatch Date and Dispatch Qty: what was delivered and when.</li>
+            <li>DC No: optional dispatch challan reference.</li>
+            <li>Job completion threshold is 95% dispatch ratio.</li>
+        </ul>
 
-    <h2>7. OEE Rules</h2>
-    <ul>
-        <li>Availability uses unplanned downtime categories only: breakdown, operator, other (summed across all downtime rows).</li>
-        <li>Setup and planned/external losses are tracked, but treated differently from unplanned losses.</li>
-        <li>Performance compares actual impressions against machine expected impressions from run time.</li>
-        <li>Quality compares good sheets against quality-impact total sheets.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">7. OEE Rules</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Availability uses unplanned downtime categories only: breakdown, operator, other (summed across all downtime rows).</li>
+            <li>Setup and planned/external losses are tracked, but treated differently from unplanned losses.</li>
+            <li>Performance compares actual impressions against machine expected impressions from run time.</li>
+            <li>Quality compares good sheets against quality-impact total sheets.</li>
+        </ul>
 
-    <h2>8. Overrun, Short Close, and Wastage Decisions</h2>
-    <ul>
-        <li>Overrun Minutes = (Run + Setup + Downtime) - Planned Minutes</li>
-        <li>Overrun is planning/time variance, not auto-wastage.</li>
-        <li>Job completion at 95% dispatch does not auto-convert remaining 5% to waste.</li>
-        <li>Remaining quantity below 100% appears as Short Close and must be operationally reviewed (carry forward, cancel balance, or dispatch later).</li>
-        <li>Manager/dispatch can click Close Gap with reason, and that pending short-close quantity is moved into Closed as Wastage.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">8. Overrun, Short Close, and Wastage Decisions</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Overrun Minutes = (Run + Setup + Downtime) - Planned Minutes</li>
+            <li>Overrun is planning/time variance, not auto-wastage.</li>
+            <li>Job completion at 95% dispatch does not auto-convert remaining 5% to waste.</li>
+            <li>Remaining quantity below 100% appears as Short Close and must be operationally reviewed (carry forward, cancel balance, or dispatch later).</li>
+            <li>Manager/dispatch can click Close Gap with reason, and that pending short-close quantity is moved into Closed as Wastage.</li>
+        </ul>
 
-    <h2>9. Shift & Machine Schedule Config</h2>
-    <ul>
-        <li>Effective From/To: set validity date range of this shift plan.</li>
-        <li>Net Shift Hours: real productive hours after breaks.</li>
-        <li>Machine Work Schedule checkbox:</li>
-        <li>Checked means machine runs that day/shift.</li>
-        <li>Unchecked means machine is OFF that day/shift.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">9. Shift & Machine Schedule Config</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Effective From/To: set validity date range of this shift plan.</li>
+            <li>Net Shift Hours: real productive hours after breaks.</li>
+            <li>Machine Work Schedule checkbox:</li>
+            <li>Checked means machine runs that day/shift.</li>
+            <li>Unchecked means machine is OFF that day/shift.</li>
+        </ul>
 
-    <h2>10. Dashboard Module (How to Read)</h2>
-    <ul>
-        <li>Top KPIs: OEE, Availability, Performance, Quality.</li>
-        <li>Planning KPIs: Planned vs Actual minutes, variance, schedule utilization.</li>
-        <li>Trend and analysis: production charts, machine/operator ranking, downtime, shift comparison, Pareto, at-risk jobs.</li>
-        <li>Short-close KPIs: pending short close and closed as wastage.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">10. Dashboard Module (How to Read)</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Top KPIs: OEE, Availability, Performance, Quality.</li>
+            <li>Planning KPIs: Planned vs Actual minutes, variance, schedule utilization.</li>
+            <li>Trend and analysis: production charts, machine/operator ranking, downtime, shift comparison, Pareto, at-risk jobs.</li>
+            <li>Short-close KPIs: pending short close and closed as wastage.</li>
+        </ul>
 
-    <h2>11. Search & Ease-of-use Helpers</h2>
-    <ul>
-        <li>Production Entry includes a user-friendly job card search picker.</li>
-        <li>Dispatch Entry includes job card search.</li>
-        <li>Machine is auto-picked from Job Card in Production Entry.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">11. Search & Ease-of-use Helpers</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Production Entry includes a user-friendly job card search picker.</li>
+            <li>Dispatch Entry includes job card search.</li>
+            <li>Machine is auto-picked from Job Card in Production Entry.</li>
+        </ul>
 
-    <h2>12. Archived Records</h2>
-    <ul>
-        <li>Archived Records lets you view deleted Job Cards, Production, and Dispatch records.</li>
-        <li>Use the All view to see every archived entity type together.</li>
-        <li>Restoring a record reactivates it while preserving audit trace.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">12. Archived Records</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Archived Records lets you view deleted Job Cards, Production, and Dispatch records.</li>
+            <li>Use the All view to see every archived entity type together.</li>
+            <li>Restoring a record reactivates it while preserving audit trace.</li>
+        </ul>
 
-    <h2>13. Daily Working Discipline (Recommended)</h2>
-    <ul>
-        <li>Planner updates Job Card with correct machine before release.</li>
-        <li>Production logs shift-wise data same day.</li>
-        <li>Dispatch logs delivery same day.</li>
-        <li>Manager reviews short-close and overrun reasons daily.</li>
-        <li>Shift config is updated when timing/working pattern changes.</li>
-    </ul>
+        <h3 class="erp-section-title" style="font-size:1rem;">13. Daily Working Discipline (Recommended)</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Planner updates Job Card with correct machine before release.</li>
+            <li>Production logs shift-wise data same day.</li>
+            <li>Dispatch logs delivery same day.</li>
+            <li>Manager reviews short-close and overrun reasons daily.</li>
+            <li>Shift config is updated when timing/working pattern changes.</li>
+        </ul>
 
-    <div class="note">
-        Keep this guide updated whenever formulas, validations, fields, or dashboard KPI logic changes.
+        <h3 class="erp-section-title" style="font-size:1rem;">14. Planning Workflow Reference</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Step 1: PO Intake. Upload or manually enter PO data and classify each line as repeat or new SKU.</li>
+            <li>Step 2: SKU Master. Missing SKUs must be created and approved before planners can continue.</li>
+            <li>Step 3: Planning Jobs. Planning fields are completed and the job card is created.</li>
+            <li>Step 4: Approval. QC validates the job card and the production manager authorizes release.</li>
+            <li>Step 5: Production Scan. Execution starts only after the released job card reaches the shop floor.</li>
+        </ul>
+
+        <h3 class="erp-section-title" style="font-size:1rem;">15. PO Intake Routing</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Repeat Route: PO Intake → Planning Jobs.</li>
+            <li>New SKU Route: PO Intake → Pending SKU → SKU Approval → Planning refresh.</li>
+            <li>The PO Inbox shows duplicate merge notes, missing master counts, and the correct next step for each PO.</li>
+        </ul>
+
+        <h3 class="erp-section-title" style="font-size:1rem;">16. SKU Approval States</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Draft: Planner creates or updates SKU master data.</li>
+            <li>Pending Review: SKU waits for QC validation.</li>
+            <li>Pending Approval: QC has reviewed and forwarded the SKU for managerial approval.</li>
+            <li>Approved: Final master data can be used for PO matching and planning.</li>
+            <li>Rejected: Reviewer sends the SKU back for correction with comments.</li>
+        </ul>
+
+        <h3 class="erp-section-title" style="font-size:1rem;">17. Job Card Approval Flow</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Planner submission places the job card into the approval trail.</li>
+            <li>QC approval validates specification, colour, and production readiness.</li>
+            <li>Production manager approval authorizes release to the shop floor.</li>
+            <li>Only released job cards should be scanned and used in production execution.</li>
+        </ul>
+
+        <div class="note" style="background:#fff8e1;border:1px solid #f3de9a;color:#7a5d1a;padding:12px 14px;border-radius:8px;">Keep this guide updated whenever formulas, validations, fields, or dashboard KPI logic changes.</div>
     </div>
 </div>
-</body>
-</html>
+{% endblock %}
 
 
 

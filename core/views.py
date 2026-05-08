@@ -47,7 +47,8 @@ from .services import (
     build_change_summary, log_change, user_has_entity_permission,
     user_can_archive_records, user_can_bypass_edit_lock, get_record_edit_lock_days,
     get_record_edit_lock_cutoff, record_is_time_locked, get_valid_override,
-    ensure_edit_lock_allowed, get_accessible_entities, validate_delete_allowed,
+    ensure_edit_lock_allowed, get_accessible_entities, get_active_record_or_404,
+    validate_delete_allowed,
     validate_restore_allowed, archive_record, restore_record_state,
     run_bulk_archive, run_bulk_permanent_delete
 )

@@ -1,11 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planning README - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Planning README - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); color: #223; }
         .container { max-width: 980px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
@@ -21,10 +18,13 @@
         .meta { color: #667085; font-size: 13px; margin-bottom: 12px; }
         .note { background: #fff8e1; border: 1px solid #f3de9a; color: #7a5d1a; padding: 10px 12px; border-radius: 8px; margin-top: 14px; }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Planning Guide{% endblock %}
+{% block header_subtitle %}Module-specific planning reference retained for download, alongside the centralized ERP guide.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">ERP Guide</a>
+{% endblock %}
+{% block content %}
 <div class="container">
     <div class="top-actions">
         <a href="{% url 'planning:home' %}" class="btn">Planning Home</a>
@@ -112,7 +112,6 @@
         Review the guide after each release or merge to ensure users have current instructions.
     </div>
 </div>
-</body>
-</html>
+{% endblock %}
 
 

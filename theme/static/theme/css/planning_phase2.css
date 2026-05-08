@@ -1,0 +1,26 @@
+/* =============================================================
+   PLANNING MODULE � Phase-specific helpers only.
+   All core component styles live in erp_components.css.
+   This file contains only planning-module-specific overrides.
+   ============================================================= */
+
+/* --- PO Inbox column widths ------------------------------- */
+.po-col-job { max-width: 340px; word-break: break-word; }
+.po-col-sku { max-width: 320px; word-break: break-all; }
+
+/* --- PO Inbox 2-column workflow layout --------------------- */
+.po-inbox-workflow-2col { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
+
+/* --- PO warning alert (extends erp-alert) ----------------- */
+.po-warning-alert { background: #fffbe6; border: 1px solid #f0c050; color: #7a5600; }
+
+/* --- Bulk-import highlight classes ------------------------ */
+.bulk-row-created td { background: #e8f5ff !important; }
+.bulk-row-created td:first-child { background: #d6ecff !important; }
+.bulk-cell-highlight { background: #fff7d6 !important; border-left: 2px solid #ffb74d !important; }
+
+/* --- Inline filter reset form ------------------------------ */
+.form-inline-reset { display: inline; margin: 0; }
+
+/* --- Approval queue action cell --------------------------- */
+.aq-action-cell { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }

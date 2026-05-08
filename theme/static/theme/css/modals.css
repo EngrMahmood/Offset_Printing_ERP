@@ -1,0 +1,15 @@
+.erp-modal { display: none; position: fixed; inset: 0; z-index: 2000; }
+.erp-modal.open { display: block; }
+.erp-modal-backdrop { position: absolute; inset: 0; background: rgba(15, 23, 38, 0.48); }
+.erp-modal-dialog {
+    position: relative;
+    max-width: 560px;
+    margin: 10vh auto;
+    background: #fff;
+    border-radius: var(--erp-radius-lg);
+    box-shadow: var(--erp-shadow-lg);
+    border: 1px solid var(--erp-border);
+}
+.erp-modal-header, .erp-modal-body, .erp-modal-footer { padding: var(--erp-space-4); }
+.erp-modal-header { border-bottom: 1px solid var(--erp-border); }
+.erp-modal-footer { border-top: 1px solid var(--erp-border); display: flex; justify-content: flex-end; gap: var(--erp-space-2); }

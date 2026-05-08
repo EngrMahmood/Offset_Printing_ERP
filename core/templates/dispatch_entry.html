@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %} - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %} - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); overflow-x: hidden; }
         .container { max-width: 100%; width: 100%; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
@@ -52,10 +51,16 @@
         }
         .clear-btn:hover { background: #dde8f2; }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %}{% endblock %}
+{% block header_subtitle %}Record dispatch quantities, dates, DC references, and history against job cards.{% endblock %}
+{% block header_actions %}
+    {% if user.profile.can_approve_dispatch %}
+    <a href="{% url 'dispatch_records' %}" class="erp-btn erp-btn-secondary">Dispatch Records</a>
+    {% endif %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
     <div class="container">
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
@@ -216,7 +221,6 @@
         });
         {% endif %}
     </script>
-</body>
-</html>
+{% endblock %}
 
 

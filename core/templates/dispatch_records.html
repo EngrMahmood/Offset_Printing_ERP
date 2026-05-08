@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Dispatch Records - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Dispatch Records - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         .records-page-shell {
             max-width: 100%;
@@ -17,9 +16,18 @@
             white-space: nowrap;
         }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Dispatch Records{% endblock %}
+{% block header_subtitle %}Compact view of dispatch activity, history, and override actions.{% endblock %}
+{% block header_actions %}
+    {% if user.profile.can_approve_dispatch %}
+    <a href="{% url 'dispatch_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> Add Dispatch</a>
+    {% endif %}
+    {% if user.profile.can_archive_records %}
+    <a href="{% url 'archived_records' %}?entity=dispatch" class="erp-btn erp-btn-secondary">Archived</a>
+    {% endif %}
+{% endblock %}
+{% block content %}
     <div class="records-page-shell">
         <div class="erp-page-stack">
             <div class="erp-actions">
@@ -182,6 +190,5 @@
             });
         }
     </script>
-</body>
-</html>
+{% endblock %}
 

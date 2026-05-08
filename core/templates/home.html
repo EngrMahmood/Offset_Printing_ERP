@@ -1,66 +1,76 @@
-{% extends 'includes/ui/base_theme.html' %}
+{% extends 'theme/base.html' %}
 {% load static %}
 
 {% block title %}Dashboard — Offset Printing ERP{% endblock %}
-{% block header_title %}Production Operations Workspace{% endblock %}
+{% block header_title %}Dashboard{% endblock %}
+{% block header_subtitle %}Production operations workspace — manage job cards, production, dispatch, and QC{% endblock %}
+
+{% block header_actions %}
+{% if user.profile.can_edit_jobcard %}
+<a href="{% url 'job_card_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> New Job Card</a>
+{% endif %}
+<a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-book"></i> Guides</a>
+{% endblock %}
 
 {% block content %}
-<div class="max-w-7xl mx-auto space-y-8 fade-in">
-    <section class="bg-white rounded-3xl border border-slate-200 shadow-sm p-8">
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-            <div>
-                <p class="text-xs uppercase tracking-[0.28em] text-brand-600 font-bold">Offset Printing ERP</p>
-                <h1 class="mt-4 text-3xl font-semibold text-slate-900">Production operations workspace</h1>
-                <p class="mt-4 text-slate-500 max-w-2xl">Manage daily printing operations from one place: create job cards, capture production, monitor performance, and control dispatch records.</p>
-                <div class="mt-6 flex flex-wrap gap-3">
-                    {% if user.profile.can_edit_jobcard %}
-                    <a href="{% url 'job_card_entry' %}" class="inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-brand-600 text-white text-sm font-semibold hover:bg-brand-700 transition"> <i class="fas fa-plus"></i> New Job Card</a>
-                    {% endif %}
-                    <a href="{% url 'planning:home' %}" class="inline-flex items-center gap-2 px-5 py-3 rounded-2xl border border-slate-200 bg-white text-slate-700 text-sm font-semibold hover:bg-slate-50 transition"> <i class="fas fa-calendar-alt"></i> Planning Hub</a>
-                </div>
-            </div>
-            <div class="aspect-[4/3] rounded-3xl overflow-hidden bg-slate-100 border border-slate-200 shadow-sm relative">
-                <img src="{% static 'core/image/cmyk.jpg' %}" alt="CMYK production" class="w-full h-full object-cover" onerror="this.style.display='none'">
-                <div class="absolute inset-0 bg-gradient-to-r from-white/90 via-white/30 to-transparent"></div>
-            </div>
-        </div>
-    </section>
+<div class="erp-dashboard-hero erp-panel" style="display:grid;grid-template-columns:1fr auto;gap:16px;align-items:center;margin-bottom:14px;">
+    <div>
+        <div class="erp-eyebrow">Offset Printing ERP</div>
+        <h2 class="erp-section-title" style="margin:4px 0 6px;">Production Operations Workspace</h2>
+        <p class="erp-card-subtitle">Manage daily printing operations from one place: create job cards, capture production, monitor performance, and control dispatch records.</p>
+    </div>
+    <img src="{% static 'core/image/cmyk.jpg' %}" alt="CMYK" style="width:180px;height:120px;object-fit:cover;border-radius:6px;border:1px solid #d4e1ee;opacity:.85;" onerror="this.style.display='none'">
+</div>
 
-    <section class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-        {% if user.profile.can_edit_jobcard %}
-        <a href="{% url 'job_card_entry' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
-            <p class="text-sm font-semibold text-brand-600 uppercase tracking-[0.24em]">Job Card Entry</p>
-            <h2 class="mt-3 text-xl font-semibold text-slate-900">Create job cards</h2>
-            <p class="mt-2 text-slate-500 text-sm">Capture PO details and schedule production accurately.</p>
-        </a>
-        <a href="{% url 'job_card_records' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
-            <p class="text-sm font-semibold text-indigo-600 uppercase tracking-[0.24em]">Tracking</p>
-            <h2 class="mt-3 text-xl font-semibold text-slate-900">Job Card Records</h2>
-            <p class="mt-2 text-slate-500 text-sm">View production history, balances, and dispatch status.</p>
-        </a>
-        {% endif %}
-        <a href="{% url 'planning:home' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
-            <p class="text-sm font-semibold text-purple-600 uppercase tracking-[0.24em]">Planning</p>
-            <h2 class="mt-3 text-xl font-semibold text-slate-900">Planning Workspace</h2>
-            <p class="mt-2 text-slate-500 text-sm">Import planning sheets, manage repeat jobs, and issue A4 job cards.</p>
-        </a>
-        {% if user.profile.can_edit_production %}
-        <a href="{% url 'production_entry' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
-            <p class="text-sm font-semibold text-amber-600 uppercase tracking-[0.24em]">Production</p>
-            <h2 class="mt-3 text-xl font-semibold text-slate-900">Production Entry</h2>
-            <p class="mt-2 text-slate-500 text-sm">Submit shift outputs, waste, and downtime directly from the shop floor.</p>
-        </a>
-        <a href="{% url 'production_records' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
-            <p class="text-sm font-semibold text-orange-600 uppercase tracking-[0.24em]">Insights</p>
-            <h2 class="mt-3 text-xl font-semibold text-slate-900">Production Records</h2>
-            <p class="mt-2 text-slate-500 text-sm">Review completed runs, output metrics, and dispatch logs.</p>
-        </a>
-        {% endif %}
-        <a href="{% url 'qc:qc_home' %}" class="block rounded-3xl border border-slate-200 bg-white p-6 shadow-sm hover:shadow-md transition hover:-translate-y-0.5">
-            <p class="text-sm font-semibold text-emerald-600 uppercase tracking-[0.24em]">QC</p>
-            <h2 class="mt-3 text-xl font-semibold text-slate-900">QC ;& Bulk Uploads</h2>
-            <p class="mt-2 text-slate-500 text-sm">Access quality workflows and PO extraction queues.</p>
-        </a>
-    </section>
+<div class="erp-route-grid erp-route-grid--3">
+    {% if user.profile.can_edit_jobcard %}
+    <a href="{% url 'job_card_entry' %}" class="erp-route-card erp-route-card--link">
+        <div class="erp-route-card__key"><i class="fas fa-file-alt"></i> Job Card Entry</div>
+        <div class="erp-route-card__value">Create job cards</div>
+        <div class="erp-card-subtitle" style="margin-top:4px;">Capture PO details and schedule production accurately.</div>
+    </a>
+    <a href="{% url 'job_card_records' %}" class="erp-route-card erp-route-card--link">
+        <div class="erp-route-card__key"><i class="fas fa-list-alt"></i> Tracking</div>
+        <div class="erp-route-card__value">Job Card Records</div>
+        <div class="erp-card-subtitle" style="margin-top:4px;">View production history, balances, and dispatch status.</div>
+    </a>
+    {% endif %}
+    <a href="{% url 'planning:home' %}" class="erp-route-card erp-route-card--link">
+        <div class="erp-route-card__key"><i class="fas fa-calendar-check"></i> Planning</div>
+        <div class="erp-route-card__value">Planning Workspace</div>
+        <div class="erp-card-subtitle" style="margin-top:4px;">Import planning sheets, manage repeat jobs, and issue A4 job cards.</div>
+    </a>
+    {% if user.profile.can_edit_production %}
+    <a href="{% url 'production_entry' %}" class="erp-route-card erp-route-card--link">
+        <div class="erp-route-card__key"><i class="fas fa-industry"></i> Production</div>
+        <div class="erp-route-card__value">Production Entry</div>
+        <div class="erp-card-subtitle" style="margin-top:4px;">Submit shift outputs, waste, and downtime directly from the shop floor.</div>
+    </a>
+    <a href="{% url 'production_records' %}" class="erp-route-card erp-route-card--link">
+        <div class="erp-route-card__key"><i class="fas fa-chart-bar"></i> Insights</div>
+        <div class="erp-route-card__value">Production Records</div>
+        <div class="erp-card-subtitle" style="margin-top:4px;">Review completed runs, output metrics, and dispatch logs.</div>
+    </a>
+    {% endif %}
+    <a href="{% url 'production_dashboard' %}" class="erp-route-card erp-route-card--link">
+        <div class="erp-route-card__key"><i class="fas fa-tachometer-alt"></i> Operations</div>
+        <div class="erp-route-card__value">Production Dashboard</div>
+        <div class="erp-card-subtitle" style="margin-top:4px;">Live OEE metrics, shift performance, and machine utilisation.</div>
+    </a>
+    <a href="{% url 'dispatch_records' %}" class="erp-route-card erp-route-card--link">
+        <div class="erp-route-card__key"><i class="fas fa-truck"></i> Dispatch</div>
+        <div class="erp-route-card__value">Dispatch Records</div>
+        <div class="erp-card-subtitle" style="margin-top:4px;">Track outbound deliveries and DC numbers.</div>
+    </a>
+    <a href="{% url 'qc:qc_home' %}" class="erp-route-card erp-route-card--link">
+        <div class="erp-route-card__key"><i class="fas fa-clipboard-check"></i> QC</div>
+        <div class="erp-route-card__value">QC & Bulk Uploads</div>
+        <div class="erp-card-subtitle" style="margin-top:4px;">Access quality workflows and PO extraction queues.</div>
+    </a>
+    <a href="{% url 'machine_master_tools' %}" class="erp-route-card erp-route-card--link">
+        <div class="erp-route-card__key"><i class="fas fa-cogs"></i> Master Data</div>
+        <div class="erp-route-card__value">Master Corrections</div>
+        <div class="erp-card-subtitle" style="margin-top:4px;">Manage machines, operators, materials, and departments.</div>
+    </a>
 </div>
 {% endblock %}
