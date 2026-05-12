@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{{ page_title }}</title>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    {% include 'includes/ui/theme_colors.html' %}
     <style>
         .wrap { max-width: 760px; margin: 0 auto; padding: 20px 14px 32px; }
         .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; gap: 8px; flex-wrap: wrap; }
@@ -50,6 +50,7 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <main class="wrap">
 
     {% with current_step='master' %}
@@ -61,7 +62,7 @@
             <h1 style="margin:0;font-size:20px;">{{ page_title }}</h1>
             <div class="muted">SKU recipe defines how a SKU should be set up when creating planning jobs from a PO.</div>
         </div>
-        <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">← Back to SKU Recipes</a>
+        <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">← Back to SKU Recipes</a>
     </div>
 
     {% if messages %}
@@ -144,15 +145,9 @@
                 <div class="section-label">Material &amp; Specification</div>
 
                 <div class="field">
-                    <label for="{{ form.material.id_for_label }}">Material <span style="color:#b5282a;">*</span></label>
+                    <label for="{{ form.material.id_for_label }}">Material Type <span style="color:#b5282a;">*</span></label>
                     {{ form.material }}
                     {% if form.material.errors %}<div class="error">{{ form.material.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="field">
-                    <label for="{{ form.purchase_material.id_for_label }}">Purchase Material Origin (Local/Imported) <span style="color:#b5282a;">*</span></label>
-                    {{ form.purchase_material }}
-                    {% if form.purchase_material.errors %}<div class="error">{{ form.purchase_material.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
@@ -214,12 +209,6 @@
                 <div class="section-label">Routing &amp; Cost</div>
 
                 <div class="field">
-                    <label for="{{ form.machine_name.id_for_label }}">Machine Name <span style="color:#b5282a;">*</span></label>
-                    {{ form.machine_name }}
-                    {% if form.machine_name.errors %}<div class="error">{{ form.machine_name.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="field">
                     <label for="{{ form.default_unit_cost.id_for_label }}">Default Unit Cost</label>
                     {{ form.default_unit_cost }}
                     {% if form.default_unit_cost.errors %}<div class="error">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
@@ -235,12 +224,6 @@
                     <label for="{{ form.awc_no.id_for_label }}">AWC No.</label>
                     {{ form.awc_no }}
                     {% if form.awc_no.errors %}<div class="error">{{ form.awc_no.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="field">
-                    <label for="{{ form.plate_set_no.id_for_label }}">Plate Set No</label>
-                    {{ form.plate_set_no }}
-                    {% if form.plate_set_no.errors %}<div class="error">{{ form.plate_set_no.errors.0 }}</div>{% endif %}
                 </div>
 
                 <div class="field">
@@ -273,7 +256,7 @@
             <div class="actions">
                 {% if recipe and recipe.master_data_status == 'approved' and not can_edit_approved %}
                 <div class="note" style="margin-bottom:10px;color:#b5282a;">
-                    Approved master records can only be changed by admin users.
+                    Approved SKU is locked. Use Reopen SKU to move it back to Draft before editing.
                 </div>
                 {% endif %}
                 {% if not recipe or recipe.master_data_status == 'draft' %}
@@ -288,15 +271,15 @@
                     {% elif recipe.master_data_status == 'reviewed' %}
                         <button type="submit" class="btn secondary" name="action" value="approve">Approve</button>
                         <button type="submit" class="btn secondary" name="action" value="back_to_draft">Back to Draft</button>
-                    {% elif recipe.master_data_status == 'approved' and can_edit_approved %}
-                        <button type="submit" class="btn secondary" name="action" value="back_to_draft">Back to Draft</button>
+                    {% elif recipe.master_data_status == 'approved' %}
+                        <button type="submit" class="btn secondary" name="action" value="reopen_sku">Reopen SKU</button>
                     {% endif %}
                     {% if recipe.master_data_status != 'approved' or can_admin_actions %}
                         <button type="submit" class="btn danger" name="action" value="delete" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
                         <button type="submit" class="btn warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
                     {% endif %}
                 {% endif %}
-                <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Cancel</a>
+                <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">Cancel</a>
             </div>
         </form>
     </section>
@@ -325,3 +308,5 @@
 </main>
 </body>
 </html>
+
+

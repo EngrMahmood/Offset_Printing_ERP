@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django import forms
 
-from .models import PlanningJob, SkuRecipe
+from .models import JobCardLayout, PLANNING_QC_GATE_STATUSES, PlanningJob, PURCHASE_MATERIAL_ORIGIN_CHOICES, SkuRecipe
 
 
 _COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
@@ -73,12 +73,6 @@ def _normalize_application_value(raw_value):
     return value
 
 
-PURCHASE_MATERIAL_ORIGIN_CHOICES = [
-    ('', 'Select Origin'),
-    ('Local', 'Local'),
-    ('Imported', 'Imported'),
-]
-
 APPLICATION_CHOICES = [
     ('', 'Select Application'),
     ('UV', 'UV'),
@@ -88,33 +82,103 @@ APPLICATION_CHOICES = [
 ]
 
 
-class PlanningJobEditForm(forms.ModelForm):
+class PlanningJobFinalizationForm(forms.ModelForm):
+    """Phase 4 finalization form — editable fields only (pre-QC execution prep).
+
+    Access rule: status must be 'draft' or 'pending_qc'.
+    SKU master fields are read-only; changes require reopen_sku → re-approval.
+    """
+
     class Meta:
         model = PlanningJob
         fields = [
-            'plan_date',
-            'po_number',
-            'sku',
-            'job_name',
-            'material',
-            'color_spec',
-            'application',
-            'order_qty',
-            'print_sheets',
+            'delivery_date',
+            'wastage_sheets',
+            'plate_set_no',
             'machine_name',
-            'department',
+            'planned_total_impressions',
+            'purchase_material_origin',
             'destination',
-            'unit_cost',
-            'daily_demand',
             'remarks',
             'requirement',
-            'status',
         ]
         widgets = {
-            'plan_date': forms.DateInput(attrs={'type': 'date'}),
+            'delivery_date': forms.DateInput(attrs={'type': 'date'}),
             'remarks': forms.Textarea(attrs={'rows': 3}),
             'requirement': forms.Textarea(attrs={'rows': 3}),
         }
+        labels = {
+            'planned_total_impressions': 'Total Impressions',
+            'requirement': 'Special Instructions',
+            'purchase_material_origin': 'Purchase Material Origin',
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        required_fields = [
+            'delivery_date',
+            'wastage_sheets',
+            'plate_set_no',
+            'machine_name',
+            'planned_total_impressions',
+            'purchase_material_origin',
+            'destination',
+            'requirement',
+        ]
+        for field_name in required_fields:
+            if field_name in self.fields:
+                self.fields[field_name].required = True
+                self.fields[field_name].widget.attrs.setdefault('required', 'required')
+
+        if 'purchase_material_origin' in self.fields:
+            self.fields['purchase_material_origin'].widget = forms.Select(choices=PURCHASE_MATERIAL_ORIGIN_CHOICES)
+        if 'plate_set_no' in self.fields:
+            self.fields['plate_set_no'].widget.attrs.setdefault('placeholder', 'Plate set reference')
+
+    def clean(self):
+        cleaned = super().clean()
+        required_messages = {
+            'delivery_date': 'Delivery Date is required.',
+            'wastage_sheets': 'Wastage Sheets is required.',
+            'plate_set_no': 'Plate Set is required.',
+            'machine_name': 'Machine Name is required.',
+            'planned_total_impressions': 'Total Impressions is required.',
+            'purchase_material_origin': 'Purchase Material Origin is required.',
+            'destination': 'Destination is required.',
+            'requirement': 'Special Instructions is required.',
+        }
+
+        for field_name, message in required_messages.items():
+            value = cleaned.get(field_name)
+            if field_name == 'wastage_sheets':
+                if value is None:
+                    self.add_error(field_name, message)
+            else:
+                if not str(value or '').strip():
+                    self.add_error(field_name, message)
+
+        status = (cleaned.get('status') or self.instance.status or '').strip().lower()
+        if status in PLANNING_QC_GATE_STATUSES:
+            qc_required_messages = {
+                'plate_set_no': 'Plate Set is required before QC approval.',
+                'wastage_sheets': 'Wastage is required before QC approval.',
+                'machine_name': 'Machine Name is required before QC approval.',
+                'purchase_material_origin': 'Purchase Material Origin is required before QC approval.',
+            }
+            for field_name, message in qc_required_messages.items():
+                value = cleaned.get(field_name)
+                if field_name == 'wastage_sheets':
+                    if value is None:
+                        self.add_error(field_name, message)
+                else:
+                    if not str(value or '').strip():
+                        self.add_error(field_name, message)
+
+        return cleaned
+
+
+# Backward-compatible alias so existing view imports keep working
+PlanningJobEditForm = PlanningJobFinalizationForm
 
 
 class SkuRecipeForm(forms.ModelForm):
@@ -132,12 +196,9 @@ class SkuRecipeForm(forms.ModelForm):
             'print_sheet_size',
             'purchase_sheet_size',
             'purchase_sheet_ups',
-            'purchase_material',
-            'machine_name',
             'default_unit_cost',
             'daily_demand',
             'awc_no',
-            'plate_set_no',
             'die_cutting',
             'notes',
         ]
@@ -148,11 +209,6 @@ class SkuRecipeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        field = self.fields['purchase_material']
-        field.widget = forms.Select(choices=PURCHASE_MATERIAL_ORIGIN_CHOICES)
-        field.required = True
-        field.widget.attrs.setdefault('required', 'required')
-
         app_field = self.fields['application']
         app_field.widget = forms.Select(choices=APPLICATION_CHOICES)
         app_field.required = True
@@ -162,26 +218,17 @@ class SkuRecipeForm(forms.ModelForm):
         self.fields['material'].widget.attrs.setdefault('required', 'required')
         self.fields['color_spec'].widget.attrs.setdefault('required', 'required')
         self.fields['application'].widget.attrs.setdefault('required', 'required')
-        self.fields['machine_name'].widget.attrs.setdefault('required', 'required')
         self.fields['print_sheet_size'].widget.attrs.setdefault('required', 'required')
         self.fields['purchase_sheet_size'].widget.attrs.setdefault('required', 'required')
         self.fields['ups'].widget.attrs.setdefault('required', 'required')
         self.fields['purchase_sheet_ups'].widget.attrs.setdefault('required', 'required')
-        self.fields['purchase_material'].widget.attrs.setdefault('required', 'required')
         self.fields['size_w_mm'].widget.attrs.setdefault('required', 'required')
         self.fields['size_h_mm'].widget.attrs.setdefault('required', 'required')
+        self.fields['material'].label = 'Material Type'
 
         self.fields['color_spec'].widget.attrs.setdefault('placeholder', 'e.g. 4 color or 1+1')
-
-    def clean_purchase_material(self):
-        value = (self.cleaned_data.get('purchase_material') or '').strip()
-        if not value:
-            return ''
-
-        lowered = value.lower()
-        if lowered in {'local', 'imported'}:
-            return value.title()
-        raise forms.ValidationError('Select Purchase Material Origin as Local or Imported.')
+        if 'die_cutting' in self.fields:
+            self.fields['die_cutting'].widget.attrs.setdefault('required', 'required')
 
     def clean_color_spec(self):
         value = _normalize_color_spec_value(self.cleaned_data.get('color_spec'))
@@ -220,3 +267,12 @@ class SkuRecipeForm(forms.ModelForm):
 
     def clean_size_h_mm(self):
         return self._normalize_decimal_field(self.cleaned_data.get('size_h_mm'))
+
+
+class JobCardLayoutForm(forms.ModelForm):
+    class Meta:
+        model = JobCardLayout
+        fields = ['name', 'layout', 'is_active']
+        widgets = {
+            'layout': forms.HiddenInput(),
+        }

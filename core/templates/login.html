@@ -1,216 +1,83 @@
-{% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login — Offset Printing ERP</title>
-    <style>
-        :root {
-            --bg: #f8f6f4;
-            --surface: #ffffff;
-            --text: #2b1b1d;
-            --muted: #6f6265;
-            --line: #e6dedd;
-            --primary: #5b0a15;
-            --primary-dark: #440811;
-            --accent: #a78a2f;
-            --accent-soft: #f7f1e1;
-            --shadow: 0 8px 24px rgba(57, 27, 31, 0.10);
-            --error-bg: #fceff0;
-            --error-text: #7b1c27;
-            --error-line: #edc8cd;
-        }
+{% extends 'base.html' %}
 
-        * { box-sizing: border-box; margin: 0; padding: 0; }
+{% block title %}Login - Offset Printing ERP{% endblock %}
 
-        body {
-            font-family: "Segoe UI", Tahoma, sans-serif;
-            background: var(--bg);
-            color: var(--text);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
+{% block sidebar %}{% endblock %}
+{% block topbar %}{% endblock %}
 
-        .login-wrapper {
-            width: 100%;
-            max-width: 420px;
-            padding: 20px;
-        }
-
-        .brand {
-            text-align: center;
-            margin-bottom: 28px;
-        }
-
-        .brand-logo {
-            width: 64px;
-            height: 64px;
-            background: var(--primary);
-            border-radius: 14px;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            margin-bottom: 12px;
-        }
-
-        .brand-logo svg {
-            width: 34px;
-            height: 34px;
-            fill: white;
-        }
-
-        .brand h1 {
-            font-size: 1.4rem;
-            font-weight: 700;
-            color: var(--primary);
-            letter-spacing: -0.3px;
-        }
-
-        .brand p {
-            font-size: 0.85rem;
-            color: var(--muted);
-            margin-top: 4px;
-        }
-
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-radius: 14px;
-            box-shadow: var(--shadow);
-            padding: 32px 28px;
-        }
-
-        .card h2 {
-            font-size: 1.1rem;
-            font-weight: 600;
-            color: var(--text);
-            margin-bottom: 22px;
-        }
-
-        .error-box {
-            background: var(--error-bg);
-            border: 1px solid var(--error-line);
-            color: var(--error-text);
-            border-radius: 8px;
-            padding: 10px 14px;
-            font-size: 0.85rem;
-            margin-bottom: 18px;
-        }
-
-        .form-group {
-            margin-bottom: 16px;
-        }
-
-        label {
-            display: block;
-            font-size: 0.82rem;
-            font-weight: 600;
-            color: var(--muted);
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            margin-bottom: 6px;
-        }
-
-        input[type="text"],
-        input[type="password"] {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            font-size: 0.95rem;
-            color: var(--text);
-            background: var(--bg);
-            transition: border-color 0.2s;
-            outline: none;
-        }
-
-        input[type="text"]:focus,
-        input[type="password"]:focus {
-            border-color: var(--primary);
-            background: white;
-        }
-
-        .btn-login {
-            width: 100%;
-            padding: 11px;
-            background: var(--primary);
-            color: white;
-            border: none;
-            border-radius: 8px;
-            font-size: 0.95rem;
-            font-weight: 600;
-            cursor: pointer;
-            margin-top: 6px;
-            transition: background 0.2s;
-        }
-
-        .btn-login:hover {
-            background: var(--primary-dark);
-        }
-
-        .footer {
-            text-align: center;
-            margin-top: 20px;
-            font-size: 0.78rem;
-            color: var(--muted);
-        }
-    </style>
-</head>
-<body>
-    <div class="login-wrapper">
-        <div class="brand">
-            <div class="brand-logo">
-                <!-- Print/press icon -->
-                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M6 2h12v6H6V2zm-2 7h16a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2h-2v3H6v-3H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2zm2 10v-2h8v2H6zm10-6a1 1 0 1 0 0-2 1 1 0 0 0 0 2z"/>
-                </svg>
+{% block content %}
+<div class="min-h-[80vh] flex items-center justify-center">
+    <div class="w-full max-w-md">
+        
+        <!-- Brand / Header -->
+        <div class="text-center mb-8 fade-in">
+            <div class="w-16 h-16 bg-brand-600 rounded-2xl inline-flex items-center justify-center mb-4 shadow-soft">
+                <i class="fas fa-print text-white text-3xl"></i>
             </div>
-            <h1>Offset Printing ERP</h1>
-            <p>Sign in to access your dashboard</p>
+            <h1 class="text-2xl font-bold text-slate-800 tracking-tight">Offset ERP</h1>
+            <p class="text-sm text-slate-500 mt-1">Sign in to your workspace</p>
         </div>
 
-        <div class="card">
-            <h2>Sign In</h2>
+        <!-- Login Card -->
+        <div class="bg-white rounded-2xl shadow-glass border border-slate-200 p-8 fade-in" style="animation-delay: 0.1s;">
+            <h2 class="text-lg font-semibold text-slate-700 mb-6">Welcome Back</h2>
 
             {% if form.errors %}
-            <div class="error-box">
-                Invalid username or password. Please try again.
+            <div class="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm mb-6 flex items-start gap-3">
+                <i class="fas fa-exclamation-circle mt-0.5"></i>
+                <span>Invalid username or password. Please try again.</span>
             </div>
             {% endif %}
 
             {% if next %}
-            <div class="error-box">
-                Please log in to access that page.
+            <div class="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm mb-6 flex items-start gap-3">
+                <i class="fas fa-info-circle mt-0.5"></i>
+                <span>Please log in to access that page.</span>
             </div>
             {% endif %}
 
-            <form method="post" action="{% url 'login' %}">
+            <form method="post" action="{% url 'login' %}" class="space-y-5">
                 {% csrf_token %}
                 <input type="hidden" name="next" value="{{ next }}">
 
-                <div class="form-group">
-                    <label for="id_username">Username</label>
-                    <input type="text" id="id_username" name="username"
-                           value="{{ form.username.value|default:'' }}"
-                           placeholder="Enter your username" autofocus>
+                <div>
+                    <label for="id_username" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Username</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-user text-slate-400"></i>
+                        </div>
+                        <input type="text" id="id_username" name="username"
+                               value="{{ form.username.value|default:'' }}"
+                               class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
+                               placeholder="Enter your username" autofocus>
+                    </div>
                 </div>
 
-                <div class="form-group">
-                    <label for="id_password">Password</label>
-                    <input type="password" id="id_password" name="password"
-                           placeholder="Enter your password">
+                <div>
+                    <label for="id_password" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Password</label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-lock text-slate-400"></i>
+                        </div>
+                        <input type="password" id="id_password" name="password"
+                               class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
+                               placeholder="********">
+                    </div>
                 </div>
 
-                <button type="submit" class="btn-login">Sign In</button>
+                <div class="pt-2">
+                    <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium py-2.5 rounded-lg shadow-sm hover-lift flex items-center justify-center gap-2">
+                        <span>Sign In</span>
+                        <i class="fas fa-arrow-right text-sm"></i>
+                    </button>
+                </div>
             </form>
         </div>
 
-        <div class="footer">
-            &copy; {{ year }} Offset Printing ERP. All rights reserved.
-        </div>
+        <p class="text-center text-slate-400 text-xs mt-8">
+            &copy; {% now "Y" %} Offset Printing ERP. All rights reserved.
+        </p>
+
     </div>
-</body>
-</html>
+</div>
+{% endblock %}

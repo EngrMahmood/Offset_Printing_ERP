@@ -3,9 +3,10 @@
 <html>
 <head>
     <title>Master Corrections - Offset ERP</title>
+    {% include 'includes/ui/theme_colors.html' %}
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 12px; background: #edf1f5; overflow-x: hidden; color: #233042; }
-        .container { max-width: 100%; margin: 0 auto; }
+        body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0; padding: 0; background: var(--erp-bg-soft, #f3f5f8); overflow-x: hidden; color: #233042; }
+        .container { max-width: 100%; margin: 0 auto; padding: 16px 20px; }
         .card { background: #fff; border-radius: 6px; padding: 14px; border: 1px solid #d9e1ea; box-shadow: 0 1px 3px rgba(15, 23, 42, 0.08); }
         .top-actions { display: flex; gap: 10px; margin-bottom: 16px; flex-wrap: wrap; }
         .btn { background: #445366; color: #fff; text-decoration: none; padding: 8px 12px; border-radius: 4px; border: none; cursor: pointer; font-size: 12px; font-weight: 600; }
@@ -44,18 +45,17 @@
             .table-shell { max-height: none; }
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <div class="container">
-    <div class="top-actions">
-        <a href="/" class="btn">Home</a>
-        <a href="javascript:history.back()" class="btn">Back</a>
-        <a href="{% url 'shift_config' %}" class="btn">Shift Config</a>
+    <div style="margin-bottom:16px;">
+        <h1 style="margin:0 0 2px;font-size:18px;font-weight:700;color:#1f2d3d;">Master Corrections</h1>
+        <p style="margin:0;font-size:12px;color:#5f6f84;">Machine, operator, material and department master data management</p>
     </div>
 
     <div class="card">
-        <h1 style="margin-top:0;">Master Corrections</h1>
         <p class="muted">Use this screen when wrong dropdown values were added for machine, operator, material, or department.</p>
 
         {% if messages %}
@@ -318,4 +318,6 @@
 </div>
 </body>
 </html>
+
+
 

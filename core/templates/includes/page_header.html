@@ -1,0 +1,59 @@
+<div class="erp-header-shell">
+    <div class="erp-header-topbar">
+        <div class="erp-header-brand-stack">
+            <a href="{% url 'home' %}" class="erp-header-brand">
+                <span class="erp-header-title">Offset ERP</span>
+                <span class="erp-header-subtitle">Production Management System</span>
+            </a>
+            <nav class="erp-header-nav" aria-label="Primary ERP navigation">
+                <a href="{% url 'home' %}" class="{% if request.resolver_match.url_name == 'home' %}is-active{% endif %}">Dashboard</a>
+
+                <div class="erp-nav-item">
+                    <a href="{% url 'planning:home' %}" class="{% if request.resolver_match.app_name == 'planning' %}is-active{% endif %}">Planning <span class="erp-nav-caret">&#9660;</span></a>
+                    <div class="erp-nav-dropdown">
+                        <a href="{% url 'planning:home' %}">Planning Overview</a>
+                        <a href="{% url 'planning:jobs' %}" class="{% if request.resolver_match.url_name == 'jobs' %}is-active{% endif %}">Planning Jobs</a>
+                        <a href="{% url 'planning:po_inbox' %}" class="{% if request.resolver_match.url_name == 'po_inbox' %}is-active{% endif %}">PO Intake</a>
+                        <a href="{% url 'planning:import_sheet' %}" class="{% if request.resolver_match.url_name == 'import_sheet' %}is-active{% endif %}">Import Sheet</a>
+                        <a href="{% url 'planning:jobs_archived' %}" class="{% if request.resolver_match.url_name == 'jobs_archived' %}is-active{% endif %}">Archived Jobs</a>
+                        <a href="{% url 'planning:job_card_layout_builder' %}">Job Card Builder</a>
+                    </div>
+                </div>
+
+                <div class="erp-nav-item">
+                    <a href="{% url 'production_dashboard' %}" class="{% if request.resolver_match.url_name == 'production_dashboard' or request.resolver_match.url_name == 'production_records' or request.resolver_match.url_name == 'production_entry' %}is-active{% endif %}">Production <span class="erp-nav-caret">&#9660;</span></a>
+                    <div class="erp-nav-dropdown">
+                        <a href="{% url 'production_dashboard' %}" class="{% if request.resolver_match.url_name == 'production_dashboard' %}is-active{% endif %}">Production Dashboard</a>
+                        <a href="{% url 'production_records' %}" class="{% if request.resolver_match.url_name == 'production_records' %}is-active{% endif %}">Production Records</a>
+                        <a href="{% url 'production_entry' %}" class="{% if request.resolver_match.url_name == 'production_entry' %}is-active{% endif %}">Production Entry</a>
+                        <a href="{% url 'machine_master_tools' %}" class="{% if request.resolver_match.url_name == 'machine_master_tools' %}is-active{% endif %}">Machine Master</a>
+                        <a href="{% url 'shift_config' %}" class="{% if request.resolver_match.url_name == 'shift_config' %}is-active{% endif %}">Shift Config</a>
+                    </div>
+                </div>
+
+                <div class="erp-nav-item">
+                    <a href="{% url 'qc:approval_queue' %}" class="{% if request.resolver_match.app_name == 'qc' %}is-active{% endif %}">QC <span class="erp-nav-caret">&#9660;</span></a>
+                    <div class="erp-nav-dropdown">
+                        <a href="{% url 'qc:approval_queue' %}" class="{% if request.resolver_match.url_name == 'approval_queue' %}is-active{% endif %}">Approval Queue</a>
+                        <a href="{% url 'qc:pending_skus' %}" class="{% if request.resolver_match.url_name == 'pending_skus' %}is-active{% endif %}">SKU Queue</a>
+                        <a href="{% url 'qc:sku_recipes' %}" class="{% if request.resolver_match.url_name == 'sku_recipes' %}is-active{% endif %}">SKU Recipes</a>
+                    </div>
+                </div>
+
+                <div class="erp-nav-item">
+                    <a href="{% url 'dispatch_records' %}" class="{% if request.resolver_match.url_name == 'dispatch_records' or request.resolver_match.url_name == 'dispatch_entry' or request.resolver_match.url_name == 'job_card_records' %}is-active{% endif %}">Dispatch <span class="erp-nav-caret">&#9660;</span></a>
+                    <div class="erp-nav-dropdown">
+                        <a href="{% url 'dispatch_records' %}" class="{% if request.resolver_match.url_name == 'dispatch_records' %}is-active{% endif %}">Dispatch Records</a>
+                        <a href="{% url 'dispatch_entry' %}" class="{% if request.resolver_match.url_name == 'dispatch_entry' %}is-active{% endif %}">Dispatch Entry</a>
+                        <a href="{% url 'job_card_records' %}" class="{% if request.resolver_match.url_name == 'job_card_records' %}is-active{% endif %}">Job Card Records</a>
+                    </div>
+                </div>
+
+                <a href="{% url 'erp_readme' %}" class="{% if request.resolver_match.url_name == 'erp_readme' %}is-active{% endif %}">Guides</a>
+            </nav>
+        </div>
+        <div class="erp-header-actions">
+            {% include 'includes/user_identity_chip.html' %}
+        </div>
+    </div>
+</div>

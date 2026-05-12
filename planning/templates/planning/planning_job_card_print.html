@@ -1,4 +1,4 @@
-﻿{% load static %}
+{% load static %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -6,507 +6,195 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Job Card {{ job.jc_number }}</title>
     <style>
-        @page { size: A4 portrait; margin: 4mm; }
-        body { font-family: Arial, sans-serif; color: #111; font-size: 8px; line-height: 1.0; margin: 0; }
-        .page { padding: 3mm; }
-        .card { border: 1px solid #333; padding: 4px; max-width: 1084px; margin: 0 auto; }
-        .data-table { width: 100%; table-layout: fixed; border-collapse: collapse; margin-bottom: 4px; }
-        .data-table th, .data-table td { border: 1px solid #333; padding: 2px 3px; vertical-align: middle; }
-        .data-table td { min-height: 14px; }
-        .header-title { font-size: 13px; font-weight: 700; text-transform: uppercase; }
-        .header-code { font-size: 11px; font-weight: 700; }
-        .header-meta { text-align: right; font-size: 8px; }
-        .header-meta .qr-code { margin-top: 6px; }
-        .header-meta img { width: 72px; height: 72px; display: block; border: 1px solid #333; }
-        .label { font-weight: 700; font-size: 8px; text-transform: uppercase; }
-        .section-title { font-size: 9px; font-weight: 700; background: #f1f1f1; }
-        .blank { min-height: 18px; }
-        .small { font-size: 7.5px; color: #444; }
-        .footer-note { font-size: 7.5px; color: #555; margin-top: 4px; }
-        .no-print { margin-top: 4px; }
-        .button-primary { padding: 4px 6px; border: 1px solid #333; background: #fff; cursor: pointer; font-size: 8px; }
-        .logo-cell { width: 100px; }
+        @page { size: A4 portrait; margin: 8mm; }
+        body { font-family: Arial, sans-serif; color: #111; font-size: 9px; line-height: 1.35; margin: 0; }
+        .page { padding: 8mm; }
+        .card { width: 100%; max-width: 210mm; margin: 0 auto; background: #fff; border: 1px solid #333; padding: 12px; }
+        .card-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+        .header-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 2px; }
+        .header-title { font-size: 18px; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 4px; }
+        .header-subtitle { font-size: 11px; color: #333; margin-bottom: 2px; }
+        .header-meta { text-align: right; font-size: 8px; color: #444; min-width: 90px; }
+        .header-meta .meta-row { margin-bottom: 4px; }
+        .qr-code { margin-top: 6px; }
+        .qr-code img { width: 72px; height: 72px; border: 1px solid #333; }
+        .section-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+        .section-block { border: 1px solid #ccc; padding: 10px; }
+        .section-block.full-width { grid-column: span 2; }
+        .section-title { font-size: 10px; font-weight: 700; background: #f3f4f6; color: #111; padding: 8px 10px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
+        .field-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #e5e7eb; }
+        .field-row:last-child { border-bottom: none; }
+        .field-label { font-weight: 700; color: #222; width: 40%; }
+        .notes { min-height: 44px; white-space: pre-wrap; padding: 8px; background: #fbfbfb; border: 1px solid #e5e7eb; }
+        .signature-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; }
+        .signature-row span { width: 48%; border-bottom: 1px solid #333; padding-bottom: 4px; }
+        .blank-row span { min-height: 18px; }
+        .footer-note { margin-top: 12px; font-size: 8px; color: #555; }
+        .no-print { margin-top: 10px; }
+        .button-primary { padding: 6px 10px; border: 1px solid #333; background: #fff; cursor: pointer; font-size: 9px; }
         @media print { .no-print { display: none; } .card { border: none; } }
     </style>
 </head>
 <body>
 <div class="page">
     <div class="card">
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr>
-                <td rowspan="2" class="logo-cell">&nbsp;</td>
-                <td colspan="6" class="header-title">Utopia Printing & Packaging</td>
-                <td colspan="3" rowspan="2" class="header-meta">
-                    <div>Doc. #:</div>
-                    {% if qr_code_b64 %}
-                    <div class="qr-code"><img src="data:image/png;base64,{{ qr_code_b64 }}" alt="QR Code"></div>
-                    {% endif %}
-                    <div style="margin-top:4px;">Rev. #:<br>Rev. Date:</div>
-                </td>
-            </tr>
-            <tr>
-                <td colspan="6" class="header-code">{{ job.job_card_version|default:'0' }}</td>
-            </tr>
-            <tr>
-                <td class="label">JOB CARD#</td>
-                <td colspan="2">{{ job.jc_number }}</td>
-                <td colspan="5">&nbsp;</td>
-                <td colspan="2" class="label">Repeat</td>
-            </tr>
-        </table>
+        <div class="card-header">
+            <div>
+                <div class="header-label">Utopia Printing & Packaging</div>
+                <div class="header-title">Job Card</div>
+                <div class="header-subtitle">{{ job.jc_number }} | {{ job.sku|default:'-' }}</div>
+            </div>
+            <div class="header-meta">
+                <div class="meta-row"><strong>Doc #:</strong> {{ job.job_card_version|default:'0' }}</div>
+                <div class="meta-row"><strong>Rev Date:</strong> {{ now_ts|date:'d M Y' }}</div>
+                {% if qr_code_b64 %}
+                <div class="qr-code"><img src="data:image/png;base64,{{ qr_code_b64 }}" alt="QR Code"></div>
+                {% endif %}
+            </div>
+        </div>
 
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr><td colspan="10" class="section-title">ORDER INFORMATION</td></tr>
-            <tr>
-                <td class="label">SKU</td>
-                <td colspan="3">{{ job.sku|default:'-' }}</td>
-                <td class="label">PO#</td>
-                <td colspan="2">{{ job.po_number|default:'-' }}</td>
-                <td class="label">Order Qty</td>
-                <td colspan="2">{{ job.order_qty|default:'-' }}</td>
-            </tr>
-            <tr>
-                <td colspan="4">&nbsp;</td>
-                <td class="label">Indent/PR</td>
-                <td colspan="2">{{ job.pr_reference|default:'-' }}</td>
-                <td colspan="3">&nbsp;</td>
-            </tr>
-            <tr>
-                <td class="label">Job Name</td>
-                <td colspan="3">{{ job.job_name|default:'-' }}</td>
-                <td class="label">PO Received Date</td>
-                <td colspan="2">{{ job.po_received_date|date:'d M Y'|default:'-' }}</td>
-                <td class="label">Delivery Location</td>
-                <td colspan="2">{{ job.destination|default:'-' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Department</td>
-                <td colspan="3">{{ job.department|default:'-' }}</td>
-                <td class="label">Days plan?</td>
-                <td colspan="2">{{ job.daily_demand|default:'-' }}</td>
-                <td class="label">Daily Demand</td>
-                <td colspan="2">{{ job.daily_demand|default:'-' }}</td>
-            </tr>
-        </table>
+        <section class="section-block full-width">
+            <div class="section-title">Software Data</div>
+        </section>
 
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr><td colspan="10" class="section-title">MATERIAL AND WORK PROCESS</td></tr>
-            <tr>
-                <td class="label">Material Type</td>
-                <td colspan="3">{{ job.material|default:'-' }}</td>
-                <td class="label">Size W mm</td>
-                <td colspan="2">{{ job.size_w_mm|default:'-' }}</td>
-                <td class="label">Total sheet Qty</td>
-                <td colspan="2">{{ job.print_sheets|default:job.actual_sheet_required|default:'-' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Purch Sheet Size</td>
-                <td colspan="3">{{ job.purchase_sheet_size|default:'-' }}</td>
-                <td class="label">Size H mm</td>
-                <td colspan="2">{{ job.size_h_mm|default:'-' }}</td>
-                <td class="label">No of Colors</td>
-                <td colspan="2">{{ job.total_colors|default:'-' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Purch sheet Ups</td>
-                <td colspan="3">{{ job.purchase_sheet_ups|default:'-' }}</td>
-                <td class="label">Print Sheet Size</td>
-                <td colspan="2">{{ job.print_sheet_size|default:'-' }}</td>
-                <td class="label">Wastage</td>
-                <td colspan="2">{{ job.wastage_sheets|default:'-' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Purchase Material</td>
-                <td colspan="3">{{ job.purchase_material|default:'-' }}</td>
-                <td class="label"># of UPS</td>
-                <td colspan="2">{{ job.ups|default:'-' }}</td>
-                <td class="label">Machine</td>
-                <td colspan="2">{{ job.machine_name|default:'-' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Purch extra sheet Size</td>
-                <td>&nbsp;</td>
-                <td colspan="2" class="label">Purch extra sheet qty</td>
-                <td>&nbsp;</td>
-                <td class="label">Job card issue No.</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td colspan="2" class="label">Excess sheets qty</td>
-            </tr>
-        </table>
-
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr>
-                <td colspan="7" class="section-title">APPLICATIONS</td>
-                <td class="label">Stock in Sheet</td>
-                <td colspan="2">&nbsp;</td>
-            </tr>
-            <tr>
-                <td class="label">Lamination</td>
-                <td>{{ job.application|default:'-' }}</td>
-                <td class="label">Die Cutting</td>
-                <td>{{ job.die_cutting|default:'-' }}</td>
-                <td colspan="2" class="label">Art Work No.</td>
-                <td colspan="2">{{ job.art_work_no|default:'-' }}</td>
-                <td class="label">P Set No.</td>
-                <td>{{ job.plate_set_no|default:'-' }}</td>
-            </tr>
-            <tr>
-                <td colspan="2" class="label">Special instructions if any</td>
-                <td colspan="8">{{ job.remarks|default:job.requirement|default:'-' }}</td>
-            </tr>
-        </table>
-
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr>
-                <td>{{ now_ts }}</td>
-                <td colspan="9">&nbsp;</td>
-            </tr>
-            <tr>
-                <td class="label">Prepared by</td>
-                <td>&nbsp;</td>
-                <td colspan="2" class="label">Checked By</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td class="label">Plate Check By</td>
-                <td>&nbsp;</td>
-                <td colspan="2" class="label">Approved By</td>
-            </tr>
-            <tr>
-                <td colspan="10">&nbsp;</td>
-            </tr>
-        </table>
-
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr><td colspan="10" class="section-title">MATERIAL ISSUANSE</td></tr>
-            <tr>
-                <td class="label">Date</td>
-                <td class="label">Machine</td>
-                <td colspan="2" class="label">Operator</td>
-                <td class="label">Shift A/B</td>
-                <td colspan="2" class="label">Sheet Size</td>
-                <td colspan="2" class="label">Full Sheet Qty</td>
-                <td class="label">Print Sheet Qty</td>
-            </tr>
-            {% for _ in "12345" %}
-            <tr>
-                <td class="blank">&nbsp;</td>
-                <td class="blank">&nbsp;</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="blank">&nbsp;</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="blank">&nbsp;</td>
-            </tr>
+        {% if layout_enabled %}
+            {% for section in layout_sections %}
+            <section class="section-block full-width">
+                <div class="section-title">{{ section.title }}</div>
+                {% for field_id in section.fields %}
+                <div class="field-row"><span class="field-label">{{ field.label }}</span><span>{{ field.value }}</span></div>
+                {% endfor %}
+            </section>
             {% endfor %}
-        </table>
+        {% else %}
+        <section class="section-grid">
+            <div class="section-block">
+                <div class="section-title">Order Information</div>
+                <div class="field-row"><span class="field-label">PO Number</span><span>{{ job.po_number|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">PR Reference</span><span>{{ job.pr_reference|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Order Qty</span><span>{{ job.order_qty|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">PO Received</span><span>{{ job.po_received_date|date:'d M Y'|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Delivery Date</span><span>{{ job.delivery_date|date:'d M Y'|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Delivery Location</span><span>{{ job.destination|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Department</span><span>{{ job.department|default:'-' }}</span></div>
+            </div>
+            <div class="section-block">
+                <div class="section-title">Job Details</div>
+                <div class="field-row"><span class="field-label">Job Name</span><span>{{ job.job_name|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Material</span><span>{{ job.material_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Color</span><span>{{ job.color_spec_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Color Count</span><span>{{ job.number_of_colors|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Application</span><span>{{ job.application_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Repeat Flag</span><span>{{ job.repeat_flag|default:'-' }}</span></div>
+            </div>
+        </section>
 
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr><td colspan="10" class="section-title">PRINTING</td></tr>
-            <tr>
-                <td class="label">Date</td>
-                <td class="label">Machine</td>
-                <td colspan="2" class="label">Operator</td>
-                <td class="label">Shift A/B</td>
-                <td colspan="2" class="label">Print Sheet Qty</td>
-                <td colspan="2" class="label">Wastage Sheet</td>
-                <td class="label">Half Good</td>
-            </tr>
-            {% for _ in "123456" %}
-            <tr>
-                <td class="blank">&nbsp;</td>
-                <td class="blank">&nbsp;</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="blank">&nbsp;</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td colspan="2" class="blank">&nbsp;</td>
-                <td class="blank">&nbsp;</td>
-            </tr>
-            {% endfor %}
-            <tr>
-                <td colspan="5">&nbsp;</td>
-                <td colspan="5" class="label">Damage Plate Colors Name</td>
-            </tr>
-            <tr>
-                <td>0</td>
-                <td colspan="2">0</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-            </tr>
-            <tr>
-                <td colspan="2" class="label">Stock Check</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td class="label">Shift Supervisor</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td colspan="2" class="label">Dispatched by</td>
-            </tr>
-            <tr>
-                <td colspan="10">&nbsp;</td>
-            </tr>
-            <tr><td colspan="10" class="section-title">DISPATCH</td></tr>
-            <tr>
-                <td class="label">Delivery Date #01</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">DC#01</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">Qty-01</td>
-                <td>&nbsp;</td>
-                <td class="label">Packing</td>
-                <td>&nbsp;</td>
-            </tr>
-            <tr>
-                <td class="label">Delivery Date #02</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">DC#02</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">Qty-02</td>
-                <td>&nbsp;</td>
-                <td class="label">Packing</td>
-                <td>&nbsp;</td>
-            </tr>
-            <tr>
-                <td class="label">Delivery Date #03</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">DC#03</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">Qty-03</td>
-                <td>&nbsp;</td>
-                <td class="label">Packing</td>
-                <td>&nbsp;</td>
-            </tr>
-            <tr>
-                <td class="label">Delivery Date #04</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">DC#04</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">Qty 02</td>
-                <td>&nbsp;</td>
-                <td class="label">Packing</td>
-                <td>&nbsp;</td>
-            </tr>
-            <tr>
-                <td class="label">Delivery Date #05</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">DC#05</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">Qty-04</td>
-                <td>&nbsp;</td>
-                <td class="label">Packing</td>
-                <td>&nbsp;</td>
-            </tr>
-            <tr>
-                <td class="label">Delivery Date #06</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">DC#06</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">Qty-06</td>
-                <td>&nbsp;</td>
-                <td class="label">Packing</td>
-                <td>&nbsp;</td>
-            </tr>
-            <tr>
-                <td colspan="5" class="label">TOTAL DELIVERED QUANTITY</td>
-                <td colspan="5">&nbsp;</td>
-            </tr>
-        </table>
+        <section class="section-grid">
+            <div class="section-block">
+                <div class="section-title">Printing Specification</div>
+                <div class="field-row"><span class="field-label">Print Sheet</span><span>{{ job.print_sheet_size_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Purchase Sheet</span><span>{{ job.purchase_sheet_size_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Purchase Sheet UPS</span><span>{{ job.purchase_sheet_ups_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">UPS</span><span>{{ job.ups_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Total Sheets</span><span>{{ job.total_sheet_quantity|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Purchase Sheet Qty</span><span>{{ job.purchase_sheet_required_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Actual Sheet Req.</span><span>{{ job.actual_sheet_required_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Wastage Sheets</span><span>{{ job.wastage_sheets|default_if_none:'0' }}</span></div>
+            </div>
+            <div class="section-block">
+                <div class="section-title">Machine & Production</div>
+                <div class="field-row"><span class="field-label">Machine</span><span>{{ job.machine_name|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Plate Set No.</span><span>{{ job.plate_set_no|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">AWC No.</span><span>{{ job.awc_no_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Die Cutting</span><span>{{ job.die_cutting_display|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Purchase Origin</span><span>{{ job.purchase_material_origin|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Stock Qty</span><span>{{ job.stock_qty|default:'-' }}</span></div>
+            </div>
+        </section>
 
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr>
-                <td rowspan="3" class="label">Printing</td>
-                <td colspan="2" rowspan="3" class="label">Lamination</td>
-                <td colspan="2" rowspan="3" class="label">Cutting</td>
-                <td colspan="2" rowspan="3" class="label">Sorting</td>
-                <td rowspan="3" class="label">Packing</td>
-                <td colspan="2" rowspan="3" class="label">Dispatch</td>
-            </tr>
-            <tr></tr>
-            <tr></tr>
-        </table>
+        <section class="section-block full-width">
+        {% endif %}
+            <div class="section-title">Remarks / Requirement</div>
+            <div class="notes">{{ job.remarks|default:job.requirement|default:'-' }}</div>
+        </section>
 
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr><td colspan="10" class="section-title">EXTRA PRODUCE</td></tr>
-            <tr>
-                <td class="label">Extra Produce</td>
-                <td>&nbsp;</td>
-                <td>&nbsp;</td>
-                <td class="label">Box / Bag NO #</td>
-                <td>&nbsp;</td>
-                <td colspan="2" class="label">Actual waste</td>
-                <td colspan="2">&nbsp;</td>
-                <td class="label">Total wastage per %</td>
-            </tr>
-        </table>
+        <section class="section-block full-width">
+            <div class="section-title">Operator Production Entry</div>
+        </section>
 
-        <table class="data-table">
-            <colgroup>
-                <col style="width:12.18%">
-                <col style="width:8.39%">
-                <col style="width:11.26%">
-                <col style="width:7.20%">
-                <col style="width:8.86%">
-                <col style="width:9.41%">
-                <col style="width:5.26%">
-                <col style="width:12.18%">
-                <col style="width:4.71%">
-                <col style="width:20.58%">
-            </colgroup>
-            <tr><td colspan="10" class="section-title">CUTTING SLIP</td></tr>
-            <tr>
-                <td class="label">Job Card #</td>
-                <td>{{ job.jc_number }}</td>
-                <td class="label">Job Name</td>
-                <td colspan="7">{{ job.job_name|default:'-' }}</td>
-            </tr>
-            <tr>
-                <td class="label">Purch sheet size</td>
-                <td>{{ job.purchase_sheet_size|default:'-' }}</td>
-                <td class="label">Purch sheet Ups</td>
-                <td>{{ job.purchase_sheet_ups|default:'-' }}</td>
-                <td class="label">Print sheet size</td>
-                <td>{{ job.print_sheet_size|default:'-' }}</td>
-                <td class="label">Type</td>
-                <td>{{ job.material|default:'-' }}</td>
-                <td colspan="2" class="label">Sheet Qty</td>
-            </tr>
-            <tr>
-                <td class="label">Purch sheet Qty</td>
-                <td>{{ job.purchase_sheet_required|default:'-' }}</td>
-                <td colspan="2" class="label">Remarks</td>
-                <td colspan="6">{{ job.remarks|default:job.requirement|default:'-' }}</td>
-            </tr>
-            <tr>
-                <td colspan="2">&nbsp;</td>
-                <td colspan="2">&nbsp;</td>
-                <td colspan="6">&nbsp;</td>
-            </tr>
-            <tr>
-                <td colspan="2" class="label">Cutting Operator Signature</td>
-                <td colspan="7">&nbsp;</td>
-                <td class="label">Receiving Signature</td>
-            </tr>
-        </table>
+        <section class="section-block full-width">
+            <div class="section-title">Material Issuance / Printing / Dispatch</div>
+            <div class="section-grid">
+                <div class="section-block">
+                    <div class="section-title" style="font-size:10px;">Material Issuance</div>
+                    <div class="field-row"><span class="field-label">Material</span><span>{{ job.material_display|default:'-' }}</span></div>
+                    <div class="field-row"><span class="field-label">Issued Qty</span><span>{{ job.mi_quantity|default:'-' }}</span></div>
+                    <div class="field-row"><span class="field-label">Balance</span><span>{{ job.mi_balance|default:'-' }}</span></div>
+                    <div class="field-row"><span class="field-label">Stock Left</span><span>{{ job.stock_qty|default:'-' }}</span></div>
+                    <div class="field-row"><span class="field-label">Remaining Sheet</span><span>{{ job.remaining_sheet|default:'-' }}</span></div>
+                </div>
+                <div class="section-block">
+                    <div class="section-title" style="font-size:10px;">Printing / QA Logs</div>
+                    <div class="table-wrap">
+                        <div class="table-row table-header"><span>Run</span><span>Date</span><span>Qty</span><span>Wastage</span></div>
+                        {% for run in job.print_runs.all %}
+                        <div class="table-row"><span>{{ run.run_index }}</span><span>{{ run.print_date|date:'d M Y'|default:'-' }}</span><span>{{ run.print_qty|default:'-' }}</span><span>{{ run.wastage_qty|default:'-' }}</span></div>
+                        {% endfor %}
+                        {% for _ in '123456' %}
+                            {% if forloop.counter > job.print_runs.count %}
+                        <div class="table-row blank-row"><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span></div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+            <div class="section-grid">
+                <div class="section-block">
+                    <div class="section-title" style="font-size:10px;">Dispatch / Delivery</div>
+                    <div class="table-wrap">
+                        <div class="table-row table-header"><span>DC No</span><span>Date</span><span>Qty</span><span>Balance</span></div>
+                        {% for dispatch in job.dispatch_runs.all %}
+                        <div class="table-row"><span>{{ dispatch.dc_no|default:'-' }}</span><span>{{ dispatch.delivery_date|date:'d M Y'|default:'-' }}</span><span>{{ dispatch.delivered_qty|default:'-' }}</span><span>{{ job.balance_qty|default:'-' }}</span></div>
+                        {% endfor %}
+                        {% for _ in '1234' %}
+                            {% if forloop.counter > job.dispatch_runs.count %}
+                        <div class="table-row blank-row"><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span></div>
+                            {% endif %}
+                        {% endfor %}
+                    </div>
+                </div>
+                <div class="section-block">
+                    <div class="section-title" style="font-size:10px;">Cutting Slip</div>
+                    <div class="table-wrap">
+                        <div class="table-row table-header"><span>Cut Date</span><span>Qty</span><span>Operator</span><span>Remarks</span></div>
+                        {% for _ in '123456' %}
+                        <div class="table-row blank-row"><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span></div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </section>
 
-        <div class="footer-note">Generated at {{ now_ts }} | Planning version {{ job.job_card_version }}</div>
+        <section class="section-grid">
+            <div class="section-block">
+                <div class="section-title">Approval Signatures</div>
+                <div class="signature-row"><span>Prepared By</span><span>________________________</span></div>
+                <div class="signature-row"><span>Checked By</span><span>________________________</span></div>
+                <div class="signature-row"><span>Approved By</span><span>________________________</span></div>
+                <div class="signature-row"><span>Plate Check By</span><span>________________________</span></div>
+            </div>
+            <div class="section-block">
+                <div class="section-title">Production Notes</div>
+                {% for _ in '1234' %}
+                <div class="signature-row blank-row"><span>&nbsp;</span><span>&nbsp;</span></div>
+                {% endfor %}
+            </div>
+        </section>
 
+        <div class="footer-note">Generated at {{ now_ts }} | Job card print</div>
         <div class="no-print">
             <button class="button-primary" onclick="window.print()">Print A4</button>
-            <span class="small">Use browser print and choose Save as PDF for exact A4 job-card output.</span>
+            <span class="small">Use browser print and choose Save as PDF for exact A4 output.</span>
         </div>
     </div>
 </div>

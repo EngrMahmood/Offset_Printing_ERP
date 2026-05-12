@@ -1,0 +1,20 @@
+{% extends 'base.html' %}
+
+{% block extra_head %}
+    {{ block.super }}
+    {% include 'includes/ui/theme_colors.html' %}
+    {% include 'includes/ui/theme_cards.html' %}
+    {% include 'includes/ui/theme_buttons.html' %}
+    {% include 'includes/ui/theme_badges.html' %}
+    {% include 'includes/ui/theme_tables.html' %}
+    {% include 'includes/ui/theme_forms.html' %}
+    {% include 'includes/ui/theme_filters.html' %}
+    {% include 'includes/ui/theme_dashboard_cards.html' %}
+    {% include 'includes/ui/theme_workflow_stepper.html' %}
+    {% include 'includes/ui/theme_modals.html' %}
+    {% include 'includes/ui/theme_alerts.html' %}
+    {% include 'includes/ui/theme_navigation.html' %}
+    {% include 'includes/ui/theme_sidebar.html' %}
+    {% include 'includes/ui/theme_header.html' %}
+    {% include 'includes/ui/theme_stats.html' %}
+{% endblock %}

@@ -27,8 +27,8 @@
 
         body {
             margin: 0;
-            font-family: "Segoe UI", Tahoma, sans-serif;
-            background: var(--bg);
+            font-family: 'IBM Plex Sans', Arial, sans-serif;
+            background: var(--erp-bg-soft, #f3f5f8);
             color: var(--text);
         }
 
@@ -320,21 +320,16 @@
             .top-nav-wrap { justify-content: center; }
         }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    {% include 'includes/ui/theme_colors.html' %}
 </head>
 <body>
-<header class="top-nav">
-    <div class="top-nav-wrap">
-        <div>
-            <div class="module-title">Planning And Scheduling Module</div>
-            <div class="module-subtitle">Clear sequence workflow by role and stage</div>
-        </div>
-        <div class="chip">Role: {{ user_role|default:'unassigned'|upper }}</div>
-    </div>
-</header>
-
+    {% include 'includes/page_header.html' %}
 <main class="page">
     <div class="utility-bar">
+        <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:14px;font-weight:700;color:#1f3449;">Planning &amp; Scheduling Module</span>
+            <span class="chip">Role: {{ user_role|default:'unassigned'|upper }}</span>
+        </div>
         {% include 'includes/user_identity_chip.html' %}
         <a class="go-btn" href="{% url 'planning:planning_readme' %}">Planning Guide</a>
     </div>
@@ -359,11 +354,11 @@
             <div class="hero-panel">
                 <h3>How To Use This Screen</h3>
                 <ul>
-                    <li>Step 1: Maintain Master SKU data (manual or bulk) and approve.</li>
-                    <li>Step 2: Upload PO and route Repeat vs New.</li>
-                    <li>Step 3: New SKUs complete pending master approval.</li>
-                    <li>Step 4: Create/update Planning jobs.</li>
-                    <li>Step 5: Planning approval, card print, and shop floor scan.</li>
+                    <li>Step 1: PO Intake - Upload or manually enter PO.</li>
+                    <li>Step 2: SKU Master &amp; New SKU - Check SKU existence and create missing master data.</li>
+                    <li>Step 3: Planning Jobs - Planner fills planning-only fields and creates Job Card.</li>
+                    <li>Step 4: Job Card Approval - QC reviews and approves Job Card.</li>
+                    <li>Step 5: Production Scan - Production scans approved Job Card and starts execution.</li>
                 </ul>
             </div>
         </div>
@@ -373,11 +368,11 @@
     <section class="workflow-shell">
         <div class="phase-tabs" role="tablist" aria-label="Planning workflow stages">
             <button class="phase-tab active" data-phase="start" type="button">Start Here</button>
-            <button class="phase-tab" data-phase="master" type="button">Step 1 - Master SKU</button>
-            <button class="phase-tab" data-phase="po" type="button">Step 2 - PO Intake</button>
+            <button class="phase-tab" data-phase="po" type="button">Step 1 - PO Intake</button>
+            <button class="phase-tab" data-phase="master" type="button">Step 2 - Master SKU &amp; New SKUs</button>
             <button class="phase-tab" data-phase="planning" type="button">Step 3 - Planning Jobs</button>
-            <button class="phase-tab" data-phase="approval" type="button">Step 4 - Approval Flow</button>
-            <button class="phase-tab" data-phase="shop" type="button">Step 5 - Job Card And Scan</button>
+            <button class="phase-tab" data-phase="approval" type="button">Step 4 - Job Card Approval</button>
+            <button class="phase-tab" data-phase="shop" type="button">Step 5 - Job Card &amp; Scan</button>
         </div>
 
         <section class="phase-panel active" data-phase="start">
@@ -386,52 +381,51 @@
                 <p>Use this route for each PO with strict master-first governance for new SKU data.</p>
             </div>
             <div class="step-strip">
-                <span class="step-pill">1. Master SKU setup and approval</span>
-                <span class="step-pill">2. Upload PO and split Repeat/New</span>
-                <span class="step-pill">3. New SKU pending approval</span>
-                <span class="step-pill">4. Generate or update planning jobs</span>
-                <span class="step-pill">5. QC and PM approval</span>
-                <span class="step-pill">6. Print card and execute</span>
+                <span class="step-pill">1. PO Intake</span>
+                <span class="step-pill">2. SKU Master / New SKU Entry</span>
+                <span class="step-pill">3. Planning Jobs</span>
+                <span class="step-pill">4. Job Card Approval</span>
+                <span class="step-pill">5. Production Scan</span>
             </div>
             <div class="cards">
-                <article class="tool-card master">
-                    <h3>Go To Master SKU</h3>
-                    <p>Create or bulk-upload SKU master data, then move Draft -> Reviewed -> Approved.</p>
+                <article class="tool-card po">
+                    <h3>1. PO Intake</h3>
+                    <p>Upload or manually enter PO.</p>
                     <div class="card-footer">
                         <span class="role-tag">Planner / Manager / Admin</span>
-                        <a class="go-btn" href="{% url 'planning:sku_recipes' %}">Open Step 1</a>
+                        <a class="go-btn" href="{% url 'planning:po_inbox' %}">Open Step 1</a>
                     </div>
                 </article>
-                <article class="tool-card po">
-                    <h3>Go To PO Intake</h3>
-                    <p>Upload PO and route Repeat directly to Planning and New to pending master data.</p>
+                <article class="tool-card master">
+                    <h3>2. SKU Master &amp; New SKU</h3>
+                    <p>Check SKU existence and create missing master data.</p>
                     <div class="card-footer">
                         <span class="role-tag">Planner / Manager / Admin</span>
-                        <a class="go-btn" href="{% url 'planning:po_inbox' %}">Open Step 2</a>
+                        <a class="go-btn" href="{% url 'qc:pending_skus' %}">Open Step 2</a>
                     </div>
                 </article>
                 <article class="tool-card plan">
-                    <h3>Go To Planning Jobs</h3>
-                    <p>Create and manage planning jobs after approved SKU master data and PO routing are complete.</p>
+                    <h3>3. Planning Jobs</h3>
+                    <p>Planner fills planning-only fields and creates Job Card.</p>
                     <div class="card-footer">
                         <span class="role-tag">Planner / Manager / Admin</span>
                         <a class="go-btn" href="{% url 'planning:jobs' %}">Open Step 3</a>
                     </div>
                 </article>
                 <article class="tool-card approval">
-                    <h3>Go To Approval Queue</h3>
-                    <p>Move jobs from draft to reviewed, then approved for production release.</p>
+                    <h3>4. Job Card Approval</h3>
+                    <p>QC reviews and approves Job Card.</p>
                     <div class="card-footer">
                         <span class="role-tag">Planner / Manager / Admin</span>
-                        <a class="go-btn" href="{% url 'planning:approval_queue' %}">Open Step 4</a>
+                        <a class="go-btn" href="{% url 'qc:approval_queue' %}">Open Step 4</a>
                     </div>
                 </article>
                 <article class="tool-card shop">
-                    <h3>Planning README / Guide</h3>
-                    <p>Open the complete planning process guide and download a text copy for team training.</p>
+                    <h3>5. Production Scan</h3>
+                    <p>Production scans approved Job Card and starts execution.</p>
                     <div class="card-footer">
-                        <span class="role-tag">Reference Guide</span>
-                        <a class="go-btn" href="{% url 'planning:planning_readme' %}">Open Guide</a>
+                        <span class="role-tag">Production Support</span>
+                        <a class="go-btn" href="{% url 'planning:scan' %}">Open Step 5</a>
                     </div>
                 </article>
             </div>
@@ -439,7 +433,7 @@
 
         <section class="phase-panel" data-phase="po">
             <div class="phase-head">
-                <h2>Step 2 - Purchase Order Intake</h2>
+                <h2>Step 1 - Purchase Order Intake</h2>
                 <p>Collect incoming PO data and classify SKU lines as Repeat or New.</p>
             </div>
             <div class="cards">
@@ -472,24 +466,32 @@
 
         <section class="phase-panel" data-phase="master">
             <div class="phase-head">
-                <h2>Step 1 - Master SKU Governance</h2>
-                <p>Create/edit in draft, review, and approve master data. New SKUs from PO cannot bypass this step.</p>
+                <h2>Step 2 - Master SKU &amp; Pending New SKUs</h2>
+                <p>After PO intake identifies new SKUs, fill their recipe data here and approve. Repeat SKUs use the existing approved master automatically.</p>
             </div>
             <div class="cards">
                 <article class="tool-card master">
-                    <h3>Pending SKUs</h3>
-                    <p>Fill missing recipe details and move SKU data through draft, reviewed, approved stages.</p>
+                    <h3>Pending New SKUs</h3>
+                    <p>Primary screen for new SKUs surfaced from a PO. Fill recipe details and push through draft &rarr; reviewed &rarr; approved.</p>
                     <div class="card-footer">
-                        <span class="role-tag">Primary Screen</span>
-                        <a class="go-btn" href="{% url 'planning:pending_skus' %}">Open</a>
+                        <span class="role-tag">Start Here After PO Intake</span>
+                        <a class="go-btn" href="{% url 'qc:pending_skus' %}">Open</a>
                     </div>
                 </article>
                 <article class="tool-card master">
                     <h3>SKU Recipe Master</h3>
-                    <p>View or maintain approved recipes used to auto-populate repeat planning jobs.</p>
+                    <p>View or maintain all approved recipes. Use bulk upload to create many at once.</p>
                     <div class="card-footer">
                         <span class="role-tag">{% if can_manage_masters %}Manager/Admin{% else %}Planner Access{% endif %}</span>
-                        <a class="go-btn" href="{% url 'planning:sku_recipes' %}">Open</a>
+                        <a class="go-btn" href="{% url 'qc:sku_recipes' %}">Open</a>
+                    </div>
+                </article>
+                <article class="tool-card master">
+                    <h3>Bulk Upload SKU Recipes</h3>
+                    <p>Upload a CSV/XLSX file to create or update multiple SKU master records in one action.</p>
+                    <div class="card-footer">
+                        <span class="role-tag">Bulk Mode</span>
+                        <a class="go-btn" href="{% url 'qc:sku_recipe_bulk_upload' %}">Open</a>
                     </div>
                 </article>
             </div>
@@ -498,12 +500,12 @@
         <section class="phase-panel" data-phase="planning">
             <div class="phase-head">
                 <h2>Step 3 - Planning Job Creation And Control</h2>
-                <p>Create jobs from approved data, validate details, and prepare for approval routing.</p>
+                <p>The Planning Jobs screen has three dashboard sections at the top: PO Intake Queue (Step 1), SKU Queue (Step 2), and Planning Queue (Step 3). Use those counters to track work across all queues at a glance, then edit and validate job details below.</p>
             </div>
             <div class="cards">
                 <article class="tool-card plan">
                     <h3>Planning Jobs List</h3>
-                    <p>Main operational screen for filtering, editing, and status handling of planning jobs.</p>
+                    <p>Main operational screen with live queue counters for PO Intake, SKU, and Planning queues, plus filtering and editing of active jobs.</p>
                     <div class="card-footer">
                         <span class="role-tag">Daily Operations</span>
                         <a class="go-btn" href="{% url 'planning:jobs' %}">Open</a>
@@ -522,16 +524,16 @@
 
         <section class="phase-panel" data-phase="approval">
             <div class="phase-head">
-                <h2>Step 4 - Approval And Release</h2>
-                <p>Move records from Draft to Pending Review and finally Pending Approval (Manager).</p>
+                <h2>Step 4 - Job Card Approval And Release</h2>
+                <p>The approval screen is split into two sections: SKU Approval Queue (Step 2 banner — approve pending new SKUs) and Job Card Approval Queue (Step 4 tabs — Planning Approval, QC Approval, PM Approval, Release).</p>
             </div>
             <div class="cards">
                 <article class="tool-card approval">
                     <h3>Approval Queue</h3>
-                    <p>Single checkpoint for review transitions and final release authorization.</p>
+                    <p>SKU approval banner shows pending new SKUs at the top. Below it, four tabs handle Planning, QC, PM approval, and Release.</p>
                     <div class="card-footer">
                         <span class="role-tag">QC / Production Review</span>
-                        <a class="go-btn" href="{% url 'planning:approval_queue' %}">Open</a>
+                        <a class="go-btn" href="{% url 'qc:approval_queue' %}">Open</a>
                     </div>
                 </article>
                 {% if can_view_reports %}
@@ -657,3 +659,5 @@
 </script>
 </body>
 </html>
+
+

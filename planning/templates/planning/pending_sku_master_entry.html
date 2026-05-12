@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Master Data Entry | Pending SKU</title>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260419a">
+    {% include 'includes/ui/theme_colors.html' %}
     <style>
         .wrap { max-width: 960px; margin: 0 auto; }
         .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
@@ -47,6 +47,7 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <main class="wrap page-container">
     {% with current_step='master' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
@@ -57,7 +58,7 @@
             <h1 style="margin:0;font-size:20px;">Pending SKU Master Data</h1>
             <div class="warning-box"><span class="icon">⚠</span><span>Complete required master fields, then send for approval. Only approved SKU data moves to Planning.</span></div>
         </div>
-        <a class="btn secondary" href="{% url 'planning:pending_skus' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To Pending SKUs</a>
+        <a class="btn secondary" href="{% url 'qc:pending_skus' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To Pending SKUs</a>
     </div>
 
     {% for msg in messages %}
@@ -95,7 +96,7 @@
         <div style="margin-bottom:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
             <span class="status {{ recipe_status }}">{{ recipe_status }}</span>
             <span class="hint">Job Name: <strong>{{ suggested_job_name }}</strong></span>
-            <a class="btn secondary" href="{% url 'planning:po_review' po_doc_id %}">Open PO</a>
+            <a class="btn secondary" href="{% url 'qc:po_review' po_doc_id %}">Open PO</a>
         </div>
         {% if missing_required_fields and recipe_status != 'approved' %}
             <div class="warn" style="margin-bottom:10px;">Missing required fields before approval: {{ missing_required_fields|join:', ' }}</div>
@@ -124,7 +125,7 @@
                     <input type="text" value="{{ suggested_job_name }}" readonly>
                 </div>
                 <div class="field">
-                    <label for="{{ form.material.id_for_label }}">Material <span class="req">*</span></label>
+                    <label for="{{ form.material.id_for_label }}">Material Type <span class="req">*</span></label>
                     {{ form.material }}
                     {% if form.material.errors %}<div class="error">{{ form.material.errors.0 }}</div>{% endif %}
                 </div>
@@ -150,11 +151,6 @@
                     {% if form.size_h_mm.errors %}<div class="error">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="field">
-                    <label for="{{ form.machine_name.id_for_label }}">Machine <span class="req">*</span></label>
-                    {{ form.machine_name }}
-                    {% if form.machine_name.errors %}<div class="error">{{ form.machine_name.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="field">
                     <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet <span class="req">*</span></label>
                     {{ form.print_sheet_size }}
                     {% if form.print_sheet_size.errors %}<div class="error">{{ form.print_sheet_size.errors.0 }}</div>{% endif %}
@@ -175,11 +171,6 @@
                     {{ form.ups }}
                     {% if form.ups.errors %}<div class="error">{{ form.ups.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
-                    <label for="{{ form.purchase_material.id_for_label }}">Purchase Material Origin <span class="req">*</span></label>
-                    {{ form.purchase_material }}
-                    {% if form.purchase_material.errors %}<div class="error">{{ form.purchase_material.errors.0 }}</div>{% endif %}
-                </div>
 
                 <div class="field">
                     <label for="{{ form.default_unit_cost.id_for_label }}">Unit Cost</label>
@@ -198,12 +189,7 @@
                 </div>
 
                 <div class="field">
-                    <label for="{{ form.plate_set_no.id_for_label }}">Plate Set No</label>
-                    {{ form.plate_set_no }}
-                    {% if form.plate_set_no.errors %}<div class="error">{{ form.plate_set_no.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="field">
-                    <label for="{{ form.die_cutting.id_for_label }}">Die</label>
+                    <label for="{{ form.die_cutting.id_for_label }}">Die Cutting <span class="req">*</span></label>
                     {{ form.die_cutting }}
                     {% if form.die_cutting.errors %}<div class="error">{{ form.die_cutting.errors.0 }}</div>{% endif %}
                 </div>
@@ -230,3 +216,5 @@
 </main>
 </body>
 </html>
+
+

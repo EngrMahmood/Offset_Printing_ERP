@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>New SKU Setup | {{ payload.po_number }}</title>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    {% include 'includes/ui/theme_colors.html' %}
     <style>
         .wrap { max-width: 100%; margin: 0 auto; }
         .card { background: #fff; border: 1px solid #d6e0ea; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
@@ -24,6 +24,7 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <main class="wrap page-container">
     {% with current_step='master' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
@@ -34,7 +35,7 @@
             <h1 style="margin:0;font-size:20px;">New SKU Recipe Setup</h1>
             <div class="muted">PO {{ payload.po_number|default:'-' }} | Configure missing SKUs to move them into planning flow.</div>
         </div>
-        <a href="{% url 'planning:po_review' po_doc.id %}" class="btn secondary">Back To PO Review</a>
+        <a href="{% url 'qc:po_review' po_doc.id %}" class="btn secondary">Back To PO Review</a>
     </div>
 
     {% if not missing_skus %}
@@ -52,14 +53,12 @@
                     <th>SKU</th>
                     <th>Current Stage</th>
                     <th>Job Name</th>
-                    <th>Material</th>
+                    <th>Material Type</th>
                     <th>Color</th>
                     <th>Application</th>
-                    <th>Machine</th>
                     <th>Print Sheet Size</th>
                     <th>Purchase Sheet Size</th>
                     <th>UPS</th>
-                    <th>Purchase Material</th>
                     <th>Default Unit Cost</th>
                 </tr>
             </thead>
@@ -80,11 +79,10 @@
                     <td><input type="text" name="sku_{{ row.sku }}_material" value="{% if row.recipe %}{{ row.recipe.material }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_color_spec" value="{% if row.recipe %}{{ row.recipe.color_spec }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_application" value="{% if row.recipe %}{{ row.recipe.application }}{% endif %}"></td>
-                    <td><input type="text" name="sku_{{ row.sku }}_machine_name" value="{% if row.recipe %}{{ row.recipe.machine_name }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_print_sheet_size" value="{% if row.recipe %}{{ row.recipe.print_sheet_size }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_purchase_sheet_size" value="{% if row.recipe %}{{ row.recipe.purchase_sheet_size }}{% endif %}"></td>
                     <td><input type="text" name="sku_{{ row.sku }}_ups" value="{% if row.recipe %}{{ row.recipe.ups }}{% endif %}"></td>
-                    <td><input type="text" name="sku_{{ row.sku }}_purchase_material" value="{% if row.recipe %}{{ row.recipe.purchase_material }}{% endif %}"></td>
+
                     <td><input type="text" name="sku_{{ row.sku }}_default_unit_cost" value="{% if row.recipe %}{{ row.recipe.default_unit_cost }}{% endif %}" placeholder="0.00"></td>
                 </tr>
                 {% endfor %}
@@ -92,7 +90,7 @@
         </table>
         <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
             <button type="submit" class="btn">Save SKU Recipes</button>
-            <a href="{% url 'planning:po_review' po_doc.id %}" class="btn secondary">Back Without Saving</a>
+            <a href="{% url 'qc:po_review' po_doc.id %}" class="btn secondary">Back Without Saving</a>
         </div>
         <div class="muted" style="margin-top:8px;">Saving from this screen keeps SKU master data in Draft stage. Use Pending SKUs to move Draft -> Reviewed -> Approved.</div>
     </form>
@@ -100,3 +98,5 @@
 </main>
 </body>
 </html>
+
+

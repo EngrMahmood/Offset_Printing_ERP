@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Archived Planning Jobs</title>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
+    {% include 'includes/ui/theme_colors.html' %}
     <style>
         .wrap { max-width: 100%; margin: 0 auto; }
         .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
@@ -23,9 +23,13 @@
         .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; font-size: 10px; border: 1px solid #d3deea; background: #f3f7fb; }
         .badge.draft { background:#eef5ff; border-color:#c8daf7; }
         .badge.reviewed { background:#fff7e6; border-color:#f0d79a; }
-        .badge.approved { background:#e6f6ea; border-color:#bde4c7; }
-        .badge.closed { background:#f3f4f6; border-color:#d2d6dc; }
-        .row-approved { background: #f8fffb; }
+        .badge.pending_qc { background:#fff7e6; border-color:#f0d79a; }
+        .badge.qc_approved { background:#e6f6ea; border-color:#bde4c7; }
+        .badge.released { background:#eaf7ff; border-color:#b8dcef; }
+        .badge.in_production { background:#f3f4f6; border-color:#d2d6dc; }
+        .badge.completed { background:#edf7ef; border-color:#c7e2cc; }
+        .row-released { background: #f8fffb; }
+        .row-completed { background: #f4f6f8; }
         .route-shell { margin-bottom:10px; padding:10px; border-radius:10px; border:1px solid #d8e4f1; background:#f5f9ff; display:grid; grid-template-columns: repeat(3, minmax(200px, 1fr)); gap:8px; }
         .route-card { border:1px solid #c9d9ea; border-radius:8px; background:#fff; padding:8px; }
         @media (max-width: 1080px) {
@@ -35,6 +39,7 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <main class="wrap page-container">
     {% with current_step='planning' %}
         {% include 'planning/includes/workflow_sequence_bar.html' %}
@@ -50,8 +55,8 @@
             <a class="btn secondary" href="{% url 'planning:planning_readme' %}">Guide</a>
             <a class="btn secondary" href="{% url 'home' %}">Back Home</a>
             <a class="btn secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
-            <a class="btn secondary" href="{% url 'planning:approval_queue' %}">Approval Queue</a>
-            <a class="btn secondary" href="{% url 'planning:pending_skus_ignored' %}">Ignored SKUs</a>
+            <a class="btn secondary" href="{% url 'qc:approval_queue' %}">Approval Queue</a>
+            <a class="btn secondary" href="{% url 'qc:pending_skus_ignored' %}">Ignored SKUs</a>
             <a class="btn secondary" href="{% url 'planning:scan' %}">Scan QR</a>
             <a class="btn secondary" href="{% url 'planning:report' %}">Planning Report</a>
             <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
@@ -99,9 +104,11 @@
         <div class="stats">
             <span class="badge">Total: {{ jobs.paginator.count }}</span>
             <span class="badge draft">Draft: {{ status_counts.draft|default:0 }}</span>
-            <span class="badge reviewed">Reviewed: {{ status_counts.reviewed|default:0 }}</span>
-            <span class="badge approved">Approved: {{ status_counts.approved|default:0 }}</span>
-            <span class="badge closed">Closed: {{ status_counts.closed|default:0 }}</span>
+            <span class="badge pending_qc">Pending QC: {{ status_counts.pending_qc|default:0 }}</span>
+            <span class="badge qc_approved">QC Approved: {{ status_counts.qc_approved|default:0 }}</span>
+            <span class="badge released">Released: {{ status_counts.released|default:0 }}</span>
+            <span class="badge in_production">In Production: {{ status_counts.in_production|default:0 }}</span>
+            <span class="badge completed">Completed: {{ status_counts.completed|default:0 }}</span>
         </div>
 
         <div class="bulk-row">
@@ -124,7 +131,7 @@
                         <th>Job Name</th>
                         <th>Order Qty</th>
                         <th>Flag</th>
-                        <th>Print Sheets</th>
+                        <th>Total Sheets</th>
                         <th>Machine</th>
                         <th>Department</th>
                         <th>Status</th>
@@ -135,7 +142,7 @@
                 </thead>
                 <tbody>
                 {% for job in jobs %}
-                    <tr class="{% if job.status|lower == 'approved' %}row-approved{% endif %}">
+                    <tr class="{% if job.workflow_status == 'released' %}row-released{% elif job.workflow_status == 'completed' %}row-completed{% endif %}">
                         <td><input type="checkbox" class="bulk-check" value="{{ job.id }}"></td>
                         <td><strong>{{ job.jc_number }}</strong><div class="muted">{{ job.plan_date|default:"" }}</div></td>
                         <td>{{ job.po_number|default:"-" }}</td>
@@ -156,10 +163,10 @@
                                 <div class="badge" style="background:#fdecea;border-color:#f5c2c0;color:#842029;margin-top:4px;">On Hold</div>
                             {% endif %}
                         </td>
-                        <td>{{ job.print_sheets|default:"-" }}</td>
+                        <td>{{ job.calculated_sheets_required|default:"-" }}</td>
                         <td>{{ job.machine_name|default:"-" }}</td>
                         <td>{{ job.department|default:"-" }}</td>
-                        <td><span class="badge {{ job.status|default:'draft'|lower }}">{{ job.status|default:"draft" }}</span></td>
+                        <td><span class="badge {{ job.workflow_status }}">{{ job.workflow_status_label }}</span></td>
                         <td>{{ job.print_runs.count }}</td>
                         <td>{{ job.dispatch_runs.count }}</td>
                         <td style="display:grid; gap:4px;">
@@ -284,3 +291,5 @@ function submitBulkAction(action, promptText) {
 </script>
 </body>
 </html>
+
+

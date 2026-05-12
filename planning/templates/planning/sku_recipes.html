@@ -5,7 +5,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>SKU Recipe Master</title>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260419">
+    {% include 'includes/ui/theme_colors.html' %}
     <style>
         .wrap { max-width: 100%; margin: 0 auto; }
         .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
@@ -74,6 +74,7 @@
     </style>
 </head>
 <body>
+    {% include 'includes/page_header.html' %}
 <main class="wrap page-container">
 
     {% with current_step='master' %}
@@ -87,9 +88,9 @@
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <a class="btn secondary" href="{% url 'planning:home' %}">Planning Home</a>
-            <a class="btn secondary" href="{% url 'planning:sku_recipes_archived' %}">Archived Recipes</a>
-            <a class="btn secondary" href="{% url 'planning:sku_recipe_bulk_upload' %}">⬆ Bulk Upload</a>
-            <a class="btn" href="{% url 'planning:sku_recipe_add' %}">+ Add SKU Recipe</a>
+            <a class="btn secondary" href="{% url 'qc:sku_recipes_archived' %}">Archived Recipes</a>
+            <a class="btn secondary" href="{% url 'qc:sku_recipe_bulk_upload' %}">⬆ Bulk Upload</a>
+            <a class="btn" href="{% url 'qc:sku_recipe_add' %}">+ Add SKU Recipe</a>
         </div>
     </div>
 
@@ -99,8 +100,8 @@
 
     <!-- Sub-tabs: Master / Pending SKUs -->
     <div style="margin:8px 0 12px;">
-        <a class="stat-chip active" href="{% url 'planning:sku_recipes' %}">Master</a>
-        <a class="stat-chip" href="{% url 'planning:pending_skus' %}">Pending SKUs</a>
+        <a class="stat-chip active" href="{% url 'qc:sku_recipes' %}">Master</a>
+        <a class="stat-chip" href="{% url 'qc:pending_skus' %}">Pending SKUs</a>
     </div>
 
     <!-- End-to-end workflow guide -->
@@ -137,15 +138,15 @@
         <div class="stats-strip">
             <span class="muted" style="align-self:center;">Filter:</span>
             <a class="stat-chip {% if not status_filter %}active{% endif %}"
-               href="{% url 'planning:sku_recipes' %}{% if q %}?q={{ q }}{% endif %}">All</a>
+               href="{% url 'qc:sku_recipes' %}{% if q %}?q={{ q }}{% endif %}">All</a>
             <a class="stat-chip {% if status_filter == 'draft' %}active{% endif %}"
-               href="?status=draft{% if q %}&q={{ q }}{% endif %}">● Draft (Planner)</a>
+               href="?status=draft{% if q %}&q={{ q }}{% endif %}">● Draft (Planner) ({{ draft_count }})</a>
             <a class="stat-chip {% if status_filter == 'pending_review' %}active{% endif %}"
-               href="?status=pending_review{% if q %}&q={{ q }}{% endif %}">● Pending Review (QC)</a>
+               href="?status=pending_review{% if q %}&q={{ q }}{% endif %}">● Pending Review (QC) ({{ pending_review_count }})</a>
             <a class="stat-chip {% if status_filter == 'reviewed' %}active{% endif %}"
-               href="?status=reviewed{% if q %}&q={{ q }}{% endif %}">● Pending Approval (Manager)</a>
+               href="?status=reviewed{% if q %}&q={{ q }}{% endif %}">● Pending Approval (Manager) ({{ reviewed_count }})</a>
             <a class="stat-chip {% if status_filter == 'approved' %}active{% endif %}"
-               href="?status=approved{% if q %}&q={{ q }}{% endif %}">● Approved (Manager)</a>
+               href="?status=approved{% if q %}&q={{ q }}{% endif %}">● Approved (Manager) ({{ approved_count }})</a>
         </div>
 
         <!-- Search -->
@@ -153,7 +154,7 @@
             {% if status_filter %}<input type="hidden" name="status" value="{{ status_filter }}">{% endif %}
             <input type="text" name="q" placeholder="Search SKU, job name, material, machine…" value="{{ q }}">
             <button class="btn" type="submit">Search</button>
-            {% if q or status_filter %}<a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Clear All</a>{% endif %}
+            {% if q or status_filter %}<a class="btn secondary" href="{% url 'qc:sku_recipes' %}">Clear All</a>{% endif %}
         </form>
 
         <div class="muted" style="margin-bottom:8px;">
@@ -169,7 +170,7 @@
                     onclick="return confirm('Archive selected SKUs? Archived recipes will be hidden from the active master list.');">Archive selected</button>
             <button class="btn danger" type="submit" name="action" value="bulk_delete"
                     onclick="return confirm('Permanently delete selected SKUs? This cannot be undone.');">Delete selected</button>
-            <span class="muted">Approved recipes can only be archived or deleted by admin users.</span>
+            <span class="muted">Approved recipes require the "Reopen SKU" action before editing. Archive/Delete requires admin.</span>
         </form>
 
         <div class="table-shell">
@@ -188,7 +189,6 @@
                         <th>UPS</th>
                         <th>Print Sheet</th>
                         <th>Purchase Sheet</th>
-                        <th>Machine</th>
                         <th>Unit Cost</th>
                         <th>Status</th>
                         <th>Reviewed / Approved By</th>
@@ -214,7 +214,6 @@
                         <td class="{% if 'ups' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.ups|default:"-" }}</td>
                         <td class="{% if 'print_sheet_size' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.print_sheet_size|default:"-" }}</td>
                         <td class="{% if 'purchase_sheet_size' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.purchase_sheet_size|default:"-" }}</td>
-                        <td class="{% if 'machine_name' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.machine_name|default:"-" }}</td>
                         <td class="{% if 'default_unit_cost' in recipe.bulk_highlight_fields %}bulk-cell-highlight{% endif %}">{{ recipe.default_unit_cost|default:"-" }}</td>
                         <td>
                             <span class="badge {{ recipe.master_data_status }}">
@@ -234,10 +233,10 @@
                         </td>
                         <td>
                             <div class="action-group">
-                                {% if recipe.master_data_status == 'approved' and not can_edit_approved %}
-                                    <span class="btn sm secondary" style="opacity:0.6;cursor:not-allowed;">Admin only</span>
+                                {% if False %}
+                                    {# Admin-only gate removed: all users can reopen approved SKUs via the edit page #}
                                 {% else %}
-                                    <a class="btn sm" href="{% url 'planning:sku_recipe_edit' recipe.id %}">Edit</a>
+                                    <a class="btn sm" href="{% url 'qc:sku_recipe_edit' recipe.id %}">Edit</a>
                                     <form method="post" action="" style="display:inline;">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="delete">
@@ -269,7 +268,7 @@
                     {% empty %}
                     <tr><td colspan="18" class="empty-state">
                         No SKU recipes found{% if q %} matching "{{ q }}"{% endif %}{% if status_filter %} with status "{{ status_filter }}"{% endif %}.
-                        <a href="{% url 'planning:sku_recipe_add' %}">Add one now.</a>
+                        <a href="{% url 'qc:sku_recipe_add' %}">Add one now.</a>
                     </td></tr>
                     {% endfor %}
                 </tbody>
@@ -349,3 +348,5 @@ if (bulkSelectAll) {
 </script>
 </body>
 </html>
+
+

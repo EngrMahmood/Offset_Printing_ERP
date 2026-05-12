@@ -1,3 +1,6 @@
+import math
+import re
+
 from django.db import models, transaction, IntegrityError
 from django.core.exceptions import ValidationError
 from django.db.models import Sum
@@ -55,12 +58,74 @@ class SequenceCounter(models.Model):
     def __str__(self):
         return f"{self.key}: {self.last_value}"
 
+
+JOB_CARD_STATUS_CHOICES = [
+    ('draft', 'Draft'),
+    ('pending_data', 'Pending Data'),
+    ('planning_approved', 'Planning Approved'),
+    ('pending_qc', 'Pending QC'),
+    ('qc_approved', 'QC Approved'),
+    ('qc_rejected', 'QC Rejected'),
+    ('pending_pm_approval', 'Pending Production Manager Approval'),
+    ('production_approved', 'Production Approved'),
+    ('pm_rejected', 'PM Rejected'),
+    ('released', 'Released'),
+    ('in_production', 'In Production'),
+    ('completed', 'Completed'),
+    ('closed', 'Closed'),
+]
+
+JOB_CARD_STATUS_ALIASES = {
+    'open': 'pending_data',
+    'pending': 'pending_data',
+    'in progress': 'in_production',
+    'in_progress': 'in_production',
+    'approved': 'production_approved',
+    'printed': 'released',
+    'done': 'completed',
+    'finished': 'completed',
+    'archived': 'closed',
+}
+
+JOB_CARD_PLANNING_EDITABLE_STATUSES = {'draft', 'pending_data', 'qc_rejected'}
+JOB_CARD_PLANNING_APPROVAL_STATUSES = {
+    'planning_approved',
+    'pending_qc',
+    'qc_approved',
+    'pending_pm_approval',
+    'production_approved',
+    'pm_rejected',
+    'released',
+    'in_production',
+    'completed',
+    'closed',
+}
+JOB_CARD_EXECUTION_STATUSES = {'in_production', 'completed', 'closed'}
+JOB_CARD_PRODUCTION_START_STATUSES = {'released', 'in_production'}
+JOB_CARD_DISPATCHABLE_STATUSES = {'in_production', 'completed', 'closed'}
+JOB_CARD_PRINTABLE_STATUSES = {'production_approved', 'released', 'in_production', 'completed', 'closed'}
+JOB_CARD_PLANNING_REQUIRED_FIELDS = (
+    ('po_date', 'PO Received Date'),
+    ('total_sheet_quantity', 'Total Sheet Quantity'),
+    ('total_colors', 'Number of Colors'),
+    ('plate_set_no', 'Plate Set'),
+    ('wastage', 'Wastage'),
+    ('machine_name', 'Machine Name'),
+)
+
 # =========================
 # JOB CARD
 # =========================
 
 class JobCard(models.Model):
     job_card_no = models.CharField(max_length=50, unique=True)
+    planning_job = models.OneToOneField(
+        'planning.PlanningJob',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='job_card',
+    )
 
     month = models.CharField(max_length=20, null=True, blank=True)
     po_date = models.DateField(null=True, blank=True)
@@ -103,8 +168,11 @@ class JobCard(models.Model):
 
     ups = models.IntegerField(null=True, blank=True)
     print_sheet_size = models.CharField(max_length=50, null=True, blank=True)
+    plate_set_no = models.CharField(max_length=120, null=True, blank=True)
 
-    wastage = models.IntegerField(default=0,help_text="in Sheets")
+    wastage = models.IntegerField(default=0, help_text="in Sheets")
+    total_sheet_quantity = models.PositiveIntegerField(null=True, blank=True)
+    total_colors = models.PositiveIntegerField(null=True, blank=True)
 
     purchase_sheet_size = models.CharField(max_length=50, null=True, blank=True)
     purchase_sheet_ups = models.IntegerField(null=True, blank=True)
@@ -153,11 +221,175 @@ class JobCard(models.Model):
 
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
-    status = models.CharField(max_length=20, default='Open')
+    status = models.CharField(max_length=40, choices=JOB_CARD_STATUS_CHOICES, default='pending_data', blank=True)
 
     def __str__(self):
         return self.job_card_no
+
+    @property
+    def workflow_status(self):
+        raw_status = (self.status or '').strip().lower()
+        return JOB_CARD_STATUS_ALIASES.get(raw_status, raw_status or 'pending_data')
+
+    @property
+    def workflow_status_label(self):
+        labels = dict(JOB_CARD_STATUS_CHOICES)
+        normalized_status = self.workflow_status
+        return labels.get(normalized_status, normalized_status.replace('_', ' ').title())
+
+    @property
+    def machine_name_display(self):
+        if self.machine_name_id:
+            return str(self.machine_name)
+        if self.planning_job and str(self.planning_job.machine_name or '').strip():
+            return self.planning_job.machine_name
+        return ''
+
+    @property
+    def total_sheet_quantity_display(self):
+        if self.total_sheet_quantity is not None:
+            return self.total_sheet_quantity
+        if self.planning_job and self.planning_job.total_sheet_quantity is not None:
+            return self.planning_job.total_sheet_quantity
+        return None
+
+    @property
+    def total_colors_display(self):
+        if self.total_colors is not None:
+            return self.total_colors
+        if self.planning_job and self.planning_job.number_of_colors is not None:
+            return self.planning_job.number_of_colors
+        return None
+
+    @property
+    def is_planning_editable(self):
+        return self.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES
+
+    @property
+    def latest_rejection_reason(self):
+        log = ChangeLog.objects.filter(
+            entity_type='job_card',
+            record_id=self.pk,
+            action='reject',
+        ).order_by('-created_at').first()
+        if not log:
+            return ''
+        if log.change_reason:
+            return log.change_reason
+        note = log.field_changes.get('note') if isinstance(log.field_changes, dict) else None
+        if isinstance(note, dict):
+            return note.get('to') or ''
+        return ''
+
+    @property
+    def po_received_date(self):
+        if self.po_date:
+            return self.po_date
+        if self.created_at:
+            return self.created_at.date()
+        return None
+
+    def planning_missing_fields(self):
+        if self.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES:
+            return []
+
+        missing_fields = []
+        for field_name, label in JOB_CARD_PLANNING_REQUIRED_FIELDS:
+            if field_name == 'machine_name':
+                if getattr(self, 'machine_name_id', None):
+                    continue
+                if self.planning_job and str(self.planning_job.machine_name or '').strip():
+                    continue
+                missing_fields.append(label)
+                continue
+
+            if field_name == 'total_sheet_quantity':
+                if getattr(self, 'total_sheet_quantity', None) is not None:
+                    continue
+                if self.planning_job and self.planning_job.total_sheet_quantity is not None:
+                    continue
+                missing_fields.append(label)
+                continue
+
+            if field_name == 'total_colors':
+                if getattr(self, 'total_colors', None) is not None:
+                    continue
+                if self.planning_job and self.planning_job.number_of_colors is not None:
+                    continue
+                missing_fields.append(label)
+                continue
+
+            if field_name in {'po_date', 'wastage'}:
+                if getattr(self, field_name, None) is None:
+                    missing_fields.append(label)
+                continue
+
+            value = getattr(self, field_name, None)
+            if not str(value or '').strip():
+                missing_fields.append(label)
+        return missing_fields
+
+    def planning_validation_errors(self):
+        missing_fields = self.planning_missing_fields()
+        if not missing_fields:
+            return {}
+
+        errors = {}
+        for field_name, label in JOB_CARD_PLANNING_REQUIRED_FIELDS:
+            if label not in missing_fields:
+                continue
+            errors[field_name] = f'{label} is required before the Job Card can move past planning approval.'
+        return errors
+
+    @property
+    def number_of_colors(self):
+        if self.total_colors is not None:
+            return self.total_colors
+
+        raw_value = (self.colour or '').strip()
+        if not raw_value:
+            return None
+
+        plus_match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw_value)
+        if plus_match:
+            return int(plus_match.group(1)) + int(plus_match.group(2))
+
+        single_match = re.fullmatch(r'(\d+)\s*(?:colou?r(?:s)?)?', raw_value, re.IGNORECASE)
+        if single_match:
+            return int(single_match.group(1))
+
+        numbers = re.findall(r'\d+', raw_value)
+        if len(numbers) == 1:
+            return int(numbers[0])
+        if len(numbers) == 2:
+            return int(numbers[0]) + int(numbers[1])
+        return None
+
+    def can_print_job_card(self):
+        return self.workflow_status in JOB_CARD_PRINTABLE_STATUSES and not self.planning_missing_fields()
+
+    def clean(self):
+        super().clean()
+        planning_errors = self.planning_validation_errors()
+        if planning_errors:
+            raise ValidationError(planning_errors)
+
+    def save(self, *args, **kwargs):
+        update_fields = kwargs.get('update_fields')
+        if update_fields is not None:
+            update_fields = set(update_fields)
+
+        self.status = self.workflow_status
+        if update_fields is not None:
+            update_fields.add('status')
+
+        self.full_clean()
+
+        if update_fields is not None:
+            kwargs['update_fields'] = list(update_fields)
+        return super().save(*args, **kwargs)
 
     # ===== ERP PROPERTIES =====
 
@@ -169,7 +401,9 @@ class JobCard(models.Model):
     
     @property
     def total_sheets_planned(self):
-        return int (self.required_sheets + self.wastage)
+        if self.total_sheet_quantity is not None:
+            return self.total_sheet_quantity
+        return int(self.required_sheets + self.wastage)
 
     @property
     def tolerance_sheets(self):
@@ -350,6 +584,11 @@ class Production(models.Model):
 
     def clean(self):
         errors = {}
+
+        if self.job_card and self.job_card.workflow_status not in JOB_CARD_PRODUCTION_START_STATUSES:
+            errors['job_card'] = (
+                'Production can only start after the Job Card has been released for execution.'
+            )
 
         existing = Production.objects.filter(job_card=self.job_card, is_active=True)\
             .exclude(id=self.id)\
@@ -579,6 +818,11 @@ class Dispatch(models.Model):
     def clean(self):
         errors = {}
 
+        if self.job_card and self.job_card.workflow_status not in JOB_CARD_DISPATCHABLE_STATUSES:
+            errors['job_card'] = (
+                'Dispatch can only be created after the Job Card has entered production execution.'
+            )
+
         if self.dispatch_qty <= 0:
             errors['dispatch_qty'] = "Dispatch must be greater than 0"
 
@@ -632,6 +876,13 @@ class ChangeLog(models.Model):
         ('update', 'Updated'),
         ('delete', 'Deleted'),
         ('restore', 'Restored'),
+        ('submit', 'Submitted'),
+        ('approve', 'Approved'),
+        ('reject', 'Rejected'),
+        ('release', 'Released'),
+        ('start_production', 'Start Production'),
+        ('complete', 'Completed'),
+        ('close', 'Closed'),
     ]
 
     entity_type = models.CharField(max_length=20, choices=ENTITY_CHOICES)
@@ -665,6 +916,7 @@ class UserProfile(models.Model):
         ('admin', 'Admin — Full system access & configuration'),
         ('manager', 'Manager — Overall oversight (jobs, production, dispatch, reports)'),
         ('planner', 'Planner — Create & manage job cards, view analytics'),
+        ('production_manager', 'Production Manager — Final approval and release'),
         ('production', 'Production Supervisor — Manage production entries & team'),
         ('operator', 'Machine Operator — Production entry only'),
         ('dispatch', 'Dispatch Coordinator — Dispatch approval & tracking'),
@@ -688,11 +940,19 @@ class UserProfile(models.Model):
     # Permission helpers
     def can_edit_jobcard(self):
         """Can create/edit job cards"""
+        return self.role in ('admin', 'manager', 'planner', 'production_manager')
+
+    def can_approve_planning(self):
+        """Can approve the planning queue."""
         return self.role in ('admin', 'manager', 'planner')
     
     def can_edit_production(self):
         """Can log production data"""
-        return self.role in ('admin', 'manager', 'production', 'operator')
+        return self.role in ('admin', 'manager', 'production_manager', 'production', 'operator')
+
+    def can_start_production(self):
+        """Can move a released JobCard into production execution."""
+        return self.role in ('admin', 'manager', 'production_manager', 'production')
     
     def can_approve_dispatch(self):
         """Can approve/edit dispatch"""
@@ -704,19 +964,40 @@ class UserProfile(models.Model):
     
     def can_manage_masters(self):
         """Can manage machines, operators, materials, departments"""
-        return self.role in ('admin', 'manager')
+        return self.role in ('admin', 'manager', 'production_manager')
     
     def can_approve_qc(self):
         """Can perform QC checks"""
-        return self.role in ('admin', 'qc')
+        return self.role in ('admin', 'qc', 'manager')
+
+    def can_approve_pm(self):
+        """Can perform production manager approval."""
+        return self.role in ('admin', 'manager', 'production_manager')
+
+    def can_view_planning_queue(self):
+        return self.role in ('admin', 'manager', 'planner', 'production_manager', 'qc')
+
+    def can_view_qc_queue(self):
+        return self.role in ('admin', 'manager', 'qc', 'production_manager')
+
+    def can_view_pm_queue(self):
+        return self.role in ('admin', 'manager', 'production_manager')
+
+    def can_plan(self):
+        """Can create, edit, and manage planning jobs (planner role)."""
+        return self.role in ('admin', 'manager', 'planner')
+
+    def can_view_approval_queue(self):
+        """Can access the approval queue page (view-only or with actions)."""
+        return self.role in ('admin', 'manager', 'planner', 'qc', 'production_manager')
     
     def can_manage_operators(self):
         """Can assign operators to shifts/jobs"""
-        return self.role in ('admin', 'manager', 'production')
+        return self.role in ('admin', 'manager', 'production_manager', 'production')
 
     def can_archive_records(self):
         """Can archive and restore operational records"""
-        return self.role in ('admin', 'manager')
+        return self.role in ('admin', 'manager', 'production_manager')
     
     def can_view_reports(self):
         """Can view financial/operational reports"""
