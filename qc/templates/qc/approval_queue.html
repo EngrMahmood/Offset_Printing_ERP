@@ -1,8 +1,9 @@
 {% extends 'theme/base.html' %}
+{% load theme_tags %}
 
 {% block title %}Job Card Approval Queue - ERP{% endblock %}
-{% block header_title %}Approval Queue{% endblock %}
-{% block header_subtitle %}QC review, production manager approval, and release checkpoints for job cards.{% endblock %}
+{% block header_title %}Job Card Approval{% endblock %}
+{% block header_subtitle %}QC review queue for planner-submitted job cards before production release.{% endblock %}
 {% block content %}
 <div class="erp-page-stack">
 
@@ -19,36 +20,18 @@
         <div class="erp-kpi-card erp-kpi-card-compact">
             <div class="erp-kpi-row">
                 <div>
-                    <div class="erp-kpi-label">Pending QC Jobs</div>
+                    <div class="erp-kpi-label">Pending Job Card Approval</div>
                     <div class="erp-kpi-value">{{ pending_qc_jobs_count }}</div>
                 </div>
-                <span class="erp-kpi-icon">Q</span>
-            </div>
-        </div>
-        <div class="erp-kpi-card erp-kpi-card-compact">
-            <div class="erp-kpi-row">
-                <div>
-                    <div class="erp-kpi-label">PM Pending Jobs</div>
-                    <div class="erp-kpi-value">{{ pending_pm_jobs_count }}</div>
-                </div>
-                <span class="erp-kpi-icon">P</span>
-            </div>
-        </div>
-        <div class="erp-kpi-card erp-kpi-card-compact">
-            <div class="erp-kpi-row">
-                <div>
-                    <div class="erp-kpi-label">Released Jobs</div>
-                    <div class="erp-kpi-value">{{ released_jobs_count }}</div>
-                </div>
-                <span class="erp-kpi-icon">R</span>
+                <span class="erp-kpi-icon" style="font-size:10px;">JC</span>
             </div>
         </div>
     </section>
 
-    {% if not user_can_approve_qc and not user_can_approve_pm %}
+    {% if not user_can_approve_qc %}
     <section class="erp-section-shell">
         <div class="erp-alert erp-alert-info">
-            <strong>View Only</strong> — You can view job cards in the queue but do not have approval permissions. Contact your administrator if you need action rights.
+            <strong>View Only</strong> — You can view job cards in the queue but do not have QC approval permissions. Contact your administrator if you need action rights.
         </div>
     </section>
     {% endif %}
@@ -68,22 +51,12 @@
         </form>
     </section>
 
-    <section class="erp-section-shell">
-        <div class="erp-tab-strip">
-            <button type="button" class="erp-tab-button is-active tab-link" data-target="qc-panel">QC Approval{% if qc_jobs %} ({{ qc_jobs|length }}){% endif %}</button>
-            {% if user_can_approve_pm %}
-            <button type="button" class="erp-tab-button tab-link" data-target="pm-panel">PM Approval{% if pm_jobs %} ({{ pm_jobs|length }}){% endif %}</button>
-            <button type="button" class="erp-tab-button tab-link" data-target="release-panel">Release{% if release_jobs %} ({{ release_jobs|length }}){% endif %}</button>
-            {% endif %}
-        </div>
-    </section>
-
     <section id="qc-panel" class="tab-panel">
         <div class="erp-section-shell">
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
                     <div class="erp-eyebrow">Quality Check Queue</div>
-                    <h3 class="erp-section-title">QC Approval Queue</h3>
+                    <h3 class="erp-section-title">Job Card Approval Queue</h3>
                     <p class="erp-section-desc">Job cards submitted by planners awaiting QC inspector review.</p>
                 </div>
                 <span class="erp-status-chip warning"><span class="erp-status-dot"></span>In Quality Review</span>
@@ -99,14 +72,14 @@
                             <td>{{ job.PO_No|default:'-' }}</td>
                             <td>{{ job.SKU|default:'-' }}</td>
                             <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
-                            <td><span class="erp-badge erp-badge-pending">{{ job.workflow_status_label }}</span></td>
+                            <td><span class="erp-badge {{ job.workflow_status|jc_status_badge }}">{{ job.workflow_status_label }}</span></td>
                             <td>{{ job.machine_name_display|default:'-' }}</td>
-                            <td>
-                                <div class="erp-actions">
-                                    {% if job.planning_job %}<a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>{% endif %}
+                            <td style="white-space:nowrap;">
+                                <div class="erp-actions" style="flex-wrap:nowrap; gap:5px;">
+                                    {% if job.planning_job %}<a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary sm">View</a>{% endif %}
                                     {% if user_can_approve_qc %}
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_qc"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success">Approve</button></form>
-                                    <button type="button" class="erp-btn erp-btn-danger" onclick="openRejectModal('reject_qc', '{{ job.id }}', '{{ job.job_card_no }}')">Send Back</button>
+                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_qc"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success sm">Approve</button></form>
+                                    <button type="button" class="erp-btn erp-btn-danger sm" onclick="openRejectModal('reject_qc', '{{ job.id }}', '{{ job.job_card_no }}')">Send Back</button>
                                     {% endif %}
                                 </div>
                                 {% if job.latest_rejection_reason %}
@@ -123,94 +96,6 @@
             {% endif %}
         </div>
     </section>
-
-    {% if user_can_approve_pm %}
-    <section id="pm-panel" class="tab-panel" hidden>
-        <div class="erp-section-shell">
-            <div class="erp-card-header">
-                <div class="erp-card-title-stack">
-                    <div class="erp-eyebrow">Production Manager Queue</div>
-                    <h3 class="erp-section-title">Production Manager Approval</h3>
-                    <p class="erp-section-desc">QC-approved job cards awaiting Production Manager sign-off.</p>
-                </div>
-                <span class="erp-status-chip info"><span class="erp-status-dot"></span>Manager Review</span>
-            </div>
-            {% if pm_jobs %}
-            <div class="erp-table-wrap">
-                <table class="erp-table erp-table-dense">
-                    <thead><tr><th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th><th>Status</th><th>Action</th></tr></thead>
-                    <tbody>
-                    {% for job in pm_jobs %}
-                        <tr>
-                            <td><a href="{% if job.planning_job %}{% url 'planning:job_detail' job.planning_job.id %}{% else %}#{% endif %}" class="erp-table-link">{{ job.job_card_no }}</a></td>
-                            <td>{{ job.PO_No|default:'-' }}</td>
-                            <td>{{ job.SKU|default:'-' }}</td>
-                            <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
-                            <td><span class="erp-badge erp-badge-pending">{{ job.workflow_status_label }}</span></td>
-                            <td>
-                                <div class="erp-actions">
-                                    {% if job.planning_job %}<a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>{% endif %}
-                                    {% if user_can_approve_pm %}
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_pm"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success">Approve</button></form>
-                                    <button type="button" class="erp-btn erp-btn-danger" onclick="openRejectModal('reject_pm', '{{ job.id }}', '{{ job.job_card_no }}')">Send Back</button>
-                                    {% endif %}
-                                </div>
-                                {% if job.latest_rejection_reason %}
-                                    <div class="erp-note">Reason: {{ job.latest_rejection_reason }}</div>
-                                {% endif %}
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="erp-alert erp-alert-info">No Job Cards are waiting for PM approval.</div>
-            {% endif %}
-        </div>
-    </section>
-
-    <section id="release-panel" class="tab-panel" hidden>
-        <div class="erp-section-shell">
-            <div class="erp-card-header">
-                <div class="erp-card-title-stack">
-                    <div class="erp-eyebrow">Release Queue</div>
-                    <h3 class="erp-section-title">Release for Production</h3>
-                    <p class="erp-section-desc">PM-approved job cards ready to be released to the production floor.</p>
-                </div>
-                <span class="erp-status-chip success"><span class="erp-status-dot"></span>Ready for Production</span>
-            </div>
-            {% if release_jobs %}
-            <div class="erp-table-wrap">
-                <table class="erp-table erp-table-dense">
-                    <thead><tr><th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th><th>Status</th><th>Action</th></tr></thead>
-                    <tbody>
-                    {% for job in release_jobs %}
-                        <tr>
-                            <td>{{ job.job_card_no }}</td>
-                            <td>{{ job.PO_No|default:'-' }}</td>
-                            <td>{{ job.SKU|default:'-' }}</td>
-                            <td>{{ job.planning_job.job_name|default:job.SKU|default:'-' }}</td>
-                            <td><span class="erp-badge erp-badge-approved">{{ job.workflow_status_label }}</span></td>
-                            <td>
-                                <div class="erp-actions">
-                                    {% if job.planning_job %}<a href="{% url 'planning:job_card_print' job.planning_job.id %}" class="erp-btn erp-btn-print" target="_blank" rel="noopener">A4 Print</a>{% endif %}
-                                    {% if user_can_approve_pm %}
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="release_for_production"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-info">Release Job</button></form>
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
-                    {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-            {% else %}
-            <div class="erp-alert erp-alert-info">No Job Cards are ready to release for production.</div>
-            {% endif %}
-        </div>
-    </section>
-    {% endif %}
 </div>
 
 <div class="modal-overlay" id="rejectModal" hidden>
@@ -251,36 +136,6 @@
         if (!modal.hidden && event.target === modal) {
             closeRejectModal();
         }
-    });
-    document.addEventListener('DOMContentLoaded', function() {
-        const tabs = document.querySelectorAll('.tab-link');
-        const panels = document.querySelectorAll('.tab-panel');
-        const requestedTarget = '{% if request.resolver_match.url_name == "release_approval" and user_can_approve_pm %}release-panel{% elif request.resolver_match.url_name == "job_card_approval" %}qc-panel{% else %}qc-panel{% endif %}';
-
-        function activatePanel(targetId) {
-            tabs.forEach(button => button.classList.remove('is-active'));
-            panels.forEach(panel => panel.hidden = true);
-            const activeTab = Array.from(tabs).find(button => button.dataset.target === targetId);
-            const activePanel = document.getElementById(targetId);
-            if (activeTab) {
-                activeTab.classList.add('is-active');
-            }
-            if (activePanel) {
-                activePanel.hidden = false;
-            }
-        }
-
-        const availableTargets = Array.from(tabs).map(tab => tab.dataset.target);
-        const initialTarget = availableTargets.includes(requestedTarget)
-            ? requestedTarget
-            : (availableTargets[0] || 'qc-panel');
-        activatePanel(initialTarget);
-
-        tabs.forEach(tab => {
-            tab.addEventListener('click', function() {
-                activatePanel(this.dataset.target);
-            });
-        });
     });
 </script>
 {% endblock %}

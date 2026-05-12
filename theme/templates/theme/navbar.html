@@ -78,23 +78,15 @@
     {% if app == 'planning' and nav.can_access_planning %}
     <div class="erp-subnav">
         <a href="{% url 'planning:po_inbox' %}"
-           class="erp-subnav-link {% if url == 'po_root' or url == 'po_inbox' %}is-active{% endif %}">
-            PO Intake
-        </a>
-        <a href="{% url 'planning:po_upload' %}"
-           class="erp-subnav-link {% if url == 'po_upload' or url == 'upload_po' %}is-active{% endif %}">
-            Upload PO
-        </a>
-        <a href="{% url 'planning:po_manual' %}"
-           class="erp-subnav-link {% if url == 'po_manual' or url == 'manual_po_entry' %}is-active{% endif %}">
-            Manual PO
+           class="erp-subnav-link {% if url == 'po_root' or url == 'po_inbox' or url == 'po_upload' or url == 'upload_po' or url == 'po_manual' or url == 'manual_po_entry' or url == 'po_review' or url == 'po_new_skus' or url == 'pending_actions' %}is-active{% endif %}">
+            PO Management
         </a>
         <a href="{% url 'planning:sku_queue' %}"
-           class="erp-subnav-link {% if url == 'sku_queue' or url == 'sku_recipes_list' %}is-active{% endif %}">
-            SKU Entry
+           class="erp-subnav-link {% if url == 'sku_queue' or url == 'sku_recipes_list' or url == 'sku_recipes' or url == 'sku_recipes_draft' or url == 'sku_recipes_pending_review' or url == 'sku_recipes_reviewed' or url == 'sku_recipes_approved' or url == 'sku_recipes_archived' or url == 'sku_recipe_bulk_upload' or url == 'sku_recipe_template_download' or url == 'sku_recipe_add' or url == 'sku_recipe_edit' or url == 'pending_skus' or url == 'pending_skus_ignored' or url == 'pending_sku_master_entry' %}is-active{% endif %}">
+            SKU Management
         </a>
         <a href="{% url 'planning:jobs' %}"
-           class="erp-subnav-link {% if url == 'jobs' or url == 'job_detail' or url == 'job_edit' %}is-active{% endif %}">
+           class="erp-subnav-link {% if url == 'jobs' or url == 'jobs_drafts' or url == 'jobs_locked' or url == 'jobs_archived' or url == 'job_detail' or url == 'job_edit' or url == 'job_status_update' or url == 'scan' or url == 'scan_open' %}is-active{% endif %}">
             Planning Jobs
         </a>
         {% if nav.role == 'admin' or nav.role == 'manager' %}
@@ -109,25 +101,21 @@
         </a>
     </div>
 
+    {% include 'theme/planning_context_nav.html' %}
+
     {% elif app == 'qc' and nav.can_access_qc %}
     <div class="erp-subnav">
         <a href="{% url 'qc:approval_queue' %}"
            class="erp-subnav-link {% if url == 'qc_home' or url == 'approvals' or url == 'approval_queue' or url == 'job_card_approval' %}is-active{% endif %}">
-            Approval Queue
+            Job Card Approval
         </a>
         <a href="{% url 'qc:master_review' %}"
            class="erp-subnav-link {% if url == 'master_review' or url == 'pending_sku_master_entry' %}is-active{% endif %}">
             SKU Master Review
         </a>
-        <a href="{% url 'qc:release_approval' %}"
-           class="erp-subnav-link {% if url == 'release_approval' %}is-active{% endif %}">
-            Release Approval
-        </a>
-        <a href="{% url 'qc:history' %}"
-           class="erp-subnav-link {% if url == 'history' %}is-active{% endif %}">
-            QC Review History
-        </a>
     </div>
+
+    {% include 'theme/qc_context_nav.html' %}
 
     {% elif url == 'production_dashboard' or url == 'production_entry' or url == 'production_records' or url == 'job_card_entry' or url == 'job_card_records' %}
     <div class="erp-subnav">
@@ -152,6 +140,8 @@
             Production Records
         </a>
     </div>
+
+    {% include 'theme/production_context_nav.html' %}
 
     {% elif url == 'dispatch_records' or url == 'dispatch_entry' %}
     <div class="erp-subnav">

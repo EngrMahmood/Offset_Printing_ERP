@@ -1,53 +1,46 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}New SKU Setup | {{ payload.po_number }}{% endblock %}
-{% block extra_head %}
-    <style>
-        .wrap { max-width: 100%; margin: 0 auto; }
-        .card { background: #fff; border: 1px solid #d6e0ea; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-        .btn { display: inline-block; padding: 7px 11px; border-radius: 5px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; }
-        .btn.secondary { background: #fff; color: #445366; }
-        .muted { color: #5f6f82; font-size: 11px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; }
-        th, td { border-bottom: 1px solid #e7eef5; padding: 7px; text-align: left; vertical-align: top; }
-        th { background: #f0f5fa; font-size: 10px; text-transform: uppercase; letter-spacing: 0.02em; }
-        input, textarea { width: 100%; border: 1px solid #bfd0e2; border-radius: 4px; padding: 5px 7px; font-size: 12px; }
-        textarea { min-height: 56px; }
-        .status { display:inline-block; padding:3px 8px; border-radius:999px; font-size:10px; border:1px solid #d3deea; background:#f3f7fb; text-transform:uppercase; }
-        .status.draft { background:#fff4e6; border-color:#f1c58b; color:#8a3f00; }
-        .status.reviewed { background:#fffbe8; border-color:#eed789; color:#6b4c00; }
-        .status.approved { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; }
-    </style>
-{% endblock %}
 {% block header_title %}New SKU Recipe Setup{% endblock %}
 {% block header_subtitle %}Capture missing recipe details for PO intake lines before they continue through the master-data workflow.{% endblock %}
 {% block header_actions %}
     <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
 {% endblock %}
 {% block content %}
-<main class="wrap page-container">
+<main class="erp-page-stack">
     {% with current_step='master' %}
     {% endwith %}
 
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
         <div>
-            <h1 style="margin:0;font-size:20px;">New SKU Recipe Setup</h1>
-            <div class="muted">PO {{ payload.po_number|default:'-' }} | Configure missing SKUs to move them into planning flow.</div>
+                <h1 class="erp-section-title">New SKU Recipe Setup</h1>
+                <p class="erp-section-desc">PO {{ payload.po_number|default:'-' }} | Configure missing SKUs to move them into planning flow.</p>
         </div>
-        <a href="{% url 'qc:po_review' po_doc.id %}" class="btn secondary">Back To PO Review</a>
-    </div>
+            <div class="erp-actions">
+                <a href="{% url 'qc:po_review' po_doc.id %}" class="erp-btn erp-btn-secondary">Back To PO Review</a>
+            </div>
+        </div>
+    </section>
 
-    {% if not missing_skus %}
-    <div class="card" style="margin-top:10px;">
-        <div style="font-size:13px;font-weight:700;color:#1f2f43;">No new SKUs found</div>
-        <div class="muted" style="margin-top:4px;">All extracted SKUs already exist in SKU Recipe Master.</div>
-    </div>
+    <section class="erp-section-shell">
+        {% if not missing_skus %}
+        <div class="erp-alert erp-alert-info">
+            <strong>No new SKUs found</strong> — All extracted SKUs already exist in SKU Recipe Master.
+        </div>
     {% else %}
-    <form method="post" class="card" style="margin-top:10px;">
+        <form method="post">
         {% csrf_token %}
-        <div style="font-size:13px;font-weight:700;color:#1f2f43;margin-bottom:8px;">Missing SKU Recipes ({{ missing_skus|length }})</div>
-        <table>
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Data Entry</div>
+                    <h3 class="erp-section-title">Missing SKU Recipes ({{ missing_skus|length }})</h3>
+                </div>
+            </div>
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
             <thead>
                 <tr>
                     <th>SKU</th>
@@ -70,9 +63,9 @@
                     </td>
                     <td>
                         {% if row.recipe %}
-                        <span class="status {{ row.recipe.master_data_status }}">{{ row.recipe.master_data_status }}</span>
+                        <span class="erp-badge {{ row.recipe.master_data_status|recipe_status_badge }}">{{ row.recipe.master_data_status }}</span>
                         {% else %}
-                        <span class="status draft">draft</span>
+                        <span class="erp-badge erp-badge-draft">draft</span>
                         {% endif %}
                     </td>
                     <td><input type="text" name="sku_{{ row.sku }}_job_name" value="{% if row.recipe %}{{ row.recipe.job_name }}{% endif %}" placeholder="Required in practice"></td>
@@ -87,14 +80,16 @@
                 </tr>
                 {% endfor %}
             </tbody>
-        </table>
-        <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
-            <button type="submit" class="btn">Save SKU Recipes</button>
-            <a href="{% url 'qc:po_review' po_doc.id %}" class="btn secondary">Back Without Saving</a>
-        </div>
-        <div class="muted" style="margin-top:8px;">Saving from this screen keeps SKU master data in Draft stage. Use Pending SKUs to move Draft -> Reviewed -> Approved.</div>
-    </form>
+                </table>
+            </div>
+            <div class="erp-form-actions" style="margin-top:12px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Save SKU Recipes</button>
+                <a href="{% url 'qc:po_review' po_doc.id %}" class="erp-btn erp-btn-secondary">Back Without Saving</a>
+            </div>
+            <div class="erp-note" style="margin-top:8px;">Saving from this screen keeps SKU master data in Draft stage. Use Pending SKUs to move Draft -> Reviewed -> Approved.</div>
+        </form>
     {% endif %}
+    </section>
 </main>
 {% endblock %}
 

@@ -1,106 +1,81 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}Bulk Upload SKU Recipes{% endblock %}
-{% block extra_head %}
-    <style>
-        .wrap { max-width: 860px; margin: 0 auto; }
-        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 16px; }
-        .btn { display: inline-block; padding: 7px 12px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; font-family: inherit; }
-        .btn:hover { background: #32465d; }
-        .btn.secondary { background: #fff; color: #445366; }
-        .btn.secondary:hover { background: #f0f5fb; }
-        .btn.success { background: #1b7f45; border-color: #1b7f45; }
-        .btn.success:hover { background: #166337; }
-        .muted { color: #5f6f82; font-size: 12px; }
-        .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; font-size: 12px; border: 1px solid #c8d7e7; background: #f5f9ff; color: #2e3f53; }
-        .msg.error { background: #fff5f5; border-color: #f5c6c6; color: #7a1a1a; }
-        .upload-zone { border: 2px dashed #b8cce2; border-radius: 10px; padding: 24px 18px; text-align: center; background: #f7fbff; margin-bottom: 16px; transition: border-color 0.15s; }
-        .upload-zone:hover { border-color: #445366; }
-        .upload-zone input[type="file"] { display: block; margin: 10px auto 0; font-size: 13px; }
-        .guide-section { margin-top: 16px; }
-        .guide-section h3 { font-size: 13px; font-weight: 700; color: #32465d; margin: 0 0 8px; text-transform: uppercase; letter-spacing: 0.04em; }
-        .field-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 6px; margin-bottom: 10px; }
-        .field-chip { background: #f0f5fb; border: 1px solid #d0dcea; border-radius: 6px; padding: 5px 9px; font-size: 12px; }
-        .field-chip .fname { font-weight: 700; color: #1f3048; font-family: Consolas, monospace; font-size: 11px; }
-        .field-chip .fdesc { color: #5f6f82; font-size: 11px; margin-top: 2px; }
-        .field-chip.required { border-left: 3px solid #1b7f45; }
-        .note-box { background: #fff8ec; border: 1px solid #f0d890; border-radius: 8px; padding: 10px 12px; font-size: 12px; color: #7a5700; margin-top: 10px; }
-        .note-box ul { margin: 6px 0 0 16px; padding: 0; }
-        .note-box li { margin-bottom: 3px; }
-        .steps-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
-        .step-box { flex: 1; min-width: 160px; border: 1px solid #c9d9ea; border-radius: 8px; background: #fff; padding: 8px 10px; }
-        .step-box .k { font-size: 10px; text-transform: uppercase; color: #55708a; font-weight: 700; }
-        .step-box .v { font-size: 12px; color: #1f3048; font-weight: 700; margin-top: 2px; }
-    </style>
-{% endblock %}
 {% block header_title %}Bulk Upload SKU Recipes{% endblock %}
 {% block header_subtitle %}Import or refresh recipe master data from CSV or XLSX, then route uploaded rows back through approval.{% endblock %}
 {% block header_actions %}
     <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
 {% endblock %}
 {% block content %}
-<main class="wrap page-container">
+<main class="erp-page-stack">
 
     {% with current_step='master' %}
     {% endwith %}
 
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
-        <div>
-            <h1 style="margin:0;font-size:20px;">Bulk Upload SKU Recipes</h1>
-            <div class="muted">Upload master SKU data from CSV or XLSX. All uploaded rows are saved as <strong>Draft</strong> and must go through Review → Approve before PO sync.</div>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div>
+                <h1 class="erp-section-title">Bulk Upload SKU Recipes</h1>
+                <p class="erp-section-desc">Upload master SKU data from CSV or XLSX. All uploaded rows are saved as <strong>Draft</strong> and must go through Review → Approve before PO sync.</p>
+            </div>
+            <div class="erp-actions">
+                <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">SKU Master</a>
+                <a class="erp-btn erp-btn-success" href="{% url 'qc:sku_recipe_template_download' %}">Download Template (CSV)</a>
+                <a class="erp-btn erp-btn-success" href="/static/planning/docs/sku_recipe_upload_sample.xlsx" download>Download Template (Excel)</a>
+            </div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">← SKU Master</a>
-            <a class="btn success" href="{% url 'qc:sku_recipe_template_download' %}">⬇ Download Template (CSV)</a>
-            <a class="btn success" href="/static/planning/docs/sku_recipe_upload_sample.xlsx" download>⬇ Download Template (Excel)</a>
-        </div>
-    </div>
+    </section>
 
     {% for msg in messages %}
-        <div class="msg {% if 'error' in msg.tags %}error{% endif %}">{{ msg }}</div>
+        <section class="erp-section-shell">
+            <div class="erp-alert {% if 'error' in msg.tags %}erp-alert-danger{% else %}erp-alert-info{% endif %}">{{ msg }}</div>
+        </section>
     {% endfor %}
 
     <!-- How it works steps -->
-    <div class="steps-row">
-        <div class="step-box">
-            <div class="k">Step 1</div>
-            <div class="v">Download the CSV template</div>
+    <section class="erp-section-shell">
+    <div class="erp-info-grid">
+        <div class="erp-info-item">
+            <div class="erp-info-item__label">Step 1</div>
+            <div class="erp-info-item__value">Download template</div>
         </div>
-        <div class="step-box">
-            <div class="k">Step 2</div>
-            <div class="v">Fill in your SKU data</div>
+        <div class="erp-info-item">
+            <div class="erp-info-item__label">Step 2</div>
+            <div class="erp-info-item__value">Fill SKU data</div>
         </div>
-        <div class="step-box">
-            <div class="k">Step 3</div>
-            <div class="v">Upload CSV or XLSX here</div>
+        <div class="erp-info-item">
+            <div class="erp-info-item__label">Step 3</div>
+            <div class="erp-info-item__value">Upload file</div>
         </div>
-        <div class="step-box">
-            <div class="k">Step 4</div>
-            <div class="v">Review → Approve in SKU Master</div>
+        <div class="erp-info-item">
+            <div class="erp-info-item__label">Step 4</div>
+            <div class="erp-info-item__value">Review and approve</div>
         </div>
     </div>
+    </section>
 
-    <section class="panel">
+    <section class="erp-section-shell">
         <!-- Upload zone -->
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
-            <div class="upload-zone">
+            <div style="border:2px dashed #b8cce2;border-radius:10px;padding:24px 18px;text-align:center;background:#f7fbff;margin-bottom:16px;">
                 <div style="font-size:28px;">📂</div>
                 <div style="font-size:14px;font-weight:700;color:#32465d;margin-top:6px;">Choose CSV or XLSX file</div>
-                <div class="muted" style="margin-top:4px;">Existing SKU records will be updated. New SKU codes will be created.</div>
+                <div class="erp-note" style="margin-top:4px;">Existing SKU records will be updated. New SKU codes will be created.</div>
                 <input type="file" name="upload_file" accept=".csv,.xlsx" required>
             </div>
             <div style="display:flex;gap:8px;justify-content:center;">
-                <button class="btn" type="submit" style="padding:9px 24px;font-size:13px;">⬆ Upload File</button>
-                <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">Cancel</a>
+                <button class="erp-btn erp-btn-primary" type="submit">Upload File</button>
+                <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">Cancel</a>
             </div>
         </form>
 
         <!-- Field reference -->
-        <div class="guide-section">
+        <div>
             <h3>Column Reference</h3>
-            <div class="field-grid">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:6px;margin-bottom:10px;">
                 <div class="field-chip required">
                     <div class="fname">sku</div>
                     <div class="fdesc">Required. Exact SKU code.</div>
@@ -175,7 +150,7 @@
             </div>
         </div>
 
-        <div class="note-box">
+        <div class="erp-alert erp-alert-warning">
             <strong>Important rules:</strong>
             <ul>
                 <li>If a SKU code already exists it will be <strong>updated</strong> and reset to Draft for re-approval.</li>

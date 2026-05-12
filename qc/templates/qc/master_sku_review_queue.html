@@ -1,0 +1,174 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Master SKU Approval Queue - ERP{% endblock %}
+{% block header_title %}Master SKU Approval{% endblock %}
+{% block header_subtitle %}QC review queue for planner-submitted SKU master records before planning sync.{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'qc:approval_queue' %}" class="erp-btn erp-btn-secondary">Job Card Approval</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-kpi-grid-compact">
+        <div class="erp-kpi-card erp-kpi-card-compact">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Pending SKU Review</div>
+                    <div class="erp-kpi-value">{{ review_count }}</div>
+                </div>
+                <span class="erp-kpi-icon">S</span>
+            </div>
+        </div>
+    </section>
+
+    {% if not user_can_approve_qc %}
+    <section class="erp-section-shell">
+        <div class="erp-alert erp-alert-info">
+            <strong>View Only</strong> - You can view submitted SKU records but do not have QC approval permissions.
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <form method="get" class="erp-form-grid" style="margin-bottom: 12px;">
+            <div>
+                <label>PO</label>
+                <select name="po">
+                    <option value="">All POs</option>
+                    {% for po in po_summary %}
+                    <option value="{{ po.po_number }}" {% if po_filter == po.po_number %}selected{% endif %}>{{ po.po_number }} ({{ po.count }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>Search</label>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name">
+            </div>
+            <div class="erp-form-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'qc:master_review' %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">SKU Master Review</div>
+                <h3 class="erp-section-title">Submitted For QC Review</h3>
+                <p class="erp-section-desc">Only records sent by planning are shown here for QC action.</p>
+            </div>
+            <span class="erp-status-chip warning"><span class="erp-status-dot"></span>QC Action Required</span>
+        </div>
+
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead>
+                    <tr>
+                        <th>PO</th>
+                        <th>SKU</th>
+                        <th>Job Name</th>
+                        <th>Qty</th>
+                        <th>Delivery</th>
+                        <th>Status</th>
+                        <th>Missing Required</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in review_rows %}
+                    <tr>
+                        <td>
+                            <div>{{ row.po_number }}</div>
+                            <div class="erp-note"><a href="{% url 'qc:po_review' row.po_doc_id %}">Open PO</a></div>
+                        </td>
+                        <td><strong>{{ row.sku }}</strong></td>
+                        <td>{{ row.job_name|default:'-' }}</td>
+                        <td>{{ row.qty|default:'-' }}</td>
+                        <td>{{ row.delivery_date|default:'-' }}</td>
+                        <td>
+                            <span class="erp-badge {{ row.recipe_status|recipe_status_badge }}">{{ row.recipe_status|cut:'_' }}</span>
+                            {% if row.recipe.reviewed_by %}
+                            <div class="erp-note">Reviewed by {{ row.recipe.reviewed_by.username }}</div>
+                            {% endif %}
+                            {% if row.recipe.rejection_comment %}
+                            <div class="erp-note" style="color:#8a2424;">Last send back: {{ row.recipe.rejection_comment }}</div>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if row.missing_required_fields %}
+                            <span class="erp-note" style="color:#8a3f00;">{{ row.missing_required_fields|join:', ' }}</span>
+                            {% else %}
+                            <span class="erp-note">-</span>
+                            {% endif %}
+                        </td>
+                        <td style="white-space:nowrap;">
+                            <div class="erp-actions" style="flex-wrap:nowrap; gap:5px;">
+                                <a href="{% url 'planning:pending_sku_master_entry' %}?po_doc_id={{ row.po_doc_id }}&sku={{ row.sku|urlencode }}&readonly=1" class="erp-btn erp-btn-secondary sm">View</a>
+                                {% if user_can_approve_qc %}
+                                <form method="post" action="" class="erp-inline-form">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="approve">
+                                    <input type="hidden" name="sku" value="{{ row.sku }}">
+                                    <input type="hidden" name="return_po" value="{{ po_filter }}">
+                                    <input type="hidden" name="return_q" value="{{ q }}">
+                                    <button type="submit" class="erp-btn erp-btn-success sm">Approve</button>
+                                </form>
+                                <button type="button" class="erp-btn erp-btn-danger sm" onclick="openSkuSendBackModal('{{ row.sku|escapejs }}')">Send Back</button>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8" class="erp-empty">No SKU records are pending QC review.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+
+<div class="modal-overlay" id="skuSendBackModal" hidden>
+    <div class="modal-box">
+        <h3>Send Back SKU</h3>
+        <p id="skuSendBackLabel">Provide a reason to send this SKU back to planner draft stage.</p>
+        <form method="post" action="" id="skuSendBackForm">
+            {% csrf_token %}
+            <input type="hidden" name="action" value="back_to_draft">
+            <input type="hidden" name="sku" id="skuSendBackSku" value="">
+            <input type="hidden" name="return_po" value="{{ po_filter }}">
+            <input type="hidden" name="return_q" value="{{ q }}">
+            <textarea name="rejection_comment" id="skuSendBackReason" required placeholder="Enter reason for send back..."></textarea>
+            <div class="erp-actions" style="margin-top:12px; gap:10px; display:flex; flex-wrap:wrap;">
+                <button type="button" class="erp-btn erp-btn-secondary" onclick="closeSkuSendBackModal()">Cancel</button>
+                <button type="submit" class="erp-btn erp-btn-warning">Submit Reason</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function openSkuSendBackModal(sku) {
+        document.getElementById('skuSendBackSku').value = sku;
+        document.getElementById('skuSendBackLabel').textContent = 'SKU: ' + sku + ' - Provide a reason for sending back.';
+        document.getElementById('skuSendBackReason').value = '';
+        document.getElementById('skuSendBackModal').hidden = false;
+        setTimeout(() => document.getElementById('skuSendBackReason').focus(), 80);
+    }
+
+    function closeSkuSendBackModal() {
+        document.getElementById('skuSendBackModal').hidden = true;
+    }
+
+    document.addEventListener('click', function(event) {
+        const modal = document.getElementById('skuSendBackModal');
+        if (!modal.hidden && event.target === modal) {
+            closeSkuSendBackModal();
+        }
+    });
+</script>
+{% endblock %}

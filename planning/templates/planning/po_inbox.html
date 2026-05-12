@@ -6,55 +6,75 @@
 {% block header_subtitle %}Unified PO Intake — repeat jobs route to Planning, new SKUs route to Master Data first.{% endblock %}
 
 {% block header_actions %}
-    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Bulk Upload PO</a>
-    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO Entry</a>
 {% endblock %}
 
 {% block content %}
-<div class="erp-table-wrap">
-    <table>
-        <thead>
-            <tr>
-                <th>PO</th>
-                <th>Supplier</th>
-                <th>Items</th>
-                <th>Ignored</th>
-                <th>Pending Master</th>
-                <th>Uploaded</th>
-                <th>Actions</th>
-            </tr>
-        </thead>
-        <tbody>
-        {% for row in rows %}
-            <tr>
-                <td>{{ row.po_number }}</td>
-                <td>{{ row.supplier }}</td>
-                <td>{{ row.item_count }}</td>
-                <td>
-                    {% if row.ignored_count %}
-                        <span class="erp-badge is-rejected">{{ row.ignored_count }}</span>
-                        <div class="mt-1"><a href="{% url 'qc:pending_skus_ignored' %}?po={{ row.po_number|urlencode }}">Review</a></div>
-                    {% else %}
-                        0
-                    {% endif %}
-                </td>
-                <td>{{ row.missing_count }}</td>
-                <td class="erp-muted">{{ row.doc.created_at|date:'d M Y H:i' }}</td>
-                <td>
-                    <div class="erp-actions">
-                        {% if row.repeat_count > 0 %}
-                            <a href="{% url 'planning:jobs' %}?q={{ row.po_number }}" class="erp-btn erp-btn-primary">Planning</a>
-                        {% endif %}
-                        {% if row.new_count > 0 %}
-                            <a href="{% url 'qc:pending_skus' %}?po={{ row.po_number|urlencode }}" class="erp-btn erp-btn-warning">Master Data</a>
-                        {% endif %}
-                    </div>
-                </td>
-            </tr>
-        {% empty %}
-            <tr><td colspan="7" class="erp-empty">No uploaded PO documents yet.</td></tr>
-        {% endfor %}
-        </tbody>
-    </table>
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-info-grid">
+            <div class="erp-info-item">
+                <div class="erp-info-item__label">PO Documents</div>
+                <div class="erp-info-item__value">{{ rows|length }}</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Intake Overview</div>
+                <h3 class="erp-section-title">PO Intake Queue</h3>
+                <p class="erp-section-desc">Review each PO and route repeat lines to planning while sending new SKUs to master data entry.</p>
+            </div>
+        </div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead>
+                    <tr>
+                        <th>PO</th>
+                        <th>Supplier</th>
+                        <th>Items</th>
+                        <th>Ignored</th>
+                        <th>Pending Master</th>
+                        <th>Uploaded</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{{ row.po_number }}</td>
+                        <td>{{ row.supplier }}</td>
+                        <td>{{ row.item_count }}</td>
+                        <td>
+                            {% if row.ignored_count %}
+                                <span class="erp-badge is-rejected">{{ row.ignored_count }}</span>
+                                <div class="mt-1"><a href="{% url 'planning:pending_skus_ignored' %}?po={{ row.po_number|urlencode }}">Review</a></div>
+                            {% else %}
+                                0
+                            {% endif %}
+                        </td>
+                        <td>{{ row.missing_count }}</td>
+                        <td class="erp-muted">{{ row.doc.created_at|date:'d M Y H:i' }}</td>
+                        <td>
+                            <div class="erp-actions">
+                                {% if row.repeat_count > 0 %}
+                                    <a href="{% url 'planning:jobs' %}?q={{ row.po_number }}" class="erp-btn erp-btn-primary">Planning</a>
+                                {% endif %}
+                                {% if row.new_count > 0 %}
+                                    <a href="{% url 'planning:pending_skus' %}?po={{ row.po_number|urlencode }}" class="erp-btn erp-btn-warning">Master Data</a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7" class="erp-empty">No uploaded PO documents yet.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
 </div>
 {% endblock %}

@@ -1,22 +1,8 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}Production Records - Offset ERP{% endblock %}
-{% block extra_head %}
-    <style>
-        .records-page-shell {
-            max-width: 100%;
-            margin: 0 auto;
-            padding: 12px;
-        }
-        .production-records-table {
-            min-width: 1800px;
-        }
-        .records-actions-cell {
-            white-space: nowrap;
-        }
-    </style>
-{% endblock %}
 {% block header_title %}Production Records{% endblock %}
 {% block header_subtitle %}High-density production record view with efficiency, variance, and history tracking.{% endblock %}
 {% block header_actions %}
@@ -28,7 +14,6 @@
     {% endif %}
 {% endblock %}
 {% block content %}
-    <div class="records-page-shell">
         <div class="erp-page-stack">
             <div class="erp-actions">
                 <a href="{% url 'home' %}" class="erp-btn erp-btn-secondary">Home</a>
@@ -54,12 +39,12 @@
 
                 {% if messages %}
                     {% for message in messages %}
-                        <div class="erp-inline-message {% if message.tags == 'success' %}success{% else %}danger{% endif %}">{{ message }}</div>
+                        <div class="erp-alert {% if message.tags == 'success' %}erp-alert-success{% else %}erp-alert-danger{% endif %}">{{ message }}</div>
                     {% endfor %}
                 {% endif %}
 
                 {% if edit_lock_days > 0 %}
-                <p class="erp-table-meta-text">
+                <p class="erp-note">
                     Production records dated before {{ edit_lock_cutoff }}
                     {% if can_bypass_edit_lock %}
                     are locked for operational roles. Manager and admin can still edit them.

@@ -48,6 +48,130 @@
 .erp-actions--right { justify-content: flex-end; }
 .erp-actions--compact { gap: 4px; }
 
+/* ─── Lightweight dropdown used in page header actions ─────── */
+.erp-dropdown { position: relative; display: inline-block; }
+.erp-dropdown summary { list-style: none; margin: 0; }
+.erp-dropdown summary::-webkit-details-marker { display: none; }
+.erp-dropdown summary { cursor: pointer; }
+.erp-dropdown[open] > summary { filter: brightness(0.97); }
+.erp-dropdown-menu {
+    position: absolute; right: 0; top: calc(100% + 8px);
+    background: #fff; border: 1px solid #d9e2ec; border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(21,38,62,0.08); padding: 8px; min-width: 180px;
+    display: flex; flex-direction: column; gap: 6px; z-index: 240;
+}
+.erp-dropdown-menu a.erp-btn { display:block; text-align:left; padding:8px 10px; width:100%; }
+.erp-dropdown-menu a.erp-btn:hover { background:#f5f8fc; }
+
+/* Contextual sub-navigation row (Layer 3) */
+.erp-subnav.erp-subnav-context {
+    background: linear-gradient(180deg, #f4f8fd 0%, #eaf1fa 100%) !important;
+    border-top: 1px solid #cfdcea !important;
+    border-bottom: 1px solid #c2d2e3 !important;
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.92), 0 2px 8px rgba(20,43,70,0.10) !important;
+    overflow: visible !important;
+    overflow-x: visible !important;
+    overflow-y: visible !important;
+    flex-wrap: wrap !important;
+    height: auto !important;
+    min-height: 40px !important;
+    gap: 4px;
+    position: relative;
+    z-index: 180;
+    padding-top: 4px !important;
+    padding-bottom: 4px !important;
+}
+.erp-subnav-context-label {
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    color: #526b84;
+    margin-right: 8px;
+    padding: 0 2px;
+    line-height: 32px;
+}
+
+/* Higher specificity to override base inline .erp-subnav-link rules. */
+.erp-subnav.erp-subnav-context .erp-subnav-link.erp-subnav-context-link {
+    color: #2f4359 !important;
+    font-weight: 600 !important;
+    border-bottom-color: transparent !important;
+    border-radius: 6px;
+    height: 32px !important;
+    line-height: 32px !important;
+    padding: 0 12px !important;
+}
+.erp-subnav.erp-subnav-context .erp-subnav-link.erp-subnav-context-link:hover {
+    color: #173a5e !important;
+    background: rgba(31, 79, 138, 0.11) !important;
+}
+.erp-subnav.erp-subnav-context .erp-subnav-link.erp-subnav-context-link.is-active {
+    color: #0f355b !important;
+    background: rgba(31, 79, 138, 0.20) !important;
+    border-bottom-color: transparent !important;
+    box-shadow: inset 0 -2px 0 #1f4f8a;
+}
+.erp-subnav.erp-subnav-context .erp-subnav-link.erp-subnav-context-link:focus-visible,
+.erp-context-dropdown summary:focus-visible,
+.erp-context-dropdown .erp-dropdown-menu a.erp-btn:focus-visible {
+    outline: 2px solid rgba(31, 79, 138, 0.35);
+    outline-offset: 1px;
+}
+.erp-context-dropdown { margin: 0 2px; }
+.erp-context-dropdown > .erp-dropdown-menu {
+    top: calc(100% + 8px);
+    left: 0;
+    right: auto;
+    min-width: 230px;
+    border-color: #b9cde1;
+    box-shadow: 0 14px 30px rgba(13, 30, 51, 0.22), 0 2px 6px rgba(13, 30, 51, 0.14);
+    z-index: 500;
+    padding: 8px;
+    background: #ffffff;
+}
+.erp-context-dropdown .erp-dropdown-menu a.erp-btn {
+    border: 1px solid transparent;
+    border-radius: 6px;
+    background: #fff;
+    color: #22384f;
+    font-weight: 600;
+    padding: 9px 10px;
+}
+.erp-context-dropdown .erp-dropdown-menu a.erp-btn:hover {
+    background: #edf4fb;
+    border-color: #c8d9ea;
+}
+/* Mobile: make dropdown contents static in flow to avoid overflow */
+@media (max-width: 640px) {
+    .erp-subnav.erp-subnav-context {
+        height: auto !important;
+        padding: 6px 12px !important;
+        overflow: visible !important;
+        overflow-x: visible !important;
+        overflow-y: visible !important;
+    }
+    .erp-subnav-context-label {
+        width: 100%;
+        line-height: 1.4;
+        margin: 0 0 4px 0;
+    }
+    .erp-subnav-context-link {
+        height: 32px !important;
+        line-height: 32px !important;
+        padding: 0 10px !important;
+    }
+    .erp-context-dropdown > .erp-dropdown-menu {
+        position: static;
+        box-shadow: none;
+        border: 1px solid #d5e0ec;
+        background: rgba(255,255,255,0.96);
+        min-width: auto;
+        margin-top: 4px;
+    }
+    .erp-dropdown-menu a.erp-btn { padding: 8px 10px; }
+}
+
 /* ─── Panel / Card ─────────────────────────────────────────────
    Standard white surface with border and shadow.
    ----------------------------------------------------------- */

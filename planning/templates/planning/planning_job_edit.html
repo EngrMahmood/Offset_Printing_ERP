@@ -1,5 +1,5 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+{% load theme_tags %}
 
 {% block title %}Phase 4 Finalization — {{ job.jc_number }}{% endblock %}
 {% block header_title %}Phase 4 Finalization — {{ job.jc_number }}{% endblock %}
@@ -11,11 +11,14 @@
 {% endblock %}
 
 {% block content %}
-    {% with current_step='planning' %}
-    {% endwith %}
-
-    <div class="erp-panel">
-        <div class="erp-panel__header"><h3 class="erp-panel__title">PO Intake / Planning Job Reference</h3></div>
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Reference</div>
+                <h3 class="erp-section-title">PO Intake / Planning Job</h3>
+            </div>
+        </div>
         <div class="erp-info-grid">
             <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
@@ -24,11 +27,15 @@
             <div class="erp-info-item"><div class="erp-info-item__label">Planned Date</div><div class="erp-info-item__value">{{ job.plan_date|date:'d-m-Y'|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Delivery Location</div><div class="erp-info-item__value">{{ job.destination|default:'-' }}</div></div>
         </div>
-    </div>
+    </section>
 
-    {# ── Phase 3 read-only reference ─────────────────────────────── #}
-    <div class="erp-panel">
-        <div class="erp-panel__header"><h3 class="erp-panel__title">Phase 3 — SKU Master Data (Read Only)</h3></div>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Phase 3</div>
+                <h3 class="erp-section-title">SKU Master Data (Read Only)</h3>
+            </div>
+        </div>
         {% if recipe %}
         <div class="erp-info-grid">
             <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ recipe.material|default:'-' }}</div></div>
@@ -43,16 +50,21 @@
             <div class="erp-info-item"><div class="erp-info-item__label">AWC No.</div><div class="erp-info-item__value">{{ job.awc_no_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Die Cutting</div><div class="erp-info-item__value">{{ job.die_cutting_display|default:'-' }}</div></div>
         </div>
-        <div class="erp-muted" style="margin-top:6px;">
+        <div class="erp-note" style="margin-top:8px;">
             SKU is locked. To change master data: <a href="{% url 'qc:sku_recipe_edit' recipe.id %}">Reopen SKU</a> &rarr; edit &rarr; re-approve.
         </div>
         {% else %}
-        <div class="erp-alert is-warning">No approved SKU master found for <strong>{{ job.sku }}</strong>. Create and approve a SKU recipe before finalizing this job.</div>
+        <div class="erp-alert erp-alert-warning">No approved SKU master found for <strong>{{ job.sku }}</strong>. Create and approve a SKU recipe before finalizing this job.</div>
         {% endif %}
-    </div>
+    </section>
 
-    <div class="erp-panel">
-        <div class="erp-panel__header"><h3 class="erp-panel__title">Computed Planning Values</h3></div>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Calculations</div>
+                <h3 class="erp-section-title">Computed Planning Values</h3>
+            </div>
+        </div>
         <div class="erp-info-grid">
             <div class="erp-info-item"><div class="erp-info-item__label">Net Print Qty (pcs)</div><div class="erp-info-item__value">{{ job.net_print_qty|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Total Print Sheets Required</div><div class="erp-info-item__value">{{ job.calculated_sheets_required|default:'-' }}</div></div>
@@ -61,15 +73,19 @@
             <div class="erp-info-item"><div class="erp-info-item__label">Balance Qty (pcs)</div><div class="erp-info-item__value">{{ job.balance_qty|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Stock Qty</div><div class="erp-info-item__value">{{ job.stock_qty|floatformat:"-2"|default:'-' }}</div></div>
         </div>
-    </div>
+    </section>
 
-    {# ── Phase 4 editable fields ─────────────────────────────────── #}
-    <div class="erp-panel">
-        <div class="erp-panel__header"><h3 class="erp-panel__title">Phase 4 — Job Finalization Fields</h3></div>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Phase 4</div>
+                <h3 class="erp-section-title">Job Finalization Fields</h3>
+            </div>
+        </div>
         {% if form.non_field_errors %}
-        <div class="erp-alert is-warning">{{ form.non_field_errors|striptags }}</div>
+        <div class="erp-alert erp-alert-warning">{{ form.non_field_errors|striptags }}</div>
         {% elif form.errors %}
-        <div class="erp-alert is-warning">Please correct the highlighted fields before saving.</div>
+        <div class="erp-alert erp-alert-warning">Please correct the highlighted fields before saving.</div>
         {% endif %}
         <form method="post">
             {% csrf_token %}
@@ -79,19 +95,19 @@
                     <label class="erp-form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                     {{ field }}
                     {% if field.errors %}
-                        <div class="erp-form-error">{{ field.errors|striptags }}</div>
+                        <div style="color:#e74c3c; font-size:12px; margin-top:4px;">{{ field.errors|striptags }}</div>
                     {% endif %}
                 </div>
                 {% endfor %}
             </div>
-            <div class="erp-form-actions">
+            <div class="erp-form-actions" style="margin-top:14px;">
                 <button class="erp-btn erp-btn-primary" type="submit">Save Changes</button>
                 <a class="erp-btn erp-btn-secondary" href="{% url 'planning:job_detail' job.id %}">Cancel</a>
             </div>
         </form>
-        <div class="erp-actions" style="margin-top:10px;">
+        <div class="erp-actions" style="margin-top:12px; gap:8px;">
             {% if job.status == 'draft' %}
-            <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="m-0">
+            <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="erp-inline-form">
                 {% csrf_token %}
                 <input type="hidden" name="transition" value="submit_qc">
                 <input type="hidden" name="next" value="{% url 'planning:job_edit' job.id %}">
@@ -99,7 +115,7 @@
             </form>
             {% endif %}
             {% if can_admin_delete %}
-            <form method="post" action="{% url 'planning:jobs' %}" class="m-0">
+            <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="delete">
                 <input type="hidden" name="job_id" value="{{ job.id }}">
@@ -107,7 +123,8 @@
             </form>
             {% endif %}
         </div>
-    </div>
+    </section>
+</div>
 {% endblock %}
 
 

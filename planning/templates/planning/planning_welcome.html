@@ -1,5 +1,6 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}Planning Workspace{% endblock %}
 {% block header_title %}Planning Workspace{% endblock %}
@@ -9,75 +10,81 @@
 {% endblock %}
 
 {% block content %}
+    <div class="erp-page-stack">
     {% with current_step='start' %}
     {% endwith %}
 
     {% if can_edit_jobcard %}
 
-    <div class="erp-tab-strip" role="tablist">
+    <section class="erp-section-shell">
+        <div class="erp-tab-strip" role="tablist">
         <button class="erp-tab is-active" data-phase="start" type="button">Start Here</button>
         <button class="erp-tab" data-phase="po" type="button">Step 1 — PO Intake</button>
         <button class="erp-tab" data-phase="master" type="button">Step 2 — Master SKU</button>
         <button class="erp-tab" data-phase="planning" type="button">Step 3 — Planning Jobs</button>
         <button class="erp-tab" data-phase="approval" type="button">Step 4 — Approval</button>
         <button class="erp-tab" data-phase="shop" type="button">Step 5 — Shop Floor</button>
-    </div>
+        </div>
+    </section>
 
-    <div class="erp-tab-panel is-active" data-phase="start">
-        <div class="erp-alert is-info">Use this route for each PO. New SKUs must complete master approval before planning jobs can be created.</div>
+    <section class="erp-section-shell">
+        <div class="erp-tab-panel is-active" data-phase="start">
+            <div class="erp-alert erp-alert-info">Use this route for each PO. New SKUs must complete master approval before planning jobs can be created.</div>
         <div class="erp-route-grid">
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">1. PO Intake</h3></div>
+            <div class="erp-card">
+                <div class="erp-card-header"><h3 class="erp-section-title">1. PO Intake</h3></div>
                 <p>Upload or manually enter PO.</p>
-                <p class="erp-muted">Planner / Manager / Admin</p>
+                <p class="erp-note">Planner / Manager / Admin</p>
                 <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:po_inbox' %}">Open Step 1</a></div>
             </div>
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">2. SKU Master &amp; New SKU</h3></div>
+            <div class="erp-card">
+                <div class="erp-card-header"><h3 class="erp-section-title">2. SKU Master &amp; New SKU</h3></div>
                 <p>Check SKU existence and create missing master data.</p>
-                <p class="erp-muted">Planner / Manager / Admin</p>
+                <p class="erp-note">Planner / Manager / Admin</p>
                 <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:pending_skus' %}">Open Step 2</a></div>
             </div>
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">3. Planning Jobs</h3></div>
+            <div class="erp-card">
+                <div class="erp-card-header"><h3 class="erp-section-title">3. Planning Jobs</h3></div>
                 <p>Planner fills planning-only fields and creates Job Card.</p>
-                <p class="erp-muted">Planner / Manager / Admin</p>
+                <p class="erp-note">Planner / Manager / Admin</p>
                 <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:jobs' %}">Open Step 3</a></div>
             </div>
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">4. Job Card Approval</h3></div>
+            <div class="erp-card">
+                <div class="erp-card-header"><h3 class="erp-section-title">4. Job Card Approval</h3></div>
                 <p>QC team handles this stage in the dedicated QC module.</p>
-                <p class="erp-muted">View-only reminder for planners</p>
+                <p class="erp-note">View-only reminder for planners</p>
                 <div class="erp-actions"><span class="erp-btn erp-btn-secondary" style="pointer-events:none; opacity:0.8;">Handled in QC</span></div>
             </div>
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">5. Production Scan</h3></div>
+            <div class="erp-card">
+                <div class="erp-card-header"><h3 class="erp-section-title">5. Production Scan</h3></div>
                 <p>Production scans approved Job Card and starts execution.</p>
-                <p class="erp-muted">Production Support</p>
+                <p class="erp-note">Production Support</p>
                 <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:scan' %}">Open Step 5</a></div>
             </div>
         </div>
-    </div>
+        </div>
+    </section>
 
-    <div class="erp-tab-panel" data-phase="po">
-        <p class="erp-muted">Collect incoming PO data and classify SKU lines as Repeat or New.</p>
+    <section class="erp-section-shell">
+        <div class="erp-tab-panel" data-phase="po">
+            <p class="erp-note">Collect incoming PO data and classify SKU lines as Repeat or New.</p>
         <div class="erp-route-grid">
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">Upload PO PDF</h3></div>
+            <div class="erp-card">
+                <div class="erp-card-header"><h3 class="erp-section-title">Upload PO PDF</h3></div>
                 <p>Upload customer PO PDF and send it to the intake queue for extraction review.</p>
-                <p class="erp-muted">Intake Start</p>
+                <p class="erp-note">Intake Start</p>
                 <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:upload_po' %}">Open</a></div>
             </div>
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">PO Intake Queue</h3></div>
+            <div class="erp-card">
+                <div class="erp-card-header"><h3 class="erp-section-title">PO Intake Queue</h3></div>
                 <p>Review parsed items, check repeat/new split, then continue to next workflow step.</p>
-                <p class="erp-muted">Mandatory Review</p>
+                <p class="erp-note">Mandatory Review</p>
                 <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:po_inbox' %}">Open</a></div>
             </div>
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">PO Debug Extract</h3></div>
+            <div class="erp-card">
+                <div class="erp-card-header"><h3 class="erp-section-title">PO Debug Extract</h3></div>
                 <p>Use only when parser output needs troubleshooting before final intake.</p>
-                <p class="erp-muted">Optional Utility</p>
+                <p class="erp-note">Optional Utility</p>
                 <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_debug' %}">Open</a></div>
             </div>
         </div>

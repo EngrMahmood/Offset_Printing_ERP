@@ -299,6 +299,196 @@ def po_new_skus(request, doc_id):
     return planning_views.po_new_skus(request, doc_id)
 
 
+@login_required
+@permission_required('can_edit_jobcard')
+def planner_pending_skus_redirect(request):
+    target = reverse('planning:pending_skus')
+    query = request.META.get('QUERY_STRING', '')
+    return redirect(f'{target}?{query}' if query else target)
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planner_pending_skus_ignored_redirect(request):
+    target = reverse('planning:pending_skus_ignored')
+    query = request.META.get('QUERY_STRING', '')
+    return redirect(f'{target}?{query}' if query else target)
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planner_pending_sku_master_entry_redirect(request):
+    target = reverse('planning:pending_sku_master_entry')
+    query = request.META.get('QUERY_STRING', '')
+    return redirect(f'{target}?{query}' if query else target)
+
+
+@login_required
+@permission_required('can_view_approval_queue')
+@transaction.atomic
+def master_sku_review_queue(request):
+    profile = getattr(request.user, 'profile', None)
+    user_can_approve_qc = profile.can_approve_qc() if profile else False
+
+    po_filter = (request.POST.get('return_po') or request.GET.get('po') or '').strip()
+    q = (request.POST.get('return_q') or request.GET.get('q') or '').strip()
+
+    def _redirect_queue():
+        params = {}
+        if po_filter:
+            params['po'] = po_filter
+        if q:
+            params['q'] = q
+        url = reverse('qc:master_review')
+        return redirect(f'{url}?{urlencode(params)}' if params else url)
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        sku = (request.POST.get('sku') or '').strip()
+        rejection_comment = (request.POST.get('rejection_comment') or '').strip()
+
+        if action not in {'approve', 'back_to_draft'}:
+            messages.error(request, 'Invalid action.')
+            return _redirect_queue()
+
+        if not user_can_approve_qc:
+            messages.error(request, 'You do not have permission to review SKU master records.')
+            return _redirect_queue()
+
+        recipe = SkuRecipe.objects.filter(sku__iexact=sku, is_active=True).first()
+        if not recipe:
+            messages.error(request, f'SKU recipe for {sku} was not found.')
+            return _redirect_queue()
+
+        current_status = (recipe.master_data_status or 'draft').lower()
+
+        if action == 'approve':
+            if current_status not in {'pending_review', 'reviewed'}:
+                messages.error(request, f'SKU {sku} is not in QC review queue.')
+                return _redirect_queue()
+
+            missing_required = _missing_required_master_fields(recipe, recipe.job_name)
+            if missing_required:
+                messages.error(
+                    request,
+                    f'SKU {sku} cannot be approved. Missing required fields: {", ".join(missing_required)}.',
+                )
+                return _redirect_queue()
+
+            if current_status == 'pending_review':
+                recipe.reviewed_by = request.user
+                recipe.reviewed_at = timezone.now()
+
+            recipe.master_data_status = 'approved'
+            recipe.approved_by = request.user
+            recipe.approved_at = timezone.now()
+            recipe.rejection_comment = ''
+            recipe.last_rejected_by = None
+            recipe.last_rejected_at = None
+            recipe.save(update_fields=[
+                'master_data_status', 'reviewed_by', 'reviewed_at',
+                'approved_by', 'approved_at', 'rejection_comment',
+                'last_rejected_by', 'last_rejected_at', 'updated_at',
+            ])
+
+            sync_result = _sync_new_jobs_for_approved_sku(sku, actor=request.user)
+            messages.success(
+                request,
+                f'SKU {sku} approved. Planning jobs refreshed: updated {sync_result["updated"]}, locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.',
+            )
+            return _redirect_queue()
+
+        if current_status == 'draft':
+            messages.info(request, f'SKU {sku} is already in Draft.')
+            return _redirect_queue()
+
+        if not rejection_comment:
+            messages.error(request, 'Reason is required to send back this SKU.')
+            return _redirect_queue()
+
+        recipe.master_data_status = 'draft'
+        recipe.reviewed_by = None
+        recipe.reviewed_at = None
+        recipe.approved_by = None
+        recipe.approved_at = None
+        recipe.rejection_comment = rejection_comment
+        recipe.last_rejected_by = request.user
+        recipe.last_rejected_at = timezone.now()
+        recipe.save(update_fields=[
+            'master_data_status', 'reviewed_by', 'reviewed_at',
+            'approved_by', 'approved_at', 'rejection_comment',
+            'last_rejected_by', 'last_rejected_at', 'updated_at',
+        ])
+        messages.warning(request, f'SKU {sku} sent back to Draft. Reason: {rejection_comment}')
+        return _redirect_queue()
+
+    po_docs = PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('-created_at')[:400]
+    deduped_docs = []
+    seen_po_numbers = set()
+    for doc in po_docs:
+        payload = doc.extracted_payload or {}
+        po_number = (payload.get('po_number') or '').strip().upper()
+        if po_number:
+            if po_number in seen_po_numbers:
+                continue
+            seen_po_numbers.add(po_number)
+        deduped_docs.append(doc)
+
+    all_rows = _collect_pending_sku_rows(deduped_docs[:200])
+    sku_values = sorted({row['sku'] for row in all_rows if row.get('sku')})
+
+    recipes_by_sku = {}
+    if sku_values:
+        recipe_query = Q()
+        for sku in sku_values:
+            recipe_query |= Q(sku__iexact=sku)
+        recipes = SkuRecipe.objects.filter(recipe_query, is_active=True)
+        recipes_by_sku = {recipe.sku.upper(): recipe for recipe in recipes}
+
+    review_rows = []
+    po_summary_map = {}
+    for row in all_rows:
+        recipe = recipes_by_sku.get(_sku_key(row.get('sku')))
+        if not recipe:
+            continue
+
+        recipe_status = (recipe.master_data_status or '').strip().lower()
+        if recipe_status not in {'pending_review', 'reviewed'}:
+            continue
+
+        row['recipe'] = recipe
+        row['recipe_status'] = recipe_status
+        row['missing_required_fields'] = _missing_required_master_fields(recipe, row.get('job_name') or '')
+
+        po_number = row.get('po_number') or '-'
+        po_summary_map.setdefault(po_number, {'po_number': po_number, 'count': 0})
+        po_summary_map[po_number]['count'] += 1
+        review_rows.append(row)
+
+    if po_filter:
+        review_rows = [row for row in review_rows if (row.get('po_number') or '') == po_filter]
+    if q:
+        q_upper = q.upper()
+        review_rows = [
+            row for row in review_rows
+            if q_upper in (row.get('sku') or '').upper()
+            or q_upper in (row.get('po_number') or '').upper()
+            or q_upper in (row.get('job_name') or '').upper()
+        ]
+
+    review_rows.sort(key=lambda row: (row['po_number'], row['sku']))
+
+    context = {
+        'review_rows': review_rows,
+        'review_count': len(review_rows),
+        'po_summary': sorted(po_summary_map.values(), key=lambda x: x['po_number']),
+        'po_filter': po_filter,
+        'q': q,
+        'user_can_approve_qc': user_can_approve_qc,
+    }
+    return render(request, 'qc/master_sku_review_queue.html', context)
+
+
 # MOVED TO QC APP (temporary compatibility layer)
 @login_required
 @permission_required('can_edit_jobcard')
@@ -370,13 +560,14 @@ def pending_skus(request):
             messages.error(request, 'SKU is required.')
             return _redirect_pending()
 
-        if action in {'submit_review', 'approve', 'back_to_draft'}:
+        if action in {'submit_review', 'review', 'approve', 'back_to_draft'}:
             recipe = SkuRecipe.objects.filter(sku__iexact=sku).first()
             if not recipe:
                 messages.error(request, f'No SKU recipe found for {sku}. Save recipe data first.')
                 return _redirect_pending()
 
             current_status = (recipe.master_data_status or 'draft').lower()
+            rejection_comment = (request.POST.get('rejection_comment') or '').strip()
 
             if action == 'submit_review':
                 if current_status != 'draft':
@@ -391,9 +582,29 @@ def pending_skus(request):
                 messages.success(request, f'SKU {sku} moved to Pending Review.')
                 return _redirect_pending()
 
+            if action == 'review':
+                if current_status != 'pending_review':
+                    messages.error(request, f'SKU {sku} can only move to Reviewed from Pending Review.')
+                    return _redirect_pending()
+                recipe.master_data_status = 'reviewed'
+                recipe.reviewed_by = request.user
+                recipe.reviewed_at = timezone.now()
+                recipe.approved_by = None
+                recipe.approved_at = None
+                recipe.rejection_comment = ''
+                recipe.last_rejected_by = None
+                recipe.last_rejected_at = None
+                recipe.save(update_fields=[
+                    'master_data_status', 'reviewed_by', 'reviewed_at',
+                    'approved_by', 'approved_at', 'rejection_comment',
+                    'last_rejected_by', 'last_rejected_at', 'updated_at',
+                ])
+                messages.success(request, f'SKU {sku} reviewed successfully.')
+                return _redirect_pending()
+
             if action == 'approve':
-                if current_status != 'reviewed':
-                    messages.error(request, f'SKU {sku} can only be Approved from Reviewed status.')
+                if current_status not in {'pending_review', 'reviewed'}:
+                    messages.error(request, f'SKU {sku} can only be Approved from Pending Review or Reviewed status.')
                     return _redirect_pending()
                 missing_required = _missing_required_master_fields(recipe)
                 if missing_required:
@@ -402,10 +613,20 @@ def pending_skus(request):
                         f'SKU {sku} cannot be approved. Missing required master data: {", ".join(missing_required)}.',
                     )
                     return _redirect_pending()
+                if current_status == 'pending_review':
+                    recipe.reviewed_by = request.user
+                    recipe.reviewed_at = timezone.now()
                 recipe.master_data_status = 'approved'
                 recipe.approved_by = request.user
                 recipe.approved_at = timezone.now()
-                recipe.save(update_fields=['master_data_status', 'approved_by', 'approved_at', 'updated_at'])
+                recipe.rejection_comment = ''
+                recipe.last_rejected_by = None
+                recipe.last_rejected_at = None
+                recipe.save(update_fields=[
+                    'master_data_status', 'reviewed_by', 'reviewed_at',
+                    'approved_by', 'approved_at', 'rejection_comment',
+                    'last_rejected_by', 'last_rejected_at', 'updated_at',
+                ])
                 sync_result = _sync_new_jobs_for_approved_sku(sku, actor=request.user)
                 messages.success(
                     request,
@@ -417,13 +638,23 @@ def pending_skus(request):
                 if current_status == 'draft':
                     messages.info(request, f'SKU {sku} is already in Draft.')
                     return _redirect_pending()
+                if not rejection_comment:
+                    messages.error(request, 'Reason is required to send SKU back to Draft.')
+                    return _redirect_pending()
                 recipe.master_data_status = 'draft'
                 recipe.reviewed_by = None
                 recipe.reviewed_at = None
                 recipe.approved_by = None
                 recipe.approved_at = None
-                recipe.save(update_fields=['master_data_status', 'reviewed_by', 'reviewed_at', 'approved_by', 'approved_at', 'updated_at'])
-                messages.success(request, f'SKU {sku} moved back to Draft.')
+                recipe.rejection_comment = rejection_comment
+                recipe.last_rejected_by = request.user
+                recipe.last_rejected_at = timezone.now()
+                recipe.save(update_fields=[
+                    'master_data_status', 'reviewed_by', 'reviewed_at',
+                    'approved_by', 'approved_at', 'rejection_comment',
+                    'last_rejected_by', 'last_rejected_at', 'updated_at',
+                ])
+                messages.warning(request, f'SKU {sku} sent back to Draft. Reason: {rejection_comment}')
                 return _redirect_pending()
 
         job_name = (request.POST.get('job_name') or '').strip()
@@ -555,10 +786,16 @@ def pending_skus(request):
         row['missing_required_fields'] = _missing_required_master_fields(recipe, row.get('job_name') or '')
 
     pending_rows.sort(key=lambda row: (row['po_number'], row['sku']))
+    approval_rows = [
+        row for row in pending_rows
+        if row.get('recipe') and row.get('recipe_status') in {'pending_review', 'reviewed'}
+    ]
 
     context = {
         'pending_rows': pending_rows,
+        'approval_rows': approval_rows,
         'pending_count': len(pending_rows),
+        'approval_count': len(approval_rows),
         'po_summary': sorted(po_summary_map.values(), key=lambda x: x['po_number']),
         'po_filter': po_filter,
         'q': q,

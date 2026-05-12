@@ -1,0 +1,29 @@
+{% comment %}
+  Layer 3: Production contextual navigation.
+  Render Production operations only for production-related screens.
+{% endcomment %}
+{% if url == 'production_dashboard' or url == 'production_entry' or url == 'production_records' or url == 'job_card_entry' or url == 'job_card_records' %}
+<div class="erp-subnav erp-subnav-context" aria-label="Production context navigation">
+    <span class="erp-subnav-context-label">Production Context</span>
+    <a href="{% url 'production_dashboard' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'production_dashboard' %}is-active{% endif %}">
+        Dashboard
+    </a>
+    <a href="{% url 'job_card_entry' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'job_card_entry' %}is-active{% endif %}">
+        Job Card Entry
+    </a>
+    <a href="{% url 'job_card_records' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'job_card_records' %}is-active{% endif %}">
+        Job Card Records
+    </a>
+    <a href="{% url 'production_entry' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'production_entry' %}is-active{% endif %}">
+        Production Entry
+    </a>
+    <a href="{% url 'production_records' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'production_records' %}is-active{% endif %}">
+        Production Records
+    </a>
+</div>
+{% endif %}

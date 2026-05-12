@@ -1,0 +1,17 @@
+{% comment %}
+  Layer 3: QC contextual navigation.
+  Render QC operations only for QC-related screens.
+{% endcomment %}
+{% if url == 'qc_home' or url == 'approvals' or url == 'approval_queue' or url == 'job_card_approval' or url == 'master_review' or url == 'pending_sku_master_entry' %}
+<div class="erp-subnav erp-subnav-context" aria-label="QC context navigation">
+    <span class="erp-subnav-context-label">QC Context</span>
+    <a href="{% url 'qc:approval_queue' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'qc_home' or url == 'approvals' or url == 'approval_queue' or url == 'job_card_approval' %}is-active{% endif %}">
+        Job Card Approval
+    </a>
+    <a href="{% url 'qc:master_review' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'master_review' or url == 'pending_sku_master_entry' %}is-active{% endif %}">
+        SKU Master Review
+    </a>
+</div>
+{% endif %}

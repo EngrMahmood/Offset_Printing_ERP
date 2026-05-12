@@ -1,111 +1,99 @@
 {% extends 'theme/base.html' %}
 {% load static %}
+{% load theme_tags %}
 
-{% block title %}Master Data Entry | Pending SKU{% endblock %}
-{% block extra_head %}
-    <style>
-        .wrap { max-width: 960px; margin: 0 auto; }
-        .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-        .btn { display:inline-block; padding:7px 11px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
-        .btn.secondary { background:#fff; color:#445366; }
-        .panel { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:12px; }
-        .msg { padding:8px 10px; border-radius:6px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; margin-bottom:8px; font-size:12px; }
-        .route-line { margin-bottom:10px; padding:10px; border-radius:10px; border:1px solid #d8e4f1; background:#f5f9ff; }
-        .route-track { display:grid; grid-template-columns:repeat(4, minmax(130px, 1fr)); gap:8px; }
-        .route-node { border:1px solid #c9d9ea; border-radius:8px; background:#fff; padding:7px 8px; text-align:center; }
-        .route-node .step { display:block; font-size:10px; text-transform:uppercase; color:#5c7590; font-weight:700; }
-        .route-node .name { display:block; font-size:12px; color:#213d59; font-weight:700; margin-top:2px; }
-        .meta-grid { display:grid; grid-template-columns:repeat(4, minmax(120px, 1fr)); gap:8px; margin-bottom:12px; }
-        .meta-item { border:1px solid #dde6ef; border-radius:8px; background:#f8fbff; padding:8px; }
-        .meta-label { font-size:10px; color:#6a7e96; text-transform:uppercase; }
-        .meta-value { font-size:13px; font-weight:700; color:#203449; }
-        .status { display:inline-block; padding:3px 8px; border-radius:999px; font-size:10px; border:1px solid #d3deea; background:#f3f7fb; text-transform:uppercase; }
-        .status.draft { background:#fff4e6; border-color:#f1c58b; color:#8a3f00; }
-        .status.reviewed { background:#fffbe8; border-color:#eed789; color:#6b4c00; }
-        .status.approved { background:#e6f4ea; border-color:#bee2c5; color:#1f6c37; }
-        .warning-box { display:flex; align-items:flex-start; gap:8px; padding:12px 14px; border-radius:10px; background:#ffe9e9; border:1px solid #f5c6c6; color:#9a1c1c; font-size:13px; margin-bottom:12px; }
-        .warning-box .icon { font-size:18px; line-height:1; margin-top:2px; }
-        .hint { color:#5f6f82; font-size:11px; margin-bottom:8px; }
-        .warn { display:block; padding:10px 12px; border-radius:8px; background:#ffe9e9; border:1px solid #f5c6c6; color:#9a1c1c; font-size:12px; margin-bottom:8px; }
-        .form-grid { display:grid; grid-template-columns:repeat(3, minmax(0, 1fr)); gap:8px; }
-        .field { display:flex; flex-direction:column; gap:4px; }
-        .field label { font-size:11px; color:#33485f; font-weight:700; }
-        .field input, .field textarea, .field select { border:1px solid #bfd0e2; border-radius:6px; padding:7px 8px; font-size:12px; background:#fff; width:100%; }
-        .field textarea { min-height:72px; resize:vertical; }
-        .field.full { grid-column:1 / -1; }
-        .req { color:#8a3f00; font-weight:700; }
-        .actions { margin-top:12px; display:flex; gap:6px; flex-wrap:wrap; }
-        .error { font-size:11px; color:#b5282a; }
-        @media (max-width: 860px) {
-            .route-track { grid-template-columns:repeat(2, minmax(130px, 1fr)); }
-            .meta-grid { grid-template-columns:repeat(2, minmax(120px, 1fr)); }
-            .form-grid { grid-template-columns:1fr; }
-        }
-    </style>
-{% endblock %}
-{% block header_title %}Pending SKU Master Data{% endblock %}
-{% block header_subtitle %}Complete required recipe fields and submit the SKU through review and approval for planning sync.{% endblock %}
+{% block title %}{% if is_readonly %}SKU Master Details{% else %}Master Data Entry | Pending SKU{% endif %}{% endblock %}
+{% block header_title %}{% if is_readonly %}SKU Master Details{% else %}Pending SKU Master Data{% endif %}{% endblock %}
+{% block header_subtitle %}{% if is_readonly %}Read-only view for QC review before approval actions.{% else %}Complete required recipe fields and submit the SKU through review and approval for planning sync.{% endif %}{% endblock %}
 {% block header_actions %}
     <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
 {% endblock %}
 {% block content %}
-<main class="wrap page-container">
-    {% with current_step='master' %}
-    {% endwith %}
+<div class="erp-page-stack">
 
-    <div class="top">
-        <div>
-            <h1 style="margin:0;font-size:20px;">Pending SKU Master Data</h1>
-            <div class="warning-box"><span class="icon">⚠</span><span>Complete required master fields, then send for approval. Only approved SKU data moves to Planning.</span></div>
-        </div>
-        <a class="btn secondary" href="{% url 'qc:pending_skus' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To Pending SKUs</a>
+    {# ── Workflow progress bar ── #}
+    <div class="erp-wf-guide">
+        <div class="erp-wf-step"><div class="erp-wf-step__key">Step 1</div><div class="erp-wf-step__value">PO Intake</div></div>
+        <div class="erp-wf-step"><div class="erp-wf-step__key">Step 2</div><div class="erp-wf-step__value">Pending SKU</div></div>
+        <div class="erp-wf-step"><div class="erp-wf-step__key">Step 3</div><div class="erp-wf-step__value">QC Approval</div></div>
+        <div class="erp-wf-step"><div class="erp-wf-step__key">Step 4</div><div class="erp-wf-step__value">Planning Jobs</div></div>
     </div>
 
+    {# ── Messages ── #}
     {% for msg in messages %}
-        <div class="msg">{{ msg }}</div>
+        <div class="erp-alert {% if 'error' in msg.tags %}erp-alert-danger{% elif 'warning' in msg.tags %}erp-alert-warning{% else %}erp-alert-info{% endif %}">{{ msg }}</div>
     {% endfor %}
 
-    <section class="panel">
-        <div class="route-line">
-            <div class="route-track">
-                <div class="route-node"><span class="step">Step 1</span><span class="name">PO Intake</span></div>
-                <div class="route-node"><span class="step">Step 2</span><span class="name">Pending SKU</span></div>
-                <div class="route-node"><span class="step">Step 3</span><span class="name">Approval</span></div>
-                <div class="route-node"><span class="step">Step 4</span><span class="name">Planning Jobs</span></div>
+    {# ── Context notice ── #}
+    {% if is_readonly %}
+    <div class="erp-alert erp-alert-info">
+        <strong>Read-only View</strong> — This form is open in inspection mode for QC review. Use the <em>Back To QC Review Queue</em> button below to return and take approval action.
+    </div>
+    {% else %}
+    <div class="erp-alert erp-alert-warning">
+        Complete required master fields, then send for QC approval. Only approved SKU data moves to Planning.
+    </div>
+    {% endif %}
+
+    {# ── SKU meta info ── #}
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">SKU Context</div>
+                <h3 class="erp-section-title">{{ sku }}</h3>
+                <p class="erp-section-desc">{{ suggested_job_name }}</p>
             </div>
-        </div>
-        <div class="meta-grid">
-            <div class="meta-item">
-                <div class="meta-label">PO Number</div>
-                <div class="meta-value">{{ po_number }}</div>
-            </div>
-            <div class="meta-item">
-                <div class="meta-label">SKU</div>
-                <div class="meta-value">{{ sku }}</div>
-            </div>
-            <div class="meta-item">
-                <div class="meta-label">Quantity</div>
-                <div class="meta-value">{{ suggested_qty }}</div>
-            </div>
-            <div class="meta-item">
-                <div class="meta-label">Delivery</div>
-                <div class="meta-value">{{ suggested_delivery_date }}</div>
+            <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
+                <span class="erp-badge {{ recipe_status|recipe_status_badge }}">{{ recipe_status }}</span>
+                <a href="{% url 'qc:po_review' po_doc_id %}" class="erp-btn erp-btn-secondary sm">Open PO</a>
             </div>
         </div>
 
-        <div style="margin-bottom:8px; display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
-            <span class="status {{ recipe_status }}">{{ recipe_status }}</span>
-            <span class="hint">Job Name: <strong>{{ suggested_job_name }}</strong></span>
-            <a class="btn secondary" href="{% url 'qc:po_review' po_doc_id %}">Open PO</a>
+        <div class="erp-info-grid" style="grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); margin-bottom:12px;">
+            <div class="erp-info-item">
+                <div class="erp-info-item__label">PO Number</div>
+                <div class="erp-info-item__value">{{ po_number }}</div>
+            </div>
+            <div class="erp-info-item">
+                <div class="erp-info-item__label">SKU</div>
+                <div class="erp-info-item__value">{{ sku }}</div>
+            </div>
+            <div class="erp-info-item">
+                <div class="erp-info-item__label">Quantity</div>
+                <div class="erp-info-item__value">{{ suggested_qty|default:'-' }}</div>
+            </div>
+            <div class="erp-info-item">
+                <div class="erp-info-item__label">Delivery</div>
+                <div class="erp-info-item__value">{{ suggested_delivery_date|default:'-' }}</div>
+            </div>
         </div>
+
         {% if missing_required_fields and recipe_status != 'approved' %}
-            <div class="warn" style="margin-bottom:10px;">Missing required fields before approval: {{ missing_required_fields|join:', ' }}</div>
+            <div class="erp-alert erp-alert-warning" style="margin-bottom:8px;">
+                <strong>Missing required fields before approval:</strong> {{ missing_required_fields|join:', ' }}
+            </div>
         {% endif %}
         {% if mismatch_alerts %}
             {% for alert in mismatch_alerts %}
-                <div class="warn" style="margin-bottom:8px;">{{ alert }}</div>
+                <div class="erp-alert erp-alert-danger" style="margin-bottom:6px;">{{ alert }}</div>
             {% endfor %}
         {% endif %}
+    </section>
+
+    {# ── Master data form ── #}
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Master Data</div>
+                <h3 class="erp-section-title">Recipe Fields</h3>
+                <p class="erp-section-desc">Fields marked <span style="color:#8a3f00; font-weight:700;">*</span> are required before QC can approve.</p>
+            </div>
+            {% if not is_readonly %}
+            <span class="erp-status-chip warning"><span class="erp-status-dot"></span>Planner Entry</span>
+            {% else %}
+            <span class="erp-status-chip info"><span class="erp-status-dot"></span>QC View</span>
+            {% endif %}
+        </div>
 
         <form method="post">
             {% csrf_token %}
@@ -113,107 +101,112 @@
             <input type="hidden" name="sku" value="{{ sku }}">
             <input type="hidden" name="return_po" value="{{ return_po }}">
             <input type="hidden" name="return_q" value="{{ return_q }}">
+            <input type="hidden" name="readonly" value="{% if is_readonly %}1{% endif %}">
 
-            <div class="form-grid">
-                <div class="field">
+            <div class="erp-form-grid" style="grid-template-columns:repeat(3, minmax(0, 1fr)); margin-bottom:14px;">
+                <div class="erp-form-field">
                     <label for="{{ form.sku.id_for_label }}">SKU</label>
                     {{ form.sku }}
-                    {% if form.sku.errors %}<div class="error">{{ form.sku.errors.0 }}</div>{% endif %}
+                    {% if form.sku.errors %}<div class="field-error-text">{{ form.sku.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
+                <div class="erp-form-field">
                     <label>Job Name</label>
                     <input type="text" value="{{ suggested_job_name }}" readonly>
                 </div>
-                <div class="field">
-                    <label for="{{ form.material.id_for_label }}">Material Type <span class="req">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.material.id_for_label }}">Material Type <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.material }}
-                    {% if form.material.errors %}<div class="error">{{ form.material.errors.0 }}</div>{% endif %}
+                    {% if form.material.errors %}<div class="field-error-text">{{ form.material.errors.0 }}</div>{% endif %}
                 </div>
-
-                <div class="field">
-                    <label for="{{ form.color_spec.id_for_label }}">Color <span class="req">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.color_spec.id_for_label }}">Color <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.color_spec }}
-                    {% if form.color_spec.errors %}<div class="error">{{ form.color_spec.errors.0 }}</div>{% endif %}
+                    {% if form.color_spec.errors %}<div class="field-error-text">{{ form.color_spec.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
-                    <label for="{{ form.application.id_for_label }}">Application (UV / Lamination Gloss / Lamination Matt / NO) <span class="req">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.application.id_for_label }}">Application <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.application }}
-                    {% if form.application.errors %}<div class="error">{{ form.application.errors.0 }}</div>{% endif %}
+                    {% if form.application.errors %}<div class="field-error-text">{{ form.application.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
-                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm) <span class="req">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm) <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.size_w_mm }}
-                    {% if form.size_w_mm.errors %}<div class="error">{{ form.size_w_mm.errors.0 }}</div>{% endif %}
+                    {% if form.size_w_mm.errors %}<div class="field-error-text">{{ form.size_w_mm.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
-                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm) <span class="req">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm) <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.size_h_mm }}
-                    {% if form.size_h_mm.errors %}<div class="error">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
+                    {% if form.size_h_mm.errors %}<div class="field-error-text">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
-                    <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet <span class="req">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.print_sheet_size }}
-                    {% if form.print_sheet_size.errors %}<div class="error">{{ form.print_sheet_size.errors.0 }}</div>{% endif %}
+                    {% if form.print_sheet_size.errors %}<div class="field-error-text">{{ form.print_sheet_size.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
-                    <label for="{{ form.purchase_sheet_size.id_for_label }}">Purchase Sheet <span class="req">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.purchase_sheet_size.id_for_label }}">Purchase Sheet <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.purchase_sheet_size }}
-                    {% if form.purchase_sheet_size.errors %}<div class="error">{{ form.purchase_sheet_size.errors.0 }}</div>{% endif %}
+                    {% if form.purchase_sheet_size.errors %}<div class="field-error-text">{{ form.purchase_sheet_size.errors.0 }}</div>{% endif %}
                 </div>
-
-                <div class="field">
+                <div class="erp-form-field">
                     <label for="{{ form.purchase_sheet_ups.id_for_label }}">Purchase Sheet Ups</label>
                     {{ form.purchase_sheet_ups }}
-                    {% if form.purchase_sheet_ups.errors %}<div class="error">{{ form.purchase_sheet_ups.errors.0 }}</div>{% endif %}
+                    {% if form.purchase_sheet_ups.errors %}<div class="field-error-text">{{ form.purchase_sheet_ups.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
-                    <label for="{{ form.ups.id_for_label }}">UPS <span class="req">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.ups.id_for_label }}">UPS <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.ups }}
-                    {% if form.ups.errors %}<div class="error">{{ form.ups.errors.0 }}</div>{% endif %}
+                    {% if form.ups.errors %}<div class="field-error-text">{{ form.ups.errors.0 }}</div>{% endif %}
                 </div>
-
-                <div class="field">
+                <div class="erp-form-field">
                     <label for="{{ form.default_unit_cost.id_for_label }}">Unit Cost</label>
                     {{ form.default_unit_cost }}
-                    {% if form.default_unit_cost.errors %}<div class="error">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
+                    {% if form.default_unit_cost.errors %}<div class="field-error-text">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
+                <div class="erp-form-field">
                     <label for="{{ form.daily_demand.id_for_label }}">Daily Demand</label>
                     {{ form.daily_demand }}
-                    {% if form.daily_demand.errors %}<div class="error">{{ form.daily_demand.errors.0 }}</div>{% endif %}
+                    {% if form.daily_demand.errors %}<div class="field-error-text">{{ form.daily_demand.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field">
+                <div class="erp-form-field">
                     <label for="{{ form.awc_no.id_for_label }}">AWC No.</label>
                     {{ form.awc_no }}
-                    {% if form.awc_no.errors %}<div class="error">{{ form.awc_no.errors.0 }}</div>{% endif %}
+                    {% if form.awc_no.errors %}<div class="field-error-text">{{ form.awc_no.errors.0 }}</div>{% endif %}
                 </div>
-
-                <div class="field">
-                    <label for="{{ form.die_cutting.id_for_label }}">Die Cutting <span class="req">*</span></label>
+                <div class="erp-form-field">
+                    <label for="{{ form.die_cutting.id_for_label }}">Die Cutting <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.die_cutting }}
-                    {% if form.die_cutting.errors %}<div class="error">{{ form.die_cutting.errors.0 }}</div>{% endif %}
+                    {% if form.die_cutting.errors %}<div class="field-error-text">{{ form.die_cutting.errors.0 }}</div>{% endif %}
                 </div>
-                <div class="field full">
+                <div class="erp-form-field" style="grid-column: 1 / -1;">
                     <label for="{{ form.notes.id_for_label }}">Notes</label>
                     {{ form.notes }}
-                    {% if form.notes.errors %}<div class="error">{{ form.notes.errors.0 }}</div>{% endif %}
+                    {% if form.notes.errors %}<div class="field-error-text">{{ form.notes.errors.0 }}</div>{% endif %}
                 </div>
             </div>
 
-            <div class="actions">
-                <button type="submit" class="btn secondary" name="action" value="save_draft">Save Draft (Master)</button>
-                <button type="submit" class="btn" name="action" value="submit_review">Send to QC Review</button>
-                <button type="submit" class="btn secondary" name="action" value="ignore" onclick="return confirm('Ignore this pending SKU and remove it from further processing?');">Ignore</button>
+            {% if not is_readonly %}
+            <div class="erp-form-actions">
+                <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="save_draft">Save Draft</button>
+                <button type="submit" class="erp-btn erp-btn-primary" name="action" value="submit_review">Send to QC Review</button>
+                <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="ignore" onclick="return confirm('Ignore this pending SKU and remove it from further processing?');">Ignore</button>
                 {% if recipe %}
                     {% if recipe.master_data_status != 'approved' or can_admin_actions %}
-                        <button type="submit" class="btn danger" name="action" value="delete" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
-                        <button type="submit" class="btn warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
+                        <button type="submit" class="erp-btn erp-btn-danger" name="action" value="delete" onclick="return confirm('Delete this SKU recipe?');">Delete</button>
+                        <button type="submit" class="erp-btn erp-btn-warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
                     {% endif %}
                 {% endif %}
             </div>
+            {% else %}
+            <div class="erp-form-actions">
+                <a class="erp-btn erp-btn-secondary" href="{% url 'qc:master_review' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To QC Review Queue</a>
+                <a class="erp-btn erp-btn-secondary" href="{% url 'planning:pending_skus' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To Pending SKUs</a>
+            </div>
+            {% endif %}
         </form>
     </section>
-</main>
+
+</div>
 {% endblock %}
 
 

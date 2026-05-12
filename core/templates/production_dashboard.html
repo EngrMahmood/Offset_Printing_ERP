@@ -1,83 +1,10 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}Production Dashboard — Offset Printing ERP{% endblock %}
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<style>
-        .pd-container {
-            max-width: 100%;
-            padding: 16px 20px;
-        }
-
-        .pd-section-title {
-            color: var(--erp-text, #1a2f45);
-            margin: 20px 0 12px;
-            font-size: 15px;
-            font-weight: 700;
-            letter-spacing: 0.02em;
-        }
-
-        .pd-metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 10px;
-            margin-bottom: 16px;
-        }
-
-        .pd-metric-card {
-            background: #fff;
-            padding: 14px;
-            border-radius: 6px;
-            border: 1px solid #dde5ef;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-            text-align: center;
-        }
-
-        .pd-metric-value {
-            font-size: 2rem;
-            font-weight: 800;
-            margin: 6px 0 4px;
-            line-height: 1.1;
-        }
-
-        .oee-value { color: #3a5f8a; }
-        .availability-value { color: #2e7d50; }
-        .performance-value { color: #7a6018; }
-        .quality-value { color: #7b1c27; }
-
-        .pd-metric-label {
-            color: #5e7389;
-            font-size: 10px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.06em;
-        }
-
-        .pd-charts-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        .pd-chart-card {
-            background: #fff;
-            padding: 16px;
-            border-radius: 6px;
-            border: 1px solid #dde5ef;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-        }
-
-        .pd-chart-card h3 {
-            margin: 0 0 12px;
-            font-size: 13px;
-            font-weight: 700;
-            color: #24425f;
-        }
-
-        .chart-container {
-            position: relative;
             height: 260px;
         }
 

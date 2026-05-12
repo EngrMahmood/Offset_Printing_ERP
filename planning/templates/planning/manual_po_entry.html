@@ -1,66 +1,45 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}Manual PO Entry{% endblock %}
-{% block extra_head %}
-    <style>
-        .wrap { max-width: 100%; margin: 0 auto; }
-        .btn { display:inline-block; padding:7px 11px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; cursor:pointer; }
-        .btn.secondary { background:#fff; color:#445366; }
-        .btn.danger { background:#8d3040; border-color:#8d3040; }
-        .panel { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:15px; }
-        .field-group { display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:12px; margin-bottom:14px; }
-        .field-group label { display:block; font-size:12px; margin-bottom:5px; color:#1f2f43; }
-        .field-group input, .field-group textarea, .field-group select { width:100%; padding:8px; border:1px solid #b0c4d8; border-radius:6px; font-size:13px; }
-        .table-shell { overflow-x:auto; border:1px solid #d6e0ea; border-radius:8px; margin-bottom:14px; }
-        table { width:100%; border-collapse:collapse; min-width:1200px; font-size:12px; }
-        th, td { padding:8px; border-bottom:1px solid #e7eef5; text-align:left; vertical-align:middle; }
-        th { background:#f6f9fc; font-size:11px; text-transform:uppercase; letter-spacing:0.02em; }
-        .muted { color:#5f6f82; font-size:12px; }
-        .msg { padding:9px 12px; border-radius:6px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; margin-bottom:10px; }
-        .alert-error { background:#fce8e6; color:#8a1c1c; border:1px solid #f5c2c7; }
-        .info-row { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px; margin-bottom:12px; }
-        .info-row h1 { margin:0; font-size:20px; }
-        .form-actions { display:flex; gap:10px; flex-wrap:wrap; align-items:center; }
-        .remove-button { border:1px solid #c7414f; background:#fff2f0; color:#8a2f23; border-radius:6px; padding:6px 10px; cursor:pointer; }
-    </style>
-{% endblock %}
 {% block header_title %}Manual PO Entry{% endblock %}
 {% block header_subtitle %}Create PO intake rows manually when orders arrive without a PDF source file.{% endblock %}
 {% block header_actions %}
-    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+    <a href="{% url 'planning:po_inbox' %}" class="erp-btn erp-btn-secondary">PO Intake Queue</a>
 {% endblock %}
 {% block content %}
-<main class="wrap page-container">
-    <div class="info-row">
-        <div>
-            <h1>Manual PO Entry</h1>
-            <div class="muted">Create a PO intake record manually with the same fields extracted from a PDF.</div>
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-alert erp-alert-info">
+            <strong>PO / PR Intake:</strong> Enter a PO Number, a PR Number, or both. PR-only jobs can be created for urgent work; a PO must be linked before dispatch.
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap;">
-            <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
-            <a class="btn secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
-        </div>
-    </div>
+    </section>
 
     {% for msg in messages %}
-        <div class="msg alert-error">{{ msg }}</div>
+    <section class="erp-section-shell">
+        <div class="erp-alert erp-alert-danger">{{ msg }}</div>
+    </section>
     {% endfor %}
 
-    <section class="panel">
-        <div class="msg" style="background:#f0f7ff;border-color:#b8d4f0;color:#1e3a5f;">
-            <strong>PO / PR Intake:</strong> Enter a PO Number, a PR Number, or both.
-            PR-only jobs can be created for urgent work; a PO must be linked before dispatch.
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Manual Intake</div>
+                <h3 class="erp-section-title">Manual PO Entry Form</h3>
+                <p class="erp-section-desc">Create a PO intake record manually using the same structure as extracted PDF data.</p>
+            </div>
         </div>
+
         <form method="post" id="manual_po_form">
             {% csrf_token %}
-            <div class="field-group">
+            <div class="erp-form-grid" style="margin-bottom: 14px;">
                 <div>
-                    <label for="po_number">PO Number <span class="muted">(optional if PR provided)</span></label>
+                    <label for="po_number">PO Number <span class="erp-note">(optional if PR provided)</span></label>
                     <input id="po_number" name="po_number" type="text">
                 </div>
                 <div>
-                    <label for="pr_number">PR Number <span class="muted">(optional if PO provided)</span></label>
+                    <label for="pr_number">PR Number <span class="erp-note">(optional if PO provided)</span></label>
                     <input id="pr_number" name="pr_number" type="text" placeholder="e.g. PR-2026-001">
                 </div>
                 <div>
@@ -93,8 +72,8 @@
                 </div>
             </div>
 
-            <div class="table-shell">
-                <table>
+            <div class="erp-table-wrap" style="margin-bottom:14px;">
+                <table class="erp-table erp-table-dense">
                     <thead>
                         <tr>
                             <th style="width:48px;"></th>
@@ -125,13 +104,13 @@
                 </table>
             </div>
 
-            <div class="form-actions">
-                <button type="button" class="btn secondary" onclick="addLine()">Add another line</button>
-                <button type="submit" class="btn">Save Manual PO</button>
+            <div class="erp-form-actions">
+                <button type="button" class="erp-btn erp-btn-secondary" onclick="addLine()">Add Another Line</button>
+                <button type="submit" class="erp-btn erp-btn-primary">Save Manual PO</button>
             </div>
         </form>
     </section>
-</main>
+</div>
 {% endblock %}
 {% block extra_js %}
 <script>

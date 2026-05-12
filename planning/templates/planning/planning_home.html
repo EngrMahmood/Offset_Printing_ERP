@@ -1,5 +1,5 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+{% load theme_tags %}
 
 {% block sidebar %}{% endblock %}
 
@@ -13,107 +13,80 @@
 
 {% block content %}
 
-    {% with current_step='planning' %}
-    {% endwith %}
-
-    <!-- Removed redundant summary panels for minimal UI -->
-
-    <!-- Removed redundant status cards for minimal UI -->
-
-    <div class="erp-section-divider">
-        <strong>Planning Jobs</strong>
-        <span class="erp-badge is-count">{{ jobs.paginator.count }} job{{ jobs.paginator.count|pluralize }}</span>
-    </div>
-    <div class="erp-split-layout">
-        <aside class="erp-filter-sidebar">
-            <div class="erp-filter-sidebar__title">Filters</div>
-            <form method="get">
-                <div class="erp-form-field">
-                    <label>Search</label>
-                    <input type="text" name="q" placeholder="JC / PO / SKU / Job" value="{{ filters.q }}">
-                </div>
-                <div class="erp-form-field">
-                    <label>Status</label>
-                    <select name="status">
-                        <option value="">All Status</option>
-                        {% for value, label in status_choices %}
-                        <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
-                <div class="erp-form-actions">
-                    <button type="submit" class="erp-btn erp-btn-primary erp-btn-block">Apply</button>
-                    <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-secondary erp-btn-block">Reset</a>
-                </div>
-            </form>
-        </aside>
-        <section class="erp-data-pane">
-            <!-- Removed redundant table meta toolbar -->
-            <div class="erp-table-wrap erp-table-dense">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>JC Number</th>
-                            <th>PO Number</th>
-                            <th>SKU</th>
-                            <th>Job Name</th>
-                            <th>Status</th>
-                            <th>Plan Date</th>
-                            <th class="erp-col-actions">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for job in jobs %}
-                        <tr>
-                            <td><a href="{% url 'planning:job_detail' job.id %}">{{ job.jc_number }}</a></td>
-                            <td>{{ job.po_number|default:'-' }}</td>
-                            <td>{{ job.sku|default:'-' }}</td>
-                            <td title="{{ job.job_name }}">{{ job.job_name|default:'-' }}</td>
-                            <td><span class="erp-badge is-{{ job.effective_status }}">{{ job.effective_status_label }}</span></td>
-                            <td>{{ job.plan_date|date:'Y-m-d' }}</td>
-                            <td class="erp-col-actions">
-                                <div class="erp-actions erp-actions--compact">
-                                    <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-primary">Details</a>
-                                    {% if user_can_plan and job.effective_status == 'draft' %}
-                                        <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-secondary">Edit</a>
-                                        {% if job.can_submit_qc %}
-                                            <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="inline-flex">
-                                                {% csrf_token %}
-                                                <input type="hidden" name="transition" value="submit_qc">
-                                                <input type="hidden" name="next" value="{% url 'planning:jobs' %}">
-                                                <button type="submit" class="erp-btn erp-btn-success">Send to QC</button>
-                                            </form>
-                                        {% else %}
-                                            <button type="button" class="erp-btn erp-btn-secondary" title="{{ job.submit_qc_block_reason }}" disabled>Send to QC</button>
-                                        {% endif %}
-                                    {% endif %}
-                                    {% if job.effective_status == 'qc_approved' or job.effective_status == 'released' %}
-                                        <a href="{% url 'planning:job_card_print' job.id %}" class="erp-btn erp-btn-success">Print</a>
-                                    {% endif %}
-                                </div>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="7" class="erp-empty">No planning jobs found. Use the filters or upload PO documents to populate the queue.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Queue</div>
+                <h3 class="erp-section-title">Planning Jobs</h3>
+                <p class="erp-section-desc">{{ jobs.paginator.count }} active job{{ jobs.paginator.count|pluralize }}</p>
             </div>
-            {% if jobs.has_other_pages %}
-            <div class="erp-pager">
-                <p class="erp-pager__info">Page {{ jobs.number }} of {{ jobs.paginator.num_pages }}</p>
-                <div class="erp-actions">
-                    {% if jobs.has_previous %}
-                    <a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-secondary">&#8592; Previous</a>
-                    {% endif %}
-                    {% if jobs.has_next %}
-                    <a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.department %}&department={{ filters.department }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-primary">Next &#8594;</a>
-                    {% endif %}
-                </div>
+        </div>
+        <form method="get" class="erp-form-grid" style="grid-template-columns:1fr auto; gap:12px; margin-bottom:12px;">
+            <input type="text" name="q" placeholder="Search JC / PO / SKU / Job" value="{{ filters.q }}">
+            <select name="status">
+                <option value="">All Statuses</option>
+                {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            <div class="erp-actions" style="gap:8px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Filter</button>
+                <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-secondary">Reset</a>
             </div>
-            {% endif %}
-        </section>
-    </div>
+        </form>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
+                        <th>Status</th><th>Plan Date</th><th style="width:120px;">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in jobs %}
+                    <tr>
+                        <td><strong><a href="{% url 'planning:job_detail' job.id %}">{{ job.jc_number }}</a></strong></td>
+                        <td>{{ job.po_number|default:'-' }}</td>
+                        <td>{{ job.sku|default:'-' }}</td>
+                        <td title="{{ job.job_name }}">{{ job.job_name|default:'-' }}</td>
+                        <td><span class="erp-badge {{ job.effective_status|jc_status_badge }}">{{ job.effective_status_label }}</span></td>
+                        <td>{{ job.plan_date|date:'Y-m-d' }}</td>
+                        <td style="white-space:nowrap;">
+                            <div class="erp-actions" style="gap:4px;">
+                                <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-secondary sm">View</a>
+                                {% if user_can_plan and job.effective_status == 'draft' %}
+                                    <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                                    {% if job.can_submit_qc %}
+                                        <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="erp-inline-form">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="transition" value="submit_qc">
+                                            <input type="hidden" name="next" value="{% url 'planning:jobs' %}">
+                                            <button type="submit" class="erp-btn erp-btn-success sm">QC</button>
+                                        </form>
+                                    {% endif %}
+                                {% endif %}
+                                {% if job.effective_status == 'qc_approved' or job.effective_status == 'released' %}
+                                    <a href="{% url 'planning:job_card_print' job.id %}" class="erp-btn erp-btn-success sm">Print</a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7"><div class="erp-empty">No planning jobs found. Upload PO or create new jobs.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if jobs.has_other_pages %}
+        <div class="erp-pager">
+            <span style="color:#666;">Page {{ jobs.number }} of {{ jobs.paginator.num_pages }}</span>
+            {% if jobs.has_previous %}<a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}" class="erp-btn erp-btn-secondary">← Previous</a>{% endif %}
+            {% if jobs.has_next %}<a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}" class="erp-btn erp-btn-primary">Next →</a>{% endif %}
+        </div>
+        {% endif %}
+    </section>
+</div>
 {% endblock %}

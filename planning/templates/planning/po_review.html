@@ -1,5 +1,5 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+{% load theme_tags %}
 
 {% block title %}Review PO {{ payload.po_number }}{% endblock %}
 {% block header_title %}Review PO {{ payload.po_number }}{% endblock %}
@@ -11,39 +11,49 @@
 {% block page_alerts %}{% endblock %}
 
 {% block content %}
-
+<div class="erp-page-stack">
     {% for msg in messages %}
     {% if 'Partial extraction' in msg.message or msg.level_tag == 'warning' %}
-    <div class="erp-alert is-warning">⚠ {{ msg }}</div>
+    <section class="erp-section-shell"><div class="erp-alert erp-alert-warning">{{ msg }}</div></section>
     {% else %}
-    <div class="erp-alert is-success">{{ msg }}</div>
+    <section class="erp-section-shell"><div class="erp-alert erp-alert-success">{{ msg }}</div></section>
     {% endif %}
     {% endfor %}
 
-    <div class="erp-alert is-notice">
-        Default JC numbering now uses your serial format: <strong>JC-MM-YY-####</strong>.
-        JC numbers are assigned automatically by the system, and manual override is disabled.
-        If the same PO + SKU is uploaded again, the existing planning job is updated instead of creating duplicates.
-    </div>
-
-    <div class="erp-panel erp-panel--row">
-        <div>
-            <span class="erp-badge is-repeat">Repeat SKUs: {{ repeat_count }}</span>
-            <span class="erp-badge is-new">New SKUs: {{ new_count }}</span>
-            <div class="muted">New SKUs must complete Pending SKU -&gt; Reviewed -&gt; Approved before planning jobs can be created for them.</div>
-            {% if configured_new_count %}
-            <div class="erp-alert is-warning erp-alert--nested">Configured from this PO as NEW for production: {{ configured_new_count }}</div>
-            {% endif %}
+    <section class="erp-section-shell">
+        <div class="erp-alert erp-alert-info">
+            Default JC numbering now uses your serial format: <strong>JC-MM-YY-####</strong>.
+            JC numbers are assigned automatically by the system, and manual override is disabled.
+            If the same PO + SKU is uploaded again, the existing planning job is updated instead of creating duplicates.
         </div>
-        <a href="{% url 'qc:po_new_skus' po_doc.id %}" class="erp-btn {% if new_count == 0 %}erp-btn-secondary{% else %}erp-btn-primary{% endif %}">Configure New SKUs</a>
-    </div>
+    </section>
 
-    
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Routing Summary</div>
+                <h3 class="erp-section-title">Repeat vs New SKU Routing</h3>
+                <p class="erp-section-desc">New SKUs must complete Pending SKU -&gt; Reviewed -&gt; Approved before planning jobs can be created for them.</p>
+            </div>
+            <div class="erp-actions" style="margin:0;">
+                <span class="erp-badge is-repeat">Repeat SKUs: {{ repeat_count }}</span>
+                <span class="erp-badge is-new">New SKUs: {{ new_count }}</span>
+            </div>
+        </div>
+        {% if configured_new_count %}
+        <div class="erp-alert erp-alert-warning erp-alert--nested">Configured from this PO as NEW for production: {{ configured_new_count }}</div>
+        {% endif %}
+        <div class="erp-actions" style="margin-top:12px;">
+            <a href="{% url 'qc:po_new_skus' po_doc.id %}" class="erp-btn {% if new_count == 0 %}erp-btn-secondary{% else %}erp-btn-primary{% endif %}">Configure New SKUs</a>
+        </div>
+    </section>
 
-    <!-- PO Header Summary -->
-    <div class="erp-panel">
-        <div class="erp-panel__header">
-            <span class="erp-panel__title">PO Header</span>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Details</div>
+                <h3 class="erp-section-title">PO Header</h3>
+            </div>
         </div>
         <div class="erp-info-grid">
             <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ payload.po_number|default:"-" }}</div></div>
@@ -55,18 +65,20 @@
             <div class="erp-info-item"><div class="erp-info-item__label">Supplier</div><div class="erp-info-item__value">{{ payload.supplier_name|default:"-" }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Buyer</div><div class="erp-info-item__value">{{ payload.buyer_name|default:"-" }}</div></div>
         </div>
-    </div>
+    </section>
 
-    <!-- Line Items Review -->
-    <div class="erp-panel">
-        <div class="erp-panel__header">
-            <span class="erp-panel__title">Line Items <span class="erp-badge is-count">{{ items|length }} SKU{{ items|length|pluralize }}</span></span>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Items</div>
+                <h3 class="erp-section-title">Line Items ({{ items|length }} SKU{{ items|length|pluralize }})</h3>
+            </div>
         </div>
-        <div class="muted">Use the Exclude checkbox to omit a SKU from the current Create Planning Jobs run. Use Ignore to remove the SKU permanently from PO intake review.</div>
+        <div class="erp-note">Use the Exclude checkbox to omit a SKU from the current Create Planning Jobs run. Use Ignore to remove the SKU permanently from PO intake review.</div>
         {% if ignored_count %}
-            <div class="muted">
+            <div class="erp-note">
                 {{ ignored_count }} SKU{{ ignored_count|pluralize }} ignored from this PO intake review.
-                <a href="{% url 'qc:pending_skus_ignored' %}?po={{ payload.po_number|urlencode }}" class="erp-btn erp-btn-secondary">Manage ignored SKUs</a>
+                <a href="{% url 'planning:pending_skus_ignored' %}?po={{ payload.po_number|urlencode }}" class="erp-btn erp-btn-secondary">Manage ignored SKUs</a>
             </div>
         {% endif %}
 
@@ -76,7 +88,7 @@
             <input type="hidden" name="sku" id="review_form_sku" value="">
 
             <div class="erp-table-wrap">
-                <table>
+                <table class="erp-table erp-table-dense">
                     <thead>
                         <tr>
                             <th>#</th>
@@ -106,7 +118,7 @@
                                 {% if item.recipe_status == 'New' %}
                                     <button class="erp-btn erp-btn-secondary" type="button" onclick="ignorePoReviewSku('{{ item.sku|escapejs }}')">Ignore from review</button>
                                 {% else %}
-                                    <span class="muted">-</span>
+                                    <span class="erp-muted">-</span>
                                 {% endif %}
                             </td>
                             <td>
@@ -114,7 +126,7 @@
                                     <div><strong>{{ item.existing_jc_number }}</strong></div>
                                     <a href="{% url 'planning:job_edit' item.existing_job_id %}" class="erp-btn erp-btn-secondary" target="_blank" rel="noopener">Edit</a>
                                 {% else %}
-                                    <span class="muted">New create</span>
+                                    <span class="erp-muted">New create</span>
                                 {% endif %}
                             </td>
                             <td>{{ item.delivery_date|default:"-" }}</td>
@@ -122,7 +134,7 @@
                             <td>{{ item.unit }}</td>
                             <td>{{ item.unit_cost }}</td>
                             <td>{{ item.net_total }}</td>
-                            <td><span class="muted">Auto-assigned on create</span></td>
+                            <td><span class="erp-muted">Auto-assigned on create</span></td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -142,8 +154,8 @@
                 <a href="{% url 'planning:po_inbox' %}" class="erp-btn erp-btn-secondary">Cancel</a>
             </div>
         </form>
-    </div>
-
+    </section>
+</div>
 {% endblock %}
 
 {% block extra_js %}

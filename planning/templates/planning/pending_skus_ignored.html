@@ -2,70 +2,62 @@
 {% load static %}
 
 {% block title %}Ignored SKUs | Planning{% endblock %}
-{% block extra_head %}
-    <style>
-        .wrap { max-width: 100%; margin: 0 auto; }
-        .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
-        .btn { display:inline-block; padding:7px 11px; border-radius:6px; border:1px solid #445366; color:#fff; background:#445366; text-decoration:none; font-size:12px; }
-        .btn.secondary { background:#fff; color:#445366; }
-        .panel { background:#fff; border:1px solid #d6e0ea; border-radius:10px; padding:10px; }
-        .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; align-items:center; }
-        .filters input, .filters select { border:1px solid #bfd0e2; border-radius:6px; padding:6px 8px; font-size:12px; min-width:180px; }
-        .table-shell { overflow:auto; max-height:calc(100vh - 240px); border:1px solid #d6e0ea; border-radius:8px; }
-        table { width:100%; border-collapse:collapse; font-size:12px; min-width:1000px; }
-        th, td { border-bottom:1px solid #e7eef5; padding:8px 10px; text-align:left; vertical-align:top; }
-        th { position:sticky; top:0; background:#f6f9fc; z-index:1; font-size:11px; text-transform:uppercase; }
-        .muted { color:#5f6f82; font-size:11px; }
-        .badge { display:inline-flex; align-items:center; padding:3px 9px; border-radius:12px; font-size:11px; font-weight:700; }
-        .badge.missing { background:#fff4e9; color:#c76f1e; }
-        .badge.draft { background:#eef2f7; color:#42556e; }
-        .badge.pending_review { background:#fff4e9; color:#c76f1e; }
-        .badge.reviewed { background:#fff7e0; color:#8a5e00; }
-        .badge.approved { background:#e7f6ec; color:#1b7f45; }
-        .msg { padding:8px 12px; border-radius:6px; margin-bottom:10px; font-size:12px; border:1px solid #c8d7e7; background:#f5f9ff; color:#2e3f53; }
-    </style>
-{% endblock %}
 {% block header_title %}Ignored Pending SKUs{% endblock %}
 {% block header_subtitle %}Review ignored PO intake lines and restore any SKU that should return to pending master-data processing.{% endblock %}
 {% block header_actions %}
-    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+    <a href="{% url 'planning:pending_skus' %}" class="erp-btn erp-btn-secondary">Back to Pending SKUs</a>
+    <a href="{% url 'qc:approval_queue' %}" class="erp-btn erp-btn-secondary">Job Card Approval</a>
 {% endblock %}
 {% block content %}
-<main class="wrap page-container">
-    {% with current_step='master' %}
-    {% endwith %}
-
-    <div class="top">
-        <div>
-            <h1 style="margin:0;font-size:20px;">Ignored Pending SKUs</h1>
-            <div class="muted">Review SKUs that were ignored from the pending master-to-planning workflow.</div>
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-info-grid">
+            <div class="erp-info-item">
+                <div class="erp-info-item__label">Ignored SKU Rows</div>
+                <div class="erp-info-item__value">{{ rows|length }}</div>
+            </div>
         </div>
-        <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <a class="btn secondary" href="{% url 'qc:pending_skus' %}">Pending SKUs</a>
-            <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">SKU Recipe Master</a>
-            <a class="btn" href="{% url 'planning:home' %}">Planning Home</a>
-        </div>
-    </div>
+    </section>
 
     {% for msg in messages %}
-        <div class="msg">{{ msg }}</div>
+    <section class="erp-section-shell">
+        <div class="erp-alert erp-alert-info">{{ msg }}</div>
+    </section>
     {% endfor %}
 
-    <section class="panel">
-        <form method="get" class="filters">
-            <select name="po">
-                <option value="">All POs</option>
-                {% for po in po_summary %}
+    <section class="erp-section-shell">
+        <form method="get" class="erp-form-grid" style="margin-bottom: 0;">
+            <div>
+                <label>PO</label>
+                <select name="po">
+                    <option value="">All POs</option>
+                    {% for po in po_summary %}
                     <option value="{{ po.po_number }}" {% if po_filter == po.po_number %}selected{% endif %}>{{ po.po_number }} ({{ po.count }})</option>
-                {% endfor %}
-            </select>
-            <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name">
-            <button type="submit" class="btn secondary">Apply</button>
-            <a class="btn secondary" href="{% url 'qc:pending_skus_ignored' %}">Reset</a>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>Search</label>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name">
+            </div>
+            <div class="erp-form-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'planning:pending_skus_ignored' %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
         </form>
+    </section>
 
-        <div class="table-shell">
-            <table>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Ignored Queue</div>
+                <h3 class="erp-section-title">Ignored Pending SKUs</h3>
+                <p class="erp-section-desc">Restore ignored SKUs to return them to planning data-entry workflow.</p>
+            </div>
+        </div>
+
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
                 <thead>
                     <tr>
                         <th>PO</th>
@@ -81,10 +73,10 @@
                 {% for row in rows %}
                     <tr>
                         <td>{{ row.po_number }}</td>
-                        <td style="font-weight:700;">{{ row.sku }}</td>
+                        <td><strong>{{ row.sku }}</strong></td>
                         <td>{{ row.job_name|default:'-' }}</td>
                         <td>
-                            <span class="badge {{ row.recipe_status }}">
+                            <span class="erp-badge erp-badge-pending">
                                 {% if row.recipe_status == 'pending_review' %}
                                     Pending Review
                                 {% elif row.recipe_status == 'reviewed' %}
@@ -94,26 +86,26 @@
                                 {% endif %}
                             </span>
                         </td>
-                        <td>{% if row.recipe %}<a class="btn secondary" href="{% url 'qc:pending_sku_master_entry' %}?po_doc_id={{ row.po_doc_id }}&sku={{ row.sku|urlencode }}">Open Recipe</a>{% else %}-{% endif %}</td>
-                        <td class="muted">{{ row.uploaded_at|date:'d M Y H:i' }}</td>
+                        <td>{% if row.recipe %}<a class="erp-btn erp-btn-secondary" href="{% url 'planning:pending_sku_master_entry' %}?po_doc_id={{ row.po_doc_id }}&sku={{ row.sku|urlencode }}">Open Recipe</a>{% else %}<span class="erp-note">-</span>{% endif %}</td>
+                        <td class="erp-note">{{ row.uploaded_at|date:'d M Y H:i' }}</td>
                         <td>
-                            <form method="post" action="" style="display:inline;">
+                            <form method="post" action="" class="erp-inline-form">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="unignore">
                                 <input type="hidden" name="sku" value="{{ row.sku }}">
                                 <input type="hidden" name="po_doc_id" value="{{ row.po_doc_id }}">
-                                <button class="btn" type="submit" onclick="return confirm('Restore this ignored SKU to pending processing?');">Reopen</button>
+                                <button class="erp-btn erp-btn-primary" type="submit" onclick="return confirm('Restore this ignored SKU to pending processing?');">Reopen</button>
                             </form>
                         </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="7">No ignored pending SKUs found.</td></tr>
+                    <tr><td colspan="7" class="erp-empty">No ignored pending SKUs found.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>
         </div>
     </section>
-</main>
+</div>
 {% endblock %}
 
 

@@ -1,60 +1,71 @@
 {% extends 'theme/base.html' %}
-
+{% load theme_tags %}
 {% block title %}QC Review History - ERP{% endblock %}
 {% block header_title %}QC Review History{% endblock %}
 {% block header_subtitle %}Read-only log view of Job Card approval outcomes and latest rejection reasons.{% endblock %}
 
 {% block content %}
-<div class="erp-section-shell">
-    <form method="get" class="erp-form-grid" style="margin-bottom: 12px;">
-        <div>
-            <label>Status</label>
-            <select name="status">
-                <option value="">All</option>
-                <option value="qc_rejected" {% if status_filter == 'qc_rejected' %}selected{% endif %}>QC Rejected</option>
-                <option value="pm_rejected" {% if status_filter == 'pm_rejected' %}selected{% endif %}>PM Rejected</option>
-                <option value="qc_approved" {% if status_filter == 'qc_approved' %}selected{% endif %}>QC Approved</option>
-                <option value="production_approved" {% if status_filter == 'production_approved' %}selected{% endif %}>Production Approved</option>
-                <option value="released" {% if status_filter == 'released' %}selected{% endif %}>Released</option>
-            </select>
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Logs</div>
+                <h3 class="erp-section-title">Approval History</h3>
+                <p class="erp-section-desc">Read-only log of job card approval outcomes and rejection reasons</p>
+            </div>
         </div>
-        <div>
-            <label>Search</label>
-            <input type="text" name="q" value="{{ q }}" placeholder="JC / PO / SKU">
-        </div>
-        <div class="erp-form-actions">
-            <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
-            <a href="{% url 'qc:history' %}" class="erp-btn erp-btn-secondary">Reset</a>
-        </div>
-    </form>
+        <form method="get" class="erp-form-grid" style="margin-bottom: 12px;">
+            <div>
+                <label>Status</label>
+                <select name="status">
+                    <option value="">All</option>
+                    <option value="qc_rejected" {% if status_filter == 'qc_rejected' %}selected{% endif %}>QC Rejected</option>
+                    <option value="pm_rejected" {% if status_filter == 'pm_rejected' %}selected{% endif %}>PM Rejected</option>
+                    <option value="qc_approved" {% if status_filter == 'qc_approved' %}selected{% endif %}>QC Approved</option>
+                    <option value="production_approved" {% if status_filter == 'production_approved' %}selected{% endif %}>Production Approved</option>
+                    <option value="released" {% if status_filter == 'released' %}selected{% endif %}>Released</option>
+                </select>
+            </div>
+            <div>
+                <label>Search</label>
+                <input type="text" name="q" value="{{ q }}" placeholder="JC / PO / SKU">
+            </div>
+            <div class="erp-form-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'qc:history' %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
+        </form>
+    </section>
 
-    <div class="erp-table-wrap">
-        <table>
-            <thead>
-                <tr>
-                    <th>Updated</th>
-                    <th>Job Card</th>
-                    <th>PO</th>
-                    <th>SKU</th>
-                    <th>Status</th>
-                    <th>Latest Rejection Reason</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in rows %}
-                <tr>
-                    <td>{{ row.updated_at|date:'d M Y H:i' }}</td>
-                    <td>{{ row.job_card_no|default:'-' }}</td>
-                    <td>{{ row.PO_No|default:'-' }}</td>
-                    <td>{{ row.SKU|default:'-' }}</td>
-                    <td><span class="erp-badge erp-badge-pending">{{ row.workflow_status_label }}</span></td>
-                    <td>{{ row.latest_rejection_reason|default:'-' }}</td>
-                </tr>
-                {% empty %}
-                <tr><td colspan="6" class="erp-empty">No approval history records found.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
+    <section class="erp-section-shell">
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead>
+                    <tr>
+                        <th>Updated</th>
+                        <th>Job Card</th>
+                        <th>PO</th>
+                        <th>SKU</th>
+                        <th>Status</th>
+                        <th>Latest Rejection Reason</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td>{{ row.updated_at|date:'d M Y H:i' }}</td>
+                        <td>{{ row.job_card_no|default:'-' }}</td>
+                        <td>{{ row.PO_No|default:'-' }}</td>
+                        <td>{{ row.SKU|default:'-' }}</td>
+                        <td><span class="erp-badge {{ row.workflow_status|jc_status_badge }}">{{ row.workflow_status_label }}</span></td>
+                        <td>{{ row.latest_rejection_reason|default:'-' }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6"><div class="erp-empty">No approval history records found.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
 </div>
 {% endblock %}

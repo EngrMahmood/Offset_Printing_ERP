@@ -1,5 +1,6 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}Planning Report{% endblock %}
 {% block header_title %}Planning Report{% endblock %}
@@ -9,10 +10,12 @@
 {% endblock %}
 
 {% block content %}
+    <div class="erp-page-stack">
     {% with current_step='approval' %}
     {% endwith %}
 
-    <form method="get" class="erp-filter">
+    <section class="erp-section-shell">
+        <form method="get" class="erp-form-grid">
         <div class="erp-form-field">
             <label>From Date</label>
             <input type="date" name="from_date" value="{{ filters.from_date }}">
@@ -21,61 +24,69 @@
             <label>To Date</label>
             <input type="date" name="to_date" value="{{ filters.to_date }}">
         </div>
-        <button class="erp-btn erp-btn-primary" type="submit">Apply</button>
-        <a class="erp-btn erp-btn-secondary" href="{% url 'planning:report' %}">Reset</a>
-    </form>
+        <div class="erp-form-actions">
+            <button class="erp-btn erp-btn-primary" type="submit">Apply</button>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'planning:report' %}">Reset</a>
+        </div>
+        </form>
+    </section>
 
+    <section class="erp-section-shell">
     <div class="erp-route-grid erp-route-grid--4">
-        <div class="erp-route-card">
-            <div class="erp-route-card__key">Total Jobs</div>
-            <div class="erp-route-card__value">{{ totals.total_jobs|default:0 }}</div>
+        <div class="erp-info-item">
+            <div class="erp-info-item__label">Total Jobs</div>
+            <div class="erp-info-item__value">{{ totals.total_jobs|default:0 }}</div>
         </div>
-        <div class="erp-route-card">
-            <div class="erp-route-card__key">Total Order Qty</div>
-            <div class="erp-route-card__value">{{ totals.total_order_qty|default:0 }}</div>
+        <div class="erp-info-item">
+            <div class="erp-info-item__label">Total Order Qty</div>
+            <div class="erp-info-item__value">{{ totals.total_order_qty|default:0 }}</div>
         </div>
-        <div class="erp-route-card">
-            <div class="erp-route-card__key">Released Jobs</div>
-            <div class="erp-route-card__value">{{ totals.released_jobs|default:0 }}</div>
+        <div class="erp-info-item">
+            <div class="erp-info-item__label">Released Jobs</div>
+            <div class="erp-info-item__value">{{ totals.released_jobs|default:0 }}</div>
         </div>
-        <div class="erp-route-card">
-            <div class="erp-route-card__key">Completed Jobs</div>
-            <div class="erp-route-card__value">{{ totals.completed_jobs|default:0 }}</div>
+        <div class="erp-info-item">
+            <div class="erp-info-item__label">Completed Jobs</div>
+            <div class="erp-info-item__value">{{ totals.completed_jobs|default:0 }}</div>
         </div>
     </div>
+    </section>
 
+    <section class="erp-section-shell">
     <div class="erp-route-grid">
-        <div class="erp-panel">
-            <div class="erp-panel__header"><h3 class="erp-panel__title">Status Summary</h3></div>
+        <div class="erp-card">
+            <div class="erp-card-header"><h3 class="erp-section-title">Status Summary</h3></div>
             <div class="erp-table-wrap">
-                <table>
+                <table class="erp-table">
                     <thead><tr><th>Status</th><th>Jobs</th><th>Order Qty</th></tr></thead>
                     <tbody>
                     {% for row in by_status %}
                         <tr><td>{{ row.status_label|default:row.status|default:'draft' }}</td><td>{{ row.total }}</td><td>{{ row.order_qty|default:0 }}</td></tr>
                     {% empty %}
-                        <tr><td colspan="3" class="erp-empty">No data for selected range.</td></tr>
+                        <tr><td colspan="3"><div class="erp-empty">No data for selected range.</div></td></tr>
                     {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
 
-        <div class="erp-panel">
-            <div class="erp-panel__header"><h3 class="erp-panel__title">Department Summary</h3></div>
+        <div class="erp-card">
+            <div class="erp-card-header"><h3 class="erp-section-title">Department Summary</h3></div>
             <div class="erp-table-wrap">
-                <table>
+                <table class="erp-table">
                     <thead><tr><th>Department</th><th>Jobs</th><th>Order Qty</th></tr></thead>
                     <tbody>
                     {% for row in by_department %}
                         <tr><td>{{ row.department|default:'-' }}</td><td>{{ row.total }}</td><td>{{ row.order_qty|default:0 }}</td></tr>
                     {% empty %}
-                        <tr><td colspan="3" class="erp-empty">No data for selected range.</td></tr>
+                        <tr><td colspan="3"><div class="erp-empty">No data for selected range.</div></td></tr>
                     {% endfor %}
                     </tbody>
                 </table>
             </div>
         </div>
+    </div>
+    </section>
     </div>
 
     <div class="erp-panel">

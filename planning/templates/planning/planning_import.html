@@ -1,5 +1,6 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}Import Planning Sheet{% endblock %}
 {% block header_title %}Import Planning Sheet{% endblock %}
@@ -9,12 +10,16 @@
 {% endblock %}
 
 {% block content %}
+    <div class="erp-page-stack">
     {% with current_step='planning' %}
     {% endwith %}
 
-    <div class="erp-panel">
-        <div class="erp-panel__header">
-            <h3 class="erp-panel__title">Upload CSV File</h3>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Upload</div>
+                <h3 class="erp-section-title">Upload CSV File</h3>
+            </div>
         </div>
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
@@ -30,13 +35,17 @@
                 <a class="erp-btn erp-btn-secondary" href="{% url 'planning:home' %}">Cancel</a>
             </div>
         </form>
-    </div>
+    </section>
 
-    <div class="erp-panel">
-        <div class="erp-panel__header">
-            <h3 class="erp-panel__title">Expected CSV Columns</h3>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Reference</div>
+                <h3 class="erp-section-title">Expected CSV Columns</h3>
+            </div>
         </div>
         <p>JC, Month, Date, Po, SKU, Job Name, Material, Color, Size, Order Qty, Print Sheet Size, Print Sheets, Machine Name, Department, Print Date 1..5 / Print Qty 1..5 / Wastage 1..5, Date Delivery 01..06 / DC 01..06 / Delivered Quantity 01..06.</p>
+    </section>
     </div>
 {% endblock %}
 

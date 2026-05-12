@@ -1,0 +1,36 @@
+{% comment %}
+  Layer 3: Planning contextual navigation.
+  Render PO operations only for PO-related Planning screens.
+{% endcomment %}
+{% if url == 'po_root' or url == 'po_inbox' or url == 'po_upload' or url == 'upload_po' or url == 'po_manual' or url == 'manual_po_entry' or url == 'po_review' or url == 'po_new_skus' or url == 'pending_actions' %}
+<div class="erp-subnav erp-subnav-context" aria-label="Planning PO context navigation">
+    <span class="erp-subnav-context-label">PO Context</span>
+    <a href="{% url 'planning:po_inbox' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'po_root' or url == 'po_inbox' %}is-active{% endif %}">
+        PO Inbox
+    </a>
+
+    <details class="erp-dropdown erp-context-dropdown" role="list">
+        <summary class="erp-subnav-link erp-subnav-context-link {% if url == 'po_upload' or url == 'upload_po' or url == 'po_manual' or url == 'manual_po_entry' %}is-active{% endif %}" aria-haspopup="menu" aria-expanded="false">
+            PO Intake <i class="fas fa-chevron-down" style="margin-left:6px;font-size:0.8em;"></i>
+        </summary>
+        <div class="erp-dropdown-menu" role="menu">
+            <a role="menuitem" href="{% url 'planning:upload_po' %}" class="erp-btn erp-btn-ghost">Upload PO</a>
+            <a role="menuitem" href="{% url 'planning:manual_po_entry' %}" class="erp-btn erp-btn-ghost">Manual PO Entry</a>
+        </div>
+    </details>
+
+    <a href="{% url 'planning:pending_actions' %}"
+         class="erp-subnav-link erp-subnav-context-link {% if url == 'pending_actions' or url == 'po_new_skus' %}is-active{% endif %}">
+        Pending Review
+    </a>
+    <a href="{% url 'planning:jobs_drafts' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'jobs_drafts' %}is-active{% endif %}">
+        Draft PO
+    </a>
+    <a href="{% url 'planning:jobs_locked' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'jobs_locked' %}is-active{% endif %}">
+        Locked PO
+    </a>
+</div>
+{% endif %}

@@ -578,7 +578,7 @@ def planning_jobs_locked(request):
 @login_required
 @permission_required('can_edit_jobcard')
 def planning_sku_queue(request):
-    return redirect('qc:pending_skus')
+    return redirect('planning:pending_skus')
 
 
 @login_required
@@ -2774,6 +2774,7 @@ def pending_sku_master_entry(request):
     po_doc_id_raw = request.GET.get('po_doc_id') or request.POST.get('po_doc_id')
     return_po = (request.GET.get('return_po') or request.POST.get('return_po') or '').strip()
     return_q = (request.GET.get('return_q') or request.POST.get('return_q') or '').strip()
+    is_readonly = (request.GET.get('readonly') or request.POST.get('readonly') or '').strip() in {'1', 'true', 'yes'}
 
     def _redirect_pending():
         params = {}
@@ -2821,6 +2822,10 @@ def pending_sku_master_entry(request):
     recipe = SkuRecipe.objects.filter(sku__iexact=sku).first()
 
     if request.method == 'POST':
+        if is_readonly:
+            messages.error(request, 'Read-only mode does not allow edits.')
+            return _redirect_pending()
+
         action = (request.POST.get('action') or 'save_draft').strip()
         if recipe and action == 'delete':
             if recipe.master_data_status == 'approved' and not is_admin_user:
@@ -2911,6 +2916,9 @@ def pending_sku_master_entry(request):
         form = SkuRecipeForm(instance=recipe, initial=initial)
 
     form.fields['sku'].widget.attrs['readonly'] = True
+    if is_readonly:
+        for field in form.fields.values():
+            field.disabled = True
 
     current_recipe = recipe
     if request.method == 'POST' and form.is_valid() and 'obj' in locals():
@@ -2935,6 +2943,7 @@ def pending_sku_master_entry(request):
         'recipe_status': (current_recipe.master_data_status if current_recipe else 'missing'),
         'missing_required_fields': _missing_required_master_fields(current_recipe, po_job_name),
         'mismatch_alerts': mismatch_alerts,
+        'is_readonly': is_readonly,
     }
     context['can_admin_actions'] = is_admin_user
     return render(request, 'planning/pending_sku_master_entry.html', context)

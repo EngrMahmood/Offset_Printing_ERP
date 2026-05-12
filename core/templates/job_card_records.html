@@ -1,22 +1,8 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}Job Card Records - Offset ERP{% endblock %}
-{% block extra_head %}
-    <style>
-        .records-page-shell {
-            max-width: 100%;
-            margin: 0 auto;
-            padding: 12px;
-        }
-        .job-card-records-table {
-            min-width: 1500px;
-        }
-        .records-actions-cell {
-            white-space: nowrap;
-        }
-    </style>
-{% endblock %}
 {% block header_title %}Job Card Records{% endblock %}
 {% block header_subtitle %}Dense record view for job card progress, dispatch position, and close-gap actions.{% endblock %}
 {% block header_actions %}
@@ -28,7 +14,6 @@
     {% endif %}
 {% endblock %}
 {% block content %}
-    <div class="records-page-shell">
         <div class="erp-page-stack">
             <div class="erp-actions">
                 <a href="{% url 'home' %}" class="erp-btn erp-btn-secondary">Home</a>
@@ -52,7 +37,7 @@
 
                 {% if messages %}
                     {% for message in messages %}
-                        <div class="erp-inline-message {% if message.tags == 'success' %}success{% else %}danger{% endif %}">{{ message }}</div>
+                        <div class="erp-alert {% if message.tags == 'success' %}erp-alert-success{% else %}erp-alert-danger{% endif %}">{{ message }}</div>
                     {% endfor %}
                 {% endif %}
 

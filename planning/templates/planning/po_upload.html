@@ -1,25 +1,29 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+
+{% load theme_tags %}
 
 {% block title %}Upload PO PDF{% endblock %}
 {% block header_title %}Upload PO PDF{% endblock %}
 {% block header_subtitle %}After upload, route Repeat vs New in PO Intake. New SKUs must pass Master approval before Planning sync.{% endblock %}
 {% block header_actions %}
-    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO Entry</a>
     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:home' %}">Back to Planning</a>
 {% endblock %}
 
 {% block content %}
-    {% with current_step='po' %}
-    {% endwith %}
-
+<div class="erp-page-stack">
     {% for msg in messages %}
-    <div class="erp-alert is-error">{{ msg }}</div>
+    <section class="erp-section-shell">
+        <div class="erp-alert erp-alert-danger">{{ msg }}</div>
+    </section>
     {% endfor %}
 
-    <div class="erp-panel">
-        <div class="erp-panel__header">
-            <h3 class="erp-panel__title">Upload Purchase Order PDF</h3>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">PO Intake</div>
+                <h3 class="erp-section-title">Upload Purchase Order PDF</h3>
+                <p class="erp-section-desc">Upload PO PDF to auto-extract line items into the intake queue.</p>
+            </div>
         </div>
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
@@ -35,11 +39,14 @@
                 <a href="{% url 'planning:home' %}" class="erp-btn erp-btn-secondary">Cancel</a>
             </div>
         </form>
-    </div>
+    </section>
 
-    <div class="erp-panel">
-        <div class="erp-panel__header">
-            <h3 class="erp-panel__title">What Gets Extracted Automatically</h3>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Extraction Scope</div>
+                <h3 class="erp-section-title">What Gets Extracted Automatically</h3>
+            </div>
         </div>
         <ul>
             <li>PO Number, PO Date, Approval Date</li>
@@ -48,7 +55,9 @@
             <li>Variable number of SKUs (1 to 20+) — all detected automatically</li>
         </ul>
         <p class="erp-muted">After extraction, use PO Intake Queue to route repeat/new lines. Job Card numbers are auto-assigned.</p>
-    </div>
+        <p class="erp-note">After extraction, use PO Intake Queue to route repeat/new lines. Job Card numbers are auto-assigned.</p>
+    </section>
+</div>
 {% endblock %}
 
 
