@@ -8,6 +8,9 @@
 {% block header_actions %}
     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Bulk Upload PO</a>
     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO</a>
+{% endblock %}
+
+{% block content %}
 <div class="erp-table-wrap">
     <table>
         <thead>
@@ -48,32 +51,8 @@
                     </div>
                 </td>
             </tr>
-        {% endfor %}
-        </tbody>
-    </table>
-</div>
-                    <div class="erp-actions">
-                        <form method="post" action="">
-                            {% csrf_token %}
-                            <input type="hidden" name="action" value="delete_po_intake">
-                            {% if row.po_number != '-' %}
-                                <input type="hidden" name="po_number" value="{{ row.po_number }}">
-                                <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Delete the entire PO intake for {{ row.po_number }}? This removes the intake document(s) and cannot be undone.');">Delete Intake</button>
-                            {% else %}
-                                <input type="hidden" name="po_doc_id" value="{{ row.po_doc_id }}">
-                                <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Delete this PO intake document? This removes the intake document and cannot be undone.');">Delete Intake</button>
-                            {% endif %}
-                        </form>
-                    </div>
-                    {% endif %}
-                    <p class="erp-muted">
-                        New jobs must complete Master approval first. After Approved status, matching draft planning jobs are refreshed.
-                        {% if row.new_skus_sent_to_planning_count > 0 %}Planning jobs unlocked so far: {{ row.new_skus_sent_to_planning_count }}.{% endif %}
-                    </p>
-                </td>
-            </tr>
         {% empty %}
-            <tr><td colspan="10" class="erp-empty">No uploaded PO documents yet.</td></tr>
+            <tr><td colspan="7" class="erp-empty">No uploaded PO documents yet.</td></tr>
         {% endfor %}
         </tbody>
     </table>
