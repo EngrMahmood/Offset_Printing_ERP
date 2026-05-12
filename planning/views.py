@@ -1500,6 +1500,59 @@ def planning_job_card_print(request, job_id):
 
 @login_required
 @permission_required('can_edit_jobcard')
+def planning_job_card_pdf(request, job_id):
+    job = get_object_or_404(
+        PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs'),
+        id=job_id,
+    )
+    status_now = _normalize_status(job.status)
+    job_card = getattr(job, 'job_card', None)
+    can_print_from_job = status_now in {'qc_approved', 'released', 'in_production', 'completed'}
+    can_print_from_card = job_card.can_print_job_card() if job_card else False
+    if not (can_print_from_job or can_print_from_card):
+        messages.error(request, 'Job card print is available only after QC approval or production approval.')
+        return redirect('planning:job_detail', job_id=job.id)
+
+    missing_qc_fields = job.qc_missing_fields()
+    if missing_qc_fields:
+        messages.error(request, f'Job card cannot be downloaded until QC fields are completed: {", ".join(missing_qc_fields)}.')
+        return redirect('planning:job_detail', job_id=job.id)
+
+    def _pdf_filename(jc_number):
+        if not jc_number:
+            return 'JOB-CARD'
+        normalized = str(jc_number).strip().upper()
+        parts = [part for part in normalized.split('-') if part]
+        if 'UPP' in parts:
+            return '-'.join(parts)
+        if len(parts) == 4 and parts[0] == 'JC':
+            return '-'.join([parts[0], parts[1], parts[2], 'UPP', parts[3]])
+        if len(parts) >= 4 and parts[0] == 'JC' and parts[-2] != 'UPP':
+            return '-'.join(parts[:-1] + ['UPP', parts[-1]])
+        return normalized
+
+    pdf_filename = _pdf_filename(job.jc_number)
+    job_scan_url = request.build_absolute_uri(reverse('planning:job_detail', kwargs={'job_id': job.id}))
+
+    try:
+        pdf_bytes = _build_job_card_pdf_bytes(job, job_scan_url)
+    except RuntimeError as exc:
+        messages.error(request, str(exc))
+        return redirect('planning:job_card_print', job_id=job.id)
+
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{pdf_filename}.pdf"'
+    return response
+
+
+@login_required
+@permission_required('can_view_approval_queue')
+def approval_queue(request):
+    return redirect('qc:approval_queue')
+
+
+@login_required
+@permission_required('can_edit_jobcard')
 def planning_report(request):
     queryset = PlanningJob.objects.all()
 
