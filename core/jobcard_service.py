@@ -4,6 +4,7 @@ import re
 
 from django.core.exceptions import ValidationError
 from django.db import transaction
+from django.db.models import Q
 
 from .models import (
     ChangeLog,
@@ -61,7 +62,14 @@ def job_card_queue_queryset(queue_name):
     statuses = job_card_queue_statuses(queue_name)
     queryset = JobCard.objects.filter(is_active=True)
     if statuses:
-        queryset = queryset.filter(status__in=statuses)
+        if queue_name == 'qc':
+            # Keep QC visibility resilient when PlanningJob already moved to pending_qc
+            # but JobCard status sync has not yet been applied.
+            queryset = queryset.filter(
+                Q(status__in=statuses) | Q(planning_job__status='pending_qc')
+            )
+        else:
+            queryset = queryset.filter(status__in=statuses)
     return queryset.select_related('planning_job', 'material', 'machine_name', 'department', 'created_by')
 
 

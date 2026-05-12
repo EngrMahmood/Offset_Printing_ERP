@@ -7,6 +7,7 @@ app_name = 'planning'
 urlpatterns = [
     path('', views.planning_welcome, name='home'),
     path('po/', views.planning_po_root, name='po_root'),
+    path('manual-entry/', views.manual_po_entry, name='manual_entry'),
     path('po/upload/', views.upload_po, name='po_upload'),
     path('po/manual/', views.manual_po_entry, name='po_manual'),
     path('actions/pending/', views.planning_pending_actions, name='pending_actions'),

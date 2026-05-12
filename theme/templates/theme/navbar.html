@@ -111,34 +111,34 @@
         </a>
         <a href="{% url 'planning:job_cards' %}"
            class="erp-subnav-link {% if url == 'job_cards' or url == 'job_card_layout_builder' %}is-active{% endif %}">
-            Job Cards
+            Job Card Preparation
         </a>
-        <a href="{% url 'planning:planning_readme' %}"
-           class="erp-subnav-link {% if url == 'planning_readme' %}is-active{% endif %}">
-            Planning Guide
-        </a>
-        <a href="{% url 'planning:po_debug' %}"
-           class="erp-subnav-link {% if url == 'po_debug' or url == 'po_debug_alias' %}is-active{% endif %}">
-            PO Debug
+        <a href="{% url 'planning:sku_recipes_list' %}"
+           class="erp-subnav-link {% if url == 'sku_recipes_list' %}is-active{% endif %}">
+            Recipe Entry
         </a>
     </div>
 
     {% elif app == 'qc' and nav.can_access_qc %}
     <div class="erp-subnav">
+        <a href="{% url 'qc:approval_queue' %}"
+           class="erp-subnav-link {% if url == 'qc_home' or url == 'approvals' or url == 'approval_queue' or url == 'job_card_approval' %}is-active{% endif %}">
+            Approval Queue
+        </a>
         <a href="{% url 'qc:pending_skus' %}"
            class="erp-subnav-link {% if url == 'pending_skus' or url == 'master_review' %}is-active{% endif %}">
             Pending SKU Approval
         </a>
         <a href="{% url 'qc:pending_skus_ignored' %}"
            class="erp-subnav-link {% if url == 'pending_skus_ignored' %}is-active{% endif %}">
-            Ignored Pending SKU
+            Ignored SKUs
         </a>
         <a href="{% url 'qc:master_review' %}"
            class="erp-subnav-link {% if url == 'master_review' or url == 'pending_sku_master_entry' %}is-active{% endif %}">
             Master SKU Review
         </a>
         <a href="{% url 'qc:job_card_approval' %}"
-           class="erp-subnav-link {% if url == 'qc_home' or url == 'approval_queue' or url == 'job_card_approval' %}is-active{% endif %}">
+           class="erp-subnav-link {% if url == 'job_card_approval' %}is-active{% endif %}">
             Job Card Approval
         </a>
         <a href="{% url 'qc:release_approval' %}"

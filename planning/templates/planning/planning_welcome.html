@@ -36,7 +36,7 @@
                 <div class="erp-panel__header"><h3 class="erp-panel__title">2. SKU Master &amp; New SKU</h3></div>
                 <p>Check SKU existence and create missing master data.</p>
                 <p class="erp-muted">Planner / Manager / Admin</p>
-                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'qc:pending_skus' %}">Open Step 2</a></div>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:pending_skus' %}">Open Step 2</a></div>
             </div>
             <div class="erp-panel">
                 <div class="erp-panel__header"><h3 class="erp-panel__title">3. Planning Jobs</h3></div>
@@ -46,9 +46,9 @@
             </div>
             <div class="erp-panel">
                 <div class="erp-panel__header"><h3 class="erp-panel__title">4. Job Card Approval</h3></div>
-                <p>QC reviews and approves Job Card.</p>
-                <p class="erp-muted">Planner / Manager / Admin</p>
-                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'qc:approval_queue' %}">Open Step 4</a></div>
+                <p>QC team handles this stage in the dedicated QC module.</p>
+                <p class="erp-muted">View-only reminder for planners</p>
+                <div class="erp-actions"><span class="erp-btn erp-btn-secondary" style="pointer-events:none; opacity:0.8;">Handled in QC</span></div>
             </div>
             <div class="erp-panel">
                 <div class="erp-panel__header"><h3 class="erp-panel__title">5. Production Scan</h3></div>
@@ -90,19 +90,19 @@
                 <div class="erp-panel__header"><h3 class="erp-panel__title">Pending New SKUs</h3></div>
                 <p>Primary screen for new SKUs surfaced from a PO. Fill recipe details and push through draft &rarr; reviewed &rarr; approved.</p>
                 <p class="erp-muted">Start Here After PO Intake</p>
-                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'qc:pending_skus' %}">Open</a></div>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:pending_skus' %}">Open</a></div>
             </div>
             <div class="erp-panel">
                 <div class="erp-panel__header"><h3 class="erp-panel__title">SKU Recipe Master</h3></div>
                 <p>View or maintain all approved recipes. Use bulk upload to create many at once.</p>
                 <p class="erp-muted">{% if can_manage_masters %}Manager/Admin{% else %}Planner Access{% endif %}</p>
-                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">Open</a></div>
+                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipes' %}">Open</a></div>
             </div>
             <div class="erp-panel">
                 <div class="erp-panel__header"><h3 class="erp-panel__title">Bulk Upload SKU Recipes</h3></div>
                 <p>Upload a CSV/XLSX file to create or update multiple SKU master records in one action.</p>
                 <p class="erp-muted">Bulk Mode</p>
-                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipe_bulk_upload' %}">Open</a></div>
+                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipe_bulk_upload' %}">Open</a></div>
             </div>
         </div>
     </div>
@@ -129,10 +129,10 @@
         <p class="erp-muted">The approval screen is split into two sections: SKU Approval Queue (Step 2 banner) and Job Card Approval Queue (Step 4 tabs).</p>
         <div class="erp-route-grid">
             <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">Approval Queue</h3></div>
-                <p>SKU approval banner shows pending new SKUs at the top. Below it, four tabs handle Planning, QC, PM approval, and Release.</p>
-                <p class="erp-muted">QC / Production Review</p>
-                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'qc:approval_queue' %}">Open</a></div>
+                <div class="erp-panel__header"><h3 class="erp-panel__title">QC Approval Handoff</h3></div>
+                <p>After planners submit jobs, the QC team reviews approvals in the QC module and controls release gates.</p>
+                <p class="erp-muted">No actions from planning screen</p>
+                <div class="erp-actions"><span class="erp-btn erp-btn-secondary" style="pointer-events:none; opacity:0.8;">Handled in QC</span></div>
             </div>
             {% if can_view_reports %}
             <div class="erp-panel">

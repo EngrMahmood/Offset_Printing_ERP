@@ -54,6 +54,21 @@
     {% endif %}
 
     <section class="erp-section-shell">
+        <form method="get" class="erp-actions" style="justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                <label for="queue-q" class="erp-muted" style="margin:0;">Find PO/SKU/JC</label>
+                <input id="queue-q" type="text" name="q" value="{{ queue_q|default:'' }}" placeholder="e.g. PO-04-2026-164650" style="min-width:260px;">
+            </div>
+            <div class="erp-actions" style="margin:0;">
+                <button type="submit" class="erp-btn erp-btn-secondary">Search</button>
+                {% if queue_q %}
+                <a href="{% url 'qc:approval_queue' %}" class="erp-btn erp-btn-secondary">Reset</a>
+                {% endif %}
+            </div>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
         <div class="erp-tab-strip">
             <button type="button" class="erp-tab-button is-active tab-link" data-target="qc-panel">QC Approval{% if qc_jobs %} ({{ qc_jobs|length }}){% endif %}</button>
             <button type="button" class="erp-tab-button tab-link" data-target="pm-panel">PM Approval{% if pm_jobs %} ({{ pm_jobs|length }}){% endif %}</button>

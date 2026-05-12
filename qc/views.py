@@ -53,6 +53,7 @@ def approval_queue(request):
     qc_jobs = job_card_queue_queryset('qc')
     pm_jobs = job_card_queue_queryset('production_manager')
     release_jobs = job_card_queue_queryset('production')
+    queue_q = (request.GET.get('q') or '').strip()
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
@@ -121,9 +122,24 @@ def approval_queue(request):
             messages.success(request, f'Job Card {job_card.job_card_no} moved successfully.')
             return redirect('qc:approval_queue')
 
+    if queue_q:
+        queue_filter = (
+            Q(job_card_no__icontains=queue_q)
+            | Q(PO_No__icontains=queue_q)
+            | Q(SKU__icontains=queue_q)
+            | Q(planning_job__po_number__icontains=queue_q)
+            | Q(planning_job__sku__icontains=queue_q)
+        )
+        qc_jobs = qc_jobs.filter(queue_filter)
+        pm_jobs = pm_jobs.filter(queue_filter)
+        release_jobs = release_jobs.filter(queue_filter)
+
     qc_jobs = qc_jobs.order_by('-updated_at', '-id')[:300]
     pm_jobs = pm_jobs.order_by('-updated_at', '-id')[:300]
     release_jobs = release_jobs.order_by('-updated_at', '-id')[:300]
+
+    if queue_q and not (qc_jobs or pm_jobs or release_jobs):
+        logger.info('QC queue search had no matches for query="%s"', queue_q)
 
     # Dashboard counters (display only)
     profile = getattr(request.user, 'profile', None)
@@ -139,6 +155,7 @@ def approval_queue(request):
         'qc_jobs': qc_jobs,
         'pm_jobs': pm_jobs,
         'release_jobs': release_jobs,
+        'queue_q': queue_q,
         'pending_qc_jobs_count': pending_qc_jobs_count,
         'pending_pm_jobs_count': pending_pm_jobs_count,
         'released_jobs_count': released_jobs_count,
