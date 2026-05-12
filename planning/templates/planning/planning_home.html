@@ -16,76 +16,12 @@
     {% with current_step='planning' %}
     {% endwith %}
 
-    <div class="erp-route-grid">
-        <div class="erp-panel">
-            <div class="erp-panel__header">
-                <h3 class="erp-panel__title">PO Intake Queue</h3>
-                <span class="erp-badge is-count">{{ po_queue_count|default:0 }}</span>
-            </div>
-            <div class="erp-info-grid">
-                <div class="erp-info-item"><div class="erp-info-item__label">Uploaded POs</div><div class="erp-info-item__value">{{ po_queue_count|default:0 }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Pending Review</div><div class="erp-info-item__value">{{ po_pending_review_count|default:0 }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Processed</div><div class="erp-info-item__value">{{ po_processed_count|default:0 }}</div></div>
-            </div>
-            <div class="erp-actions">
-                <a href="{% url 'planning:upload_po' %}" class="erp-btn erp-btn-secondary">Upload PO</a>
-                <a href="{% url 'planning:po_inbox' %}" class="erp-btn erp-btn-secondary">Open Inbox</a>
-            </div>
-        </div>
+    <!-- Removed redundant summary panels for minimal UI -->
 
-        <div class="erp-panel">
-            <div class="erp-panel__header">
-                <h3 class="erp-panel__title">SKU Queue</h3>
-                <span class="erp-badge is-count">{{ sku_pending_count|default:0 }}</span>
-            </div>
-            <div class="erp-info-grid">
-                <div class="erp-info-item"><div class="erp-info-item__label">Pending New SKUs</div><div class="erp-info-item__value">{{ sku_pending_count|default:0 }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Pending Masters</div><div class="erp-info-item__value">{{ sku_pending_master_entries_count|default:0 }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Approved Masters</div><div class="erp-info-item__value">{{ sku_approved_count|default:0 }}</div></div>
-            </div>
-            <div class="erp-actions">
-                <a href="{% url 'planning:sku_queue' %}" class="erp-btn erp-btn-secondary">SKU Queue</a>
-                <a href="{% url 'planning:sku_recipes_list' %}" class="erp-btn erp-btn-secondary">Recipe List</a>
-            </div>
-        </div>
-
-        <div class="erp-panel">
-            <div class="erp-panel__header">
-                <h3 class="erp-panel__title">Planning Queue</h3>
-                <span class="erp-badge is-count">{{ planning_draft_count|default:0 }}</span>
-            </div>
-            <div class="erp-info-grid">
-                <div class="erp-info-item"><div class="erp-info-item__label">Draft Jobs</div><div class="erp-info-item__value">{{ planning_draft_count|default:0 }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Pending QC</div><div class="erp-info-item__value">{{ planning_pending_qc_count|default:0 }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Released Jobs</div><div class="erp-info-item__value">{{ planning_released_count|default:0 }}</div></div>
-            </div>
-            <div class="erp-actions">
-                <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-primary">Open Jobs</a>
-            </div>
-        </div>
-    </div>
-
-    <div class="erp-route-grid erp-route-grid--4">
-        <div class="erp-route-card">
-            <div class="erp-route-card__key">Draft</div>
-            <div class="erp-route-card__value">{{ planning_draft_count|default:0 }}</div>
-        </div>
-        <div class="erp-route-card">
-            <div class="erp-route-card__key">Pending QC</div>
-            <div class="erp-route-card__value">{{ planning_pending_qc_count|default:0 }}</div>
-        </div>
-        <div class="erp-route-card">
-            <div class="erp-route-card__key">Approved</div>
-            <div class="erp-route-card__value">{{ planning_approved_count|default:0 }}</div>
-        </div>
-        <div class="erp-route-card">
-            <div class="erp-route-card__key">Released</div>
-            <div class="erp-route-card__value">{{ planning_released_count|default:0 }}</div>
-        </div>
-    </div>
+    <!-- Removed redundant status cards for minimal UI -->
 
     <div class="erp-section-divider">
-        Open Planning Jobs
+        <strong>Planning Jobs</strong>
         <span class="erp-badge is-count">{{ jobs.paginator.count }} job{{ jobs.paginator.count|pluralize }}</span>
     </div>
     <div class="erp-split-layout">
@@ -105,22 +41,6 @@
                         {% endfor %}
                     </select>
                 </div>
-                <div class="erp-form-field">
-                    <label>Department</label>
-                    <input type="text" name="department" placeholder="Department" value="{{ filters.department }}">
-                </div>
-                <div class="erp-form-field">
-                    <label>Machine</label>
-                    <input type="text" name="machine" placeholder="Machine" value="{{ filters.machine }}">
-                </div>
-                <div class="erp-form-field">
-                    <label>From</label>
-                    <input type="date" name="from_date" value="{{ filters.from_date }}">
-                </div>
-                <div class="erp-form-field">
-                    <label>To</label>
-                    <input type="date" name="to_date" value="{{ filters.to_date }}">
-                </div>
                 <div class="erp-form-actions">
                     <button type="submit" class="erp-btn erp-btn-primary erp-btn-block">Apply</button>
                     <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-secondary erp-btn-block">Reset</a>
@@ -128,9 +48,7 @@
             </form>
         </aside>
         <section class="erp-data-pane">
-            <div class="erp-table-toolbar">
-                <span class="erp-table-meta">{{ jobs.paginator.count }} job{{ jobs.paginator.count|pluralize }}</span>
-            </div>
+            <!-- Removed redundant table meta toolbar -->
             <div class="erp-table-wrap erp-table-dense">
                 <table>
                     <thead>
@@ -155,21 +73,22 @@
                             <td>{{ job.plan_date|date:'Y-m-d' }}</td>
                             <td class="erp-col-actions">
                                 <div class="erp-actions erp-actions--compact">
-                                    <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-secondary">View</a>
-                                    {% if user_can_plan %}
-                                    {% if job.effective_status == 'draft' or job.effective_status == 'pending_qc' %}
-                                    <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-primary">Finalize Job</a>
+                                    <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-primary">Details</a>
+                                    {% if user_can_plan and job.effective_status == 'draft' %}
+                                        <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-secondary">Edit</a>
+                                        {% if job.can_submit_qc %}
+                                            <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="inline-flex">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="transition" value="submit_qc">
+                                                <input type="hidden" name="next" value="{% url 'planning:jobs' %}">
+                                                <button type="submit" class="erp-btn erp-btn-success">Send to QC</button>
+                                            </form>
+                                        {% else %}
+                                            <button type="button" class="erp-btn erp-btn-secondary" title="{{ job.submit_qc_block_reason }}" disabled>Send to QC</button>
+                                        {% endif %}
                                     {% endif %}
-                                    {% if job.effective_status == 'draft' %}
-                                    <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="inline-flex">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="transition" value="submit_qc">
-                                        <input type="hidden" name="next" value="{% url 'planning:jobs' %}">
-                                        <button type="submit" class="erp-btn erp-btn-success">Send to QC</button>
-                                    </form>
-                                    {% elif job.effective_status == 'qc_approved' or job.effective_status == 'released' %}
-                                    <a href="{% url 'planning:job_card_print' job.id %}" class="erp-btn erp-btn-success">Print Job Card</a>
-                                    {% endif %}
+                                    {% if job.effective_status == 'qc_approved' or job.effective_status == 'released' %}
+                                        <a href="{% url 'planning:job_card_print' job.id %}" class="erp-btn erp-btn-success">Print</a>
                                     {% endif %}
                                 </div>
                             </td>

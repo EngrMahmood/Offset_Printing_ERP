@@ -1002,7 +1002,7 @@ def sku_recipes_list(request):
             Q(sku__icontains=q)
             | Q(job_name__icontains=q)
             | Q(material__icontains=q)
-            | Q(machine_name__icontains=q)
+            | Q(application__icontains=q)
         )
     if status_filter in ('draft', 'pending_review', 'reviewed', 'approved'):
         qs = qs.filter(master_data_status=status_filter)

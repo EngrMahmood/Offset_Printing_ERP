@@ -69,68 +69,38 @@
         </div>
     </div>
 
-    <div class="summary-bar">
-        <div class="summary-card">
-            <span class="label">Pending SKUs</span>
-            <span class="value">{{ pending_count }}</span>
-        </div>
-        <div class="summary-card">
-            <span class="label">Current Filter</span>
-            <span class="value">{{ po_filter|default:'All POs' }}</span>
-        </div>
-        <div class="summary-card">
-            <span class="label">Search</span>
-            <span class="value">{{ q|default:'All SKUs' }}</span>
-        </div>
-    </div>
+    <!-- Removed summary cards for minimal UI -->
 
-    <div style="margin:8px 0 12px;">
-        <a class="stat-chip" href="{% url 'qc:sku_recipes' %}">Master</a>
-        <a class="stat-chip active" href="{% url 'qc:pending_skus' %}">Pending SKUs</a>
-    </div>
+    <!-- Removed custom stat chips for minimal UI -->
 
     {% for msg in messages %}
         <div class="msg {% if 'warning' in msg.tags %}warning{% endif %}">{{ msg }}</div>
     {% endfor %}
 
-    <section class="panel">
-        <div class="route-band">
-            <div class="route-step">
-                <div class="k">Step A</div>
-                <div class="v">Open Master Form</div>
-            </div>
-            <div class="route-step">
-                <div class="k">Step B</div>
-                <div class="v">Send For Review / Approval</div>
-            </div>
-            <div class="route-step">
-                <div class="k">Step C</div>
-                <div class="v">Approved SKU Auto-Sync To Planning</div>
-            </div>
-        </div>
-        <div style="margin-bottom:8px;display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
-            <div><span class="badge">Pending: {{ pending_count }}</span></div>
-            <div class="muted">Select a SKU, open the form, complete master data, then send it for approval review.</div>
-        </div>
+    <section class="erp-panel">
+        <!-- Minimal UI: removed stepper and summary, only table and filter remain -->
 
-        <form method="get" class="filters">
-            <select name="po">
-                <option value="">All POs</option>
-                {% for po in po_summary %}
-                    <option value="{{ po.po_number }}" {% if po_filter == po.po_number %}selected{% endif %}>{{ po.po_number }} ({{ po.count }})</option>
-                {% endfor %}
-            </select>
-            <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name">
-            <button type="submit" class="btn secondary">Apply</button>
-            <a href="{% url 'qc:pending_skus' %}" class="btn secondary">Reset</a>
+        <form method="get" class="erp-form-grid" style="margin-bottom: 12px;">
+            <div>
+                <label>PO</label>
+                <select name="po">
+                    <option value="">All POs</option>
+                    {% for po in po_summary %}
+                        <option value="{{ po.po_number }}" {% if po_filter == po.po_number %}selected{% endif %}>{{ po.po_number }} ({{ po.count }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label>Search</label>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name">
+            </div>
+            <div class="erp-form-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'qc:pending_skus' %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
         </form>
 
-        <div class="po-chip-wrap">
-            <a class="po-chip {% if not po_filter %}active{% endif %}" href="{% url 'qc:pending_skus' %}{% if q %}?q={{ q|urlencode }}{% endif %}">All POs</a>
-            {% for po in po_summary %}
-                <a class="po-chip {% if po_filter == po.po_number %}active{% endif %}" href="{% url 'qc:pending_skus' %}?po={{ po.po_number|urlencode }}{% if q %}&q={{ q|urlencode }}{% endif %}">{{ po.po_number }} ({{ po.count }})</a>
-            {% endfor %}
-        </div>
+        <!-- Removed custom PO filter chips for minimal UI -->
 
         <div class="table-shell">
             <table>

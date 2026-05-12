@@ -779,10 +779,25 @@ def planning_home(request):
     paginator = Paginator(queryset, 50)
     page_number = request.GET.get('page')
     jobs = paginator.get_page(page_number)
+    approved_sku_keys = {
+        _sku_key(sku)
+        for sku in SkuRecipe.objects.filter(
+            is_active=True,
+            master_data_status='approved',
+        ).values_list('sku', flat=True)
+        if sku
+    }
     for job in jobs:
         _repair_rejected_job_status(job)
         job.effective_status = _effective_planning_status(job)
         job.effective_status_label = _effective_planning_status_label(job, job.effective_status)
+        job.can_submit_qc = True
+        job.submit_qc_block_reason = ''
+        if job.effective_status == 'draft':
+            has_approved_recipe = _sku_key(job.sku) in approved_sku_keys
+            if not has_approved_recipe:
+                job.can_submit_qc = False
+                job.submit_qc_block_reason = 'SKU master is pending review/approval in QC.'
 
     # --- Dashboard section counts (display only, no logic change) ---
     po_docs_qs = PoDocument.objects.all()

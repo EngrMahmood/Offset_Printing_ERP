@@ -8,10 +8,6 @@
 {% block header_actions %}
     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Bulk Upload PO</a>
     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO</a>
-{% endblock %}
-
-{% block content %}
-
 <div class="erp-table-wrap">
     <table>
         <thead>
@@ -19,13 +15,10 @@
                 <th>PO</th>
                 <th>Supplier</th>
                 <th>Items</th>
-                <th>Repeat</th>
-                <th>New</th>
                 <th>Ignored</th>
                 <th>Pending Master</th>
-                <th>Merge Note</th>
                 <th>Uploaded</th>
-                <th>Next Step</th>
+                <th>Actions</th>
             </tr>
         </thead>
         <tbody>
@@ -34,8 +27,6 @@
                 <td>{{ row.po_number }}</td>
                 <td>{{ row.supplier }}</td>
                 <td>{{ row.item_count }}</td>
-                <td><span class="erp-badge is-approved">{{ row.repeat_count }}</span></td>
-                <td><span class="erp-badge is-pending">{{ row.new_count }}</span></td>
                 <td>
                     {% if row.ignored_count %}
                         <span class="erp-badge is-rejected">{{ row.ignored_count }}</span>
@@ -45,42 +36,22 @@
                     {% endif %}
                 </td>
                 <td>{{ row.missing_count }}</td>
-                <td>
-                    {% if row.merged_duplicates %}
-                        <span class="erp-badge is-hold">Merged duplicate SKU lines</span>
-                        <p class="erp-muted">Lines: {{ row.source_item_count }} &rarr; {{ row.item_count }}</p>
-                        <p class="erp-muted">SKU(s): {{ row.merged_duplicate_skus|join:', ' }}</p>
-                    {% else %}
-                        <span class="erp-muted">No duplicate SKU lines</span>
-                    {% endif %}
-                </td>
                 <td class="erp-muted">{{ row.doc.created_at|date:'d M Y H:i' }}</td>
                 <td>
-                    {% if row.repeat_count > 0 %}
-                    <p><strong>Repeat Route</strong></p>
                     <div class="erp-actions">
-                        <a href="{% url 'planning:jobs' %}?q={{ row.po_number }}" class="erp-btn erp-btn-secondary">Open Planning</a>
-                    </div>
-                    <p class="erp-muted">
-                        Repeat jobs synced. Created: {{ row.repeat_jobs_created_count }}, Updated: {{ row.repeat_jobs_updated_count }}.
-                        {% if row.repeat_jobs_locked_count %}Locked: {{ row.repeat_jobs_locked_count }}.{% endif %}
-                        {% if row.repeat_jobs_missing_recipe_count %}Missing approved master: {{ row.repeat_jobs_missing_recipe_count }}.{% endif %}
-                    </p>
-                    {% else %}
-                    <p class="erp-muted">No repeat jobs to refresh in Planning from this PO.</p>
-                    {% endif %}
-
-                    {% if row.new_count > 0 %}
-                    <p><strong>New Route</strong></p>
-                    <div class="erp-actions">
-                        <a href="{% url 'qc:pending_skus' %}?po={{ row.po_number|urlencode }}" class="erp-btn erp-btn-warning">Open Pending Master Data</a>
-                        {% if row.new_skus_sent_to_planning_count > 0 %}
-                        <a href="{% url 'planning:jobs' %}?q={{ row.po_number }}" class="erp-btn erp-btn-secondary">Open Planning</a>
+                        {% if row.repeat_count > 0 %}
+                            <a href="{% url 'planning:jobs' %}?q={{ row.po_number }}" class="erp-btn erp-btn-primary">Planning</a>
+                        {% endif %}
+                        {% if row.new_count > 0 %}
+                            <a href="{% url 'qc:pending_skus' %}?po={{ row.po_number|urlencode }}" class="erp-btn erp-btn-warning">Master Data</a>
                         {% endif %}
                     </div>
-                    {% endif %}
-
-                    {% if can_admin_actions %}
+                </td>
+            </tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
                     <div class="erp-actions">
                         <form method="post" action="">
                             {% csrf_token %}

@@ -71,8 +71,10 @@
     <section class="erp-section-shell">
         <div class="erp-tab-strip">
             <button type="button" class="erp-tab-button is-active tab-link" data-target="qc-panel">QC Approval{% if qc_jobs %} ({{ qc_jobs|length }}){% endif %}</button>
+            {% if user_can_approve_pm %}
             <button type="button" class="erp-tab-button tab-link" data-target="pm-panel">PM Approval{% if pm_jobs %} ({{ pm_jobs|length }}){% endif %}</button>
             <button type="button" class="erp-tab-button tab-link" data-target="release-panel">Release{% if release_jobs %} ({{ release_jobs|length }}){% endif %}</button>
+            {% endif %}
         </div>
     </section>
 
@@ -103,8 +105,8 @@
                                 <div class="erp-actions">
                                     {% if job.planning_job %}<a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>{% endif %}
                                     {% if user_can_approve_qc %}
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_qc"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success">Approve QC</button></form>
-                                    <button type="button" class="erp-btn erp-btn-danger" onclick="openRejectModal('reject_qc', '{{ job.id }}', '{{ job.job_card_no }}')">Reject QC</button>
+                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_qc"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success">Approve</button></form>
+                                    <button type="button" class="erp-btn erp-btn-danger" onclick="openRejectModal('reject_qc', '{{ job.id }}', '{{ job.job_card_no }}')">Send Back</button>
                                     {% endif %}
                                 </div>
                                 {% if job.latest_rejection_reason %}
@@ -122,6 +124,7 @@
         </div>
     </section>
 
+    {% if user_can_approve_pm %}
     <section id="pm-panel" class="tab-panel" hidden>
         <div class="erp-section-shell">
             <div class="erp-card-header">
@@ -148,8 +151,8 @@
                                 <div class="erp-actions">
                                     {% if job.planning_job %}<a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>{% endif %}
                                     {% if user_can_approve_pm %}
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_pm"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success">Approve PM</button></form>
-                                    <button type="button" class="erp-btn erp-btn-danger" onclick="openRejectModal('reject_pm', '{{ job.id }}', '{{ job.job_card_no }}')">Reject PM</button>
+                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_pm"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success">Approve</button></form>
+                                    <button type="button" class="erp-btn erp-btn-danger" onclick="openRejectModal('reject_pm', '{{ job.id }}', '{{ job.job_card_no }}')">Send Back</button>
                                     {% endif %}
                                 </div>
                                 {% if job.latest_rejection_reason %}
@@ -193,7 +196,7 @@
                                 <div class="erp-actions">
                                     {% if job.planning_job %}<a href="{% url 'planning:job_card_print' job.planning_job.id %}" class="erp-btn erp-btn-print" target="_blank" rel="noopener">A4 Print</a>{% endif %}
                                     {% if user_can_approve_pm %}
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="release_for_production"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-info">Release</button></form>
+                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="release_for_production"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-info">Release Job</button></form>
                                     {% endif %}
                                 </div>
                             </td>
@@ -207,6 +210,7 @@
             {% endif %}
         </div>
     </section>
+    {% endif %}
 </div>
 
 <div class="modal-overlay" id="rejectModal" hidden>
@@ -251,7 +255,7 @@
     document.addEventListener('DOMContentLoaded', function() {
         const tabs = document.querySelectorAll('.tab-link');
         const panels = document.querySelectorAll('.tab-panel');
-        const initialTarget = '{% if request.resolver_match.url_name == "release_approval" %}release-panel{% elif request.resolver_match.url_name == "job_card_approval" %}qc-panel{% else %}qc-panel{% endif %}';
+        const requestedTarget = '{% if request.resolver_match.url_name == "release_approval" and user_can_approve_pm %}release-panel{% elif request.resolver_match.url_name == "job_card_approval" %}qc-panel{% else %}qc-panel{% endif %}';
 
         function activatePanel(targetId) {
             tabs.forEach(button => button.classList.remove('is-active'));
@@ -266,6 +270,10 @@
             }
         }
 
+        const availableTargets = Array.from(tabs).map(tab => tab.dataset.target);
+        const initialTarget = availableTargets.includes(requestedTarget)
+            ? requestedTarget
+            : (availableTargets[0] || 'qc-panel');
         activatePanel(initialTarget);
 
         tabs.forEach(tab => {
