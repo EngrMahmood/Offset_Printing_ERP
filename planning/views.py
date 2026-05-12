@@ -155,6 +155,7 @@ def _effective_planning_status(job):
     }
     planning_status = _normalize_status(job.status)
     job_card_status = None
+    card_status = None
     if hasattr(job, 'job_card'):
         try:
             card_status = (job.job_card.workflow_status or '').strip().lower()
@@ -169,8 +170,6 @@ def _effective_planning_status(job):
         elif card_status in status_rank:
             job_card_status = card_status
 
-    if planning_status == 'draft':
-        return 'draft'
     if planning_status == 'draft':
         return 'draft'
     if card_status in {'qc_rejected', 'pm_rejected'}:
