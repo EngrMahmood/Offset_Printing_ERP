@@ -53,6 +53,7 @@
         .erp-topnav-module:hover { background: rgba(255,255,255,0.1) !important; color: #fff !important; }
         .erp-topnav-module.is-active { background: rgba(96,165,250,0.18) !important; color: #93c5fd !important; font-weight: 600 !important; }
         .erp-topnav-actions { display: flex !important; align-items: center !important; gap: 12px !important; margin-left: auto !important; flex-shrink: 0 !important; }
+        .erp-topbar-actions { display: flex !important; align-items: center !important; gap: 10px !important; flex-wrap: wrap !important; padding: 8px 20px 10px !important; border-top: 1px solid rgba(255,255,255,0.08) !important; }
         .erp-topnav-user-info { display: flex !important; align-items: center !important; gap: 7px !important; color: rgba(255,255,255,0.8) !important; font-size: 13px !important; }
         .erp-topnav-logout {
             display: flex !important; align-items: center !important; gap: 5px !important;
@@ -84,15 +85,24 @@
     {% block extra_head %}{% endblock %}
 </head>
 <body>
-    {% include 'theme/alerts.html' %}
 
     <div class="erp-shell">
         {% block topbar %}
-            {% include 'theme/navbar.html' %}
+            <nav class="erp-topnav" aria-label="Main navigation">
+                {% block navbar %}
+                    {% include 'theme/navbar.html' %}
+                {% endblock %}
+                <div class="erp-topbar-actions">
+                    {% block header_actions %}{% endblock %}
+                </div>
+            </nav>
         {% endblock %}
 
         <main class="erp-main">
             <section class="erp-content">
+                {% block page_alerts %}
+                    {% include 'theme/alerts.html' %}
+                {% endblock %}
                 {% block breadcrumbs %}
                     {% include 'theme/breadcrumbs.html' %}
                 {% endblock %}

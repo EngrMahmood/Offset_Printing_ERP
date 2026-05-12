@@ -8,10 +8,9 @@
     <a href="{% url 'planning:po_inbox' %}" class="erp-btn erp-btn-secondary">Back to PO Intake Queue</a>
 {% endblock %}
 
+{% block page_alerts %}{% endblock %}
+
 {% block content %}
-    {% with current_step='po' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
-    {% endwith %}
 
     {% for msg in messages %}
     {% if 'Partial extraction' in msg.message or msg.level_tag == 'warning' %}

@@ -3,17 +3,8 @@
 {% block title %}Job Card Approval Queue - ERP{% endblock %}
 {% block header_title %}Approval Queue{% endblock %}
 {% block header_subtitle %}QC review, production manager approval, and release checkpoints for job cards.{% endblock %}
-{% block header_actions %}
-<a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
-<a class="erp-btn erp-btn-secondary" href="{% url 'planning:jobs' %}">All Planning Jobs</a>
-<a class="erp-btn erp-btn-secondary" href="{% url 'erp_readme' %}">Guide</a>
-{% endblock %}
-
 {% block content %}
 <div class="erp-page-stack">
-    {% with current_step='approval' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
-    {% endwith %}
 
     <section class="erp-kpi-grid-compact">
         <div class="erp-kpi-card erp-kpi-card-compact">
@@ -245,15 +236,26 @@
     document.addEventListener('DOMContentLoaded', function() {
         const tabs = document.querySelectorAll('.tab-link');
         const panels = document.querySelectorAll('.tab-panel');
+        const initialTarget = '{% if request.resolver_match.url_name == "release_approval" %}release-panel{% elif request.resolver_match.url_name == "job_card_approval" %}qc-panel{% else %}qc-panel{% endif %}';
+
+        function activatePanel(targetId) {
+            tabs.forEach(button => button.classList.remove('is-active'));
+            panels.forEach(panel => panel.hidden = true);
+            const activeTab = Array.from(tabs).find(button => button.dataset.target === targetId);
+            const activePanel = document.getElementById(targetId);
+            if (activeTab) {
+                activeTab.classList.add('is-active');
+            }
+            if (activePanel) {
+                activePanel.hidden = false;
+            }
+        }
+
+        activatePanel(initialTarget);
+
         tabs.forEach(tab => {
             tab.addEventListener('click', function() {
-                tabs.forEach(button => button.classList.remove('is-active'));
-                panels.forEach(panel => panel.hidden = true);
-                this.classList.add('is-active');
-                const panel = document.getElementById(this.dataset.target);
-                if (panel) {
-                    panel.hidden = false;
-                }
+                activatePanel(this.dataset.target);
             });
         });
     });

@@ -17,7 +17,6 @@
 
 {% block content %}
     {% with current_step='planning' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
     {% if job.repeat_flag|lower == 'new' %}

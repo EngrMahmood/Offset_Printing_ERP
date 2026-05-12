@@ -6,17 +6,11 @@
 {% block header_subtitle %}Unified PO Intake — repeat jobs route to Planning, new SKUs route to Master Data first.{% endblock %}
 
 {% block header_actions %}
-    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:home' %}">Planning Home</a>
-    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Upload PO</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Bulk Upload PO</a>
     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO</a>
-    <a class="erp-btn erp-btn-primary" href="{% url 'qc:approval_queue' %}">Approval Queue</a>
-    <a class="erp-btn erp-btn-secondary" href="{% url 'erp_readme' %}">Guide</a>
 {% endblock %}
 
 {% block content %}
-{% with current_step='po' %}
-    {% include 'planning/includes/workflow_sequence_bar.html' %}
-{% endwith %}
 
 <div class="erp-table-wrap">
     <table>
@@ -86,13 +80,18 @@
                     </div>
                     {% endif %}
 
-                    {% if can_admin_actions and row.po_number != '-' %}
+                    {% if can_admin_actions %}
                     <div class="erp-actions">
                         <form method="post" action="">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="delete_po_intake">
-                            <input type="hidden" name="po_number" value="{{ row.po_number }}">
-                            <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Delete the entire PO intake for {{ row.po_number }}? This removes the intake document(s) and cannot be undone.');">Delete Intake</button>
+                            {% if row.po_number != '-' %}
+                                <input type="hidden" name="po_number" value="{{ row.po_number }}">
+                                <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Delete the entire PO intake for {{ row.po_number }}? This removes the intake document(s) and cannot be undone.');">Delete Intake</button>
+                            {% else %}
+                                <input type="hidden" name="po_doc_id" value="{{ row.po_doc_id }}">
+                                <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Delete this PO intake document? This removes the intake document and cannot be undone.');">Delete Intake</button>
+                            {% endif %}
                         </form>
                     </div>
                     {% endif %}

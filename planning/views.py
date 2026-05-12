@@ -553,6 +553,42 @@ def planning_welcome(request):
 
 
 @login_required
+@permission_required('can_edit_jobcard')
+def planning_po_root(request):
+    return redirect('planning:po_inbox')
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planning_pending_actions(request):
+    return redirect(f"{reverse('planning:jobs')}?status=draft")
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planning_jobs_drafts(request):
+    return redirect(f"{reverse('planning:jobs')}?status=draft")
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planning_jobs_locked(request):
+    return redirect(f"{reverse('planning:jobs')}?status=qc_approved")
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planning_sku_queue(request):
+    return redirect('qc:pending_skus')
+
+
+@login_required
+@permission_required('can_edit_jobcard')
+def planning_sku_recipes_list(request):
+    return redirect('qc:sku_recipes')
+
+
+@login_required
 def planning_home(request):
     _user_can_plan = getattr(getattr(request.user, 'profile', None), 'can_plan', lambda: False)()
     queryset = PlanningJob.objects.select_related('job_card').prefetch_related('print_runs', 'dispatch_runs').filter(
@@ -2849,7 +2885,26 @@ def po_inbox(request):
                 messages.error(request, 'Only administrators can delete PO intake records.')
                 return redirect('planning:po_inbox')
 
+            po_doc_id = (request.POST.get('po_doc_id') or '').strip()
             po_number = (request.POST.get('po_number') or '').strip()
+
+            if po_doc_id:
+                try:
+                    doc = PoDocument.objects.get(id=int(po_doc_id))
+                except (TypeError, ValueError, PoDocument.DoesNotExist):
+                    messages.error(request, 'Invalid PO document selected for delete action.')
+                    return redirect('planning:po_inbox')
+
+                try:
+                    if doc.po_file:
+                        doc.po_file.delete(save=False)
+                except Exception:
+                    pass
+                doc.delete()
+
+                messages.success(request, f'Deleted PO intake document {doc.id}.')
+                return redirect('planning:po_inbox')
+
             if not po_number:
                 messages.error(request, 'Invalid PO number for delete action.')
                 return redirect('planning:po_inbox')
@@ -2894,6 +2949,7 @@ def po_inbox(request):
         rows.append(
             {
                 'doc': doc,
+                'po_doc_id': doc.id,
                 'po_number': payload.get('po_number') or '-',
                 'supplier': payload.get('supplier_name') or '-',
                 'item_count': len(items),
