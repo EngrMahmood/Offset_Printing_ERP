@@ -1,0 +1,48 @@
+.erp-form-grid, .grid { display: grid; gap: var(--erp-space-3); grid-template-columns: repeat(2, minmax(240px, 1fr)); }
+.erp-form-field, .field { display: flex; flex-direction: column; gap: 6px; }
+.erp-form-field label, .field label, label {
+    font-size: var(--erp-font-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #4f6379;
+}
+.erp-form-field input,
+.erp-form-field select,
+.erp-form-field textarea,
+.field input,
+.field select,
+.field textarea,
+.filters input,
+.filters select,
+input[type='text'],
+input[type='date'],
+input[type='number'],
+select,
+textarea {
+    width: 100%;
+    border: 1px solid #bfd0e2;
+    border-radius: var(--erp-radius-sm);
+    padding: 8px 10px;
+    font-size: var(--erp-font-sm);
+    background: #fff;
+}
+textarea { min-height: 80px; }
+input:focus, select:focus, textarea:focus {
+    outline: none;
+    border-color: var(--erp-primary);
+    box-shadow: 0 0 0 3px rgba(31, 79, 138, 0.12);
+}
+.field-error input, .field-error select, .field-error textarea {
+    border-color: var(--erp-danger);
+    box-shadow: 0 0 0 3px rgba(181, 40, 42, 0.1);
+}
+.field-error-text, .error {
+    color: var(--erp-danger);
+    font-size: var(--erp-font-xs);
+}
+.erp-filter-bar, .filters {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(140px, 1fr));
+    gap: var(--erp-space-2);
+    align-items: end;
+}

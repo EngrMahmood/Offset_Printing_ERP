@@ -1,0 +1,36 @@
+@media (max-width: 1200px) {
+    .erp-sidebar { width: 88px; }
+    .erp-sidebar .erp-nav-link span,
+    .erp-sidebar .erp-sidebar-group-title,
+    .erp-sidebar .erp-signed-in-label,
+    .erp-sidebar .erp-signed-in-user { display: none; }
+}
+
+@media (max-width: 1024px) {
+    .erp-shell { display: block; }
+    .erp-sidebar {
+        width: 100%;
+        height: auto;
+        position: static;
+        display: grid;
+        grid-template-columns: repeat(2, minmax(180px, 1fr));
+        gap: 6px;
+        padding: var(--erp-space-2);
+    }
+    .erp-sidebar-header, .erp-sidebar-footer { grid-column: 1 / -1; }
+    .erp-content { padding: var(--erp-space-3); }
+    .erp-search-shell input { min-width: 120px; }
+}
+
+@media (max-width: 768px) {
+    .erp-header-nav { overflow-x: auto; white-space: nowrap; }
+    .erp-module-nav-bar { flex-direction: column; align-items: stretch; }
+    .erp-topbar-actions { justify-content: space-between; }
+    .erp-filter-bar, .filters { grid-template-columns: 1fr 1fr; }
+    .erp-dashboard-grid, .erp-stats-grid, .kpi, .route-shell, .erp-workflow, .grid { grid-template-columns: 1fr; }
+}
+
+@media (max-width: 540px) {
+    .erp-filter-bar, .filters { grid-template-columns: 1fr; }
+    .erp-content { padding: var(--erp-space-2); }
+}

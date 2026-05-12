@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Archive Record - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Archive Record - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); }
         .container { max-width: 760px; margin: 0 auto; }
@@ -22,10 +21,13 @@
         textarea { width: 100%; min-height: 110px; box-sizing: border-box; padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
         .actions { display: flex; gap: 10px; margin-top: 14px; }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Archive Record{% endblock %}
+{% block header_subtitle %}Move a record out of live ERP workflows while preserving its full audit trail.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
     <div class="container">
         <div class="top-actions">
             <a href="{% url back_view_name %}" class="btn">Back To Records</a>
@@ -60,7 +62,6 @@
             </form>
         </div>
     </div>
-</body>
-</html>
+{% endblock %}
 
 

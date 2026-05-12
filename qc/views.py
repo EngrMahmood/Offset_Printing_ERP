@@ -152,6 +152,36 @@ def approval_queue(request):
     return render(request, 'qc/approval_queue.html', context)
 
 
+@login_required
+@permission_required('can_view_approval_queue')
+def approval_history(request):
+    """Read-only approval history for SKU and Job Card decisions."""
+    status_filter = (request.GET.get('status') or '').strip().lower()
+    q = (request.GET.get('q') or '').strip()
+
+    job_cards = JobCard.objects.filter(is_active=True).order_by('-updated_at', '-id')
+    if status_filter in {'qc_rejected', 'pm_rejected', 'released', 'qc_approved', 'production_approved'}:
+        job_cards = job_cards.filter(status=status_filter)
+
+    if q:
+        q_upper = q.upper()
+        job_cards = [
+            row for row in job_cards[:400]
+            if q_upper in (row.job_card_no or '').upper()
+            or q_upper in (row.PO_No or '').upper()
+            or q_upper in (row.SKU or '').upper()
+        ]
+    else:
+        job_cards = list(job_cards[:200])
+
+    context = {
+        'rows': job_cards,
+        'q': q,
+        'status_filter': status_filter,
+    }
+    return render(request, 'qc/approval_history.html', context)
+
+
 # MOVED TO QC APP (temporary compatibility layer)
 @login_required
 @permission_required('can_edit_jobcard')

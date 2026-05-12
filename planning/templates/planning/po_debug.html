@@ -1,8 +1,7 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<title>PO Extraction Debug</title>
+{% extends 'theme/base.html' %}
+
+{% block title %}PO Extraction Debug{% endblock %}
+{% block extra_head %}
 <style>
   body { font-family: monospace; font-size: 12px;  background: #f9f9f9; }
   h2 { font-size: 15px; margin-top: 24px; border-bottom: 1px solid #ccc; padding-bottom: 4px; }
@@ -16,11 +15,14 @@
   button { padding: 6px 16px; background: #0d6efd; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
   .stat { margin: 4px 0; }
 </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}PO Extraction Debug{% endblock %}
+{% block header_subtitle %}Developer-only parser inspection for diagnosing PO extraction mismatches across PDF strategies.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
 {% with current_step='po' %}
-  {% include 'planning/includes/workflow_sequence_bar.html' %}
 {% endwith %}
 
 <h1 style="font-size:18px;">PO Extraction Debug</h1>
@@ -71,7 +73,6 @@
 <pre>{{ from_windows }}</pre>
 
 {% endif %}
-</body>
-</html>
+{% endblock %}
 
 

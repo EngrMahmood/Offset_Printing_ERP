@@ -1,0 +1,916 @@
+/* =============================================================
+   ERP COMPONENT SYSTEM — Phase 3
+   Single source of truth for all shared UI components.
+   ============================================================= */
+
+/* ─── Page Header ─────────────────────────────────────────────
+   Standard title-row pattern used on every page.
+   Usage: <div class="erp-page-header">
+            <div class="erp-page-header__left">
+              <h1 class="erp-page-title">…</h1>
+              <p class="erp-page-subtitle">…</p>
+            </div>
+            <div class="erp-actions">…</div>
+          </div>
+   ----------------------------------------------------------- */
+.erp-page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 16px;
+}
+.erp-page-header__left { flex: 1; min-width: 0; }
+.erp-page-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: #172434;
+    line-height: 1.25;
+}
+.erp-page-subtitle {
+    margin: 4px 0 0;
+    font-size: 12px;
+    color: #5f6f82;
+    line-height: 1.5;
+}
+
+/* ─── Action Groups ────────────────────────────────────────────
+   Flex row of buttons. Works in page headers and table cells.
+   ----------------------------------------------------------- */
+.erp-actions {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    align-items: center;
+}
+.erp-actions--right { justify-content: flex-end; }
+.erp-actions--compact { gap: 4px; }
+
+/* ─── Panel / Card ─────────────────────────────────────────────
+   Standard white surface with border and shadow.
+   ----------------------------------------------------------- */
+.erp-panel {
+    background: #fff;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 12px;
+    box-shadow: none;
+}
+.erp-panel__header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid #eef2f7;
+}
+.erp-panel__title {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #445a70;
+    margin: 0;
+}
+/* Row variant: header + action side-by-side */
+.erp-panel--row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+/* ─── Filter Bar ───────────────────────────────────────────────
+   Compact horizontal search/filter controls.
+   ----------------------------------------------------------- */
+.erp-filter {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: flex-end;
+    padding: 10px 12px;
+    background: #f8fafb;
+    border: 1px solid #e4ecf4;
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+.erp-filter input[type="text"],
+.erp-filter input[type="search"],
+.erp-filter input[type="date"],
+.erp-filter select {
+    padding: 7px 10px;
+    border: 1px solid #bfd0e2;
+    border-radius: 6px;
+    font-size: 12px;
+    background: #fff;
+    color: #1f3048;
+    min-width: 140px;
+    font-family: inherit;
+}
+.erp-filter input:focus,
+.erp-filter select:focus {
+    outline: none;
+    border-color: #1f4f8a;
+    box-shadow: 0 0 0 2px rgba(31, 79, 138, 0.10);
+}
+.erp-filter__label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #55708a;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    align-self: center;
+}
+
+/* ─── Status / Badge Strip ─────────────────────────────────────
+   Row of count badges or filter chips above a table.
+   ----------------------------------------------------------- */
+.erp-status-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+/* ─── Bulk Action Bar ──────────────────────────────────────────
+   Appears above a table to bulk-act on selected rows.
+   ----------------------------------------------------------- */
+.erp-bulk-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    padding: 8px 12px;
+    background: #f5f8fc;
+    border: 1px solid #dce7f2;
+    border-radius: 7px;
+    margin-bottom: 10px;
+    font-size: 12px;
+    color: #445366;
+}
+
+/* ─── Table System ─────────────────────────────────────────────
+   Scrollable container + consistent table styles.
+   ----------------------------------------------------------- */
+.erp-table-wrap {
+    overflow: auto;
+    border: 1px solid #d9e2ec;
+    border-radius: 6px;
+    background: #fff;
+    margin-bottom: 2px;
+}
+.erp-table-wrap table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+}
+.erp-table-wrap th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f4f8fc;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #445a70;
+    border-bottom: 2px solid #d9e2ec;
+    white-space: nowrap;
+}
+.erp-table-wrap td {
+    padding: 8px 10px;
+    border-bottom: 1px solid #eef2f7;
+    vertical-align: middle;
+    color: #1e2f3f;
+    line-height: 1.4;
+}
+.erp-table-wrap tr:last-child td { border-bottom: none; }
+.erp-table-wrap tbody tr:hover td { background: #f7fbff; }
+/* Row accent variants */
+.erp-row--released td { background: #f6fdfb; }
+.erp-row--completed td { background: #f5f6f8; }
+/* Cell helpers */
+.erp-cell-jc strong { font-size: 13px; font-weight: 700; color: #172434; }
+.erp-cell-sub { margin-top: 2px; font-size: 11px; color: #5f6f82; }
+/* Bulk highlight */
+.erp-cell-highlight { background: #fff8e0 !important; border-left: 2px solid #f0b429 !important; }
+.erp-row-created td { background: #eaf6ff !important; }
+.erp-row-created td:first-child { background: #d6ecff !important; }
+/* Reject expansion row */
+.erp-reject-row td {
+    background: #fffbe6;
+    color: #7a5700;
+    font-size: 11px;
+    padding: 6px 12px 6px 28px;
+    border-top: none;
+    border-bottom: 1px solid #f0d88a;
+}
+
+/* ─── Info Grid (key/value blocks, e.g. PO header) ────────────
+   ----------------------------------------------------------- */
+.erp-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 8px;
+    margin-bottom: 12px;
+}
+.erp-info-item {
+    background: #f5f9fc;
+    border: 1px solid #d4e1ee;
+    border-radius: 6px;
+    padding: 7px 10px;
+}
+.erp-info-item__label {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #607080;
+    margin-bottom: 3px;
+}
+.erp-info-item__value {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1f2f43;
+}
+
+/* ─── Route Info Cards (context description grid) ─────────────
+   ----------------------------------------------------------- */
+.erp-route-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(200px, 1fr));
+    gap: 8px;
+    margin-bottom: 14px;
+}
+.erp-route-card {
+    background: #fff;
+    border: 1px solid #c9d9ea;
+    border-radius: 8px;
+    padding: 10px 12px;
+}
+.erp-route-card__key {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #55708a;
+    margin-bottom: 4px;
+    letter-spacing: 0.05em;
+}
+.erp-route-card__value {
+    font-size: 13px;
+    color: #1f3249;
+    font-weight: 600;
+    line-height: 1.4;
+}
+
+/* ─── Workflow Guide Bar (SKU status stages) ──────────────────
+   Horizontal bar showing approval stages.
+   ----------------------------------------------------------- */
+.erp-wf-guide {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+    padding: 10px;
+    background: #f5f9ff;
+    border: 1px solid #d8e4f1;
+    border-radius: 8px;
+}
+.erp-wf-step {
+    flex: 1;
+    min-width: 150px;
+    border: 1px solid #c9d9ea;
+    border-radius: 6px;
+    background: #fff;
+    padding: 8px 10px;
+}
+.erp-wf-step__key {
+    font-size: 10px;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: #55708a;
+    letter-spacing: 0.05em;
+    margin-bottom: 3px;
+}
+.erp-wf-step__value {
+    font-size: 12px;
+    color: #223f5b;
+    font-weight: 700;
+    margin-bottom: 3px;
+}
+.erp-wf-step__desc {
+    font-size: 11px;
+    color: #5f6f82;
+    line-height: 1.45;
+}
+
+/* ─── Tab Chips (filter tabs above tables) ────────────────────
+   ----------------------------------------------------------- */
+.erp-tab-strip {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-bottom: 12px;
+    align-items: center;
+}
+.erp-tab {
+    display: inline-block;
+    padding: 5px 13px;
+    border-radius: 20px;
+    font-size: 12px;
+    font-weight: 600;
+    border: 1px solid #d0dcea;
+    text-decoration: none;
+    color: #445366;
+    background: #fff;
+    cursor: pointer;
+    transition: background 0.13s, border-color 0.13s;
+    white-space: nowrap;
+}
+.erp-tab:hover { background: #f0f5fb; text-decoration: none; }
+.erp-tab.is-active,
+.erp-tab[aria-current="page"] {
+    border-color: #1f4f8a;
+    background: #1f4f8a;
+    color: #fff;
+}
+
+/* ─── Status Badges ────────────────────────────────────────────
+   Use: <span class="erp-badge is-approved">Approved</span>
+   ----------------------------------------------------------- */
+.erp-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 9px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    white-space: nowrap;
+    border: 1px solid transparent;
+}
+.erp-badge .erp-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.75;
+    flex-shrink: 0;
+}
+/* Status modifiers */
+.erp-badge.is-draft       { background: #eef2f7; color: #42556e; border-color: #d3dce8; }
+.erp-badge.is-pending     { background: #fff4e0; color: #8a5e00; border-color: #f0d79a; }
+.erp-badge.is-review      { background: #fff4e9; color: #c76f1e; border-color: #f0c8a0; }
+.erp-badge.is-approved    { background: #e7f6ec; color: #1b7f45; border-color: #bee3c7; }
+.erp-badge.is-rejected    { background: #fff0f0; color: #9b2d2f; border-color: #f2c5c7; }
+.erp-badge.is-released    { background: #eaf5ff; color: #245c8f; border-color: #bdd8ef; }
+.erp-badge.is-production  { background: #f3f4f6; color: #4b5766; border-color: #d5dbe3; }
+.erp-badge.is-completed   { background: #e8f5ec; color: #1a6635; border-color: #b8dfca; }
+.erp-badge.is-new         { background: #fff0ef; color: #8a2f23; border-color: #f1c2bd; }
+.erp-badge.is-repeat      { background: #e6f4ea; color: #1f6c37; border-color: #bee2c5; }
+.erp-badge.is-hold        { background: #fff8e6; color: #7a5310; border-color: #f0d88a; }
+.erp-badge.is-count       { background: #edf3fb; color: #2a4c7c; border-color: #bfd0e8; font-size: 12px; }
+
+/* ─── Alert Banners ────────────────────────────────────────────
+   ----------------------------------------------------------- */
+.erp-alert {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 13px;
+    margin-bottom: 12px;
+    border: 1px solid transparent;
+    line-height: 1.5;
+}
+.erp-alert.is-success { background: #e6f4ea; color: #1e6d33; border-color: #bee3c7; }
+.erp-alert.is-warning { background: #fffbe6; color: #7a5600; border-color: #f0c050; }
+.erp-alert.is-error   { background: #fff3f3; color: #8a1c1c; border-color: #f5c2c7; }
+.erp-alert.is-info    { background: #edf5ff; color: #1a4d87; border-color: #b8d5ef; }
+.erp-alert.is-notice  { background: #f5f9ff; color: #2e3f53; border-color: #c8d7e7; }
+
+/* ─── Inline Reject Note ───────────────────────────────────────
+   Used on edit pages when a record was sent back to Draft.
+   ----------------------------------------------------------- */
+.erp-reject-note {
+    background: #fffbe6;
+    border: 1px solid #f0d88a;
+    border-left: 3px solid #d4a800;
+    border-radius: 7px;
+    padding: 10px 14px;
+    font-size: 12px;
+    color: #7a5700;
+    margin-bottom: 14px;
+    line-height: 1.5;
+}
+.erp-reject-note strong { color: #5a3f00; }
+
+/* ─── Status Card (Edit-form header) ───────────────────────────
+   Shows current approval state at top of sku_recipe_edit.
+   ----------------------------------------------------------- */
+.erp-status-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    flex-wrap: wrap;
+    padding: 12px 16px;
+    background: #f8fafc;
+    border: 1px solid #d0dcea;
+    border-radius: 9px;
+    margin-bottom: 16px;
+}
+.erp-status-card__block { display: flex; flex-direction: column; gap: 3px; }
+.erp-status-card__eyebrow {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #55708a;
+}
+.erp-status-card__indicator {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    font-weight: 700;
+}
+.erp-status-card__dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+.erp-status-card__dot--draft    { background: #8fa3be; }
+.erp-status-card__dot--review   { background: #c76f1e; }
+.erp-status-card__dot--pending  { background: #d4a800; }
+.erp-status-card__dot--approved { background: #1b7f45; }
+.erp-status-card__meta { font-size: 12px; color: #32465d; }
+.erp-status-card__hint {
+    font-size: 11px;
+    color: #7a8fa6;
+    font-style: italic;
+}
+.erp-status-card__reject-note {
+    flex: 1;
+    min-width: 200px;
+    background: #fffbe6;
+    border: 1px solid #f0d890;
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: #7a5700;
+    line-height: 1.5;
+}
+
+/* ─── Form Layout ──────────────────────────────────────────────
+   ----------------------------------------------------------- */
+.erp-form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+    gap: 14px;
+    margin-bottom: 14px;
+}
+.erp-form-grid--3 { grid-template-columns: repeat(3, minmax(180px, 1fr)); }
+.erp-form-grid__full { grid-column: 1 / -1; }
+.erp-form-section {
+    grid-column: 1 / -1;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #8fa8be;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #e6eef5;
+    margin-top: 4px;
+    margin-bottom: -4px;
+}
+.erp-form-sep {
+    grid-column: 1 / -1;
+    border: none;
+    border-top: 1px solid #e6eef5;
+    margin: 2px 0;
+}
+.erp-form-field { display: flex; flex-direction: column; gap: 5px; }
+.erp-form-field label,
+.erp-form-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #32465d;
+}
+.erp-form-label .req { color: #b5282a; margin-left: 2px; }
+.erp-form-field input,
+.erp-form-field select,
+.erp-form-field textarea {
+    border: 1px solid #bfd0e2;
+    border-radius: 6px;
+    padding: 6px 10px;
+    font-size: 13px;
+    color: #1f3048;
+    background: #fafcff;
+    font-family: inherit;
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color 0.15s, box-shadow 0.15s;
+}
+.erp-form-field textarea { min-height: 80px; resize: vertical; }
+.erp-form-field input:focus,
+.erp-form-field select:focus,
+.erp-form-field textarea:focus {
+    outline: none;
+    border-color: #1f4f8a;
+    background: #fff;
+    box-shadow: 0 0 0 2px rgba(31, 79, 138, 0.10);
+}
+.erp-form-field.has-error input,
+.erp-form-field.has-error select,
+.erp-form-field.has-error textarea {
+    border-color: #b5282a;
+    box-shadow: 0 0 0 2px rgba(181, 40, 42, 0.09);
+}
+.erp-form-help { font-size: 11px; color: #7a8fa6; }
+.erp-form-error { font-size: 11px; color: #b5282a; margin-top: 1px; }
+.erp-form-required-note { font-size: 11px; color: #5f6f82; margin-bottom: 10px; }
+.erp-form-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #eef2f7;
+}
+.erp-form-lock-notice {
+    padding: 8px 12px;
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-radius: 6px;
+    font-size: 12px;
+    color: #5a4000;
+    margin-bottom: 10px;
+}
+
+/* ─── Empty State ──────────────────────────────────────────────
+   ----------------------------------------------------------- */
+.erp-empty {
+    text-align: center;
+    padding: 28px 16px;
+    color: #7a8fa6;
+}
+.erp-empty__icon {
+    font-size: 36px;
+    margin-bottom: 14px;
+    opacity: 0.4;
+}
+.erp-empty__title {
+    font-size: 15px;
+    font-weight: 700;
+    color: #445366;
+    margin: 0 0 6px;
+}
+.erp-empty__body {
+    font-size: 13px;
+    color: #7a8fa6;
+    max-width: 38ch;
+    margin: 0 auto;
+    line-height: 1.55;
+}
+
+/* ─── Pagination ───────────────────────────────────────────────
+   ----------------------------------------------------------- */
+.erp-pager {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid #eef2f7;
+    font-size: 12px;
+    color: #5f6f82;
+}
+.erp-pager .erp-pager__info { margin: 0 4px; }
+
+/* ─── Muted text shorthand ─────────────────────────────────────
+   Canonical .muted is in base.css — this extends it.
+   ----------------------------------------------------------- */
+.erp-muted { color: #5f6f82; font-size: 11px; }
+
+/* ─── Responsive ───────────────────────────────────────────────
+   ----------------------------------------------------------- */
+@media (max-width: 900px) {
+    .erp-form-grid { grid-template-columns: 1fr; }
+    .erp-form-grid__full { grid-column: 1; }
+    .erp-form-grid--3 { grid-template-columns: 1fr; }
+    .erp-route-grid { grid-template-columns: 1fr 1fr; }
+    .erp-wf-guide { flex-direction: column; }
+    .erp-filter { flex-direction: column; align-items: stretch; }
+    .erp-filter input,
+    .erp-filter select { min-width: 0; width: 100%; }
+}
+@media (max-width: 640px) {
+    .erp-page-header { flex-direction: column; }
+    .erp-info-grid { grid-template-columns: 1fr 1fr; }
+    .erp-route-grid { grid-template-columns: 1fr; }
+    .erp-status-card { flex-direction: column; }
+    .erp-panel--row { flex-direction: column; }
+}
+
+/* ─── Section Divider ──────────────────────────────────────────
+   Labeled horizontal rule separating major workflow sections.
+   Use: <div class="erp-section-divider"><span class="erp-badge is-count">Step N</span> Label</div>
+   ----------------------------------------------------------- */
+.erp-section-divider {
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    color: #4a6680;
+    letter-spacing: 0.05em;
+    padding: 8px 0 6px;
+    border-bottom: 2px solid #d0dcea;
+    margin: 16px 0 10px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ─── 4-column Route Grid variant ─────────────────────────────
+   Use .erp-route-grid.erp-route-grid--4 for 4-col stat strips.
+   ----------------------------------------------------------- */
+.erp-route-grid--4 {
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+
+/* ─── Tab Panels (content show/hide) ──────────────────────────
+   Pair with .erp-tab-strip / .erp-tab for tabbed interfaces.
+   ----------------------------------------------------------- */
+.erp-tab-panel         { display: none; }
+.erp-tab-panel.is-active { display: block; }
+
+/* ─── Action Strip (pending-item alert with count pills) ───────
+   Use for approval-queue style alerts: left text + counts + CTA.
+   Modifiers: .is-clear (green / all-good state)
+   ----------------------------------------------------------- */
+.erp-action-strip {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    background: #fffbf2;
+    border: 1px solid #f0d8a8;
+    border-radius: 10px;
+    padding: 12px 16px;
+    margin-bottom: 12px;
+}
+.erp-action-strip.is-clear {
+    background: #f0fdf6;
+    border-color: #b8e4cf;
+}
+.erp-action-strip__left { display: flex; flex-direction: column; gap: 3px; }
+.erp-action-strip__title { font-size: 14px; font-weight: 700; color: #4a3000; }
+.erp-action-strip.is-clear .erp-action-strip__title { color: #0b5e35; }
+.erp-action-strip__sub { font-size: 12px; color: #7a5500; }
+.erp-action-strip.is-clear .erp-action-strip__sub { color: #1e7a50; }
+.erp-action-strip__counts { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+.erp-action-strip__actions { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ─── KPI Count Pill ───────────────────────────────────────────
+   Used inside .erp-action-strip or dashboard count strips.
+   ----------------------------------------------------------- */
+.erp-kpi-pill {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    border: 1px solid #e8d8b0;
+    background: #fff;
+    border-radius: 8px;
+    padding: 6px 14px;
+    min-width: 80px;
+}
+.erp-kpi-pill.is-warn { border-color: #f0c060; }
+.erp-kpi-pill__value { font-size: 20px; font-weight: 700; color: #1a2f46; line-height: 1.2; }
+.erp-kpi-pill__label { font-size: 10px; color: #7a6030; text-transform: uppercase; font-weight: 700; }
+
+/* ─── Sticky Action Column ─────────────────────────────────────
+   Pin the last table column (Actions) to the right edge.
+   Apply .erp-col-actions to the th/td in the actions column.
+   ----------------------------------------------------------- */
+.erp-table-wrap th.erp-col-actions {
+    position: sticky;
+    right: 0;
+    background: #f4f8fc;
+    box-shadow: -2px 0 6px rgba(0, 0, 0, 0.06);
+    z-index: 2;
+}
+.erp-table-wrap td.erp-col-actions {
+    position: sticky;
+    right: 0;
+    background: #fff;
+    box-shadow: -2px 0 6px rgba(0, 0, 0, 0.05);
+}
+.erp-table-wrap tbody tr:hover td.erp-col-actions { background: #f7fbff; }
+
+/* Nested alert inside a panel row — small top spacing */
+.erp-alert--nested { margin-top: 6px; }
+
+/* ─── Split Layout ─────────────────────────────────────────────
+   Two-column layout: left filter sidebar + right data pane.
+   Use on heavy operational pages (lists, queues, archives).
+   ----------------------------------------------------------- */
+.erp-split-layout {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    gap: 12px;
+    align-items: start;
+    margin-bottom: 14px;
+}
+.erp-filter-sidebar {
+    background: #fff;
+    border: 1px solid #d9e2ec;
+    border-radius: 6px;
+    padding: 12px;
+    position: sticky;
+    top: 8px;
+}
+.erp-filter-sidebar__title {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #55708a;
+    margin: 0 0 8px;
+    padding-bottom: 6px;
+    border-bottom: 1px solid #eef2f7;
+}
+.erp-filter-sidebar__title + .erp-filter-sidebar__title {
+    margin-top: 10px;
+}
+.erp-filter-sidebar .erp-form-field {
+    margin-bottom: 7px;
+}
+.erp-filter-sidebar .erp-form-field label {
+    font-size: 11px;
+}
+.erp-filter-sidebar .erp-form-field input,
+.erp-filter-sidebar .erp-form-field select {
+    height: 32px;
+    padding: 4px 8px;
+    font-size: 12px;
+}
+.erp-filter-sidebar .erp-form-actions {
+    margin-top: 10px;
+    padding-top: 10px;
+    flex-direction: column;
+    gap: 5px;
+}
+/* Vertical nav links for sidebar filter grouping */
+.erp-filter-sidebar__nav {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-bottom: 10px;
+}
+.erp-filter-sidebar__nav a {
+    display: block;
+    padding: 5px 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #445a70;
+    text-decoration: none;
+    border-radius: 4px;
+    border: 1px solid transparent;
+}
+.erp-filter-sidebar__nav a:hover { background: #f0f5fb; text-decoration: none; }
+.erp-filter-sidebar__nav a.is-active {
+    background: #edf3fb;
+    border-color: #bfd3e8;
+    color: #1f4f8a;
+}
+.erp-data-pane { min-width: 0; }
+
+/* ─── Table Toolbar ────────────────────────────────────────────
+   Appears directly above a table: meta count + bulk actions.
+   ----------------------------------------------------------- */
+.erp-table-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    padding: 7px 10px;
+    background: #f4f8fc;
+    border: 1px solid #d9e2ec;
+    border-bottom: none;
+    border-radius: 6px 6px 0 0;
+}
+.erp-table-toolbar + .erp-table-wrap {
+    border-top-left-radius: 0;
+    border-top-right-radius: 0;
+}
+.erp-table-search {
+    display: inline-flex;
+    align-items: center;
+    border: 1px solid #bfd0e2;
+    border-radius: 5px;
+    background: #fff;
+    overflow: hidden;
+}
+.erp-table-search input {
+    border: none;
+    padding: 4px 10px;
+    font-size: 12px;
+    color: #1f3048;
+    background: transparent;
+    min-width: 180px;
+    font-family: inherit;
+}
+.erp-table-search input:focus { outline: none; }
+.erp-table-meta {
+    font-size: 11px;
+    color: #5f6f82;
+}
+
+/* ─── Dense Table variant ──────────────────────────────────────
+   Apply .erp-table-dense on .erp-table-wrap for tighter rows.
+   ----------------------------------------------------------- */
+.erp-table-dense th { padding: 6px 10px !important; }
+.erp-table-dense td { padding: 6px 10px !important; }
+.erp-table-dense { font-size: 12px; }
+
+/* ─── Form Block (structured horizontal sections) ──────────────
+   Full-width sectioned blocks for enterprise forms.
+   ----------------------------------------------------------- */
+.erp-form-block {
+    background: #fff;
+    border: 1px solid #d9e2ec;
+    border-radius: 6px;
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+.erp-form-block__title {
+    padding: 7px 14px;
+    background: #f4f8fc;
+    border-bottom: 1px solid #d9e2ec;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #445a70;
+}
+.erp-form-block__body {
+    padding: 12px 14px;
+}
+
+/* ─── Sub-navigation (second-level workflow nav) ───────────────
+   Use inside planning pages for step-level navigation.
+   ----------------------------------------------------------- */
+.erp-subnav {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    flex-wrap: wrap;
+    border-bottom: 2px solid #e4ecf4;
+    margin-bottom: 14px;
+}
+.erp-subnav__item {
+    display: inline-flex;
+    align-items: center;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #55708a;
+    text-decoration: none;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -2px;
+    transition: color 0.12s, border-color 0.12s;
+    cursor: pointer;
+    background: transparent;
+    border-top: none;
+    border-left: none;
+    border-right: none;
+    font-family: inherit;
+}
+.erp-subnav__item:hover { color: #1f4f8a; text-decoration: none; }
+.erp-subnav__item--active,
+.erp-subnav__item.is-active {
+    color: #1f4f8a;
+    border-bottom-color: #1f4f8a;
+}
+
+/* ─── Responsive: split layout collapses on narrow viewports ───
+   ----------------------------------------------------------- */
+@media (max-width: 900px) {
+    .erp-split-layout { grid-template-columns: 1fr; }
+    .erp-filter-sidebar { position: static; }
+}
+@media (max-width: 640px) {
+    .erp-filter-sidebar .erp-form-actions { flex-direction: row; }
+}

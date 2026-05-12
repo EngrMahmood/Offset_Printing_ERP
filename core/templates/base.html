@@ -22,7 +22,7 @@
     <div class="erp-shell">
         {% block sidebar %}
         <aside class="erp-sidebar">
-            <div style="padding:16px 14px; border-bottom:1px solid rgba(255,255,255,0.08); font-weight:700; color:#fff; font-size:18px;">ERP Console</div>
+            <div style="padding:16px 14px; border-bottom:1px solid rgba(255,255,255,0.08); font-weight:700; color:#fff; font-size:18px;">Offset ERP</div>
             <div class="erp-sidebar-group-title">Operations</div>
             <a href="{% url 'home' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'home' %}active{% endif %}"><i class="fas fa-chart-line"></i><span>Dashboard</span></a>
             <a href="{% url 'planning:home' %}" class="erp-nav-link {% if request.resolver_match.app_name == 'planning' %}active{% endif %}"><i class="fas fa-calendar-check"></i><span>Planning</span></a>

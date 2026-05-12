@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %} - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %} - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body {
             font-family: 'IBM Plex Sans', Arial, sans-serif;
@@ -223,10 +222,18 @@
             }
         }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %}{% endblock %}
+{% block header_subtitle %}Log shift output, waste, downtime, and machine execution data against released job cards.{% endblock %}
+{% block header_actions %}
+    {% if user.profile.can_edit_production %}
+    <a href="{% url 'production_records' %}" class="erp-btn erp-btn-secondary">Production Records</a>
+    {% endif %}
+    {% if user.profile.can_view_analytics %}
+    <a href="{% url 'production_dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
+    {% endif %}
+{% endblock %}
+{% block content %}
     <div class="container">
         <div class="top-actions">
             <a href="/" class="nav-btn">Home</a>
@@ -825,7 +832,6 @@
         });
         {% endif %}
     </script>
-</body>
-</html>
+{% endblock %}
 
 

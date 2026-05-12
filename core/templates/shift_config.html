@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Shift Configuration - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Shift Configuration - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0; padding: 0; background: var(--erp-bg-soft, #f3f5f8); }
         .container { max-width: 1100px; margin: 0 auto; padding: 16px 20px; }
@@ -29,10 +28,14 @@
         .on-cell { background: #f0fff4; }
         .off-cell { background: #fff9f0; }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Shift Configuration{% endblock %}
+{% block header_subtitle %}Maintain effective-dated shift hours and machine work schedules used by utilization reporting.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'production_dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
 <div class="container">
     <div style="margin-bottom:16px;">
         <h1 style="margin:0 0 2px;font-size:18px;font-weight:700;color:#1f2d3d;">Shift &amp; Machine Schedule Config</h1>
@@ -149,8 +152,7 @@
         {% endif %}
     </div>
 </div>
-</body>
-</html>
+{% endblock %}
 
 
 

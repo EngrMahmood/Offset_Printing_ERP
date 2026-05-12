@@ -1,0 +1,46 @@
+.erp-table-wrap, .table-shell {
+    overflow: auto;
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius-md);
+    background: var(--erp-surface);
+}
+.erp-table, table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1100px;
+    font-size: var(--erp-font-sm);
+}
+.erp-table th,
+.erp-table td,
+th,
+td {
+    border-bottom: 1px solid #e8eef5;
+    padding: 9px 10px;
+    text-align: left;
+    vertical-align: top;
+}
+.erp-table th, th {
+    position: sticky;
+    top: 0;
+    background: #f6f9fc;
+    z-index: 1;
+    font-size: var(--erp-font-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #597089;
+}
+.erp-table tbody tr:hover td,
+tbody tr:hover td { background: #f8fbff; }
+.erp-pagination, .pagination {
+    display: flex;
+    align-items: center;
+    gap: var(--erp-space-2);
+    margin-top: var(--erp-space-3);
+}
+.erp-page-link, .pagination a, .pagination span {
+    padding: 6px 10px;
+    border-radius: var(--erp-radius-sm);
+    border: 1px solid var(--erp-border);
+    color: var(--erp-text-secondary);
+}
+.erp-page-current, .pagination .current { background: var(--erp-primary); color: #fff; border-color: var(--erp-primary); }

@@ -1,209 +1,188 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Archived Planning Jobs</title>
-    {% include 'includes/ui/theme_colors.html' %}
-    <style>
-        .wrap { max-width: 100%; margin: 0 auto; }
-        .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; gap: 8px; flex-wrap: wrap; }
-        .btn { display: inline-block; padding: 7px 11px; border-radius: 6px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; }
-        .btn.secondary { background: #fff; color: #445366; }
-        .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 10px; }
-        .filters { display:grid; grid-template-columns: repeat(6, minmax(140px, 1fr)); gap: 8px; margin-bottom: 8px; }
-        .filters input, .filters select { width: 100%; border: 1px solid #bfd0e2; border-radius: 6px; padding: 6px 8px; font-size: 12px; }
-        .stats { display:flex; gap:6px; flex-wrap: wrap; margin-bottom: 8px; }
-        .table-shell { overflow: auto; max-height: calc(100vh - 230px); border: 1px solid #d6e0ea; border-radius: 8px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1500px; }
-        th, td { border-bottom: 1px solid #e7eef5; padding: 7px; text-align: left; vertical-align: top; }
-        th { position: sticky; top: 0; background: #f6f9fc; z-index: 1; }
-        .muted { color: #5f6f82; font-size: 11px; }
-        .badge { display: inline-block; padding: 3px 7px; border-radius: 999px; font-size: 10px; border: 1px solid #d3deea; background: #f3f7fb; }
-        .badge.draft { background:#eef5ff; border-color:#c8daf7; }
-        .badge.reviewed { background:#fff7e6; border-color:#f0d79a; }
-        .badge.pending_qc { background:#fff7e6; border-color:#f0d79a; }
-        .badge.qc_approved { background:#e6f6ea; border-color:#bde4c7; }
-        .badge.released { background:#eaf7ff; border-color:#b8dcef; }
-        .badge.in_production { background:#f3f4f6; border-color:#d2d6dc; }
-        .badge.completed { background:#edf7ef; border-color:#c7e2cc; }
-        .row-released { background: #f8fffb; }
-        .row-completed { background: #f4f6f8; }
-        .route-shell { margin-bottom:10px; padding:10px; border-radius:10px; border:1px solid #d8e4f1; background:#f5f9ff; display:grid; grid-template-columns: repeat(3, minmax(200px, 1fr)); gap:8px; }
-        .route-card { border:1px solid #c9d9ea; border-radius:8px; background:#fff; padding:8px; }
-        @media (max-width: 1080px) {
-            .filters { grid-template-columns: repeat(2, minmax(140px, 1fr)); }
-            .route-shell { grid-template-columns: 1fr; }
-        }
-    </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<main class="wrap page-container">
+
+{% block title %}Archived Planning Jobs{% endblock %}
+{% block header_title %}Archived Planning Jobs{% endblock %}
+{% block header_subtitle %}Browse planning jobs that were archived and removed from the active list.{% endblock %}
+{% block header_actions %}
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:jobs' %}">Active Jobs</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:planning_readme' %}">Guide</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'home' %}">Back Home</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'qc:approval_queue' %}">Approval Queue</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'qc:pending_skus_ignored' %}">Ignored SKUs</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:scan' %}">Scan QR</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:report' %}">Planning Report</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
+{% endblock %}
+
+{% block content %}
     {% with current_step='planning' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
-    <div class="top">
-        <div>
-            <h1 style="margin:0;font-size:20px;">Archived Planning Jobs</h1>
-            <div class="muted">Browse planning jobs that were archived and removed from the active list.</div>
-        </div>
-        <div>
-            <a class="btn secondary" href="{% url 'planning:jobs' %}">Active Jobs</a>
-            <a class="btn secondary" href="{% url 'planning:planning_readme' %}">Guide</a>
-            <a class="btn secondary" href="{% url 'home' %}">Back Home</a>
-            <a class="btn secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
-            <a class="btn secondary" href="{% url 'qc:approval_queue' %}">Approval Queue</a>
-            <a class="btn secondary" href="{% url 'qc:pending_skus_ignored' %}">Ignored SKUs</a>
-            <a class="btn secondary" href="{% url 'planning:scan' %}">Scan QR</a>
-            <a class="btn secondary" href="{% url 'planning:report' %}">Planning Report</a>
-            <a class="btn secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
-        </div>
+    {% for msg in messages %}
+        <div class="erp-alert is-info">{{ msg }}</div>
+    {% endfor %}
+
+    <div class="erp-section-divider">
+        Archived Jobs
+        <span class="erp-badge is-count">{{ jobs.paginator.count }}</span>
+    </div>
+    <div class="erp-split-layout">
+        <aside class="erp-filter-sidebar">
+            <div class="erp-filter-sidebar__title">Filters</div>
+            <form method="get">
+                <div class="erp-form-field">
+                    <label>Search</label>
+                    <input type="text" name="q" placeholder="JC / PO / SKU / Job" value="{{ filters.q }}">
+                </div>
+                <div class="erp-form-field">
+                    <label>Status</label>
+                    <select name="status">
+                        <option value="">All statuses</option>
+                        {% for value, label in status_choices %}
+                            <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-form-field">
+                    <label>Department</label>
+                    <input type="text" name="department" placeholder="Department" value="{{ filters.department }}">
+                </div>
+                <div class="erp-form-field">
+                    <label>Machine</label>
+                    <input type="text" name="machine" placeholder="Machine" value="{{ filters.machine }}">
+                </div>
+                <div class="erp-form-field">
+                    <label>From</label>
+                    <input type="date" name="from_date" value="{{ filters.from_date }}">
+                </div>
+                <div class="erp-form-field">
+                    <label>To</label>
+                    <input type="date" name="to_date" value="{{ filters.to_date }}">
+                </div>
+                <div class="erp-form-actions">
+                    <button class="erp-btn erp-btn-primary erp-btn-block" type="submit">Apply</button>
+                    <a class="erp-btn erp-btn-secondary erp-btn-block" href="{% url 'planning:jobs_archived' %}">Reset</a>
+                </div>
+            </form>
+        </aside>
+        <section class="erp-data-pane">
+            <div class="erp-status-strip">
+                <span class="erp-badge is-draft">Draft: {{ status_counts.draft|default:0 }}</span>
+                <span class="erp-badge is-pending">Pending QC: {{ status_counts.pending_qc|default:0 }}</span>
+                <span class="erp-badge is-approved">QC Approved: {{ status_counts.qc_approved|default:0 }}</span>
+                <span class="erp-badge is-released">Released: {{ status_counts.released|default:0 }}</span>
+                <span class="erp-badge is-production">In Production: {{ status_counts.in_production|default:0 }}</span>
+                <span class="erp-badge is-completed">Completed: {{ status_counts.completed|default:0 }}</span>
+            </div>
+            <div class="erp-bulk-bar">
+                <span class="muted">Bulk:</span>
+                <button class="erp-btn erp-btn-secondary" type="button" onclick="submitBulkAction('bulk_restore', 'Restore reason for selected archived jobs?');">Restore Selected</button>
+                {% if can_admin_actions %}
+                    <button class="erp-btn erp-btn-danger" type="button" onclick="submitBulkAction('bulk_delete', 'Permanently delete selected archived jobs? This cannot be undone.');">Delete Selected</button>
+                {% endif %}
+            </div>
+            <div id="csrf-container">{% csrf_token %}</div>
+            <div class="erp-table-toolbar">
+                <span class="erp-table-meta">{{ jobs.paginator.count }} archived job{{ jobs.paginator.count|pluralize }}</span>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table>
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="check_all_archive"></th>
+                            <th>JC</th>
+                            <th>PO</th>
+                            <th>SKU</th>
+                            <th>Job Name</th>
+                            <th>Order Qty</th>
+                            <th>Flag</th>
+                            <th>Total Sheets</th>
+                            <th>Machine</th>
+                            <th>Department</th>
+                            <th>Status</th>
+                            <th>Print Logs</th>
+                            <th>Dispatch Logs</th>
+                            <th class="erp-col-actions">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for job in jobs %}
+                        <tr class="{% if job.workflow_status == 'released' %}erp-row--released{% elif job.workflow_status == 'completed' %}erp-row--completed{% endif %}">
+                            <td><input type="checkbox" class="bulk-check" value="{{ job.id }}"></td>
+                            <td><strong>{{ job.jc_number }}</strong><div class="muted">{{ job.plan_date|default:"" }}</div></td>
+                            <td>{{ job.po_number|default:"-" }}</td>
+                            <td>{{ job.sku|default:"-" }}</td>
+                            <td>
+                                {{ job.job_name|default:"-" }}
+                                {% if job.archive_reason %}
+                                    <div class="muted">Reason: {{ job.archive_reason }}</div>
+                                {% endif %}
+                                <div class="muted">
+                                    Archived {{ job.archived_at|date:"Y-m-d" }}{% if job.archived_by %} by {{ job.archived_by }}{% endif %}
+                                </div>
+                            </td>
+                            <td>{{ job.order_qty|default:"-" }}</td>
+                            <td>
+                                <span class="erp-badge {% if job.repeat_flag|lower == 'new' %}is-new{% else %}is-repeat{% endif %}">{{ job.repeat_flag|default:"-" }}</span>
+                                {% if job.is_on_hold %}
+                                    <span class="erp-badge is-hold">On Hold</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ job.calculated_sheets_required|default:"-" }}</td>
+                            <td>{{ job.machine_name|default:"-" }}</td>
+                            <td>{{ job.department|default:"-" }}</td>
+                            <td><span class="erp-badge is-{{ job.workflow_status|lower }}">{{ job.workflow_status_label }}</span></td>
+                            <td>{{ job.print_runs.count }}</td>
+                            <td>{{ job.dispatch_runs.count }}</td>
+                            <td class="erp-col-actions">
+                                <div class="erp-actions erp-actions--compact">
+                                    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:job_detail' job.id %}">View</a>
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="restore">
+                                        <input type="hidden" name="job_id" value="{{ job.id }}">
+                                        <input type="hidden" name="reason" value="">
+                                        <button type="button" class="erp-btn erp-btn-secondary" onclick="submitWithPrompt(this);">Restore</button>
+                                    </form>
+                                    {% if can_admin_actions %}
+                                        <form method="post" onsubmit="return confirm('Permanently delete this archived planning job? This cannot be undone.');">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="delete">
+                                            <input type="hidden" name="job_id" value="{{ job.id }}">
+                                            <button type="submit" class="erp-btn erp-btn-danger">Delete</button>
+                                        </form>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr>
+                            <td colspan="14">
+                                <div class="erp-empty">
+                                    <div class="erp-empty__icon">📂</div>
+                                    <div class="erp-empty__title">No archived jobs found</div>
+                                    <div class="erp-empty__body">No planning jobs match the current filters. Try adjusting your search or reset all filters.</div>
+                                </div>
+                            </td>
+                        </tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if jobs.has_other_pages %}
+                <div class="erp-pager">
+                    {% if jobs.has_previous %}<a class="erp-btn erp-btn-secondary" href="?page={{ jobs.previous_page_number }}">← Previous</a>{% endif %}
+                    <span class="erp-pager__info">Page {{ jobs.number }} of {{ jobs.paginator.num_pages }}</span>
+                    {% if jobs.has_next %}<a class="erp-btn erp-btn-secondary" href="?page={{ jobs.next_page_number }}">Next →</a>{% endif %}
+                </div>
+            {% endif %}
+        </section>
     </div>
 
-    <section class="panel">
-        {% for msg in messages %}
-            <div style="margin-bottom:8px;padding:8px 10px;border-radius:6px;border:1px solid #c8d7e7;background:#f5f9ff;color:#2e3f53;font-size:12px;">{{ msg }}</div>
-        {% endfor %}
+{% endblock %}
 
-        <div class="route-shell">
-            <div class="route-card">
-                <div class="k">Archive View</div>
-                <div class="v">Planning jobs that have been archived</div>
-            </div>
-            <div class="route-card">
-                <div class="k">Visible Inactive</div>
-                <div class="v">Includes held state history and archive reason</div>
-            </div>
-            <div class="route-card">
-                <div class="k">Search</div>
-                <div class="v">Filter by JC, PO, SKU, status, department or machine</div>
-            </div>
-        </div>
-
-        <form method="get" class="filters">
-            <input type="text" name="q" placeholder="Search JC/PO/SKU/Job" value="{{ filters.q }}">
-            <select name="status">
-                <option value="">All status</option>
-                {% for value, label in status_choices %}
-                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
-                {% endfor %}
-            </select>
-            <input type="text" name="department" placeholder="Department" value="{{ filters.department }}">
-            <input type="text" name="machine" placeholder="Machine" value="{{ filters.machine }}">
-            <input type="date" name="from_date" value="{{ filters.from_date }}">
-            <input type="date" name="to_date" value="{{ filters.to_date }}">
-            <div style="grid-column: 1 / -1; display:flex; gap:8px;">
-                <button class="btn" type="submit">Apply Filters</button>
-                <a class="btn secondary" href="{% url 'planning:jobs_archived' %}">Reset</a>
-            </div>
-        </form>
-
-        <div class="stats">
-            <span class="badge">Total: {{ jobs.paginator.count }}</span>
-            <span class="badge draft">Draft: {{ status_counts.draft|default:0 }}</span>
-            <span class="badge pending_qc">Pending QC: {{ status_counts.pending_qc|default:0 }}</span>
-            <span class="badge qc_approved">QC Approved: {{ status_counts.qc_approved|default:0 }}</span>
-            <span class="badge released">Released: {{ status_counts.released|default:0 }}</span>
-            <span class="badge in_production">In Production: {{ status_counts.in_production|default:0 }}</span>
-            <span class="badge completed">Completed: {{ status_counts.completed|default:0 }}</span>
-        </div>
-
-        <div class="bulk-row">
-            <span class="muted">Bulk actions for selected rows:</span>
-            <button class="btn" type="button" onclick="submitBulkAction('bulk_restore', 'Restore reason for selected archived jobs?');">Restore Selected</button>
-            {% if can_admin_actions %}
-                <button class="btn danger" type="button" onclick="submitBulkAction('bulk_delete', 'Permanently delete selected archived jobs? This cannot be undone.');">Delete Selected</button>
-            {% endif %}
-        </div>
-        <div id="csrf-container" style="display:none;">{% csrf_token %}</div>
-
-        <div class="table-shell">
-            <table>
-                <thead>
-                    <tr>
-                        <th><input type="checkbox" id="check_all_archive"></th>
-                        <th>JC</th>
-                        <th>PO</th>
-                        <th>SKU</th>
-                        <th>Job Name</th>
-                        <th>Order Qty</th>
-                        <th>Flag</th>
-                        <th>Total Sheets</th>
-                        <th>Machine</th>
-                        <th>Department</th>
-                        <th>Status</th>
-                        <th>Print Logs</th>
-                        <th>Dispatch Logs</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for job in jobs %}
-                    <tr class="{% if job.workflow_status == 'released' %}row-released{% elif job.workflow_status == 'completed' %}row-completed{% endif %}">
-                        <td><input type="checkbox" class="bulk-check" value="{{ job.id }}"></td>
-                        <td><strong>{{ job.jc_number }}</strong><div class="muted">{{ job.plan_date|default:"" }}</div></td>
-                        <td>{{ job.po_number|default:"-" }}</td>
-                        <td>{{ job.sku|default:"-" }}</td>
-                        <td>
-                            {{ job.job_name|default:"-" }}
-                            {% if job.archive_reason %}
-                                <div class="muted" style="margin-top:4px;">Reason: {{ job.archive_reason }}</div>
-                            {% endif %}
-                            <div class="muted" style="margin-top:4px;">
-                                Archived {{ job.archived_at|date:"Y-m-d" }}{% if job.archived_by %} by {{ job.archived_by }}{% endif %}
-                            </div>
-                        </td>
-                        <td>{{ job.order_qty|default:"-" }}</td>
-                        <td>
-                            <span class="badge {% if job.repeat_flag|lower == 'new' %}reviewed{% else %}draft{% endif %}">{{ job.repeat_flag|default:"-" }}</span>
-                            {% if job.is_on_hold %}
-                                <div class="badge" style="background:#fdecea;border-color:#f5c2c0;color:#842029;margin-top:4px;">On Hold</div>
-                            {% endif %}
-                        </td>
-                        <td>{{ job.calculated_sheets_required|default:"-" }}</td>
-                        <td>{{ job.machine_name|default:"-" }}</td>
-                        <td>{{ job.department|default:"-" }}</td>
-                        <td><span class="badge {{ job.workflow_status }}">{{ job.workflow_status_label }}</span></td>
-                        <td>{{ job.print_runs.count }}</td>
-                        <td>{{ job.dispatch_runs.count }}</td>
-                        <td style="display:grid; gap:4px;">
-                            <a class="btn secondary" href="{% url 'planning:job_detail' job.id %}">View</a>
-                            <form method="post" data-reason-prompt="Restore reason for {{ job.jc_number }}?" style="margin:0;">
-                                {% csrf_token %}
-                                <input type="hidden" name="action" value="restore">
-                                <input type="hidden" name="job_id" value="{{ job.id }}">
-                                <input type="hidden" name="reason" value="">
-                                <button type="button" class="btn" onclick="submitWithPrompt(this);">Restore</button>
-                            </form>
-                            {% if can_admin_actions %}
-                                <form method="post" onsubmit="return confirm('Permanently delete this archived planning job? This cannot be undone.');" style="margin:0;">
-                                    {% csrf_token %}
-                                    <input type="hidden" name="action" value="delete">
-                                    <input type="hidden" name="job_id" value="{{ job.id }}">
-                                    <button type="submit" class="btn danger">Delete</button>
-                                </form>
-                            {% endif %}
-                        </td>
-                    </tr>
-                {% empty %}
-                    <tr><td colspan="14">No archived planning jobs found.</td></tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        {% if jobs.has_other_pages %}
-            <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
-                {% if jobs.has_previous %}<a class="btn secondary" href="?page={{ jobs.previous_page_number }}">Previous</a>{% endif %}
-                <span class="muted" style="align-self:center;">Page {{ jobs.number }} / {{ jobs.paginator.num_pages }}</span>
-                {% if jobs.has_next %}<a class="btn secondary" href="?page={{ jobs.next_page_number }}">Next</a>{% endif %}
-            </div>
-        {% endif %}
-    </section>
-</main>
+{% block extra_js %}
 <script>
 document.getElementById('check_all_archive')?.addEventListener('change', function (event) {
     const checked = event.target.checked;
@@ -289,7 +268,6 @@ function submitBulkAction(action, promptText) {
     return true;
 }
 </script>
-</body>
-</html>
+{% endblock %}
 
 

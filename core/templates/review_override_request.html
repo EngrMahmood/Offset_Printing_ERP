@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Review Edit Override - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Review Edit Override - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); }
         .container { max-width: 740px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
@@ -22,10 +21,13 @@
         textarea { width: 100%; box-sizing: border-box; min-height: 90px; padding: 9px; border: 1px solid #cfd6de; border-radius: 6px; font-size: 0.9rem; }
         .action-row { display: flex; gap: 10px; margin-top: 10px; }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Review Edit Override{% endblock %}
+{% block header_subtitle %}Approve or reject locked-record edit requests with a short audited decision note.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
     <div class="container">
         <div class="top-actions">
             <a href="{% url 'override_requests' %}" class="btn">← Back to Requests</a>
@@ -59,8 +61,7 @@
             </div>
         </div>
     </div>
-</body>
-</html>
+{% endblock %}
 
 
 

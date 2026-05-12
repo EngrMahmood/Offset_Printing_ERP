@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Restore Record - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Restore Record - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); }
         .container { max-width: 760px; margin: 0 auto; }
@@ -21,10 +20,13 @@
         .actions { display: flex; gap: 10px; margin-top: 14px; }
         .notice { margin-bottom: 14px; color: #5f6b7a; }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Restore Record{% endblock %}
+{% block header_subtitle %}Return an archived record to active ERP workflows and reporting.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
     <div class="container">
         <div class="top-actions">
             <a href="{% url 'archived_records' %}?entity={{ entity_type }}" class="btn">Back To Archived</a>
@@ -58,7 +60,6 @@
             </form>
         </div>
     </div>
-</body>
-</html>
+{% endblock %}
 
 

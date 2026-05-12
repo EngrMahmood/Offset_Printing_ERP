@@ -1,11 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Pending SKUs | Planning</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Pending SKUs | Planning{% endblock %}
+{% block extra_head %}
     <style>
         .wrap { max-width: 100%; margin: 0 auto; }
         .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
@@ -48,12 +45,15 @@
             .route-band { grid-template-columns: 1fr; }
         }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Pending SKUs{% endblock %}
+{% block header_subtitle %}Complete missing master data and route new SKUs through review and approval before planning sync.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
 <main class="wrap page-container">
     {% with current_step='master' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
     <div class="top">
@@ -227,7 +227,6 @@
         </div>
     </section>
 </main>
-</body>
-</html>
+{% endblock %}
 
 

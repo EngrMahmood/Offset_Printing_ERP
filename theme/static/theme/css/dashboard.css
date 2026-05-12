@@ -1,0 +1,33 @@
+.kpi, .stats-strip, .route-shell {
+    display: grid;
+    gap: var(--erp-space-2);
+    grid-template-columns: repeat(4, minmax(160px, 1fr));
+}
+.kpi-label, .stat-label { font-size: var(--erp-font-xs); text-transform: uppercase; color: var(--erp-text-secondary); font-weight: 700; }
+.kpi-value, .stat-value { font-size: 26px; font-weight: 700; color: var(--erp-text-primary); }
+
+.erp-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+    gap: var(--erp-space-2);
+}
+.erp-stat-card {
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius-md);
+    padding: var(--erp-space-3);
+    background: #fff;
+}
+.erp-stat-card span { display: block; color: var(--erp-text-secondary); font-size: var(--erp-font-xs); }
+.erp-stat-card strong { display: block; font-size: 22px; margin-top: 4px; color: var(--erp-text-primary); }
+
+.erp-workflow { display: grid; grid-template-columns: repeat(5, minmax(160px, 1fr)); gap: var(--erp-space-2); }
+.erp-workflow-step {
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius-md);
+    padding: var(--erp-space-2) var(--erp-space-3);
+    background: #fff;
+    color: var(--erp-text-secondary);
+    font-size: var(--erp-font-sm);
+    font-weight: 600;
+}
+.erp-workflow-step.active { border-color: #a8c4df; background: #eef6ff; color: #174674; }

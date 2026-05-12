@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Job Card Records - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Job Card Records - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         .records-page-shell {
             max-width: 100%;
@@ -17,9 +16,18 @@
             white-space: nowrap;
         }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Job Card Records{% endblock %}
+{% block header_subtitle %}Dense record view for job card progress, dispatch position, and close-gap actions.{% endblock %}
+{% block header_actions %}
+    {% if user.profile.can_edit_jobcard %}
+    <a href="{% url 'job_card_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> Add Job Card</a>
+    {% endif %}
+    {% if user.profile.can_archive_records %}
+    <a href="{% url 'archived_records' %}?entity=job_card" class="erp-btn erp-btn-secondary">Archived</a>
+    {% endif %}
+{% endblock %}
+{% block content %}
     <div class="records-page-shell">
         <div class="erp-page-stack">
             <div class="erp-actions">
@@ -227,6 +235,5 @@
             });
         }
     </script>
-</body>
-</html>
+{% endblock %}
 

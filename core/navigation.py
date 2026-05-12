@@ -1,0 +1,42 @@
+from __future__ import annotations
+
+from typing import Any
+
+PLANNING_NAV_ROLES = {'admin', 'manager', 'planner'}
+QC_NAV_ROLES = {'admin', 'manager', 'qc', 'production_manager'}
+PRODUCTION_NAV_ROLES = {'admin', 'manager', 'production_manager', 'production', 'operator'}
+DISPATCH_NAV_ROLES = {'admin', 'manager', 'dispatch'}
+MASTER_DATA_NAV_ROLES = {'admin', 'manager', 'production_manager'}
+GUIDE_NAV_ROLES = {
+    'admin', 'manager', 'planner', 'qc', 'production_manager', 'production', 'dispatch', 'finance', 'operator'
+}
+
+
+def _role_from_request(request: Any) -> str:
+    profile = getattr(getattr(request, 'user', None), 'profile', None)
+    return (getattr(profile, 'role', '') or '').strip().lower()
+
+
+def get_nav_permissions(request: Any) -> dict[str, bool | str]:
+    role = _role_from_request(request)
+    is_authenticated = bool(getattr(getattr(request, 'user', None), 'is_authenticated', False))
+    is_superuser = bool(getattr(getattr(request, 'user', None), 'is_superuser', False))
+
+    if is_superuser:
+        role = role or 'admin'
+
+    def _allow(roles: set[str]) -> bool:
+        if not is_authenticated:
+            return False
+        return is_superuser or role in roles
+
+    return {
+        'role': role,
+        'can_access_dashboard': is_authenticated,
+        'can_access_planning': _allow(PLANNING_NAV_ROLES),
+        'can_access_qc': _allow(QC_NAV_ROLES),
+        'can_access_production': _allow(PRODUCTION_NAV_ROLES),
+        'can_access_dispatch': _allow(DISPATCH_NAV_ROLES),
+        'can_access_master_data': _allow(MASTER_DATA_NAV_ROLES),
+        'can_access_guides': _allow(GUIDE_NAV_ROLES),
+    }

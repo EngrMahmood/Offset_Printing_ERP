@@ -1,10 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Manage User Roles — Offset ERP</title>
+
+{% block title %}Manage User Roles — Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         :root {
             --brand-bg: #f8f6f4;
@@ -187,9 +185,13 @@
         }
     </style>
     {% include 'includes/ui/theme_colors.html' %}
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Manage User Roles{% endblock %}
+{% block header_subtitle %}Assign operational roles and review permission coverage for ERP users.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
     <div class="container">
         <div class="top-nav">
             <a href="/" class="btn">← Home</a>
@@ -360,8 +362,7 @@
             </table>
         </div>
     </div>
-</body>
-</html>
+{% endblock %}
 
 
 

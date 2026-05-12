@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Archived Records - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Archived Records - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); }
         .container { max-width: 1200px; margin: 0 auto; }
@@ -23,10 +22,13 @@
         .muted { color: #697586; }
         .actions-cell { white-space: nowrap; }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Archived Records{% endblock %}
+{% block header_subtitle %}Review archived job cards, production entries, and dispatch records before restoration.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
     <div class="container">
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
@@ -238,7 +240,6 @@
             {% endif %}
         </div>
     </div>
-</body>
-</html>
+{% endblock %}
 
 

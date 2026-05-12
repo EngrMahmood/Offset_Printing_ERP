@@ -1,0 +1,122 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Offset ERP{% endblock %}</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <link rel="stylesheet" href="{% static 'theme/css/variables.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/base.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/layout.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/forms.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/tables.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/cards.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/buttons.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/badges.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/modals.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/dashboard.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/responsive.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/erp_components.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/planning_phase2.css' %}">
+    <style>
+        /* Two-tier topnav — override Tailwind CDN and any cache */
+        .erp-shell { display: flex !important; flex-direction: column !important; }
+        .erp-topnav {
+            display: flex !important; flex-direction: column !important;
+            background: #1a2332 !important; color: #fff !important;
+            position: sticky !important; top: 0 !important; z-index: 100 !important;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.25) !important; flex-shrink: 0 !important;
+        }
+        .erp-topnav-row1 {
+            display: flex !important; align-items: center !important;
+            height: 48px !important; padding: 0 20px !important; gap: 12px !important;
+        }
+        .erp-topnav-brand {
+            display: flex !important; align-items: center !important; gap: 8px !important;
+            font-size: 15px !important; font-weight: 700 !important; color: #fff !important;
+            white-space: nowrap !important; margin-right: 16px !important; flex-shrink: 0 !important;
+        }
+        .erp-topnav-brand i { color: #60a5fa !important; }
+        .erp-topnav-modules {
+            display: flex !important; align-items: center !important;
+            gap: 2px !important; flex: 1 !important; overflow-x: auto !important;
+        }
+        .erp-topnav-module {
+            color: rgba(255,255,255,0.72) !important; font-size: 13px !important;
+            font-weight: 500 !important; padding: 5px 13px !important;
+            border-radius: 5px !important; white-space: nowrap !important;
+            text-decoration: none !important;
+        }
+        .erp-topnav-module:hover { background: rgba(255,255,255,0.1) !important; color: #fff !important; }
+        .erp-topnav-module.is-active { background: rgba(96,165,250,0.18) !important; color: #93c5fd !important; font-weight: 600 !important; }
+        .erp-topnav-actions { display: flex !important; align-items: center !important; gap: 12px !important; margin-left: auto !important; flex-shrink: 0 !important; }
+        .erp-topbar-actions { display: flex !important; align-items: center !important; gap: 10px !important; flex-wrap: wrap !important; padding: 8px 20px 10px !important; border-top: 1px solid rgba(255,255,255,0.08) !important; }
+        .erp-topnav-user-info { display: flex !important; align-items: center !important; gap: 7px !important; color: rgba(255,255,255,0.8) !important; font-size: 13px !important; }
+        .erp-topnav-logout {
+            display: flex !important; align-items: center !important; gap: 5px !important;
+            background: rgba(255,255,255,0.07) !important; border: 1px solid rgba(255,255,255,0.16) !important;
+            color: rgba(255,255,255,0.8) !important; font-size: 12px !important;
+            padding: 4px 10px !important; border-radius: 5px !important; cursor: pointer !important;
+        }
+        .erp-topnav-logout:hover { background: rgba(239,68,68,0.22) !important; color: #fca5a5 !important; }
+        /* Sub-nav row */
+        .erp-subnav {
+            display: flex !important; align-items: center !important;
+            background: #232f42 !important; border-top: 1px solid rgba(255,255,255,0.07) !important;
+            padding: 0 20px !important; height: 36px !important;
+            overflow-x: auto !important;
+        }
+        .erp-subnav-link {
+            color: rgba(255,255,255,0.6) !important; font-size: 12px !important;
+            font-weight: 500 !important; padding: 0 13px !important;
+            height: 36px !important; line-height: 36px !important;
+            white-space: nowrap !important; text-decoration: none !important;
+            border-bottom: 2px solid transparent !important;
+        }
+        .erp-subnav-link:hover { color: rgba(255,255,255,0.9) !important; }
+        .erp-subnav-link.is-active { color: #fff !important; border-bottom-color: #60a5fa !important; font-weight: 600 !important; }
+        .erp-sidebar { display: none !important; }
+        .erp-main { flex: 1 !important; background: #f3f5f8 !important; }
+        .erp-content { padding: 20px 24px !important; }
+    </style>
+    {% block extra_head %}{% endblock %}
+</head>
+<body>
+
+    <div class="erp-shell">
+        {% block topbar %}
+            <nav class="erp-topnav" aria-label="Main navigation">
+                {% block navbar %}
+                    {% include 'theme/navbar.html' %}
+                {% endblock %}
+                <div class="erp-topbar-actions">
+                    {% block header_actions %}{% endblock %}
+                </div>
+            </nav>
+        {% endblock %}
+
+        <main class="erp-main">
+            <section class="erp-content">
+                {% block page_alerts %}
+                    {% include 'theme/alerts.html' %}
+                {% endblock %}
+                {% block breadcrumbs %}
+                    {% include 'theme/breadcrumbs.html' %}
+                {% endblock %}
+
+                {% block content %}{% endblock %}
+            </section>
+        </main>
+    </div>
+
+    <script src="{% static 'theme/js/sidebar.js' %}"></script>
+    <script src="{% static 'theme/js/modal.js' %}"></script>
+    <script src="{% static 'theme/js/filters.js' %}"></script>
+    <script src="{% static 'theme/js/table.js' %}"></script>
+    <script src="{% static 'theme/js/workflow.js' %}"></script>
+    {% block extra_js %}{% endblock %}
+</body>
+</html>

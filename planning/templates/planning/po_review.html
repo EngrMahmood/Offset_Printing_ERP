@@ -1,109 +1,72 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Review PO {{ payload.po_number }}</title>
-    {% include 'includes/ui/theme_colors.html' %}
-    <style>
-        .wrap { max-width: 100%; margin: 0 auto; }
-        .card { background: #fff; border: 1px solid #d6e0ea; border-radius: 8px; padding: 12px; margin-bottom: 10px; }
-        .btn { display: inline-block; padding: 7px 11px; border-radius: 5px; border: 1px solid #445366; color: #fff; background: #445366; text-decoration: none; font-size: 12px; cursor: pointer; }
-        .btn.secondary { background: #fff; color: #445366; }
-        .btn.danger { background: #8d3040; border-color: #8d3040; }
-        .muted { color: #5f6f82; font-size: 11px; }
-        .info-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin-bottom: 10px; }
-        .info-item { background: #f4f8fc; border: 1px solid #d4e1ee; border-radius: 6px; padding: 8px; }
-        .info-item .label { font-size: 10px; color: #607080; font-weight: 700; text-transform: uppercase; }
-        .info-item .value { font-size: 13px; color: #1f2f43; font-weight: 600; }
-        .table-shell { overflow-x: auto; border: 1px solid #d6e0ea; border-radius: 6px; }
-        table { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 1300px; }
-        th, td { border-bottom: 1px solid #e7eef5; padding: 7px 8px; text-align: left; vertical-align: middle; }
-        th { position: sticky; top: 0; background: #f0f5fa; color: #2f4257; font-size: 10px; text-transform: uppercase; letter-spacing: 0.02em; }
-        input[type="text"] { padding: 4px 7px; border: 1px solid #b0c4d8; border-radius: 4px; font-size: 12px; width: 160px; }
-        input[type="checkbox"] { width: 16px; height: 16px; cursor: pointer; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 10px; background: #e8f3fd; color: #2a5f90; border: 1px solid #b8d5ef; }
-        .badge.repeat { background: #e6f4ea; border-color: #bee2c5; color: #1f6c37; }
-        .badge.new { background: #fff0ef; border-color: #f1c2bd; color: #8a2f23; }
-        .row-new { background: #fff9f9; }
-        .total-row { background: #f7fbff; font-weight: 700; }
-        .alert { border-radius: 6px; padding: 9px 12px; margin-bottom: 10px; font-size: 13px; }
-        .alert-success { background: #e6f4ea; color: #1e6d33; border: 1px solid #bee3c7; }
-        .warn-box { background: #fffbeb; border: 1px solid #f0d88a; border-radius: 6px; padding: 9px 12px; margin-bottom: 10px; font-size: 12px; color: #6b4c00; }
-        .small-input { width: 110px; }
-    </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<main class="wrap page-container">
-    {% with current_step='po' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
-    {% endwith %}
 
-    <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:8px;">
-        <div>
-            <h1 style="margin:0;font-size:20px;">Review PO: {{ payload.po_number|default:"?" }}</h1>
-            <div class="muted">Verify extracted data and routing: Repeat can update Planning, New must go through Pending SKU approval.</div>
-        </div>
-        <a href="{% url 'planning:po_inbox' %}" class="btn secondary">Back to PO Intake Queue</a>
-    </div>
+{% block title %}Review PO {{ payload.po_number }}{% endblock %}
+{% block header_title %}Review PO {{ payload.po_number }}{% endblock %}
+{% block header_subtitle %}Verify extracted data and routing: Repeat can update Planning, New must go through Pending SKU approval.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'planning:po_inbox' %}" class="erp-btn erp-btn-secondary">Back to PO Intake Queue</a>
+{% endblock %}
+
+{% block page_alerts %}{% endblock %}
+
+{% block content %}
 
     {% for msg in messages %}
     {% if 'Partial extraction' in msg.message or msg.level_tag == 'warning' %}
-    <div class="alert" style="background:#fffbe6;border:1px solid #f0c050;color:#7a5600;">⚠ {{ msg }}</div>
+    <div class="erp-alert is-warning">⚠ {{ msg }}</div>
     {% else %}
-    <div class="alert alert-success">{{ msg }}</div>
+    <div class="erp-alert is-success">{{ msg }}</div>
     {% endif %}
     {% endfor %}
 
-    <div class="warn-box">
+    <div class="erp-alert is-notice">
         Default JC numbering now uses your serial format: <strong>JC-MM-YY-####</strong>.
         JC numbers are assigned automatically by the system, and manual override is disabled.
         If the same PO + SKU is uploaded again, the existing planning job is updated instead of creating duplicates.
     </div>
 
-    <div class="card" style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;">
+    <div class="erp-panel erp-panel--row">
         <div>
-            <span class="badge repeat">Repeat SKUs: {{ repeat_count }}</span>
-            <span class="badge new">New SKUs: {{ new_count }}</span>
-            <div class="muted" style="margin-top:4px;">New SKUs must complete Pending SKU -> Reviewed -> Approved before planning jobs can be created for them.</div>
+            <span class="erp-badge is-repeat">Repeat SKUs: {{ repeat_count }}</span>
+            <span class="erp-badge is-new">New SKUs: {{ new_count }}</span>
+            <div class="muted">New SKUs must complete Pending SKU -&gt; Reviewed -&gt; Approved before planning jobs can be created for them.</div>
             {% if configured_new_count %}
-            <div class="muted" style="margin-top:4px;color:#8a3f00;">Configured from this PO as NEW for production: {{ configured_new_count }}</div>
+            <div class="erp-alert is-warning erp-alert--nested">Configured from this PO as NEW for production: {{ configured_new_count }}</div>
             {% endif %}
         </div>
-        <a href="{% url 'qc:po_new_skus' po_doc.id %}" class="btn {% if new_count == 0 %}secondary{% endif %}">Configure New SKUs</a>
+        <a href="{% url 'qc:po_new_skus' po_doc.id %}" class="erp-btn {% if new_count == 0 %}erp-btn-secondary{% else %}erp-btn-primary{% endif %}">Configure New SKUs</a>
     </div>
 
     
 
     <!-- PO Header Summary -->
-    <div class="card">
-        <div style="font-size:13px;font-weight:700;color:#1f2f43;margin-bottom:8px;">PO Header</div>
-        <div class="info-grid">
-            <div class="info-item"><div class="label">PO Number</div><div class="value">{{ payload.po_number|default:"-" }}</div></div>
-            <div class="info-item"><div class="label">PO Date</div><div class="value">{{ payload.po_date|default:"-" }}</div></div>
-            <div class="info-item"><div class="label">Approval Date</div><div class="value">{{ payload.approval_date|default:"-" }}</div></div>
-            <div class="info-item"><div class="label">Department</div><div class="value">{{ payload.department|default:"-" }}</div></div>
-            <div class="info-item"><div class="label">Delivery Location</div><div class="value">{{ payload.delivery_location|default:"-" }}</div></div>
-            <div class="info-item"><div class="label">Grand Total</div><div class="value">Rs {{ payload.grand_total|default:"-" }}</div></div>
-            <div class="info-item"><div class="label">Supplier</div><div class="value">{{ payload.supplier_name|default:"-" }}</div></div>
-            <div class="info-item"><div class="label">Buyer</div><div class="value">{{ payload.buyer_name|default:"-" }}</div></div>
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <span class="erp-panel__title">PO Header</span>
+        </div>
+        <div class="erp-info-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ payload.po_number|default:"-" }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PO Date</div><div class="erp-info-item__value">{{ payload.po_date|default:"-" }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Approval Date</div><div class="erp-info-item__value">{{ payload.approval_date|default:"-" }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Department</div><div class="erp-info-item__value">{{ payload.department|default:"-" }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Delivery Location</div><div class="erp-info-item__value">{{ payload.delivery_location|default:"-" }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Grand Total</div><div class="erp-info-item__value">Rs {{ payload.grand_total|default:"-" }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Supplier</div><div class="erp-info-item__value">{{ payload.supplier_name|default:"-" }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Buyer</div><div class="erp-info-item__value">{{ payload.buyer_name|default:"-" }}</div></div>
         </div>
     </div>
 
     <!-- Line Items Review -->
-    <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-            <div style="font-size:13px;font-weight:700;color:#1f2f43;">
-                Line Items <span class="badge">{{ items|length }} SKU{{ items|length|pluralize }}</span>
-            </div>
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <span class="erp-panel__title">Line Items <span class="erp-badge is-count">{{ items|length }} SKU{{ items|length|pluralize }}</span></span>
         </div>
-        <div class="muted" style="margin-bottom:8px;">Use the Exclude checkbox to omit a SKU from the current Create Planning Jobs run. Use Ignore to remove the SKU permanently from PO intake review.</div>
+        <div class="muted">Use the Exclude checkbox to omit a SKU from the current Create Planning Jobs run. Use Ignore to remove the SKU permanently from PO intake review.</div>
         {% if ignored_count %}
-            <div class="muted" style="margin-bottom:8px;color:#8a3f00;">
+            <div class="muted">
                 {{ ignored_count }} SKU{{ ignored_count|pluralize }} ignored from this PO intake review.
-                <a href="{% url 'qc:pending_skus_ignored' %}?po={{ payload.po_number|urlencode }}" class="btn secondary" style="padding:4px 7px;font-size:11px;">Manage ignored SKUs</a>
+                <a href="{% url 'qc:pending_skus_ignored' %}?po={{ payload.po_number|urlencode }}" class="erp-btn erp-btn-secondary">Manage ignored SKUs</a>
             </div>
         {% endif %}
 
@@ -112,7 +75,7 @@
             <input type="hidden" name="action" id="review_form_action" value="create_jobs">
             <input type="hidden" name="sku" id="review_form_sku" value="">
 
-            <div class="table-shell">
+            <div class="erp-table-wrap">
                 <table>
                     <thead>
                         <tr>
@@ -135,13 +98,13 @@
                         {% for item in items %}
                         <tr id="row_{{ item.line_no }}" class="{% if not item.is_repeat %}row-new{% endif %}">
                             <td>{{ item.line_no }}</td>
-                            <td style="max-width:340px;word-break:break-word;">{{ item.job_name|default:item.sku }}</td>
-                            <td style="max-width:320px;word-break:break-all;">{{ item.sku }}</td>
-                            <td><span class="badge {% if item.is_repeat %}repeat{% else %}new{% endif %}">{{ item.recipe_status }}</span></td>
-                            <td><span class="badge {% if item.forward_flag == 'New' %}new{% else %}repeat{% endif %}">{{ item.forward_flag }}</span></td>
+                            <td class="po-col-job">{{ item.job_name|default:item.sku }}</td>
+                            <td class="po-col-sku">{{ item.sku }}</td>
+                            <td><span class="erp-badge {% if item.is_repeat %}is-repeat{% else %}is-new{% endif %}">{{ item.recipe_status }}</span></td>
+                            <td><span class="erp-badge {% if item.forward_flag == 'New' %}is-new{% else %}is-repeat{% endif %}">{{ item.forward_flag }}</span></td>
                             <td>
                                 {% if item.recipe_status == 'New' %}
-                                    <button class="btn secondary" type="button" style="font-size:11px;padding:4px 7px;" onclick="ignorePoReviewSku('{{ item.sku|escapejs }}')">Ignore from review</button>
+                                    <button class="erp-btn erp-btn-secondary" type="button" onclick="ignorePoReviewSku('{{ item.sku|escapejs }}')">Ignore from review</button>
                                 {% else %}
                                     <span class="muted">-</span>
                                 {% endif %}
@@ -149,7 +112,7 @@
                             <td>
                                 {% if item.existing_job_id %}
                                     <div><strong>{{ item.existing_jc_number }}</strong></div>
-                                    <a href="{% url 'planning:job_edit' item.existing_job_id %}" class="btn secondary" style="font-size:10px;padding:3px 7px;" target="_blank" rel="noopener">Edit</a>
+                                    <a href="{% url 'planning:job_edit' item.existing_job_id %}" class="erp-btn erp-btn-secondary" target="_blank" rel="noopener">Edit</a>
                                 {% else %}
                                     <span class="muted">New create</span>
                                 {% endif %}
@@ -174,14 +137,16 @@
                 </table>
             </div>
 
-            <div style="display:flex;gap:8px;margin-top:12px;flex-wrap:wrap;">
-                <button type="submit" class="btn">Create Planning Jobs</button>
-                <a href="{% url 'planning:po_inbox' %}" class="btn secondary">Cancel</a>
+            <div class="erp-form-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Create Planning Jobs</button>
+                <a href="{% url 'planning:po_inbox' %}" class="erp-btn erp-btn-secondary">Cancel</a>
             </div>
         </form>
     </div>
-</main>
 
+{% endblock %}
+
+{% block extra_js %}
 <script>
 const itemsData = {{ items_json|safe }};
 
@@ -203,7 +168,6 @@ function ignorePoReviewSku(sku) {
     document.getElementById('review_form').submit();
 }
 </script>
-</body>
-</html>
+{% endblock %}
 
 

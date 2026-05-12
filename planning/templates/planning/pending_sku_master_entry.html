@@ -1,11 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Master Data Entry | Pending SKU</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Master Data Entry | Pending SKU{% endblock %}
+{% block extra_head %}
     <style>
         .wrap { max-width: 960px; margin: 0 auto; }
         .top { display:flex; justify-content:space-between; align-items:center; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
@@ -45,12 +42,15 @@
             .form-grid { grid-template-columns:1fr; }
         }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Pending SKU Master Data{% endblock %}
+{% block header_subtitle %}Complete required recipe fields and submit the SKU through review and approval for planning sync.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
 <main class="wrap page-container">
     {% with current_step='master' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
     <div class="top">
@@ -214,7 +214,6 @@
         </form>
     </section>
 </main>
-</body>
-</html>
+{% endblock %}
 
 

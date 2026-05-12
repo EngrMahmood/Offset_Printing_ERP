@@ -1,11 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bulk Upload SKU Recipes</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Bulk Upload SKU Recipes{% endblock %}
+{% block extra_head %}
     <style>
         .wrap { max-width: 860px; margin: 0 auto; }
         .panel { background: #fff; border: 1px solid #d6e0ea; border-radius: 10px; padding: 16px; }
@@ -36,13 +33,16 @@
         .step-box .k { font-size: 10px; text-transform: uppercase; color: #55708a; font-weight: 700; }
         .step-box .v { font-size: 12px; color: #1f3048; font-weight: 700; margin-top: 2px; }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Bulk Upload SKU Recipes{% endblock %}
+{% block header_subtitle %}Import or refresh recipe master data from CSV or XLSX, then route uploaded rows back through approval.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
 <main class="wrap page-container">
 
     {% with current_step='master' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
     <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin-bottom:10px;">
@@ -187,7 +187,6 @@
     </section>
 
 </main>
-</body>
-</html>
+{% endblock %}
 
 

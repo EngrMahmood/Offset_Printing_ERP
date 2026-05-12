@@ -1,35 +1,19 @@
-{% extends 'includes/ui/base_theme.html' %}
+{% extends 'theme/base.html' %}
 
 {% block title %}PO Intake Queue - ERP{% endblock %}
 {% block header_title %}PO Intake Queue{% endblock %}
 
+{% block header_subtitle %}Unified PO Intake — repeat jobs route to Planning, new SKUs route to Master Data first.{% endblock %}
+
+{% block header_actions %}
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Bulk Upload PO</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO</a>
+{% endblock %}
+
 {% block content %}
-{% with current_step='po' %}
-    {% include 'planning/includes/workflow_sequence_bar.html' %}
-{% endwith %}
-
-<div class="erp-card" style="margin-bottom:12px; display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap;">
-    <div>
-        <h2 class="erp-section-title">Unified PO Intake Workflow</h2>
-        <div style="font-size:12px; color:var(--erp-text-muted); margin-top:4px;">Reference-inspired queue layout with route grouping, action placement, and status hierarchy.</div>
-    </div>
-    <div style="display:flex; gap:8px; flex-wrap:wrap;">
-        <a class="erp-btn erp-btn-secondary" href="{% url 'planning:home' %}">Planning Home</a>
-        <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Upload PO</a>
-        <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO</a>
-        <a class="erp-btn erp-btn-primary" href="{% url 'qc:approval_queue' %}">Approval Queue</a>
-    </div>
-</div>
-
-<div class="erp-card" style="margin-bottom:12px;">
-    <div class="erp-workflow" style="grid-template-columns:repeat(2, minmax(220px, 1fr));">
-        <div class="erp-workflow-step active">Repeat Route: PO Intake -> Planning Jobs</div>
-        <div class="erp-workflow-step">New Route: PO Intake -> Pending SKU -> Approval -> Planning Refresh</div>
-    </div>
-</div>
 
 <div class="erp-table-wrap">
-    <table class="erp-table">
+    <table>
         <thead>
             <tr>
                 <th>PO</th>
@@ -50,12 +34,12 @@
                 <td>{{ row.po_number }}</td>
                 <td>{{ row.supplier }}</td>
                 <td>{{ row.item_count }}</td>
-                <td><span class="erp-badge erp-badge-approved">{{ row.repeat_count }}</span></td>
-                <td><span class="erp-badge erp-badge-pending">{{ row.new_count }}</span></td>
+                <td><span class="erp-badge is-approved">{{ row.repeat_count }}</span></td>
+                <td><span class="erp-badge is-pending">{{ row.new_count }}</span></td>
                 <td>
                     {% if row.ignored_count %}
-                        <span class="erp-badge erp-badge-rejected">{{ row.ignored_count }}</span>
-                        <div style="margin-top:4px;"><a href="{% url 'qc:pending_skus_ignored' %}?po={{ row.po_number|urlencode }}">Review</a></div>
+                        <span class="erp-badge is-rejected">{{ row.ignored_count }}</span>
+                        <div class="mt-1"><a href="{% url 'qc:pending_skus_ignored' %}?po={{ row.po_number|urlencode }}">Review</a></div>
                     {% else %}
                         0
                     {% endif %}
@@ -63,32 +47,32 @@
                 <td>{{ row.missing_count }}</td>
                 <td>
                     {% if row.merged_duplicates %}
-                        <span class="erp-badge erp-badge-hold">Merged duplicate SKU lines</span>
-                        <div style="font-size:11px; color:var(--erp-text-muted); margin-top:4px;">Lines: {{ row.source_item_count }} -> {{ row.item_count }}</div>
-                        <div style="font-size:11px; color:var(--erp-text-muted);">SKU(s): {{ row.merged_duplicate_skus|join:', ' }}</div>
+                        <span class="erp-badge is-hold">Merged duplicate SKU lines</span>
+                        <p class="erp-muted">Lines: {{ row.source_item_count }} &rarr; {{ row.item_count }}</p>
+                        <p class="erp-muted">SKU(s): {{ row.merged_duplicate_skus|join:', ' }}</p>
                     {% else %}
-                        <span style="font-size:11px; color:var(--erp-text-muted);">No duplicate SKU lines</span>
+                        <span class="erp-muted">No duplicate SKU lines</span>
                     {% endif %}
                 </td>
-                <td style="font-size:11px; color:var(--erp-text-muted);">{{ row.doc.created_at|date:'d M Y H:i' }}</td>
+                <td class="erp-muted">{{ row.doc.created_at|date:'d M Y H:i' }}</td>
                 <td>
                     {% if row.repeat_count > 0 %}
-                    <div style="font-weight:700; color:#1f6c37; margin-bottom:5px;">Repeat Route</div>
-                    <div style="display:flex; gap:6px; flex-wrap:wrap; margin-bottom:6px;">
+                    <p><strong>Repeat Route</strong></p>
+                    <div class="erp-actions">
                         <a href="{% url 'planning:jobs' %}?q={{ row.po_number }}" class="erp-btn erp-btn-secondary">Open Planning</a>
                     </div>
-                    <div style="font-size:11px; color:var(--erp-text-muted); line-height:1.45;">
+                    <p class="erp-muted">
                         Repeat jobs synced. Created: {{ row.repeat_jobs_created_count }}, Updated: {{ row.repeat_jobs_updated_count }}.
                         {% if row.repeat_jobs_locked_count %}Locked: {{ row.repeat_jobs_locked_count }}.{% endif %}
                         {% if row.repeat_jobs_missing_recipe_count %}Missing approved master: {{ row.repeat_jobs_missing_recipe_count }}.{% endif %}
-                    </div>
+                    </p>
                     {% else %}
-                    <div style="font-size:11px; color:var(--erp-text-muted);">No repeat jobs to refresh in Planning from this PO.</div>
+                    <p class="erp-muted">No repeat jobs to refresh in Planning from this PO.</p>
                     {% endif %}
 
                     {% if row.new_count > 0 %}
-                    <div style="font-weight:700; color:#8a3f00; margin-top:8px; margin-bottom:5px;">New Route</div>
-                    <div style="display:flex; gap:6px; flex-wrap:wrap;">
+                    <p><strong>New Route</strong></p>
+                    <div class="erp-actions">
                         <a href="{% url 'qc:pending_skus' %}?po={{ row.po_number|urlencode }}" class="erp-btn erp-btn-warning">Open Pending Master Data</a>
                         {% if row.new_skus_sent_to_planning_count > 0 %}
                         <a href="{% url 'planning:jobs' %}?q={{ row.po_number }}" class="erp-btn erp-btn-secondary">Open Planning</a>
@@ -96,24 +80,29 @@
                     </div>
                     {% endif %}
 
-                    {% if can_admin_actions and row.po_number != '-' %}
-                    <div style="margin-top:10px;">
-                        <form method="post" action="" style="display:inline; margin:0;">
+                    {% if can_admin_actions %}
+                    <div class="erp-actions">
+                        <form method="post" action="">
                             {% csrf_token %}
                             <input type="hidden" name="action" value="delete_po_intake">
-                            <input type="hidden" name="po_number" value="{{ row.po_number }}">
-                            <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Delete the entire PO intake for {{ row.po_number }}? This removes the intake document(s) and cannot be undone.');">Delete Intake</button>
+                            {% if row.po_number != '-' %}
+                                <input type="hidden" name="po_number" value="{{ row.po_number }}">
+                                <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Delete the entire PO intake for {{ row.po_number }}? This removes the intake document(s) and cannot be undone.');">Delete Intake</button>
+                            {% else %}
+                                <input type="hidden" name="po_doc_id" value="{{ row.po_doc_id }}">
+                                <button class="erp-btn erp-btn-danger" type="submit" onclick="return confirm('Delete this PO intake document? This removes the intake document and cannot be undone.');">Delete Intake</button>
+                            {% endif %}
                         </form>
                     </div>
                     {% endif %}
-                    <div style="margin-top:5px; color:#8a3f00; font-size:11px; line-height:1.45;">
+                    <p class="erp-muted">
                         New jobs must complete Master approval first. After Approved status, matching draft planning jobs are refreshed.
                         {% if row.new_skus_sent_to_planning_count > 0 %}Planning jobs unlocked so far: {{ row.new_skus_sent_to_planning_count }}.{% endif %}
-                    </div>
+                    </p>
                 </td>
             </tr>
         {% empty %}
-            <tr><td colspan="10">No uploaded PO documents yet.</td></tr>
+            <tr><td colspan="10" class="erp-empty">No uploaded PO documents yet.</td></tr>
         {% endfor %}
         </tbody>
     </table>

@@ -1,0 +1,11 @@
+<nav class="erp-breadcrumbs" aria-label="Breadcrumb">
+    <a href="{% url 'home' %}">Home</a>
+    {% if request.resolver_match.app_name %}
+        <span>/</span>
+        <a href="#">{{ request.resolver_match.app_name|title }}</a>
+    {% endif %}
+    {% if request.resolver_match.url_name %}
+        <span>/</span>
+        <span class="current">{{ request.resolver_match.url_name|title|cut:'_' }}</span>
+    {% endif %}
+</nav>

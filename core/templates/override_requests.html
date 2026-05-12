@@ -1,9 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Edit Override Requests - Offset ERP</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Edit Override Requests - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); }
         .container { max-width: 1100px; margin: 0 auto; }
@@ -23,10 +22,13 @@
         .badge-rejected { background: #fee2e2; color: #7f1d1d; }
         .filter-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
     </style>
-    
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Edit Override Requests{% endblock %}
+{% block header_subtitle %}Review, track, and action record-edit override requests across protected operational data.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
     <div class="container">
         <div class="top-actions">
             <a href="/" class="btn">Home</a>
@@ -98,8 +100,7 @@
             </table>
         </div>
     </div>
-</body>
-</html>
+{% endblock %}
 
 
 

@@ -1,0 +1,232 @@
+{% comment %}
+  Two-tier navigation:
+  Row 1 (dark): Brand + module group buttons + user/logout
+  Row 2 (light): Sub-links for the active module
+{% endcomment %}
+
+{# Determine active module #}
+{% with app=request.resolver_match.app_name url=request.resolver_match.url_name entity=request.resolver_match.kwargs.entity_type|default:'' %}
+
+    {# ── Row 1: Brand + Modules + User ───────────────────────────── #}
+    <div class="erp-topnav-row1">
+        <div class="erp-topnav-brand">
+            <i class="fas fa-print"></i>
+            <span>Offset ERP</span>
+        </div>
+
+        <div class="erp-topnav-modules">
+            {% if nav.can_access_dashboard %}
+            <a href="{% url 'home' %}"
+               class="erp-topnav-module {% if url == 'home' %}is-active{% endif %}">
+                Dashboard
+            </a>
+            {% endif %}
+            {% if nav.can_access_planning %}
+            <a href="{% url 'planning:home' %}"
+               class="erp-topnav-module {% if app == 'planning' %}is-active{% endif %}">
+                Planning
+            </a>
+            {% endif %}
+            {% if nav.can_access_qc %}
+            <a href="{% url 'qc:qc_home' %}"
+               class="erp-topnav-module {% if app == 'qc' %}is-active{% endif %}">
+                QC
+            </a>
+            {% endif %}
+            {% if nav.can_access_production %}
+            <a href="{% url 'production_dashboard' %}"
+               class="erp-topnav-module {% if url == 'production_dashboard' or url == 'production_entry' or url == 'production_records' or url == 'job_card_entry' or url == 'job_card_records' %}is-active{% endif %}">
+                Production
+            </a>
+            {% endif %}
+            {% if nav.can_access_dispatch %}
+            <a href="{% url 'dispatch_records' %}"
+                    class="erp-topnav-module {% if url == 'dispatch_records' or url == 'dispatch_entry' or entity == 'dispatch' %}is-active{% endif %}">
+                Dispatch
+            </a>
+            {% endif %}
+            {% if nav.can_access_master_data %}
+            <a href="{% url 'machine_master_tools' %}"
+                    class="erp-topnav-module {% if url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'override_requests' or url == 'review_override_request' or url == 'request_edit_override' or url == 'quick_add_master' %}is-active{% endif %}">
+                Master Data
+            </a>
+            {% endif %}
+            {% if nav.can_access_guides %}
+            <a href="{% url 'erp_readme' %}"
+                    class="erp-topnav-module {% if url == 'erp_readme' or url == 'erp_version' %}is-active{% endif %}">
+                Guides
+            </a>
+            {% endif %}
+        </div>
+
+        <div class="erp-topnav-actions">
+            <div class="erp-topnav-user-info">
+                <i class="far fa-user-circle"></i>
+                <span>{{ request.user.username|default:'Guest' }}</span>
+            </div>
+            <form action="{% url 'logout' %}" method="post" style="margin:0;">
+                {% csrf_token %}
+                <button type="submit" class="erp-topnav-logout" title="Logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    <span>Logout</span>
+                </button>
+            </form>
+        </div>
+    </div>
+
+    {# ── Row 2: Sub-navigation for active module ──────────────────── #}
+    {% if app == 'planning' and nav.can_access_planning %}
+    <div class="erp-subnav">
+        <a href="{% url 'planning:po_inbox' %}"
+           class="erp-subnav-link {% if url == 'po_root' or url == 'po_inbox' %}is-active{% endif %}">
+            PO Intake
+        </a>
+        <a href="{% url 'planning:po_upload' %}"
+           class="erp-subnav-link {% if url == 'po_upload' or url == 'upload_po' %}is-active{% endif %}">
+            Upload PO
+        </a>
+        <a href="{% url 'planning:po_manual' %}"
+           class="erp-subnav-link {% if url == 'po_manual' or url == 'manual_po_entry' %}is-active{% endif %}">
+            Manual PO
+        </a>
+        <a href="{% url 'planning:sku_queue' %}"
+           class="erp-subnav-link {% if url == 'sku_queue' or url == 'sku_recipes_list' %}is-active{% endif %}">
+            SKU Entry
+        </a>
+        <a href="{% url 'planning:jobs' %}"
+           class="erp-subnav-link {% if url == 'jobs' or url == 'job_detail' or url == 'job_edit' %}is-active{% endif %}">
+            Planning Jobs
+        </a>
+        <a href="{% url 'planning:jobs_drafts' %}"
+           class="erp-subnav-link {% if url == 'jobs_drafts' %}is-active{% endif %}">
+            Draft Jobs
+        </a>
+        <a href="{% url 'planning:jobs_locked' %}"
+           class="erp-subnav-link {% if url == 'jobs_locked' %}is-active{% endif %}">
+            Locked Jobs
+        </a>
+        <a href="{% url 'planning:reports' %}"
+           class="erp-subnav-link {% if url == 'reports' or url == 'report' %}is-active{% endif %}">
+            Reports
+        </a>
+        <a href="{% url 'planning:job_cards' %}"
+           class="erp-subnav-link {% if url == 'job_cards' or url == 'job_card_layout_builder' %}is-active{% endif %}">
+            Job Cards
+        </a>
+        <a href="{% url 'planning:planning_readme' %}"
+           class="erp-subnav-link {% if url == 'planning_readme' %}is-active{% endif %}">
+            Planning Guide
+        </a>
+        <a href="{% url 'planning:po_debug' %}"
+           class="erp-subnav-link {% if url == 'po_debug' or url == 'po_debug_alias' %}is-active{% endif %}">
+            PO Debug
+        </a>
+    </div>
+
+    {% elif app == 'qc' and nav.can_access_qc %}
+    <div class="erp-subnav">
+        <a href="{% url 'qc:pending_skus' %}"
+           class="erp-subnav-link {% if url == 'pending_skus' or url == 'master_review' %}is-active{% endif %}">
+            Pending SKU Approval
+        </a>
+        <a href="{% url 'qc:pending_skus_ignored' %}"
+           class="erp-subnav-link {% if url == 'pending_skus_ignored' %}is-active{% endif %}">
+            Ignored Pending SKU
+        </a>
+        <a href="{% url 'qc:master_review' %}"
+           class="erp-subnav-link {% if url == 'master_review' or url == 'pending_sku_master_entry' %}is-active{% endif %}">
+            Master SKU Review
+        </a>
+        <a href="{% url 'qc:job_card_approval' %}"
+           class="erp-subnav-link {% if url == 'qc_home' or url == 'approval_queue' or url == 'job_card_approval' %}is-active{% endif %}">
+            Job Card Approval
+        </a>
+        <a href="{% url 'qc:release_approval' %}"
+           class="erp-subnav-link {% if url == 'release_approval' %}is-active{% endif %}">
+            Release Approval
+        </a>
+        <a href="{% url 'qc:history' %}"
+           class="erp-subnav-link {% if url == 'history' %}is-active{% endif %}">
+            QC Review History
+        </a>
+    </div>
+
+    {% elif url == 'production_dashboard' or url == 'production_entry' or url == 'production_records' or url == 'job_card_entry' or url == 'job_card_records' %}
+    <div class="erp-subnav">
+        <a href="{% url 'production_dashboard' %}"
+           class="erp-subnav-link {% if url == 'production_dashboard' %}is-active{% endif %}">
+            Dashboard
+        </a>
+        <a href="{% url 'job_card_entry' %}"
+           class="erp-subnav-link {% if url == 'job_card_entry' %}is-active{% endif %}">
+            Job Card Entry
+        </a>
+        <a href="{% url 'job_card_records' %}"
+           class="erp-subnav-link {% if url == 'job_card_records' %}is-active{% endif %}">
+            Job Card Records
+        </a>
+        <a href="{% url 'production_entry' %}"
+           class="erp-subnav-link {% if url == 'production_entry' %}is-active{% endif %}">
+            Production Entry
+        </a>
+        <a href="{% url 'production_records' %}"
+           class="erp-subnav-link {% if url == 'production_records' %}is-active{% endif %}">
+            Production Records
+        </a>
+    </div>
+
+    {% elif url == 'dispatch_records' or url == 'dispatch_entry' %}
+    <div class="erp-subnav">
+        <a href="{% url 'dispatch_records' %}"
+           class="erp-subnav-link {% if url == 'dispatch_records' %}is-active{% endif %}">
+            All Dispatches
+        </a>
+        <a href="{% url 'dispatch_entry' %}"
+           class="erp-subnav-link {% if url == 'dispatch_entry' %}is-active{% endif %}">
+            New Dispatch
+        </a>
+    </div>
+
+    {% elif url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'override_requests' or url == 'review_override_request' or url == 'request_edit_override' or url == 'quick_add_master' %}
+    <div class="erp-subnav">
+        <a href="{% url 'machine_master_tools' %}"
+           class="erp-subnav-link {% if url == 'machine_master_tools' %}is-active{% endif %}">
+            Machine & Master
+        </a>
+        <a href="{% url 'shift_config' %}"
+           class="erp-subnav-link {% if url == 'shift_config' %}is-active{% endif %}">
+            Shift Config
+        </a>
+        <a href="{% url 'manage_user_roles' %}"
+           class="erp-subnav-link {% if url == 'manage_user_roles' %}is-active{% endif %}">
+            User Roles
+        </a>
+        <a href="{% url 'bulk_upload_jobcards' %}"
+           class="erp-subnav-link {% if url == 'bulk_upload_jobcards' %}is-active{% endif %}">
+            Bulk Upload
+        </a>
+        <a href="{% url 'archived_records' %}"
+           class="erp-subnav-link {% if url == 'archived_records' %}is-active{% endif %}">
+            Archived Records
+        </a>
+        <a href="{% url 'override_requests' %}"
+           class="erp-subnav-link {% if url == 'override_requests' or url == 'review_override_request' or url == 'request_edit_override' %}is-active{% endif %}">
+            Override Requests
+        </a>
+    </div>
+    {% elif url == 'erp_readme' %}
+    <div class="erp-subnav">
+        <a href="{% url 'erp_readme' %}"
+           class="erp-subnav-link {% if url == 'erp_readme' %}is-active{% endif %}">
+            ERP Guide
+        </a>
+        <a href="{% url 'planning:planning_readme' %}"
+           class="erp-subnav-link {% if app == 'planning' and url == 'planning_readme' %}is-active{% endif %}">
+            Planning Guide
+        </a>
+    </div>
+    {% endif %}
+
+</nav>
+
+{% endwith %}

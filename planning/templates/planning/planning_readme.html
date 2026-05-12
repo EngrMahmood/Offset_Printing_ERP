@@ -1,12 +1,10 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planning README - Offset ERP</title>
+
+{% block title %}Planning README - Offset ERP{% endblock %}
+{% block extra_head %}
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background: #f3f6f9; color: #223; }
+        body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); color: #223; }
         .container { max-width: 980px; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,.08); }
         .top-actions { display: flex; gap: 10px; margin-bottom: 20px; flex-wrap: wrap; }
         .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; display: inline-block; }
@@ -20,9 +18,13 @@
         .meta { color: #667085; font-size: 13px; margin-bottom: 12px; }
         .note { background: #fff8e1; border: 1px solid #f3de9a; color: #7a5d1a; padding: 10px 12px; border-radius: 8px; margin-top: 14px; }
     </style>
-    <link rel="stylesheet" href="{% static 'core/css/theme.css' %}?v=20260418b">
-</head>
-<body>
+{% endblock %}
+{% block header_title %}Planning Guide{% endblock %}
+{% block header_subtitle %}Module-specific planning reference retained for download, alongside the centralized ERP guide.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">ERP Guide</a>
+{% endblock %}
+{% block content %}
 <div class="container">
     <div class="top-actions">
         <a href="{% url 'planning:home' %}" class="btn">Planning Home</a>
@@ -33,15 +35,6 @@
     <h1>Planning Module - Full Easy Guide</h1>
     <div class="meta">Generated on: {{ generated_on|date:'Y-m-d H:i' }}</div>
     <div class="meta">Version: {{ erp_software_version }}{% if erp_software_release_date %} · Released {{ erp_software_release_date }}{% endif %}</div>
-
-    <h2>Release Notes ({{ erp_software_version }})</h2>
-    <ul>
-        <li>Removed <strong>department</strong> from SKU master; `PlanningJob.department` is now sourced from PO intake payload.</li>
-        <li>Approving a master SKU (from any UI path) now auto-syncs matching New PO lines into Planning Jobs.</li>
-        <li>QC users now review SKU recipes in Pending Review status and use the Approval Queue for planning approvals.</li>
-        <li>Added `size_w_mm` and `size_h_mm` fields to Pending SKU master entry to match the master edit form.</li>
-        <li>Quick-config modal feature has been removed in this release.</li>
-    </ul>
 
     <p>
         This guide explains the planning workflow in simple language.
@@ -73,8 +66,6 @@
         <li>Complete missing master fields for new SKUs that arrive from PO Intake.</li>
         <li>Use the Pending SKU workflow to edit and approve new SKU master data.</li>
         <li>After approval, new SKU lines auto-sync into Planning Jobs.</li>
-        <li>QC users review SKU recipes in Pending Review status; this is the QC approval path.</li>
-        <li>Pending SKUs is a planning-editor queue; QC review is separate from Pending SKU intake.</li>
         <li>Job Name is normally taken from the PO and should not be changed unless necessary.</li>
         <li>Application values allowed: UV, Lamination Gloss, Lamination Matt, NO.</li>
         <li>Purchase Material Origin values allowed: Local, Imported.</li>
@@ -83,18 +74,17 @@
     <h2>4. Planning Jobs (Step 4)</h2>
     <ul>
         <li>Review Planning Jobs, filter by status, department, machine, and PO.</li>
-        <li>Use the bulk action panel to update statuses or archive selected jobs.</li>
+        <li>Use the bulk action panel to move jobs through released, in production, and completed states or archive selected jobs.</li>
         <li>You can place jobs on hold, release hold, archive, or permanently delete jobs.</li>
         <li>Archived jobs are moved to the Archived Jobs page for restore or permanent delete.</li>
-        <li>Always verify the job details before approving or archiving to avoid data loss.</li>
+        <li>Always verify the job details before releasing or archiving to avoid data loss.</li>
     </ul>
 
     <h2>5. Approval Queue (Step 5)</h2>
     <ul>
-        <li>Jobs flow through: Draft → Pending Review → Pending Approval (Manager).</li>
-        <li>QC users review jobs in the Approval Queue and move them onward when ready.</li>
-        <li>Only approved jobs should be released to execution and production planning.</li>
-        <li>Use this queue to ensure master data and routing are correct before final release.</li>
+        <li>Jobs flow through: Draft → Pending QC → QC Approved → Released.</li>
+        <li>Only QC-approved jobs should be released to execution and production planning.</li>
+        <li>Use this queue to ensure plate set, wastage, machine, and remarks are complete before final release.</li>
     </ul>
 
     <h2>6. Job Card and Scan (Step 6)</h2>
@@ -122,5 +112,6 @@
         Review the guide after each release or merge to ensure users have current instructions.
     </div>
 </div>
-</body>
-</html>
+{% endblock %}
+
+

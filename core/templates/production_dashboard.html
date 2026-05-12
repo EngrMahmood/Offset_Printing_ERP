@@ -1,18 +1,10 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Production Dashboard - Offset ERP</title>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    {% include 'includes/ui/theme_colors.html' %}
-    <style>
-        body {
-            margin: 0;
-            padding: 0;
-            background-color: var(--erp-bg-soft, #f3f5f8);
-            overflow-x: hidden;
-        }
 
+{% block title %}Production Dashboard — Offset Printing ERP{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<style>
         .pd-container {
             max-width: 100%;
             padding: 16px 20px;
@@ -140,9 +132,18 @@
             align-items: center;
         }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+
+{% block header_title %}Production Dashboard{% endblock %}
+{% block header_subtitle %}Live OEE metrics, output trends and dispatch visibility{% endblock %}
+{% block header_actions %}
+{% if user.profile.can_edit_production %}
+<a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus-circle"></i> Add Production Data</a>
+{% endif %}
+<a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-book"></i> Guide</a>
+{% endblock %}
+
+{% block content %}
     <div class="pd-container">
 
         <h1>📊 Production Dashboard</h1>
@@ -609,7 +610,9 @@
             </table>
         </div>
     </div>
+    {% endblock %}
 
+    {% block extra_js %}
     <script>
         // Production Trend Chart
         const productionData = JSON.parse('{{ production_by_date_json|escapejs }}');
@@ -822,7 +825,6 @@
             }
         });
     </script>
-</body>
-</html>
+    {% endblock %}
 
 

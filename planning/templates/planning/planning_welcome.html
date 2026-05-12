@@ -1,663 +1,200 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Planning Workspace</title>
-    <style>
-        :root {
-            --bg: #f1f3f6;
-            --surface: #ffffff;
-            --text: #1f2d3a;
-            --muted: #5d6a79;
-            --line: #d5dbe3;
-            --topbar: #1c2b3f;
-            --tab: #e9edf2;
-            --tab-active: #ffffff;
-            --tab-border: #c8d0da;
-            --accent: #1f4f8a;
-            --ok: #0f6d4d;
-            --warn: #8a5a00;
-            --danger: #8a2a3b;
-            --shadow: 0 6px 18px rgba(17, 31, 49, 0.08);
-        }
 
-        * { box-sizing: border-box; }
+{% block title %}Planning Workspace{% endblock %}
+{% block header_title %}Planning Workspace{% endblock %}
+{% block header_subtitle %}Role: <strong>{{ user_role|default:'unassigned'|upper }}</strong> &mdash; Follow the steps from left to right.{% endblock %}
+{% block header_actions %}
+    <a class="erp-btn erp-btn-secondary" href="{% url 'erp_readme' %}">Guide</a>
+{% endblock %}
 
-        body {
-            margin: 0;
-            font-family: 'IBM Plex Sans', Arial, sans-serif;
-            background: var(--erp-bg-soft, #f3f5f8);
-            color: var(--text);
-        }
-
-        .top-nav {
-            background: var(--topbar);
-            color: #dfe7f1;
-            border-bottom: 1px solid #162336;
-            padding: 10px 14px;
-        }
-
-        .top-nav-wrap {
-            max-width: 1440px;
-            margin: 0 auto;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .module-title {
-            font-size: 15px;
-            font-weight: 700;
-            letter-spacing: 0.02em;
-        }
-
-        .module-subtitle {
-            font-size: 12px;
-            color: #aebacc;
-        }
-
-        .page {
-            max-width: 1440px;
-            margin: 0 auto;
-            padding: 14px;
-        }
-
-        .utility-bar {
-            display: flex;
-            justify-content: flex-end;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-
-        .hero {
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-radius: 10px;
-            box-shadow: var(--shadow);
-            padding: 14px;
-            margin-bottom: 14px;
-        }
-
-        .hero-grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 12px;
-            align-items: stretch;
-        }
-
-        .hero-title-row {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 6px;
-        }
-
-        .chip {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 999px;
-            font-size: 11px;
-            border: 1px solid var(--tab-border);
-            background: #f6f8fb;
-            color: #3a4d63;
-        }
-
-        .chip.ok { background: #e9f8f1; border-color: #b8e4cf; color: #0d5d43; }
-        .chip.warn { background: #fff3dc; border-color: #f0d5a1; color: #805206; }
-
-        h1 {
-            margin: 0;
-            font-size: 28px;
-            line-height: 1.2;
-            color: #172434;
-        }
-
-        .hero p {
-            margin: 8px 0 0;
-            color: var(--muted);
-            max-width: 70ch;
-        }
-
-        .hero-panel {
-            border: 1px solid var(--line);
-            border-radius: 8px;
-            background: #f7fafc;
-            padding: 10px;
-        }
-
-        .hero-panel h3 {
-            margin: 0 0 6px;
-            font-size: 14px;
-        }
-
-        .hero-panel ul {
-            margin: 0;
-            padding-left: 16px;
-            color: #39506a;
-            font-size: 12px;
-            line-height: 1.5;
-        }
-
-        .workflow-shell {
-            background: var(--surface);
-            border: 1px solid var(--line);
-            border-radius: 10px;
-            box-shadow: var(--shadow);
-        }
-
-        .phase-tabs {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            padding: 8px;
-            border-bottom: 1px solid var(--line);
-            background: #f5f7fa;
-            border-top-left-radius: 10px;
-            border-top-right-radius: 10px;
-        }
-
-        .phase-tab {
-            border: 1px solid var(--tab-border);
-            background: var(--tab);
-            color: #2f435a;
-            border-radius: 7px;
-            padding: 8px 10px;
-            font-size: 12px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background 0.15s ease, border-color 0.15s ease;
-        }
-
-        .phase-tab.active {
-            background: var(--tab-active);
-            border-color: #7a94b4;
-            color: #15385e;
-        }
-
-        .phase-panel {
-            display: none;
-            padding: 14px;
-        }
-
-        .phase-panel.active { display: block; }
-
-        .phase-head {
-            margin-bottom: 12px;
-        }
-
-        .phase-head h2 {
-            margin: 0 0 4px;
-            font-size: 19px;
-            color: #1a2f46;
-        }
-
-        .phase-head p {
-            margin: 0;
-            color: var(--muted);
-            font-size: 13px;
-        }
-
-        .step-strip {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 7px;
-            margin-bottom: 12px;
-        }
-
-        .step-pill {
-            border: 1px solid #cfd8e2;
-            background: #f7f9fc;
-            border-radius: 999px;
-            padding: 4px 10px;
-            font-size: 11px;
-            color: #3a4c62;
-        }
-
-        .cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
-            gap: 10px;
-        }
-
-        .tool-card {
-            background: #ffffff;
-            border: 1px solid var(--line);
-            border-left: 4px solid #9bb1ca;
-            border-radius: 8px;
-            padding: 11px;
-        }
-
-        .tool-card h3 {
-            margin: 0 0 5px;
-            font-size: 15px;
-            color: #20364e;
-        }
-
-        .tool-card p {
-            margin: 0 0 9px;
-            font-size: 12px;
-            color: var(--muted);
-            line-height: 1.45;
-        }
-
-        .card-footer {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        .role-tag {
-            font-size: 11px;
-            border: 1px solid #d4dce6;
-            background: #f5f8fb;
-            color: #46607b;
-            border-radius: 999px;
-            padding: 3px 8px;
-        }
-
-        .go-btn {
-            text-decoration: none;
-            border: 1px solid #2d5f9b;
-            background: #2d5f9b;
-            color: #ffffff;
-            border-radius: 6px;
-            padding: 5px 9px;
-            font-size: 11px;
-            font-weight: 700;
-        }
-
-        .go-btn:hover { background: #234f82; }
-
-        .tool-card.po { border-left-color: #2966ab; }
-        .tool-card.master { border-left-color: #9a6b00; }
-        .tool-card.plan { border-left-color: #2c7a4b; }
-        .tool-card.approval { border-left-color: #7a2d5a; }
-        .tool-card.shop { border-left-color: #55667c; }
-
-        .access-locked {
-            border: 1px solid #f0d8a8;
-            background: #fff7e8;
-            color: #7a5310;
-            border-radius: 8px;
-            padding: 12px;
-            margin-top: 12px;
-            font-size: 13px;
-            line-height: 1.5;
-        }
-
-        .footer-note {
-            margin-top: 14px;
-            padding: 10px;
-            border-radius: 8px;
-            background: #e9eef5;
-            color: #3d556d;
-            font-size: 12px;
-            border: 1px solid #cfd9e5;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
-        .footer-note a {
-            color: #1d416b;
-            font-weight: 600;
-            text-decoration: none;
-        }
-
-        .footer-note a:hover { text-decoration: underline; }
-
-        @media (max-width: 980px) {
-            .utility-bar { justify-content: center; }
-            .hero-grid { grid-template-columns: 1fr; }
-            .top-nav-wrap { justify-content: center; }
-        }
-    </style>
-    {% include 'includes/ui/theme_colors.html' %}
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
-<main class="page">
-    <div class="utility-bar">
-        <div style="display:flex;align-items:center;gap:10px;">
-            <span style="font-size:14px;font-weight:700;color:#1f3449;">Planning &amp; Scheduling Module</span>
-            <span class="chip">Role: {{ user_role|default:'unassigned'|upper }}</span>
-        </div>
-        {% include 'includes/user_identity_chip.html' %}
-        <a class="go-btn" href="{% url 'planning:planning_readme' %}">Planning Guide</a>
-    </div>
-
+{% block content %}
     {% with current_step='start' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
-    <section class="hero">
-        <div class="hero-grid">
-            <div>
-                <div class="hero-title-row">
-                    <span class="chip ok">Process Driven</span>
-                    <span class="chip">Sequence View</span>
-                </div>
-                <h1>Planning Workspace</h1>
-                <p>
-                    Follow the steps from left to right. Start at Step 1 and continue until job card release.
-                    Each section is grouped by workflow stage to avoid confusion.
-                </p>
-            </div>
-            <div class="hero-panel">
-                <h3>How To Use This Screen</h3>
-                <ul>
-                    <li>Step 1: PO Intake - Upload or manually enter PO.</li>
-                    <li>Step 2: SKU Master &amp; New SKU - Check SKU existence and create missing master data.</li>
-                    <li>Step 3: Planning Jobs - Planner fills planning-only fields and creates Job Card.</li>
-                    <li>Step 4: Job Card Approval - QC reviews and approves Job Card.</li>
-                    <li>Step 5: Production Scan - Production scans approved Job Card and starts execution.</li>
-                </ul>
-            </div>
-        </div>
-    </section>
-
     {% if can_edit_jobcard %}
-    <section class="workflow-shell">
-        <div class="phase-tabs" role="tablist" aria-label="Planning workflow stages">
-            <button class="phase-tab active" data-phase="start" type="button">Start Here</button>
-            <button class="phase-tab" data-phase="po" type="button">Step 1 - PO Intake</button>
-            <button class="phase-tab" data-phase="master" type="button">Step 2 - Master SKU &amp; New SKUs</button>
-            <button class="phase-tab" data-phase="planning" type="button">Step 3 - Planning Jobs</button>
-            <button class="phase-tab" data-phase="approval" type="button">Step 4 - Job Card Approval</button>
-            <button class="phase-tab" data-phase="shop" type="button">Step 5 - Job Card &amp; Scan</button>
-        </div>
 
-        <section class="phase-panel active" data-phase="start">
-            <div class="phase-head">
-                <h2>Start Point And Overall Sequence</h2>
-                <p>Use this route for each PO with strict master-first governance for new SKU data.</p>
-            </div>
-            <div class="step-strip">
-                <span class="step-pill">1. PO Intake</span>
-                <span class="step-pill">2. SKU Master / New SKU Entry</span>
-                <span class="step-pill">3. Planning Jobs</span>
-                <span class="step-pill">4. Job Card Approval</span>
-                <span class="step-pill">5. Production Scan</span>
-            </div>
-            <div class="cards">
-                <article class="tool-card po">
-                    <h3>1. PO Intake</h3>
-                    <p>Upload or manually enter PO.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Planner / Manager / Admin</span>
-                        <a class="go-btn" href="{% url 'planning:po_inbox' %}">Open Step 1</a>
-                    </div>
-                </article>
-                <article class="tool-card master">
-                    <h3>2. SKU Master &amp; New SKU</h3>
-                    <p>Check SKU existence and create missing master data.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Planner / Manager / Admin</span>
-                        <a class="go-btn" href="{% url 'qc:pending_skus' %}">Open Step 2</a>
-                    </div>
-                </article>
-                <article class="tool-card plan">
-                    <h3>3. Planning Jobs</h3>
-                    <p>Planner fills planning-only fields and creates Job Card.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Planner / Manager / Admin</span>
-                        <a class="go-btn" href="{% url 'planning:jobs' %}">Open Step 3</a>
-                    </div>
-                </article>
-                <article class="tool-card approval">
-                    <h3>4. Job Card Approval</h3>
-                    <p>QC reviews and approves Job Card.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Planner / Manager / Admin</span>
-                        <a class="go-btn" href="{% url 'qc:approval_queue' %}">Open Step 4</a>
-                    </div>
-                </article>
-                <article class="tool-card shop">
-                    <h3>5. Production Scan</h3>
-                    <p>Production scans approved Job Card and starts execution.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Production Support</span>
-                        <a class="go-btn" href="{% url 'planning:scan' %}">Open Step 5</a>
-                    </div>
-                </article>
-            </div>
-        </section>
-
-        <section class="phase-panel" data-phase="po">
-            <div class="phase-head">
-                <h2>Step 1 - Purchase Order Intake</h2>
-                <p>Collect incoming PO data and classify SKU lines as Repeat or New.</p>
-            </div>
-            <div class="cards">
-                <article class="tool-card po">
-                    <h3>Upload PO PDF</h3>
-                    <p>Upload customer PO PDF and send it to the intake queue for extraction review.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Intake Start</span>
-                        <a class="go-btn" href="{% url 'planning:upload_po' %}">Open</a>
-                    </div>
-                </article>
-                <article class="tool-card po">
-                    <h3>PO Intake Queue</h3>
-                    <p>Review parsed items, check repeat/new split, then continue to next workflow step.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Mandatory Review</span>
-                        <a class="go-btn" href="{% url 'planning:po_inbox' %}">Open</a>
-                    </div>
-                </article>
-                <article class="tool-card shop">
-                    <h3>PO Debug Extract</h3>
-                    <p>Use only when parser output needs troubleshooting before final intake.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Optional Utility</span>
-                        <a class="go-btn" href="{% url 'planning:po_debug' %}">Open</a>
-                    </div>
-                </article>
-            </div>
-        </section>
-
-        <section class="phase-panel" data-phase="master">
-            <div class="phase-head">
-                <h2>Step 2 - Master SKU &amp; Pending New SKUs</h2>
-                <p>After PO intake identifies new SKUs, fill their recipe data here and approve. Repeat SKUs use the existing approved master automatically.</p>
-            </div>
-            <div class="cards">
-                <article class="tool-card master">
-                    <h3>Pending New SKUs</h3>
-                    <p>Primary screen for new SKUs surfaced from a PO. Fill recipe details and push through draft &rarr; reviewed &rarr; approved.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Start Here After PO Intake</span>
-                        <a class="go-btn" href="{% url 'qc:pending_skus' %}">Open</a>
-                    </div>
-                </article>
-                <article class="tool-card master">
-                    <h3>SKU Recipe Master</h3>
-                    <p>View or maintain all approved recipes. Use bulk upload to create many at once.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">{% if can_manage_masters %}Manager/Admin{% else %}Planner Access{% endif %}</span>
-                        <a class="go-btn" href="{% url 'qc:sku_recipes' %}">Open</a>
-                    </div>
-                </article>
-                <article class="tool-card master">
-                    <h3>Bulk Upload SKU Recipes</h3>
-                    <p>Upload a CSV/XLSX file to create or update multiple SKU master records in one action.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Bulk Mode</span>
-                        <a class="go-btn" href="{% url 'qc:sku_recipe_bulk_upload' %}">Open</a>
-                    </div>
-                </article>
-            </div>
-        </section>
-
-        <section class="phase-panel" data-phase="planning">
-            <div class="phase-head">
-                <h2>Step 3 - Planning Job Creation And Control</h2>
-                <p>The Planning Jobs screen has three dashboard sections at the top: PO Intake Queue (Step 1), SKU Queue (Step 2), and Planning Queue (Step 3). Use those counters to track work across all queues at a glance, then edit and validate job details below.</p>
-            </div>
-            <div class="cards">
-                <article class="tool-card plan">
-                    <h3>Planning Jobs List</h3>
-                    <p>Main operational screen with live queue counters for PO Intake, SKU, and Planning queues, plus filtering and editing of active jobs.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Daily Operations</span>
-                        <a class="go-btn" href="{% url 'planning:jobs' %}">Open</a>
-                    </div>
-                </article>
-                <article class="tool-card plan">
-                    <h3>Import Planning Sheet</h3>
-                    <p>Bulk create or update jobs from CSV planning sheet with mapped columns.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Bulk Mode</span>
-                        <a class="go-btn" href="{% url 'planning:import_sheet' %}">Open</a>
-                    </div>
-                </article>
-            </div>
-        </section>
-
-        <section class="phase-panel" data-phase="approval">
-            <div class="phase-head">
-                <h2>Step 4 - Job Card Approval And Release</h2>
-                <p>The approval screen is split into two sections: SKU Approval Queue (Step 2 banner — approve pending new SKUs) and Job Card Approval Queue (Step 4 tabs — Planning Approval, QC Approval, PM Approval, Release).</p>
-            </div>
-            <div class="cards">
-                <article class="tool-card approval">
-                    <h3>Approval Queue</h3>
-                    <p>SKU approval banner shows pending new SKUs at the top. Below it, four tabs handle Planning, QC, PM approval, and Release.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">QC / Production Review</span>
-                        <a class="go-btn" href="{% url 'qc:approval_queue' %}">Open</a>
-                    </div>
-                </article>
-                {% if can_view_reports %}
-                <article class="tool-card approval">
-                    <h3>Planning Report</h3>
-                    <p>Summary visibility by machine, department, and status for management tracking.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Report Access</span>
-                        <a class="go-btn" href="{% url 'planning:report' %}">Open</a>
-                    </div>
-                </article>
-                {% endif %}
-            </div>
-        </section>
-
-        <section class="phase-panel" data-phase="shop">
-            <div class="phase-head">
-                <h2>Step 5 - Job Card Execution And Traceability</h2>
-                <p>Use QR scan and printable card at shop floor to continue execution without confusion.</p>
-            </div>
-            <div class="cards">
-                <article class="tool-card shop">
-                    <h3>QR Code Scanner</h3>
-                    <p>Open a planning card directly by scanning printed job card QR code from shop floor.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Production Support</span>
-                        <a class="go-btn" href="{% url 'planning:scan' %}">Open</a>
-                    </div>
-                </article>
-                {% if can_view_reports %}
-                <article class="tool-card shop">
-                    <h3>Operational Report</h3>
-                    <p>Track completion progress and pending queue after card execution starts.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Monitoring</span>
-                        <a class="go-btn" href="{% url 'planning:report' %}">Open</a>
-                    </div>
-                </article>
-                {% endif %}
-            </div>
-        </section>
-    </section>
-    {% elif can_approve_qc %}
-    <section class="workflow-shell">
-        <div class="phase-panel active">
-            <div class="phase-head">
-                <h2>QC Access</h2>
-                <p>You can review pending SKU master data and approve planning jobs from the QC queue.</p>
-            </div>
-            <div class="cards">
-                <article class="tool-card master">
-                    <h3>SKU Reviews</h3>
-                    <p>Review SKUs in Pending Review status and perform QC approvals.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">QC Access</span>
-                        <a class="go-btn" href="{% url 'planning:sku_recipes_pending_review' %}">Open</a>
-                    </div>
-                </article>
-                <article class="tool-card approval">
-                    <h3>Approval Queue</h3>
-                    <p>Review planning jobs and move them through QC approval stages.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">QC Access</span>
-                        <a class="go-btn" href="{% url 'planning:approval_queue' %}">Open</a>
-                    </div>
-                </article>
-                <article class="tool-card shop">
-                    <h3>Planning README / Guide</h3>
-                    <p>Open the planning workflow guide for QC and planning users.</p>
-                    <div class="card-footer">
-                        <span class="role-tag">Reference Guide</span>
-                        <a class="go-btn" href="{% url 'planning:planning_readme' %}">Open</a>
-                    </div>
-                </article>
-            </div>
-        </div>
-    </section>
-    {% else %}
-    <section class="workflow-shell">
-        <div class="phase-panel active">
-            <div class="phase-head">
-                <h2>Planning Workflow Access Required</h2>
-                <p>This module is role-protected to keep planning actions secure and sequence controlled.</p>
-            </div>
-            <div class="access-locked">
-                Your current role does not have planning edit permission. Ask admin to assign Planner,
-                Manager, or Admin role for full workflow access.
-            </div>
-        </div>
-    </section>
-    {% endif %}
-
-    <div class="footer-note">
-        <span>Planning Workspace — part of Offset Printing ERP</span>
-        <a href="{% url 'home' %}">← Back to Main ERP Home</a>
+    <div class="erp-tab-strip" role="tablist">
+        <button class="erp-tab is-active" data-phase="start" type="button">Start Here</button>
+        <button class="erp-tab" data-phase="po" type="button">Step 1 — PO Intake</button>
+        <button class="erp-tab" data-phase="master" type="button">Step 2 — Master SKU</button>
+        <button class="erp-tab" data-phase="planning" type="button">Step 3 — Planning Jobs</button>
+        <button class="erp-tab" data-phase="approval" type="button">Step 4 — Approval</button>
+        <button class="erp-tab" data-phase="shop" type="button">Step 5 — Shop Floor</button>
     </div>
 
-</main>
+    <div class="erp-tab-panel is-active" data-phase="start">
+        <div class="erp-alert is-info">Use this route for each PO. New SKUs must complete master approval before planning jobs can be created.</div>
+        <div class="erp-route-grid">
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">1. PO Intake</h3></div>
+                <p>Upload or manually enter PO.</p>
+                <p class="erp-muted">Planner / Manager / Admin</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:po_inbox' %}">Open Step 1</a></div>
+            </div>
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">2. SKU Master &amp; New SKU</h3></div>
+                <p>Check SKU existence and create missing master data.</p>
+                <p class="erp-muted">Planner / Manager / Admin</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'qc:pending_skus' %}">Open Step 2</a></div>
+            </div>
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">3. Planning Jobs</h3></div>
+                <p>Planner fills planning-only fields and creates Job Card.</p>
+                <p class="erp-muted">Planner / Manager / Admin</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:jobs' %}">Open Step 3</a></div>
+            </div>
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">4. Job Card Approval</h3></div>
+                <p>QC reviews and approves Job Card.</p>
+                <p class="erp-muted">Planner / Manager / Admin</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'qc:approval_queue' %}">Open Step 4</a></div>
+            </div>
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">5. Production Scan</h3></div>
+                <p>Production scans approved Job Card and starts execution.</p>
+                <p class="erp-muted">Production Support</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:scan' %}">Open Step 5</a></div>
+            </div>
+        </div>
+    </div>
 
+    <div class="erp-tab-panel" data-phase="po">
+        <p class="erp-muted">Collect incoming PO data and classify SKU lines as Repeat or New.</p>
+        <div class="erp-route-grid">
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">Upload PO PDF</h3></div>
+                <p>Upload customer PO PDF and send it to the intake queue for extraction review.</p>
+                <p class="erp-muted">Intake Start</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:upload_po' %}">Open</a></div>
+            </div>
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">PO Intake Queue</h3></div>
+                <p>Review parsed items, check repeat/new split, then continue to next workflow step.</p>
+                <p class="erp-muted">Mandatory Review</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:po_inbox' %}">Open</a></div>
+            </div>
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">PO Debug Extract</h3></div>
+                <p>Use only when parser output needs troubleshooting before final intake.</p>
+                <p class="erp-muted">Optional Utility</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_debug' %}">Open</a></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="erp-tab-panel" data-phase="master">
+        <p class="erp-muted">After PO intake identifies new SKUs, fill their recipe data here and approve. Repeat SKUs use the existing approved master automatically.</p>
+        <div class="erp-route-grid">
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">Pending New SKUs</h3></div>
+                <p>Primary screen for new SKUs surfaced from a PO. Fill recipe details and push through draft &rarr; reviewed &rarr; approved.</p>
+                <p class="erp-muted">Start Here After PO Intake</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'qc:pending_skus' %}">Open</a></div>
+            </div>
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">SKU Recipe Master</h3></div>
+                <p>View or maintain all approved recipes. Use bulk upload to create many at once.</p>
+                <p class="erp-muted">{% if can_manage_masters %}Manager/Admin{% else %}Planner Access{% endif %}</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">Open</a></div>
+            </div>
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">Bulk Upload SKU Recipes</h3></div>
+                <p>Upload a CSV/XLSX file to create or update multiple SKU master records in one action.</p>
+                <p class="erp-muted">Bulk Mode</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipe_bulk_upload' %}">Open</a></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="erp-tab-panel" data-phase="planning">
+        <p class="erp-muted">The Planning Jobs screen has three dashboard sections at the top. Use those counters to track work across all queues.</p>
+        <div class="erp-route-grid">
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">Planning Jobs List</h3></div>
+                <p>Main operational screen with live queue counters for PO Intake, SKU, and Planning queues, plus filtering and editing of active jobs.</p>
+                <p class="erp-muted">Daily Operations</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:jobs' %}">Open</a></div>
+            </div>
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">Import Planning Sheet</h3></div>
+                <p>Bulk create or update jobs from CSV planning sheet with mapped columns.</p>
+                <p class="erp-muted">Bulk Mode</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'planning:import_sheet' %}">Open</a></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="erp-tab-panel" data-phase="approval">
+        <p class="erp-muted">The approval screen is split into two sections: SKU Approval Queue (Step 2 banner) and Job Card Approval Queue (Step 4 tabs).</p>
+        <div class="erp-route-grid">
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">Approval Queue</h3></div>
+                <p>SKU approval banner shows pending new SKUs at the top. Below it, four tabs handle Planning, QC, PM approval, and Release.</p>
+                <p class="erp-muted">QC / Production Review</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'qc:approval_queue' %}">Open</a></div>
+            </div>
+            {% if can_view_reports %}
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">Planning Report</h3></div>
+                <p>Summary visibility by machine, department, and status for management tracking.</p>
+                <p class="erp-muted">Report Access</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'planning:report' %}">Open</a></div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="erp-tab-panel" data-phase="shop">
+        <p class="erp-muted">Use QR scan and printable card at shop floor to continue execution without confusion.</p>
+        <div class="erp-route-grid">
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">QR Code Scanner</h3></div>
+                <p>Open a planning card directly by scanning printed job card QR code from shop floor.</p>
+                <p class="erp-muted">Production Support</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:scan' %}">Open</a></div>
+            </div>
+            {% if can_view_reports %}
+            <div class="erp-panel">
+                <div class="erp-panel__header"><h3 class="erp-panel__title">Operational Report</h3></div>
+                <p>Track completion progress and pending queue after card execution starts.</p>
+                <p class="erp-muted">Monitoring</p>
+                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'planning:report' %}">Open</a></div>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    {% else %}
+    <div class="erp-alert is-warning">
+        <strong>Planning Workspace Access Required</strong><br>
+        Your current role does not have planning edit permission. Ask admin to assign Planner, Manager, or Admin role for full workflow access.
+    </div>
+    {% endif %}
+
+{% endblock %}
+
+{% block extra_js %}
 <script>
     (function () {
-        const tabs = Array.from(document.querySelectorAll('.phase-tab'));
-        const panels = Array.from(document.querySelectorAll('.phase-panel'));
-        if (!tabs.length || !panels.length) {
-            return;
-        }
+        var tabs = Array.from(document.querySelectorAll('.erp-tab[data-phase]'));
+        var panels = Array.from(document.querySelectorAll('.erp-tab-panel[data-phase]'));
+        if (!tabs.length || !panels.length) { return; }
 
         function activatePhase(phaseId) {
-            tabs.forEach((tab) => {
-                tab.classList.toggle('active', tab.dataset.phase === phaseId);
+            tabs.forEach(function (tab) {
+                tab.classList.toggle('is-active', tab.dataset.phase === phaseId);
             });
-            panels.forEach((panel) => {
-                panel.classList.toggle('active', panel.dataset.phase === phaseId);
+            panels.forEach(function (panel) {
+                panel.classList.toggle('is-active', panel.dataset.phase === phaseId);
             });
         }
 
-        tabs.forEach((tab) => {
+        tabs.forEach(function (tab) {
             tab.addEventListener('click', function () {
                 activatePhase(this.dataset.phase);
             });
         });
     })();
 </script>
-</body>
-</html>
-
-
+{% endblock %}

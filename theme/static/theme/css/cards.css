@@ -1,0 +1,32 @@
+.erp-card, .panel, .card, .box {
+    background: var(--erp-surface);
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius-md);
+    padding: var(--erp-space-4);
+    box-shadow: var(--erp-shadow-sm);
+}
+.erp-card-header { margin-bottom: var(--erp-space-2); }
+.erp-card-title { font-size: var(--erp-font-md); font-weight: 700; margin: 0; }
+.erp-card-body { color: var(--erp-text-primary); }
+.erp-card-footer { margin-top: var(--erp-space-3); color: var(--erp-text-secondary); }
+
+.erp-dashboard-grid {
+    display: grid;
+    gap: var(--erp-space-3);
+    grid-template-columns: repeat(3, minmax(220px, 1fr));
+}
+.erp-dashboard-card, .kpi-item, .route-card {
+    border: 1px solid var(--erp-border);
+    border-radius: var(--erp-radius-md);
+    background: #fff;
+    padding: var(--erp-space-3);
+}
+.erp-dashboard-card .label { font-size: var(--erp-font-xs); text-transform: uppercase; color: var(--erp-text-secondary); font-weight: 700; }
+.erp-dashboard-card .value { font-size: 28px; font-weight: 700; color: var(--erp-text-primary); }
+
+.erp-empty-state {
+    text-align: center;
+    padding: var(--erp-space-8) var(--erp-space-4);
+    color: var(--erp-text-secondary);
+}
+.erp-empty-state i { font-size: 28px; margin-bottom: var(--erp-space-2); }

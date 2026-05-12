@@ -1,11 +1,8 @@
+{% extends 'theme/base.html' %}
 {% load static %}
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Archived SKU Recipes</title>
-    {% include 'includes/ui/theme_colors.html' %}
+
+{% block title %}Archived SKU Recipes{% endblock %}
+{% block extra_head %}
     <style>
         .wrap { max-width: 100%; margin: 0 auto; }
         .top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; gap: 8px; flex-wrap: wrap; }
@@ -30,12 +27,15 @@
         .empty-state { padding: 32px; text-align: center; color: #7a8fa6; }
         .msg { padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; font-size: 12px; border: 1px solid #c8d7e7; background: #f5f9ff; color: #2e3f53; }
     </style>
-</head>
-<body>
-    {% include 'includes/page_header.html' %}
+{% endblock %}
+{% block header_title %}Archived SKU Recipes{% endblock %}
+{% block header_subtitle %}Restore archived recipe masters or permanently delete them with the required admin controls.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+{% endblock %}
+{% block content %}
 <main class="wrap page-container">
     {% with current_step='master' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
     {% endwith %}
 
     <div class="top">
@@ -154,6 +154,8 @@
     </div>
     {% endif %}
 </main>
+{% endblock %}
+{% block extra_js %}
 <script>
 document.getElementById('check_all_archived')?.addEventListener('change', function (event) {
     const checked = event.target.checked;
@@ -162,7 +164,6 @@ document.getElementById('check_all_archived')?.addEventListener('change', functi
     });
 });
 </script>
-</body>
-</html>
+{% endblock %}
 
 

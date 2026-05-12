@@ -1,14 +1,10 @@
-{% extends 'includes/ui/base_theme.html' %}
+{% extends 'theme/base.html' %}
 
 {% block title %}Job Card Approval Queue - ERP{% endblock %}
 {% block header_title %}Approval Queue{% endblock %}
 {% block header_subtitle %}QC review, production manager approval, and release checkpoints for job cards.{% endblock %}
-
 {% block content %}
 <div class="erp-page-stack">
-    {% with current_step='approval' %}
-        {% include 'planning/includes/workflow_sequence_bar.html' %}
-    {% endwith %}
 
     <section class="erp-kpi-grid-compact">
         <div class="erp-kpi-card erp-kpi-card-compact">
@@ -46,18 +42,6 @@
                 </div>
                 <span class="erp-kpi-icon">R</span>
             </div>
-        </div>
-    </section>
-
-    <section class="erp-banner">
-        <div>
-            <h2 class="erp-banner-title">Approval Workflow</h2>
-            <p class="erp-banner-copy">Planners submit job cards directly to QC. QC inspectors review and approve, then the Production Manager gives final sign-off before release.</p>
-        </div>
-        <div class="erp-actions">
-            <a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_inbox' %}">PO Intake</a>
-            <a class="erp-btn erp-btn-secondary" href="{% url 'planning:jobs' %}">Planning Jobs</a>
-            <a class="erp-btn erp-btn-warning" href="{% url 'qc:pending_skus' %}">SKU Queue</a>
         </div>
     </section>
 
@@ -252,15 +236,26 @@
     document.addEventListener('DOMContentLoaded', function() {
         const tabs = document.querySelectorAll('.tab-link');
         const panels = document.querySelectorAll('.tab-panel');
+        const initialTarget = '{% if request.resolver_match.url_name == "release_approval" %}release-panel{% elif request.resolver_match.url_name == "job_card_approval" %}qc-panel{% else %}qc-panel{% endif %}';
+
+        function activatePanel(targetId) {
+            tabs.forEach(button => button.classList.remove('is-active'));
+            panels.forEach(panel => panel.hidden = true);
+            const activeTab = Array.from(tabs).find(button => button.dataset.target === targetId);
+            const activePanel = document.getElementById(targetId);
+            if (activeTab) {
+                activeTab.classList.add('is-active');
+            }
+            if (activePanel) {
+                activePanel.hidden = false;
+            }
+        }
+
+        activatePanel(initialTarget);
+
         tabs.forEach(tab => {
             tab.addEventListener('click', function() {
-                tabs.forEach(button => button.classList.remove('is-active'));
-                panels.forEach(panel => panel.hidden = true);
-                this.classList.add('is-active');
-                const panel = document.getElementById(this.dataset.target);
-                if (panel) {
-                    panel.hidden = false;
-                }
+                activatePanel(this.dataset.target);
             });
         });
     });
