@@ -23,3 +23,5 @@ Job_card_html/resources/
 planning/po_docs/
 qc_status.txt
 tmp_inspect_excel.py
+sheet_export.csv
+temp_import_job13.py
