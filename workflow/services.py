@@ -552,7 +552,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'purchase_sheet_size': recipe.purchase_sheet_size,
             'purchase_sheet_ups': recipe.purchase_sheet_ups,
             'daily_demand': recipe.daily_demand,
-            'plate_set_no': recipe.plate_set_no,
+            'plate_set_no': existing_job.plate_set_no,
         }
 
         if not forward_as_new:

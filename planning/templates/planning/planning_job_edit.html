@@ -38,17 +38,21 @@
         </div>
         {% if recipe %}
         <div class="erp-info-grid">
-            <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ recipe.material|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">Color</div><div class="erp-info-item__value">{{ recipe.color_spec|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">Application</div><div class="erp-info-item__value">{{ recipe.application|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">SKU</div><div class="erp-info-item__value">{{ job.sku|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Job Name</div><div class="erp-info-item__value">{{ job.job_name|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ job.material_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Color</div><div class="erp-info-item__value">{{ job.color_spec_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Application</div><div class="erp-info-item__value">{{ job.application_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Size W mm</div><div class="erp-info-item__value">{{ job.size_w_mm_display|floatformat:"-2"|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Size H mm</div><div class="erp-info-item__value">{{ job.size_h_mm_display|floatformat:"-2"|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">Print Sheet Size</div><div class="erp-info-item__value">{{ recipe.print_sheet_size|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Size</div><div class="erp-info-item__value">{{ recipe.purchase_sheet_size|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Print Sheet Size</div><div class="erp-info-item__value">{{ job.print_sheet_size_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Size</div><div class="erp-info-item__value">{{ job.purchase_sheet_size_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet UPS</div><div class="erp-info-item__value">{{ job.purchase_sheet_ups_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">UPS</div><div class="erp-info-item__value">{{ job.ups_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Daily Demand</div><div class="erp-info-item__value">{{ job.daily_demand|floatformat:"-2"|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">AWC No.</div><div class="erp-info-item__value">{{ job.awc_no_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Die Cutting</div><div class="erp-info-item__value">{{ job.die_cutting_display|default:'-' }}</div></div>
+            <div class="erp-info-item erp-form-grid__full"><div class="erp-info-item__label">SKU Notes</div><div class="erp-info-item__value">{{ recipe.notes|default:'-' }}</div></div>
         </div>
         <div class="erp-note" style="margin-top:8px;">
             SKU is locked. To change master data: <a href="{% url 'qc:sku_recipe_edit' recipe.id %}">Reopen SKU</a> &rarr; edit &rarr; re-approve.
