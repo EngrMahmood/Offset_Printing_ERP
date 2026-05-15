@@ -1,9 +1,17 @@
+from datetime import date
+
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase
 from django.urls import reverse
 
 from core.models import JobCard, UserProfile
+from migration.models import MigrationImportJob, PlanningImportStaging
+from migration.services.importer import (
+    _import_planning_row,
+    get_imported_planning_jobs,
+    rollback_imported_planning_jobs,
+)
 from workflow.services import _sync_new_jobs_for_approved_sku
 
 from .models import PlanningJob, PoDocument, SkuRecipe
@@ -240,6 +248,17 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(row['new_count'], 0)
 		self.assertEqual(row['missing_count'], 0)
 
+	def test_po_inbox_supports_search_and_pagination(self):
+		for index in range(25):
+			self._create_po_document(sku=f'PAGE-SKU-{index}', po_number=f'PO-PAGE-{index}')
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('planning:po_inbox') + '?q=PO-PAGE-1&per_page=10&page=1')
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.context['page_obj'].paginator.per_page, 10)
+		self.assertGreaterEqual(response.context['page_obj'].paginator.count, 2)
+		self.assertTrue(any('PO-PAGE-1' in row['po_number'] for row in response.context['rows']))
+
 	def test_job_card_created_only_on_submit_to_qc(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-005', po_number='PO-NEW-5')
 		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
@@ -277,3 +296,131 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(result['updated'], 0)
 		self.assertEqual(result['locked'], 1)
 		self.assertEqual(job.status, 'pending_qc')
+
+	def test_migration_import_uses_po_received_date_and_order_qty(self):
+		import_job = MigrationImportJob.objects.create(
+			module='PLANNING',
+			sheet_url='http://example.com',
+			status='STAGED',
+			total_rows=1,
+			created_by=self.user,
+		)
+		row = PlanningImportStaging.objects.create(
+			import_job=import_job,
+			row_number=1,
+			po_number='PO-IMPORT-1',
+			customer='Main Warehouse',
+			sku='SKU-IMPORT-1',
+			quantity=500,
+			delivery_date=date(2026, 5, 10),
+			raw_data={
+				'po_number': 'PO-IMPORT-1',
+				'po_received_date': '2026-05-10',
+				'month': 'May',
+				'date': '2026-05-10',
+				'sku': 'SKU-IMPORT-1',
+				'job_name': 'Imported Job',
+				'quantity': '500',
+				'ups': '2',
+				'print_sheet_size': '25x36',
+				'department': 'Printing',
+				'delivery_location': 'Main Warehouse',
+			},
+		)
+
+		imported = _import_planning_row(row, actor=self.user)
+		self.assertTrue(imported)
+		job = PlanningJob.objects.get(po_number='PO-IMPORT-1', sku='SKU-IMPORT-1')
+		self.assertEqual(job.order_qty, 500)
+		self.assertEqual(job.plan_date, date(2026, 5, 10))
+		self.assertEqual(job.plan_month, 'May')
+		self.assertEqual(job.po_received_date, date(2026, 5, 10))
+
+	def test_migration_import_updates_matching_existing_planning_job(self):
+		existing_job = PlanningJob.objects.create(
+			jc_number='JC-EXIST',
+			po_number='PO-IMPORT-2',
+			sku='SKU-IMPORT-2',
+			order_qty=100,
+			status='draft',
+		)
+		import_job = MigrationImportJob.objects.create(
+			module='PLANNING',
+			sheet_url='http://example.com',
+			status='STAGED',
+			total_rows=1,
+			created_by=self.user,
+		)
+		row = PlanningImportStaging.objects.create(
+			import_job=import_job,
+			row_number=1,
+			po_number='PO-IMPORT-2',
+			customer='Main Warehouse',
+			sku='SKU-IMPORT-2',
+			quantity=500,
+			delivery_date=date(2026, 5, 10),
+			raw_data={
+				'po_number': 'PO-IMPORT-2',
+				'po_received_date': '2026-05-10',
+				'month': 'May',
+				'date': '2026-05-10',
+				'sku': 'SKU-IMPORT-2',
+				'job_name': 'Imported Job',
+				'quantity': '500',
+				'ups': '2',
+				'print_sheet_size': '25x36',
+				'department': 'Printing',
+				'delivery_location': 'Main Warehouse',
+				'jc_number': 'JC-OTHER',
+			},
+		)
+
+		imported = _import_planning_row(row, actor=self.user)
+		self.assertTrue(imported)
+		refreshed = PlanningJob.objects.get(id=existing_job.id)
+		self.assertEqual(refreshed.order_qty, 500)
+		self.assertEqual(refreshed.plan_date, date(2026, 5, 10))
+		self.assertEqual(refreshed.plan_month, 'May')
+		self.assertEqual(refreshed.jc_number, 'JC-EXIST')
+		self.assertEqual(PlanningJob.objects.filter(po_number='PO-IMPORT-2', sku='SKU-IMPORT-2').count(), 1)
+		row.refresh_from_db()
+		self.assertEqual(row.imported_reference, 'JC-EXIST')
+
+	def test_rollback_imported_planning_jobs_deletes_imported_records_only(self):
+		import_job = MigrationImportJob.objects.create(
+			module='PLANNING',
+			sheet_url='http://example.com',
+			status='STAGED',
+			total_rows=1,
+			created_by=self.user,
+		)
+		row = PlanningImportStaging.objects.create(
+			import_job=import_job,
+			row_number=1,
+			po_number='PO-ROLLBACK-1',
+			customer='Main Warehouse',
+			sku='SKU-ROLLBACK-1',
+			quantity=100,
+			delivery_date=date(2026, 5, 11),
+			raw_data={
+				'po_number': 'PO-ROLLBACK-1',
+				'po_date': '2026-05-11',
+				'month': 'May',
+				'sku': 'SKU-ROLLBACK-1',
+				'job_name': 'Rollback Job',
+				'quantity': '100',
+				'ups': '2',
+				'print_sheet_size': '25x36',
+				'department': 'Printing',
+				'delivery_location': 'Main Warehouse',
+			},
+		)
+		imported = _import_planning_row(row, actor=self.user)
+		self.assertTrue(imported)
+		job = PlanningJob.objects.get(po_number='PO-ROLLBACK-1', sku='SKU-ROLLBACK-1')
+		self.assertEqual(job.order_qty, 100)
+		self.assertEqual(rollback_imported_planning_jobs(import_job, dry_run=True), 1)
+		self.assertEqual(get_imported_planning_jobs(import_job)[0].id, job.id)
+		deleted = rollback_imported_planning_jobs(import_job)
+		self.assertEqual(deleted, 1)
+		self.assertFalse(PlanningJob.objects.filter(id=job.id).exists())

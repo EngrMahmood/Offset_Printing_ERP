@@ -1,0 +1,77 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Comparison Report{% endblock %}
+{% block header_title %}Comparison Results{% endblock %}
+{% block header_subtitle %}Review the sheet-to-ERP field mapping and missing schema fields{% endblock %}
+
+{% block content %}
+<div class="erp-panel" style="padding:24px; max-width:980px; margin:auto;">
+    <div class="erp-card">
+        <div class="erp-card-header" style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+            <div>
+                <h3 class="erp-card-title" style="margin-bottom:8px;">Comparison Summary</h3>
+                <p class="erp-card-subtitle" style="margin:0; color:var(--erp-color-muted);">{{ comparison_job.get_module_display }} sheet compared against ERP schema.</p>
+            </div>
+            <a href="{% url 'migration:compare' %}" class="erp-btn erp-btn-secondary">New comparison</a>
+        </div>
+
+        <div class="erp-card-body" style="padding-top:0;">
+            <div class="erp-grid" style="grid-template-columns:1fr 1fr 1fr 1fr; gap:16px; margin-bottom:18px;">
+                <div class="erp-stat-card">
+                    <strong>Total columns</strong>
+                    <div>{{ comparison_job.total_columns }}</div>
+                </div>
+                <div class="erp-stat-card">
+                    <strong>Matched</strong>
+                    <div>{{ comparison_job.matched_columns }}</div>
+                </div>
+                <div class="erp-stat-card">
+                    <strong>Missing required fields</strong>
+                    <div>{{ comparison_job.missing_columns }}</div>
+                </div>
+                <div class="erp-stat-card">
+                    <strong>Extra sheet fields</strong>
+                    <div>{{ comparison_job.extra_columns }}</div>
+                </div>
+            </div>
+
+            <div style="margin-bottom:24px;">
+                <p><strong>Sheet URL:</strong> <a href="{{ comparison_job.sheet_url }}" target="_blank" rel="noopener">Open sheet</a></p>
+            </div>
+
+            <div class="erp-table-container" style="overflow-x:auto;">
+                <table class="erp-table erp-table--striped" style="width:100%;">
+                    <thead>
+                        <tr>
+                            <th>Sheet column</th>
+                            <th>ERP model</th>
+                            <th>ERP field</th>
+                            <th>Match type</th>
+                            <th>Status</th>
+                            <th>Confidence</th>
+                            <th>Sample values</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for result in results %}
+                        <tr>
+                            <td>{{ result.sheet_column }}</td>
+                            <td>{{ result.erp_model|default:'—' }}</td>
+                            <td>{{ result.erp_field|default:'—' }}</td>
+                            <td>{{ result.match_type }}</td>
+                            <td>{{ result.status }}</td>
+                            <td>{{ result.confidence|default:'0.00' }}</td>
+                            <td>{{ result.sample_values|join:', ' }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="7">No comparison results are available.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

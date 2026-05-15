@@ -1,0 +1,69 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Sheet Comparison{% endblock %}
+{% block header_title %}Google Sheet vs ERP Comparison{% endblock %}
+{% block header_subtitle %}Review field mappings before any import is executed{% endblock %}
+
+{% block content %}
+<div class="erp-panel" style="padding:24px; max-width:920px; margin:auto;">
+    <div class="erp-card">
+        <div class="erp-card-header" style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+            <div>
+                <h3 class="erp-card-title" style="margin-bottom:8px;">Compare Google Sheet to ERP</h3>
+                <p class="erp-card-subtitle" style="margin:0; color:var(--erp-color-muted);">Run a mandatory schema comparison before any staging or import.</p>
+            </div>
+            <a href="{% url 'migration:dashboard' %}" class="erp-btn erp-btn-secondary">Back to dashboard</a>
+        </div>
+        <div class="erp-card-body" style="padding-top:0;">
+            {% if credential_status %}
+            <div class="erp-alert {% if credential_status.available %}erp-alert-success{% else %}erp-alert-danger{% endif %}" style="margin-bottom:18px;">
+                {{ credential_status.message }}
+            </div>
+            {% endif %}
+
+            {% if oauth_enabled and not credential_status.available %}
+            <div class="erp-card erp-card--compact" style="margin-bottom:18px; border-left:4px solid var(--erp-color-primary);">
+                <div class="erp-card-body" style="padding:16px;">
+                    <p style="margin:0 0 12px; font-weight:600;">Google OAuth is available for private sheets.</p>
+                    <a href="{{ oauth_authorize_url }}" class="erp-btn erp-btn-primary">Authorize with Google</a>
+                </div>
+            </div>
+            {% elif not oauth_enabled and credential_status and not credential_status.available %}
+            <div class="erp-alert erp-alert-warning" style="margin-bottom:18px;">
+                <strong>Quick setup:</strong> make the sheet viewable by anyone with the link and paste the URL below. If the sheet must stay private, configure OAuth or add a client JSON file.
+            </div>
+            {% endif %}
+
+            <form method="post" novalidate>
+                {% csrf_token %}
+                <div class="erp-form-row" style="display:grid; grid-template-columns:1fr; gap:16px; margin-bottom:18px;">
+                    <div>
+                        <label class="erp-form-label">Target ERP Module</label>
+                        <select name="module" class="erp-form-control">
+                            {% for value, label in form.fields.module.choices %}
+                            <option value="{{ value }}" {% if form.data.module == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="erp-form-label">Google Sheet URL</label>
+                        {{ form.sheet_url }}
+                        {% if form.sheet_url.errors %}
+                        <div class="erp-form-note erp-form-note--error">{{ form.sheet_url.errors|join:', ' }}</div>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <div class="erp-alert erp-alert-info" style="margin-bottom:20px;">
+                    <strong>Note:</strong> This comparison phase is mandatory before import. It will not make any ERP changes.
+                </div>
+
+                <div style="display:flex; gap:12px; flex-wrap:wrap;">
+                    <button type="submit" class="erp-btn erp-btn-primary">Compare Now</button>
+                    <a href="{% url 'migration:dashboard' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

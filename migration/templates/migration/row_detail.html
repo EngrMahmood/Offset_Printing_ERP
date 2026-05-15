@@ -1,0 +1,80 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Row {{ row.row_number }} Details{% endblock %}
+{% block header_title %}Row {{ row.row_number }} for Import Job #{{ import_job.id }}{% endblock %}
+{% block header_subtitle %}Inspect raw values and validation error details{% endblock %}
+
+{% block content %}
+<div class="erp-panel" style="padding:24px;">
+    <div class="erp-card" style="margin-bottom:16px;">
+        <div class="erp-card-body">
+            <div class="erp-grid erp-grid--3" style="gap:16px;">
+                <div>
+                    <div class="erp-card-label">Row Number</div>
+                    <div class="erp-card-value">{{ row.row_number }}</div>
+                </div>
+                <div>
+                    <div class="erp-card-label">Status</div>
+                    <div class="erp-card-value">{{ row.get_import_status_display }}</div>
+                </div>
+                <div>
+                    <div class="erp-card-label">Error Message</div>
+                    <div class="erp-card-value text-danger">{{ row.error_message|default:'None' }}</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="erp-card" style="margin-bottom:16px;">
+        <header class="erp-card-header">
+            <h3 class="erp-card-title">Row Summary</h3>
+        </header>
+        <div class="erp-card-body">
+            <table class="erp-table" style="width:100%;">
+                <tbody>
+                    <tr><th>PO</th><td>{{ row.po_number }}</td></tr>
+                    <tr><th>Customer</th><td>{{ row.customer }}</td></tr>
+                    <tr><th>SKU</th><td>{{ row.sku }}</td></tr>
+                    <tr><th>Quantity</th><td>{{ row.quantity }}</td></tr>
+                    <tr><th>Delivery Date</th><td>{{ row.delivery_date }}</td></tr>
+                    <tr><th>Imported Reference</th><td>{{ row.imported_reference }}</td></tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="erp-card">
+        <header class="erp-card-header">
+            <h3 class="erp-card-title">Raw Data</h3>
+        </header>
+        <div class="erp-card-body">
+            <div class="erp-table-wrap">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Field</th>
+                            <th>Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for key, value in raw_data_items %}
+                        <tr>
+                            <td>{{ key }}</td>
+                            <td>{{ value }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="2" class="text-center">No raw data available.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div style="margin-top:16px;">
+        <a href="{% url 'migration:preview' import_job.id %}" class="erp-btn erp-btn-secondary">Back to Preview</a>
+    </div>
+</div>
+{% endblock %}

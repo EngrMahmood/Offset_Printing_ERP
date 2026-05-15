@@ -10,6 +10,7 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     path('', home, name='home'),
     path('planning/', include('planning.urls', namespace='planning')),
+    path('migration/', include('migration.urls', namespace='migration')),
     path('qc/', include('qc.urls', namespace='qc')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),

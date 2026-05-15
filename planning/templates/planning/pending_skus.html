@@ -9,16 +9,80 @@
     <a href="{% url 'planning:sku_recipes' %}" class="erp-btn erp-btn-secondary">SKU Recipe Master</a>
     <a href="{% url 'planning:pending_skus_ignored' %}" class="erp-btn erp-btn-secondary">Ignored SKUs</a>
 {% endblock %}
+{% block extra_head %}
+    <style>
+        .erp-pending-filters {
+            display: grid;
+            grid-template-columns: minmax(180px, 220px) minmax(260px, 1fr) auto;
+            gap: 12px;
+            align-items: end;
+        }
+        .erp-pending-filters input,
+        .erp-pending-filters select {
+            min-width: 0;
+        }
+        .erp-pending-filters .erp-filter-controls {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            align-items: center;
+        }
+        .erp-pending-filters .erp-filter-controls a {
+            height: 36px;
+        }
+        .erp-kpi-card--pending {
+            border-color: rgba(56, 124, 255, 0.17);
+            background: #f6f9ff;
+        }
+        .erp-kpi-card--pending .erp-card-title-stack .erp-section-title {
+            font-size: 32px;
+            line-height: 1.05;
+            margin: 0;
+        }
+        .erp-kpi-card--pending .erp-eyebrow {
+            color: #3c5a8a;
+        }
+        .erp-pending-card .erp-filter-bar {
+            padding: 0;
+            border: none;
+            box-shadow: none;
+            width: 100%;
+        }
+        .erp-pending-card select,
+        .erp-pending-card input {
+            min-height: 42px;
+        }
+        @media (max-width: 920px) {
+            .erp-pending-filters {
+                grid-template-columns: 1fr;
+                align-items: stretch;
+            }
+            .erp-pending-filters .erp-filter-controls {
+                justify-content: flex-start;
+                width: 100%;
+                flex-wrap: wrap;
+            }
+            .erp-kpi-row--inline {
+                flex-direction: column;
+                align-items: stretch;
+            }
+            .erp-kpi-row--inline .erp-kpi-text {
+                justify-content: space-between;
+                width: 100%;
+            }
+        }
+    </style>
+{% endblock %}
 {% block content %}
 <div class="erp-page-stack">
-    <section class="erp-kpi-grid-compact">
-        <div class="erp-kpi-card erp-kpi-card-compact">
-            <div class="erp-kpi-row">
-                <div>
-                    <div class="erp-kpi-label">Pending SKU Rows</div>
-                    <div class="erp-kpi-value">{{ pending_count }}</div>
+    <section class="erp-section-shell">
+        <div class="erp-card erp-card-compact erp-kpi-card--pending">
+            <div class="erp-card-header" style="align-items:center; justify-content:space-between; gap:16px; flex-wrap:wrap;">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Pending SKU Rows</div>
+                    <h3 class="erp-section-title">{{ pending_count }}</h3>
                 </div>
-                <span class="erp-kpi-icon">S</span>
+                <span class="erp-status-chip info"><span class="erp-status-dot"></span>SKU Queue</span>
             </div>
         </div>
     </section>
@@ -30,25 +94,28 @@
     {% endfor %}
 
     <section class="erp-section-shell">
-        <form method="get" class="erp-form-grid" style="margin-bottom: 12px;">
-            <div>
-                <label>PO</label>
-                <select name="po">
+        <div class="erp-card erp-card-compact erp-pending-card" style="padding-bottom:0;">
+            <div class="erp-card-header" style="align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:16px;">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Planner Filters</div>
+                    <h3 class="erp-section-title">Search Pending SKUs</h3>
+                    <p class="erp-card-subtitle">Refine the pending SKU queue by PO or text search before opening master data.</p>
+                </div>
+            </div>
+            <form method="get" class="erp-filter-bar erp-pending-filters" style="margin:0;">
+                <select name="po" aria-label="Filter by PO">
                     <option value="">All POs</option>
                     {% for po in po_summary %}
                         <option value="{{ po.po_number }}" {% if po_filter == po.po_number %}selected{% endif %}>{{ po.po_number }} ({{ po.count }})</option>
                     {% endfor %}
                 </select>
-            </div>
-            <div>
-                <label>Search</label>
-                <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name">
-            </div>
-            <div class="erp-form-actions">
-                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
-                <a href="{% url 'planning:pending_skus' %}" class="erp-btn erp-btn-secondary">Reset</a>
-            </div>
-        </form>
+                <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name" aria-label="Search SKU or PO or Job Name">
+                <div class="erp-filter-controls">
+                    <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                    <a href="{% url 'planning:pending_skus' %}" class="erp-btn erp-btn-secondary">Reset</a>
+                </div>
+            </form>
+        </div>
     </section>
 
     <section class="erp-section-shell">

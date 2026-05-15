@@ -7,6 +7,7 @@ QC_NAV_ROLES = {'admin', 'manager', 'qc', 'production_manager'}
 PRODUCTION_NAV_ROLES = {'admin', 'manager', 'production_manager', 'production', 'operator'}
 DISPATCH_NAV_ROLES = {'admin', 'manager', 'dispatch'}
 MASTER_DATA_NAV_ROLES = {'admin', 'manager', 'production_manager'}
+MIGRATION_NAV_ROLES = {'admin', 'manager', 'planner'}
 GUIDE_NAV_ROLES = {
     'admin', 'manager', 'planner', 'qc', 'production_manager', 'production', 'dispatch', 'finance', 'operator'
 }
@@ -38,5 +39,6 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_access_production': _allow(PRODUCTION_NAV_ROLES),
         'can_access_dispatch': _allow(DISPATCH_NAV_ROLES),
         'can_access_master_data': _allow(MASTER_DATA_NAV_ROLES),
+        'can_access_migration': _allow(MIGRATION_NAV_ROLES),
         'can_access_guides': _allow(GUIDE_NAV_ROLES),
     }

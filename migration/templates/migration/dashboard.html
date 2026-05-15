@@ -1,0 +1,93 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Migration Dashboard{% endblock %}
+{% block header_title %}Migration Dashboard{% endblock %}
+{% block header_subtitle %}Safe staging-first imports from Google Sheets{% endblock %}
+
+{% block content %}
+<div class="erp-panel">
+    <div class="erp-alert {% if credential_status.available %}erp-alert-success{% else %}erp-alert-warning{% endif %}" style="margin-bottom:16px;">
+        {{ credential_status.message }}
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:16px;">
+        <div class="erp-card" style="flex:1 1 220px;min-width:220px;">
+            <div class="erp-card-body">
+                <div class="erp-card-label">Total Imports</div>
+                <div class="erp-card-value">{{ total_imports }}</div>
+            </div>
+        </div>
+        <div class="erp-card" style="flex:1 1 220px;min-width:220px;">
+            <div class="erp-card-body">
+                <div class="erp-card-label">Pending Rows</div>
+                <div class="erp-card-value text-warning">{{ pending_rows }}</div>
+            </div>
+        </div>
+        <div class="erp-card" style="flex:1 1 220px;min-width:220px;">
+            <div class="erp-card-body">
+                <div class="erp-card-label">Error Rows</div>
+                <div class="erp-card-value text-danger">{{ error_rows }}</div>
+            </div>
+        </div>
+        <div class="erp-card" style="flex:1 1 220px;min-width:220px;">
+            <div class="erp-card-body">
+                <div class="erp-card-label">Imported Rows</div>
+                <div class="erp-card-value text-success">{{ imported_rows }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="erp-card">
+        <header class="erp-card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h3 class="erp-card-title">Recent Import Jobs</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <a href="{% url 'migration:upload' %}" class="erp-btn erp-btn-primary erp-btn.sm">New Upload</a>
+                <a href="{% url 'migration:compare' %}" class="erp-btn erp-btn-info erp-btn.sm">Compare Sheet</a>
+                <a href="{% url 'migration:clear_imports' %}" class="erp-btn erp-btn-danger erp-btn.sm">Clear Import Data</a>
+                <a href="{% url 'migration:logs' %}" class="erp-btn erp-btn-secondary erp-btn.sm">View Logs</a>
+            </div>
+        </header>
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Job</th>
+                        <th>Module</th>
+                        <th>Status</th>
+                        <th>Total</th>
+                        <th>Valid</th>
+                        <th>Error</th>
+                        <th>Imported</th>
+                        <th>Created</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in recent_jobs %}
+                    <tr>
+                        <td>#{{ job.id }}</td>
+                        <td>{{ job.get_module_display }}</td>
+                        <td>{{ job.get_status_display }}</td>
+                        <td>{{ job.total_rows }}</td>
+                        <td>{{ job.valid_rows }}</td>
+                        <td>{{ job.error_rows }}</td>
+                        <td>{{ job.imported_rows }}</td>
+                        <td>{{ job.created_at }}</td>
+                        <td style="display:flex;gap:8px;align-items:center;">
+                            <a href="{% url 'migration:preview' job.id %}" class="erp-btn erp-btn-secondary erp-btn.sm">Open</a>
+                            <form method="post" action="{% url 'migration:delete_job' job.id %}" style="margin:0;display:inline;">
+                                {% csrf_token %}
+                                <button type="submit" class="erp-btn erp-btn-danger erp-btn.sm" onclick="return confirm('Delete import job #{{ job.id }} and its staging rows?');">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center">No imports yet.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

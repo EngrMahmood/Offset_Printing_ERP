@@ -5,60 +5,252 @@
 {% block title %}Production Dashboard — Offset Printing ERP{% endblock %}
 {% block extra_head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-            height: 260px;
+<style>
+    .production-dashboard {
+        display: grid;
+        gap: 0.75rem;
+        width: 100%;
+        max-width: calc(100vw - 2rem);
+        box-sizing: border-box;
+    }
+
+    .production-dashboard,
+    .production-dashboard * {
+        box-sizing: border-box;
+    }
+
+    .production-dashboard .pd-filters,
+    .production-dashboard .pd-table-wrap,
+    .production-dashboard .pd-chart-card,
+    .production-dashboard .pd-metric-card {
+        background: #fff;
+        border-radius: 0.75rem;
+        border: 1px solid rgba(221, 229, 239, 1);
+        box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+    }
+
+    .production-dashboard .pd-filters {
+        display: flex;
+        flex-wrap: wrap;
+        padding: 0.7rem 0.85rem;
+        gap: 0.45rem;
+        align-items: flex-end;
+        font-size: 0.84rem;
+    }
+
+    .production-dashboard .pd-filters > div {
+        flex: 1 1 140px;
+        min-width: 120px;
+    }
+
+    .production-dashboard .pd-filters .erp-btn {
+        min-width: 0;
+    }
+
+    .production-dashboard .pd-filters label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 0.78rem;
+        font-weight: 700;
+        color: #334155;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+    }
+
+    .production-dashboard .pd-filters select,
+    .production-dashboard .pd-filters input[type=date] {
+        width: 100%;
+        min-height: 2.1rem;
+        padding: 0.3rem 0.65rem;
+        border-radius: 0.75rem;
+        border: 1px solid rgba(148, 163, 184, 0.5);
+        background: #fff;
+        color: #1f2937;
+        font-size: 0.9rem;
+    }
+
+    .production-dashboard .pd-metrics-grid,
+    .production-dashboard .pd-charts-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+        gap: 0.65rem;
+        min-width: 0;
+    }
+
+    .production-dashboard .pd-metric-card,
+    .production-dashboard .pd-chart-card,
+    .production-dashboard .pd-table-wrap {
+        padding: 0.85rem;
+        min-width: 0;
+    }
+
+    .production-dashboard .pd-metric-label {
+        color: #475569;
+        font-size: 0.78rem;
+        margin-bottom: 0.35rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        white-space: normal;
+        word-break: break-word;
+    }
+
+    .production-dashboard .pd-metric-value {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #0f172a;
+        line-height: 1.15;
+        word-break: break-word;
+    }
+
+    .production-dashboard .chart-container {
+        min-height: 200px;
+        position: relative;
+    }
+
+    .production-dashboard .pd-table-wrap {
+        overflow-x: auto;
+    }
+
+    .production-dashboard .pd-table-wrap h3 {
+        margin-bottom: 0.65rem;
+        font-size: 1rem;
+    }
+
+    .production-dashboard .pd-top-actions {
+        display: flex;
+        gap: 0.65rem;
+        flex-wrap: wrap;
+        align-items: flex-start;
+    }
+
+    .production-dashboard .pd-top-actions .erp-btn {
+        white-space: nowrap;
+        min-width: 0;
+    }
+
+    .production-dashboard .erp-table th,
+    .production-dashboard .erp-table td {
+        padding: 0.3rem 0.4rem !important;
+        font-size: 0.78rem !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+    }
+
+    .production-dashboard .erp-table {
+        width: 100%;
+        overflow-x: auto;
+        border-collapse: collapse;
+        table-layout: auto;
+        min-width: 0;
+    }
+
+    .production-dashboard .erp-table-wrap {
+        overflow-x: auto;
+        min-width: 0;
+    }
+
+    .production-dashboard .erp-table-wrap table {
+        display: table;
+        width: auto !important;
+        max-width: 100% !important;
+        min-width: 0;
+    }
+
+    .production-dashboard .shift-comparison-table {
+        display: inline-table !important;
+        width: auto !important;
+        max-width: 100% !important;
+        margin: 0 auto;
+        table-layout: auto !important;
+    }
+
+    .production-dashboard .shift-comparison-table th,
+    .production-dashboard .shift-comparison-table td {
+        padding: 0.22rem 0.35rem !important;
+        font-size: 0.78rem !important;
+        line-height: 1.25 !important;
+        white-space: normal !important;
+        word-break: break-word !important;
+    }
+
+    .production-dashboard .shift-comparison-table th:first-child,
+    .production-dashboard .shift-comparison-table td:first-child {
+        width: auto !important;
+        max-width: 11rem !important;
+    }
+
+    .production-dashboard .shift-comparison-table th:nth-child(2),
+    .production-dashboard .shift-comparison-table td:nth-child(2),
+    .production-dashboard .shift-comparison-table th:nth-child(3),
+    .production-dashboard .shift-comparison-table td:nth-child(3) {
+        width: 1px !important;
+        white-space: nowrap !important;
+    }
+
+    .production-dashboard .pd-table-wrap {
+        overflow-x: auto;
+    }
+
+    @media (max-width: 1100px) {
+        .production-dashboard .pd-metric-value {
+            font-size: 1.25rem;
         }
 
-        .pd-table-wrap {
-            background: #fff;
-            border-radius: 6px;
-            border: 1px solid #dde5ef;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.05);
-            margin-bottom: 16px;
-            overflow-x: auto;
+        .production-dashboard .chart-container {
+            min-height: 180px;
         }
 
-        .pd-filters {
-            background: #fff;
-            padding: 12px 16px;
-            border-radius: 6px;
-            border: 1px solid #dde5ef;
-            margin-bottom: 14px;
-            display: flex;
-            gap: 16px;
-            align-items: flex-end;
-            flex-wrap: wrap;
-            font-size: 12px;
+        .production-dashboard .pd-metrics-grid,
+        .production-dashboard .pd-charts-grid {
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+        }
+    }
+
+    @media (max-width: 960px) {
+        .production-dashboard .pd-filters {
+            font-size: 0.8rem;
+            gap: 0.45rem;
         }
 
-        .pd-filters label {
-            font-size: 11px;
-            font-weight: 700;
-            color: #3c4b5c;
-            text-transform: uppercase;
-            letter-spacing: 0.04em;
-            display: block;
-            margin-bottom: 4px;
+        .production-dashboard .pd-filters > div {
+            flex: 1 1 100%;
+            min-width: 0;
         }
 
-        .pd-filters select,
-        .pd-filters input[type=date] {
-            border: 1px solid #c9d6e4;
-            border-radius: 6px;
-            background: #fff;
-            min-height: 28px;
-            padding: 3px 8px;
-            font-size: 11px;
-            color: #1a2f45;
+        .production-dashboard .pd-metrics-grid,
+        .production-dashboard .pd-charts-grid {
+            grid-template-columns: 1fr !important;
         }
 
-        .pd-top-actions {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 14px;
-            flex-wrap: wrap;
-            align-items: center;
+        .production-dashboard .chart-container {
+            min-height: 160px;
         }
-    </style>
+    }
+
+    @media (max-width: 640px) {
+        .production-dashboard {
+            gap: 0.65rem;
+        }
+
+        .production-dashboard .pd-filters {
+            padding: 0.7rem;
+        }
+
+        .production-dashboard .pd-metric-label {
+            font-size: 0.72rem;
+        }
+
+        .production-dashboard .pd-metric-value {
+            font-size: 1.05rem;
+        }
+
+        .production-dashboard .erp-table th,
+        .production-dashboard .erp-table td {
+            padding: 0.25rem 0.35rem;
+            font-size: 0.72rem;
+        }
+    }
+</style>
 {% endblock %}
 
 {% block header_title %}Production Dashboard{% endblock %}
@@ -71,35 +263,34 @@
 {% endblock %}
 
 {% block content %}
-    <div class="pd-container">
-
-        <h1>📊 Production Dashboard</h1>
-
-        <form class="pd-filters" method="GET">
-            <div>
-                <label>Time Period:</label>
-                <select id="days" onchange="changePeriod(this.value)">
-                    <option value="1" {% if days == 1 %}selected{% endif %}>Today</option>
-                    <option value="7" {% if days == 7 %}selected{% endif %}>Last 7 Days</option>
-                    <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 Days</option>
-                </select>
-            </div>
-            <div>
-                <label for="start_date">Start Date:</label>
-                <input type="date" id="start_date" name="start_date" value="{{ start_date }}">
-            </div>
-            <div>
-                <label for="end_date">End Date:</label>
-                <input type="date" id="end_date" name="end_date" value="{{ end_date }}">
-            </div>
-            <div style="display:flex;gap:8px;align-items:flex-end;">
-                <button type="submit" class="erp-btn erp-btn-secondary">Apply Date Filter</button>
-                <a href="{% url 'production_dashboard' %}?days=7" class="erp-btn erp-btn-secondary">Reset</a>
-            </div>
-            {% if user.profile.can_edit_production %}
-            <a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary">➕ Add Production Data</a>
-            {% endif %}
-        </form>
+    <div class="erp-page-stack production-dashboard">
+        <section class="erp-section-shell">
+            <form class="pd-filters" method="GET">
+                <div>
+                    <label>Time Period:</label>
+                    <select id="days" onchange="changePeriod(this.value)">
+                        <option value="1" {% if days == 1 %}selected{% endif %}>Today</option>
+                        <option value="7" {% if days == 7 %}selected{% endif %}>Last 7 Days</option>
+                        <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 Days</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="start_date">Start Date:</label>
+                    <input type="date" id="start_date" name="start_date" value="{{ start_date }}">
+                </div>
+                <div>
+                    <label for="end_date">End Date:</label>
+                    <input type="date" id="end_date" name="end_date" value="{{ end_date }}">
+                </div>
+                <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap;">
+                    <button type="submit" class="erp-btn erp-btn-secondary">Apply Date Filter</button>
+                    <a href="{% url 'production_dashboard' %}?days=7" class="erp-btn erp-btn-secondary">Reset</a>
+                </div>
+                {% if user.profile.can_edit_production %}
+                <a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary">➕ Add Production Data</a>
+                {% endif %}
+            </form>
+        </section>
 
         <!-- Period OEE Metrics -->
         <div class="pd-metrics-grid">
@@ -267,7 +458,7 @@
         <h2 style="color:var(--brand-primary);margin:30px 0 16px;font-size:1.1rem;letter-spacing:.3px;">Advanced Analytics</h2>
 
         <!-- Machine & Operator Efficiency Rankings -->
-        <div class="pd-charts-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="pd-charts-grid">
             <div class="pd-chart-card">
                 <h3 style="margin-bottom:14px;">🏭 Machine Efficiency Ranking</h3>
                 {% if machine_efficiency %}
@@ -318,7 +509,7 @@
         </div>
 
         <!-- Waste Pareto + Shift Comparison -->
-        <div class="pd-charts-grid" style="grid-template-columns:1fr 1fr;">
+        <div class="pd-charts-grid">
             <div class="pd-chart-card">
                 <h3 style="margin-bottom:14px;">📊 Waste Pareto (80/20)</h3>
                 <div class="chart-container">
@@ -346,7 +537,7 @@
                 <div class="chart-container" style="height:220px;">
                     <canvas id="shiftComparisonChart"></canvas>
                 </div>
-                <table class="erp-table erp-table-dense" style="margin-top:12px;font-size:0.85rem;">
+                        <table class="erp-table erp-table-dense shift-comparison-table" style="margin-top:12px;font-size:0.85rem;">
                     <thead><tr><th>Metric</th><th>Shift A</th><th>Shift B</th></tr></thead>
                     <tbody>
                         <tr><td>OEE %</td>

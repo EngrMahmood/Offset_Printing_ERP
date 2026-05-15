@@ -1,0 +1,66 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Clear Migration Import Data{% endblock %}
+{% block header_title %}Clear Migration Import Data{% endblock %}
+{% block header_subtitle %}Remove migration jobs and staging rows from the system{% endblock %}
+
+{% block content %}
+<div class="erp-panel">
+    <div class="erp-card">
+        <div class="erp-card-body">
+            <p>This action will permanently delete migration import jobs and their related staging rows. It does not delete Planning jobs already imported into the system.</p>
+            <p>If imported Planning jobs are wrong due to order quantity issues, use cleanup to delete imported Planning jobs and reset the selected staging rows to VALID so the import can be retried.</p>
+            <dl class="erp-definition-list">
+                <dt>Total import jobs</dt>
+                <dd>{{ import_jobs_count }}</dd>
+                <dt>Total staging rows</dt>
+                <dd>{{ staging_rows_count }}</dd>
+            </dl>
+            <form method="post" style="margin-top:24px;">
+                {% csrf_token %}
+                <input type="hidden" name="confirm" value="1">
+                <table class="erp-table" style="margin-top:16px;">
+                    <thead>
+                        <tr>
+                            <th>Select</th>
+                            <th>Job</th>
+                            <th>Module</th>
+                            <th>Status</th>
+                            <th>Total Rows</th>
+                            <th>Valid</th>
+                            <th>Error</th>
+                            <th>Imported</th>
+                            <th>Created</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for job in import_jobs %}
+                        <tr>
+                            <td><input type="checkbox" name="selected_job_ids" value="{{ job.id }}"></td>
+                            <td>#{{ job.id }}</td>
+                            <td>{{ job.get_module_display }}</td>
+                            <td>{{ job.get_status_display }}</td>
+                            <td>{{ job.total_rows }}</td>
+                            <td>{{ job.valid_rows }}</td>
+                            <td>{{ job.error_rows }}</td>
+                            <td>{{ job.imported_rows }}</td>
+                            <td>{{ job.created_at }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9" class="text-center">No import jobs found.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:24px;">
+                    <button type="submit" name="action" value="cleanup_selected" class="erp-btn erp-btn-warning" onclick="return confirm('Clean up imported Planning jobs for the selected import jobs? This will delete imported PlanningJob records and reset staging rows to valid.');">Clean up selected imported jobs</button>
+                    <button type="submit" name="action" value="delete_selected" class="erp-btn erp-btn-warning">Delete selected jobs</button>
+                    <button type="submit" name="action" value="delete_all" class="erp-btn erp-btn-danger">Delete all import jobs and staging rows</button>
+                    <a href="{% url 'migration:dashboard' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,169 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Migration Preview{% endblock %}
+{% block header_title %}Preview Import Job #{{ import_job.id }}{% endblock %}
+{% block header_subtitle %}Review and import validated rows only{% endblock %}
+
+{% block content %}
+<div class="erp-panel" style="padding:24px;">
+    <div class="erp-grid erp-grid--5" style="gap:16px; margin-bottom:16px;">
+        <div class="erp-card">
+            <div class="erp-card-body">
+                <div class="erp-card-label">Total</div>
+                <div class="erp-card-value">{{ summary.total }}</div>
+            </div>
+        </div>
+        <div class="erp-card">
+            <div class="erp-card-body">
+                <div class="erp-card-label">Valid</div>
+                <div class="erp-card-value text-success">{{ summary.valid }}</div>
+            </div>
+        </div>
+        <div class="erp-card">
+            <div class="erp-card-body">
+                <div class="erp-card-label">Error</div>
+                <div class="erp-card-value text-danger">{{ summary.error }}</div>
+            </div>
+        </div>
+        <div class="erp-card">
+            <div class="erp-card-body">
+                <div class="erp-card-label">Pending</div>
+                <div class="erp-card-value text-warning">{{ summary.pending }}</div>
+            </div>
+        </div>
+        <div class="erp-card">
+            <div class="erp-card-body">
+                <div class="erp-card-label">Imported</div>
+                <div class="erp-card-value">{{ summary.imported }}</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="erp-card">
+        <header class="erp-card-header" style="display:flex;justify-content:space-between;align-items:center;gap:12px;">
+            <h3 class="erp-card-title">Staging Rows</h3>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                <a href="{% url 'migration:upload' %}" class="erp-btn erp-btn-secondary erp-btn.sm">New Upload</a>
+                {% if import_job.status == 'COMPLETED' %}
+                    <div style="display:flex;align-items:center;gap:8px;color:#00529B;background:#BDE5F8;padding:10px;border-radius:6px;">This import job is already completed. Imported {{ summary.imported }} rows and {{ summary.error }} rows failed.</div>
+                {% elif summary.valid == 0 %}
+                    <div style="display:flex;align-items:center;gap:8px;color:#9F6000;background:#FEEFB3;padding:10px;border-radius:6px;">No valid rows available for import. Fix staging errors first or upload a new sheet.</div>
+                    <form method="post" action="{% url 'migration:run_import' import_job.id %}" style="margin:0;">
+                        {% csrf_token %}
+                        <button type="submit" class="erp-btn erp-btn-success erp-btn.sm" disabled>Import Valid Rows</button>
+                    </form>
+                {% else %}
+                    <form method="post" action="{% url 'migration:run_import' import_job.id %}" style="margin:0;">
+                        {% csrf_token %}
+                        <button type="submit" class="erp-btn erp-btn-success erp-btn.sm">Import Valid Rows</button>
+                    </form>
+                {% endif %}
+                {% if summary.imported > 0 %}
+                    <form method="post" action="{% url 'migration:preview' import_job.id %}" style="margin:0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="cleanup_import">
+                        <input type="hidden" name="status" value="{{ status_filter }}">
+                        <input type="hidden" name="page_size" value="{{ page_size }}">
+                        <input type="hidden" name="page" value="{{ page_obj.number }}">
+                        <button type="submit" class="erp-btn erp-btn-warning erp-btn.sm" onclick="return confirm('Clean up imported jobs and reset staging rows for this import? This will delete the imported PlanningJob records and restore the rows to valid so you can retry import.');">Clean Up Imported Jobs</button>
+                    </form>
+                    <form method="post" action="{% url 'migration:rollback_import' import_job.id %}" style="margin:0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="status" value="{{ status_filter }}">
+                        <input type="hidden" name="page_size" value="{{ page_size }}">
+                        <input type="hidden" name="page" value="{{ page_obj.number }}">
+                        <button type="submit" class="erp-btn erp-btn-danger erp-btn.sm" onclick="return confirm('Rollback imported planning jobs for this import job? This will delete the imported PlanningJob records.');">Rollback Imported Jobs</button>
+                    </form>
+                {% endif %}
+            </div>
+        </header>
+        <div class="erp-table-wrap erp-table-scroll" style="overflow-x:auto;">
+            <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
+                <form method="get" action="{% url 'migration:preview' import_job.id %}" style="margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <label for="status-filter" style="margin:0; font-weight:600;">Filter:</label>
+                    <select id="status-filter" name="status" class="erp-input" onchange="this.form.submit()">
+                        {% for option in status_options %}
+                        <option value="{{ option }}" {% if status_filter == option %}selected{% endif %}>{{ option|capfirst }}</option>
+                        {% endfor %}
+                    </select>
+                    <label for="page-size" style="margin:0; font-weight:600;">Rows:</label>
+                    <select id="page-size" name="page_size" class="erp-input" onchange="this.form.submit()">
+                        {% for size in page_sizes %}
+                        <option value="{{ size }}" {% if page_size == size %}selected{% endif %}>{{ size }}</option>
+                        {% endfor %}
+                    </select>
+                    <label for="page" style="margin:0; font-weight:600;">Page:</label>
+                    <input id="page" type="number" name="page" min="1" max="{{ page_obj.paginator.num_pages }}" value="{{ page_obj.number }}" class="erp-input" style="width:72px;">
+                    <button type="submit" class="erp-btn erp-btn-secondary erp-btn.sm">Go</button>
+                    <noscript><button type="submit" class="erp-btn erp-btn-secondary erp-btn.sm">Apply</button></noscript>
+                </form>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; align-items:center;">
+                    <a href="{% url 'migration:preview' import_job.id %}" class="erp-btn erp-btn-secondary erp-btn.sm">Reset</a>
+                </div>
+            </div>
+            <form method="post" action="{% url 'migration:preview' import_job.id %}">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="delete_selected_rows">
+                <input type="hidden" name="status" value="{{ status_filter }}">
+                <input type="hidden" name="page_size" value="{{ page_size }}">
+                <input type="hidden" name="page" value="{{ page_obj.number }}">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th><input type="checkbox" id="select-all-rows" onclick="document.querySelectorAll('.row-checkbox').forEach(cb => cb.checked = this.checked)"></th>
+                            <th>Row</th>
+                            <th>PO</th>
+                            <th>Customer</th>
+                            <th>SKU</th>
+                            <th>Quantity</th>
+                            <th>Status</th>
+                            <th>Error</th>
+                            <th>Imported Ref</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in rows %}
+                    <tr class="{% if row.import_status == 'VALID' %}erp-table-row--success{% elif row.import_status == 'ERROR' %}erp-table-row--danger{% elif row.import_status == 'PENDING' %}erp-table-row--warning{% endif %}">
+                        <td><input type="checkbox" name="selected_row_ids" value="{{ row.id }}" class="row-checkbox"></td>
+                        <td>{{ row.row_number }}</td>
+                        <td>{{ row.po_number }}</td>
+                        <td>{{ row.customer }}</td>
+                        <td>{{ row.sku }}</td>
+                        <td>{{ row.quantity }}</td>
+                        <td>{{ row.get_import_status_display }}</td>
+                        <td>{{ row.error_message }}</td>
+                        <td>{{ row.imported_reference }}</td>
+                        <td style="display:flex; gap:6px; flex-wrap:wrap; align-items:center;">
+                            <a href="{% url 'migration:preview_row_detail' import_job.id row.id %}{% if status_filter != 'ALL' %}?status={{ status_filter }}{% endif %}" class="erp-btn erp-btn-secondary erp-btn.xs">View</a>
+                            <button type="submit" name="action" value="delete_row:{{ row.id }}" class="erp-btn erp-btn-danger erp-btn.xs">Delete</button>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="10" class="text-center">No rows available.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap; align-items:center; justify-content:space-between;">
+                <button type="submit" class="erp-btn erp-btn-warning erp-btn.sm" {% if summary.total == 0 %}disabled{% endif %}>Delete selected rows</button>
+                {% if page_obj and page_obj.paginator.num_pages > 1 %}
+                <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+                    <a href="{% url 'migration:preview' import_job.id %}?status={{ status_filter }}&page_size={{ page_size }}&page=1" class="erp-btn erp-btn-secondary erp-btn.xs">First</a>
+                    {% if page_obj.has_previous %}
+                    <a href="{% url 'migration:preview' import_job.id %}?status={{ status_filter }}&page_size={{ page_size }}&page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary erp-btn.xs">Previous</a>
+                    {% endif %}
+                    <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                    {% if page_obj.has_next %}
+                    <a href="{% url 'migration:preview' import_job.id %}?status={{ status_filter }}&page_size={{ page_size }}&page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary erp-btn.xs">Next</a>
+                    {% endif %}
+                    <a href="{% url 'migration:preview' import_job.id %}?status={{ status_filter }}&page_size={{ page_size }}&page={{ page_obj.paginator.num_pages }}" class="erp-btn erp-btn-secondary erp-btn.xs">Last</a>
+                </div>
+                {% endif %}
+            </div>
+        </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

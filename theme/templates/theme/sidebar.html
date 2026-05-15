@@ -12,6 +12,9 @@
     <a href="{% url 'qc:qc_home' %}" class="erp-nav-link {% if request.resolver_match.app_name == 'qc' %}active{% endif %}"><i class="fas fa-clipboard-check"></i><span>QC</span></a>
     <a href="{% url 'production_dashboard' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'production_dashboard' %}active{% endif %}"><i class="fas fa-industry"></i><span>Production</span></a>
     <a href="{% url 'dispatch_records' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'dispatch_records' %}active{% endif %}"><i class="fas fa-truck"></i><span>Dispatch</span></a>
+    {% if nav.can_access_migration %}
+    <a href="{% url 'migration:dashboard' %}" class="erp-nav-link {% if request.resolver_match.app_name == 'migration' %}active{% endif %}"><i class="fas fa-file-import"></i><span>Migration</span></a>
+    {% endif %}
 
     <div class="erp-sidebar-group-title">Master & Reports</div>
     <a href="{% url 'machine_master_tools' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'machine_master_tools' %}active{% endif %}"><i class="fas fa-cogs"></i><span>Master Data</span></a>

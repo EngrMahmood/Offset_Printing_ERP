@@ -216,6 +216,39 @@ def _repair_rejected_job_status(job):
     return False
 
 
+def _effective_planning_status_from_values(planning_status, job_card_status):
+    status_rank = {
+        'draft': 0,
+        'pending_qc': 1,
+        'qc_approved': 2,
+        'released': 3,
+        'in_production': 4,
+        'completed': 5,
+    }
+    planning_status = _normalize_status(planning_status)
+    card_status = (job_card_status or '').strip().lower()
+    if planning_status == 'draft':
+        return 'draft'
+    if card_status in {'qc_rejected', 'pm_rejected'}:
+        return 'draft'
+    job_card_status_mapped = None
+    if card_status in {'planning_approved', 'pending_qc'}:
+        job_card_status_mapped = 'pending_qc'
+    elif card_status == 'qc_approved':
+        job_card_status_mapped = 'qc_approved'
+    elif card_status in {'pending_pm_approval', 'production_approved', 'released', 'in_production', 'completed', 'closed'}:
+        job_card_status_mapped = 'released'
+    elif card_status in status_rank:
+        job_card_status_mapped = card_status
+
+    if planning_status not in status_rank:
+        return job_card_status_mapped or planning_status or 'draft'
+    if not job_card_status_mapped:
+        return planning_status
+
+    return planning_status if status_rank[planning_status] >= status_rank[job_card_status_mapped] else job_card_status_mapped
+
+
 def _job_card_layout_field_labels():
     return {
         'po_number': 'PO Number',
@@ -590,7 +623,7 @@ def planning_sku_recipes_list(request):
 @login_required
 def planning_home(request):
     _user_can_plan = getattr(getattr(request.user, 'profile', None), 'can_plan', lambda: False)()
-    queryset = PlanningJob.objects.select_related('job_card').prefetch_related('print_runs', 'dispatch_runs').filter(
+    queryset = PlanningJob.objects.select_related('job_card').filter(
         is_active=True,
     )
 
@@ -776,19 +809,27 @@ def planning_home(request):
         normalized_status = _normalize_status(row['status'])
         status_counts[normalized_status] = status_counts.get(normalized_status, 0) + (row['total'] or 0)
 
+    queryset = queryset.select_related('job_card')
     paginator = Paginator(queryset, 50)
     page_number = request.GET.get('page')
     jobs = paginator.get_page(page_number)
+
+    job_skus = {
+        _sku_key(job.sku)
+        for job in jobs
+        if job.sku
+    }
     approved_sku_keys = {
         _sku_key(sku)
         for sku in SkuRecipe.objects.filter(
             is_active=True,
             master_data_status='approved',
+            sku__in=[sku for sku in job_skus if sku],
         ).values_list('sku', flat=True)
         if sku
     }
+
     for job in jobs:
-        _repair_rejected_job_status(job)
         job.effective_status = _effective_planning_status(job)
         job.effective_status_label = _effective_planning_status_label(job, job.effective_status)
         job.can_submit_qc = True
@@ -798,41 +839,6 @@ def planning_home(request):
             if not has_approved_recipe:
                 job.can_submit_qc = False
                 job.submit_qc_block_reason = 'SKU master is pending review/approval in QC.'
-
-    # --- Dashboard section counts (display only, no logic change) ---
-    po_docs_qs = PoDocument.objects.all()
-    po_queue_count = po_docs_qs.count()
-    po_pending_review_count = po_docs_qs.filter(extraction_status='pending').count()
-    po_processed_count = po_docs_qs.filter(extraction_status='processed').count()
-    po_rejected_count = po_docs_qs.filter(extraction_status='failed').count()
-
-    po_docs_with_payload = po_docs_qs.exclude(extracted_payload__isnull=True)
-    sku_pending_count = len(_collect_pending_sku_rows(po_docs_with_payload))
-    sku_pending_master_entries_count = SkuRecipe.objects.filter(
-        is_active=True,
-        master_data_status__in=['draft', 'pending_review'],
-    ).count()
-    sku_approved_count = SkuRecipe.objects.filter(is_active=True, master_data_status='approved').count()
-
-    ignored_sku_keys = set()
-    for payload in po_docs_with_payload.values_list('extracted_payload', flat=True):
-        payload = payload or {}
-        ignored_values = payload.get('new_skus_ignored') or []
-        for raw_sku in ignored_values:
-            sku_key = _sku_key(raw_sku)
-            if sku_key:
-                ignored_sku_keys.add(sku_key)
-    sku_ignored_count = len(ignored_sku_keys)
-
-    planning_status_counts = {}
-    for job in PlanningJob.objects.select_related('job_card').filter(is_active=True):
-        status_key = _effective_planning_status(job)
-        planning_status_counts[status_key] = planning_status_counts.get(status_key, 0) + 1
-
-    planning_draft_count = planning_status_counts.get('draft', 0)
-    planning_pending_qc_count = planning_status_counts.get('pending_qc', 0)
-    planning_approved_count = planning_status_counts.get('qc_approved', 0)
-    planning_released_count = planning_status_counts.get('released', 0)
 
     return render(
         request,
@@ -854,21 +860,6 @@ def planning_home(request):
                 'from_date': request.GET.get('from_date', ''),
                 'to_date': request.GET.get('to_date', ''),
             },
-            # PO Intake section (required names)
-            'po_queue_count': po_queue_count,
-            'po_pending_review_count': po_pending_review_count,
-            'po_processed_count': po_processed_count,
-            'po_rejected_count': po_rejected_count,
-            # SKU Queue section (required names)
-            'sku_pending_count': sku_pending_count,
-            'sku_pending_master_entries_count': sku_pending_master_entries_count,
-            'sku_approved_count': sku_approved_count,
-            'sku_ignored_count': sku_ignored_count,
-            # Planning Queue section (required names)
-            'planning_draft_count': planning_draft_count,
-            'planning_pending_qc_count': planning_pending_qc_count,
-            'planning_approved_count': planning_approved_count,
-            'planning_released_count': planning_released_count,
         },
     )
 
@@ -3002,30 +2993,69 @@ def po_inbox(request):
             messages.success(request, f'Deleted PO intake {po_number} and {count} document(s).')
             return redirect('planning:po_inbox')
 
-    docs = PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('-created_at')[:400]
+    search_query = (request.GET.get('q') or '').strip()
+    per_page = _to_optional_positive_int(request.GET.get('per_page')) or 20
+    page_number = request.GET.get('page') or 1
+
+    docs_qs = PoDocument.objects.exclude(extracted_payload__isnull=True).values('id', 'created_at', 'extracted_payload').order_by('-created_at')
     deduped_docs = []
     seen_po_numbers = set()
-    for doc in docs:
-        payload = doc.extracted_payload or {}
-        po_number = (payload.get('po_number') or '').strip().upper()
+    for doc in docs_qs.iterator(chunk_size=100):
+        payload = doc.get('extracted_payload') or {}
+        po_number = str(payload.get('po_number') or '').strip().upper()
         if po_number:
             if po_number in seen_po_numbers:
                 continue
             seen_po_numbers.add(po_number)
-        deduped_docs.append(doc)
 
-    docs = deduped_docs[:200]
-    rows = []
-    for doc in docs:
-        payload = doc.extracted_payload or {}
+        deduped_docs.append(doc)
+        if len(deduped_docs) >= 200:
+            break
+
+    page_number_int = _to_optional_positive_int(page_number) or 1
+    if search_query:
+        docs_to_load = deduped_docs
+    else:
+        start = (page_number_int - 1) * per_page
+        docs_to_load = deduped_docs[start:start + per_page]
+
+    doc_items = []
+    all_sku_keys = set()
+    for doc in docs_to_load:
+        payload = doc.get('extracted_payload') or {}
         items = _po_payload_items(payload)
-        recipe_map = _build_recipe_map(items)
+        doc_items.append((doc, payload, items))
+        all_sku_keys.update(
+            _sku_key(item.get('sku'))
+            for item in items
+            if item.get('sku')
+        )
+
+    recipe_map_all = {}
+    if all_sku_keys:
+        recipe_map_all = _build_recipe_map([
+            {'sku': sku}
+            for sku in all_sku_keys
+        ])
+
+    rows = []
+    for doc, payload, items in doc_items:
+        item_sku_keys = {
+            _sku_key(item.get('sku'))
+            for item in items
+            if item.get('sku')
+        }
+        recipe_map = {
+            key: recipe_map_all[key]
+            for key in item_sku_keys
+            if key in recipe_map_all
+        }
         _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map)
-        repeat_count, new_count = _history_repeat_new_counts(items)
+        repeat_count, new_count = _history_repeat_new_counts(items, recipe_map=recipe_map)
         rows.append(
             {
-                'doc': doc,
-                'po_doc_id': doc.id,
+                'po_doc_id': doc['id'],
+                'uploaded': doc['created_at'],
                 'po_number': payload.get('po_number') or '-',
                 'supplier': payload.get('supplier_name') or '-',
                 'item_count': len(items),
@@ -3044,7 +3074,30 @@ def po_inbox(request):
             }
         )
 
-    return render(request, 'planning/po_inbox.html', {'rows': rows, 'can_admin_actions': _user_is_admin(request.user)})
+    if search_query:
+        lower_search = search_query.lower()
+        rows = [
+            row for row in rows
+            if lower_search in row['po_number'].lower()
+            or lower_search in row['supplier'].lower()
+        ]
+        paginator = Paginator(rows, per_page)
+        page_obj = paginator.get_page(page_number)
+    else:
+        paginator = Paginator(range(len(deduped_docs)), per_page)
+        page_obj = paginator.get_page(page_number)
+
+    return render(
+        request,
+        'planning/po_inbox.html',
+        {
+            'rows': page_obj.object_list,
+            'page_obj': page_obj,
+            'search_query': search_query,
+            'per_page': per_page,
+            'can_admin_actions': _user_is_admin(request.user),
+        }
+    )
 
 
 

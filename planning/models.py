@@ -183,6 +183,8 @@ class PlanningJob(models.Model):
 
     @property
     def po_received_date(self):
+        if self.plan_date:
+            return self.plan_date
         po_document = self.po_documents.order_by('created_at').first() if hasattr(self, 'po_documents') else None
         if po_document and po_document.created_at:
             return po_document.created_at.date()

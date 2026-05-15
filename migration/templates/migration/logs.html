@@ -1,0 +1,52 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Migration Logs{% endblock %}
+{% block header_title %}Import Logs{% endblock %}
+{% block header_subtitle %}History of executed import batches{% endblock %}
+
+{% block content %}
+<div class="erp-panel" style="padding:24px;">
+    <div class="erp-card">
+        <header class="erp-card-header" style="display:flex;justify-content:space-between;align-items:center;">
+            <h3 class="erp-card-title">Import History</h3>
+            <a href="{% url 'migration:dashboard' %}" class="erp-btn erp-btn-secondary erp-btn.sm">Dashboard</a>
+        </header>
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Import Date</th>
+                        <th>Job</th>
+                        <th>Module</th>
+                        <th>Imported By</th>
+                        <th>Rows Count</th>
+                        <th>Success</th>
+                        <th>Error</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in jobs %}
+                        {% with latest_log=job.logs.first %}
+                        <tr>
+                            <td>{{ job.created_at }}</td>
+                            <td><a href="{% url 'migration:preview' job.id %}">#{{ job.id }}</a></td>
+                            <td>{{ job.get_module_display }}</td>
+                            <td>{{ latest_log.imported_by.username|default:job.created_by.username|default:'-' }}</td>
+                            <td>{{ latest_log.rows_count|default:job.total_rows }}</td>
+                            <td class="text-success">{{ latest_log.success_count|default:0 }}</td>
+                            <td class="text-danger">{{ latest_log.error_count|default:job.error_rows }}</td>
+                            <td>{{ job.get_status_display }}</td>
+                        </tr>
+                        {% endwith %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="8" class="text-center">No logs available.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

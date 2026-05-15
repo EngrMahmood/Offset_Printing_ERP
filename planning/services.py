@@ -5,6 +5,7 @@ from decimal import Decimal
 from collections import defaultdict
 from django.db import transaction
 from django.db.models import Sum, Q
+from django.db.models.functions import Upper
 from django.utils import timezone
 from core.models import Machine, Department, Material
 from .models import PLANNING_STATUS_ALIASES, PlanningJob, PoDocument, SkuRecipe
@@ -35,6 +36,14 @@ def _parse_date_filter(raw_value):
     except (ValueError, TypeError):
         return None
 
+
+def _normalize_purchase_material_origin(raw_value):
+    value = (raw_value or '').strip().lower()
+    if value in {'local'}:
+        return 'local'
+    if value in {'import', 'imported'}:
+        return 'import'
+    return ''
 
 
 def _build_job_card_pdf_bytes(job, scan_url):
@@ -224,11 +233,11 @@ def _build_recipe_map(items):
     if not sku_values:
         return {}
 
-    recipe_query = Q()
-    for sku in sku_values:
-        recipe_query |= Q(sku__iexact=sku)
-
-    recipes = SkuRecipe.objects.filter(recipe_query, master_data_status='approved')
+    recipes = (
+        SkuRecipe.objects
+        .annotate(sku_upper=Upper('sku'))
+        .filter(sku_upper__in=sku_values, master_data_status='approved')
+    )
     return {recipe.sku.upper(): recipe for recipe in recipes}
 
 
@@ -385,9 +394,10 @@ def _deduplicate_po_items_by_sku(items):
 
 
 
-def _history_repeat_new_counts(items):
+def _history_repeat_new_counts(items, recipe_map=None):
     """Classify Repeat/New from approved SKU recipes, not historical PlanningJobs."""
-    recipe_map = _build_recipe_map(items)
+    if recipe_map is None:
+        recipe_map = _build_recipe_map(items)
 
     repeat_count = 0
     new_count = 0
@@ -466,14 +476,21 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
         order_qty = int(qty) if qty is not None else None
         unit_cost_val = item.get('unit_cost')
         unit_cost_dec = Decimal(str(unit_cost_val)) if unit_cost_val is not None else None
-        jc_number = existing_job.jc_number if existing_job else allocate_next_jc_number(plan_date)
+        jc_number = (
+            (item.get('jc_number') or item.get('jc') or item.get('job_card_no') or item.get('jobcardno'))
+            or (existing_job.jc_number if existing_job else None)
+            or allocate_next_jc_number(plan_date)
+        )
         is_first_production = bool(
             sku_key
             and sku_key not in existing_any_jobs_skus
             and sku_key not in seen_skus_in_payload
         )
 
-        if existing_job:
+        explicit_repeat_flag = (item.get('repeat_flag') or item.get('repeat') or '').strip()
+        if explicit_repeat_flag.lower() in {'new', 'repeat'}:
+            forward_as_new = explicit_repeat_flag.lower() == 'new'
+        elif existing_job:
             existing_repeat_flag = (existing_job.repeat_flag or '').strip().lower()
             if existing_repeat_flag in {'new', 'repeat'}:
                 forward_as_new = existing_repeat_flag == 'new'
@@ -486,26 +503,43 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
         current_requirement = existing_job.requirement if existing_job else ''
 
         fallback_job_name = (item.get('job_name') or '').strip() or sku
-        if recipe and (recipe.job_name or '').strip():
+        if item.get('job_name') and (item.get('job_name') or '').strip():
+            job_name_value = item.get('job_name').strip()
+        elif recipe and (recipe.job_name or '').strip():
             job_name_value = recipe.job_name
         elif existing_job and (existing_job.job_name or '').strip():
             job_name_value = existing_job.job_name
         else:
             job_name_value = fallback_job_name
 
-        material_value = recipe.material if recipe else (existing_job.material if existing_job else '')
-        color_spec_value = recipe.color_spec if recipe else (existing_job.color_spec if existing_job else '')
-        application_value = recipe.application if recipe else (existing_job.application if existing_job else '')
-        size_w_mm_value = recipe.size_w_mm if recipe else (existing_job.size_w_mm if existing_job else None)
-        size_h_mm_value = recipe.size_h_mm if recipe else (existing_job.size_h_mm if existing_job else None)
-        ups_value = recipe.ups if recipe else (existing_job.ups if existing_job else None)
-        print_sheet_size_value = recipe.print_sheet_size if recipe else (existing_job.print_sheet_size if existing_job else '')
-        purchase_sheet_size_value = recipe.purchase_sheet_size if recipe else (existing_job.purchase_sheet_size if existing_job else '')
-        purchase_sheet_ups_value = recipe.purchase_sheet_ups if recipe else (existing_job.purchase_sheet_ups if existing_job else None)
-        daily_demand_value = recipe.daily_demand if recipe else (existing_job.daily_demand if existing_job else None)
+        material_value = (item.get('material') or '').strip() or (recipe.material if recipe else (existing_job.material if existing_job else ''))
+        color_spec_value = (item.get('color_spec') or item.get('color') or '').strip() or (recipe.color_spec if recipe else (existing_job.color_spec if existing_job else ''))
+        application_value = (item.get('application') or '').strip() or (recipe.application if recipe else (existing_job.application if existing_job else ''))
+        size_w_mm_value = _to_decimal(item.get('size_w_mm') or '') or (recipe.size_w_mm if recipe else (existing_job.size_w_mm if existing_job else None))
+        size_h_mm_value = _to_decimal(item.get('size_h_mm') or '') or (recipe.size_h_mm if recipe else (existing_job.size_h_mm if existing_job else None))
+        ups_value = _to_int(item.get('ups') or item.get('no_of_ups')) or (recipe.ups if recipe else (existing_job.ups if existing_job else None))
+        print_sheet_size_value = (item.get('print_sheet_size') or '').strip() or (recipe.print_sheet_size if recipe else (existing_job.print_sheet_size if existing_job else ''))
+        purchase_sheet_size_value = (item.get('purchase_sheet_size') or '').strip() or (recipe.purchase_sheet_size if recipe else (existing_job.purchase_sheet_size if existing_job else ''))
+        purchase_sheet_ups_value = _to_int(item.get('purchase_sheet_ups') or '') or (recipe.purchase_sheet_ups if recipe else (existing_job.purchase_sheet_ups if existing_job else None))
+        daily_demand_value = _to_decimal(item.get('daily_demand') or '') or (recipe.daily_demand if recipe else (existing_job.daily_demand if existing_job else None))
         unit_cost_value = unit_cost_dec if unit_cost_dec is not None else (recipe.default_unit_cost if recipe else (existing_job.unit_cost if existing_job else None))
+        actual_sheet_required_value = _to_int(item.get('actual_sheet_required') or item.get('actual_sheet_require') or item.get('sheet')) or (existing_job.actual_sheet_required if existing_job else None)
+        wastage_sheets_value = _to_int(item.get('wastage') or item.get('wastage_sheets')) or (existing_job.wastage_sheets if existing_job else None)
+        purchase_sheet_required_value = _to_int(item.get('purchase_sheet_required') or item.get('purchase_sheet_require')) or (existing_job.purchase_sheet_required if existing_job else None)
+        pkt_value = _to_decimal(item.get('pkt') or item.get('pkt_value') or '') or (existing_job.pkt_value if existing_job else None)
+        stock_qty_value = _to_decimal(item.get('stock_qty') or item.get('stock') or '') or (existing_job.stock_qty if existing_job else None)
+        balance_qty_value = _to_int(item.get('balance_qty') or item.get('balance') or '') or (existing_job.balance_qty if existing_job else None)
+        plate_set_no_value = (item.get('plate_set_no') or item.get('p_set_no') or '').strip() or (existing_job.plate_set_no if existing_job else '')
+        die_cutting_value = (item.get('die_cutting') or '').strip() or (recipe.die_cutting if recipe else (existing_job.die_cutting if hasattr(existing_job, 'die_cutting') else ''))
+        purchase_material_origin_value = _normalize_purchase_material_origin(item.get('purchase_material_origin') or item.get('purchase_material') or '') or (existing_job.purchase_material_origin if existing_job else '')
+        machine_name_value = (item.get('machine_name') or item.get('machine') or '').strip() or (existing_job.machine_name if existing_job else '')
+        status_value = _normalize_status(item.get('status') or '') or 'draft'
+        requirement_value = (item.get('requirement') or '').strip() or current_requirement
 
-        requirement_value = _sync_new_sku_requirement(current_requirement, forward_as_new)
+        if existing_job and not requirement_value:
+            requirement_value = existing_job.requirement or ''
+
+        requirement_value = _sync_new_sku_requirement(requirement_value, forward_as_new)
         if recipe and not forward_as_new:
             requirement_value = _append_unique_note_line(
                 requirement_value,
@@ -522,7 +556,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'destination': delivery_location,
             'delivery_date': delivery_date,
             'unit_cost': unit_cost_value,
-            'status': 'draft',
+            'status': status_value,
             'repeat_flag': 'New' if forward_as_new else 'Repeat',
             'requirement': requirement_value,
             'material': material_value,
@@ -535,10 +569,21 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'purchase_sheet_size': purchase_sheet_size_value,
             'purchase_sheet_ups': purchase_sheet_ups_value,
             'daily_demand': daily_demand_value,
-            'plate_set_no': existing_job.plate_set_no if existing_job else '',
+            'plate_set_no': plate_set_no_value,
+            'machine_name': machine_name_value,
+            'actual_sheet_required': actual_sheet_required_value,
+            'wastage_sheets': wastage_sheets_value,
+            'purchase_sheet_required': purchase_sheet_required_value,
+            'pkt_value': pkt_value,
+            'remarks': (item.get('remarks') or '').strip() or (existing_job.remarks if existing_job else ''),
+            'purchase_material_origin': purchase_material_origin_value,
+            'stock_qty': stock_qty_value,
+            'balance_qty': balance_qty_value,
         }
         if plan_date:
             defaults['plan_date'] = plan_date
+        if payload.get('plan_month'):
+            defaults['plan_month'] = payload.get('plan_month')
         if actor and not existing_job:
             defaults['created_by'] = actor
 
