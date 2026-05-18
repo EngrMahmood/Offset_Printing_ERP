@@ -1,0 +1,466 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}{{ report.title }} — Reports — Offset Printing ERP{% endblock %}
+{% block header_title %}{{ report.title }}{% endblock %}
+{% block header_subtitle %}{{ report.description }}{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Report</div>
+                <h3 class="erp-section-title">{{ report.title }}</h3>
+                <p class="erp-section-desc">{{ report.description }}</p>
+            </div>
+        </div>
+
+        <form method="get" class="erp-form-grid" style="grid-template-columns: repeat(6, minmax(0, 1fr)); gap:12px; margin-bottom:16px;">
+            <input type="text" name="q" value="{{ filters.q }}" placeholder="Search job, PO, SKU, machine">
+            <select name="year">
+                <option value="">Select year</option>
+                <option value="2024" {% if filters.year == 2024 %}selected{% endif %}>2024</option>
+                <option value="2025" {% if filters.year == 2025 %}selected{% endif %}>2025</option>
+                <option value="2026" {% if filters.year == 2026 %}selected{% endif %}>2026</option>
+            </select>
+            <select name="days">
+                <option value="7" {% if filters.days == 7 %}selected{% endif %}>7 days</option>
+                <option value="30" {% if filters.days == 30 %}selected{% endif %}>30 days</option>
+                <option value="45" {% if filters.days == 45 %}selected{% endif %}>45 days</option>
+                <option value="90" {% if filters.days == 90 %}selected{% endif %}>90 days</option>
+            </select>
+            {% if status_choices %}
+            <select name="status">
+                <option value="">All statuses</option>
+                {% for value, label in status_choices %}
+                <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+            {% endif %}
+            {% if department_choices %}
+            <select name="department">
+                <option value="">All departments</option>
+                {% for value in department_choices %}
+                <option value="{{ value }}" {% if filters.department == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+            </select>
+            {% elif machine_choices %}
+            <select name="machine">
+                <option value="">All machines</option>
+                {% for value in machine_choices %}
+                <option value="{{ value }}" {% if filters.machine == value %}selected{% endif %}>{{ value }}</option>
+                {% endfor %}
+            </select>
+            {% else %}
+            <select name="plate_state">
+                <option value="">All plate states</option>
+                <option value="missing" {% if filters.plate_state == 'missing' %}selected{% endif %}>Missing plate set</option>
+                <option value="ready" {% if filters.plate_state == 'ready' %}selected{% endif %}>Plate ready</option>
+            </select>
+            {% endif %}
+            <div class="erp-actions" style="gap:8px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'reports:detail' report.key %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-grid erp-grid-3cols" style="gap:12px;">
+            {% for key, value in summary.items %}
+            <div class="erp-card">
+                <div class="erp-card-content">
+                    <div class="erp-eyebrow">{{ key|cut:'_'|title }}</div>
+                    <h4 style="font-size:30px; margin:6px 0 0;">{{ value|default:'0' }}</h4>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    {% if report.key == 'machine-planning' %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Planning load</div><h3 class="erp-section-title">Planned jobs by machine</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Machine</th><th>Jobs</th><th>Order Qty</th><th>Sheets</th><th>Balance</th><th>Avg Aging</th><th>Hold</th><th>Capacity/Hour</th></tr></thead>
+                <tbody>
+                    {% for row in machine_rows %}
+                    <tr>
+                        <td><strong>{{ row.machine_display }}</strong></td>
+                        <td>{{ row.job_count|default:0 }}</td>
+                        <td>{{ row.total_order_qty|default:0 }}</td>
+                        <td>{{ row.total_sheet_qty|default:0 }}</td>
+                        <td>{{ row.total_balance_qty|default:0 }}</td>
+                        <td>{{ row.avg_aging_days|default:0|floatformat:1 }}</td>
+                        <td>{{ row.on_hold_count|default:0 }}</td>
+                        <td>{{ row.machine_capacity_per_hour|default:'-' }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8"><div class="erp-empty">No machine planning data found.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Actual output</div><h3 class="erp-section-title">Production by machine</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Machine</th><th>Runs</th><th>Output</th><th>Waste</th><th>Waste %</th><th>Impressions</th><th>Throughput/hr</th><th>Utilization</th></tr></thead>
+                <tbody>
+                    {% for row in actual_rows %}
+                    <tr>
+                        <td><strong>{{ row.machine_display }}</strong></td>
+                        <td>{{ row.run_count|default:0 }}</td>
+                        <td>{{ row.output_sheets|default:0 }}</td>
+                        <td>{{ row.waste_sheets|default:0 }}</td>
+                        <td>{{ row.waste_rate }}%</td>
+                        <td>{{ row.impressions|default:0 }}</td>
+                        <td>{{ row.throughput_per_hour|default:0 }}</td>
+                        <td>{{ row.capacity_utilization|default:'-' }}{% if row.capacity_utilization %}%{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="8"><div class="erp-empty">No production data found for the selected window.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Exceptions</div><h3 class="erp-section-title">Jobs needing assignment or attention</h3></div></div>
+        <div class="erp-grid erp-grid-2cols" style="gap:12px;">
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
+                    <thead><tr><th>Unassigned jobs</th><th>Machine</th><th>Status</th></tr></thead>
+                    <tbody>
+                        {% for job in unassigned_jobs %}
+                        <tr><td><strong>{{ job.jc_number }}</strong><div class="erp-muted">{{ job.job_name|default:'-' }}</div></td><td>-</td><td>{{ job.get_status_display }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="3"><div class="erp-empty">No unassigned jobs.</div></td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
+                    <thead><tr><th>Urgent jobs</th><th>Due</th><th>Status</th></tr></thead>
+                    <tbody>
+                        {% for job in urgent_jobs %}
+                        <tr><td><strong>{{ job.jc_number }}</strong><div class="erp-muted">{{ job.job_name|default:'-' }}</div></td><td>{{ job.delivery_date|default:job.plan_date|date:'Y-m-d' }}</td><td>{{ job.get_status_display }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="3"><div class="erp-empty">No urgent jobs.</div></td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    {% elif report.key == 'job-planning' %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Status mix</div><h3 class="erp-section-title">Planning workload by status</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Status</th><th>Jobs</th></tr></thead>
+                <tbody>
+                    {% for row in status_rows %}
+                    <tr><td>{{ row.status|default:'-' }}</td><td>{{ row.count }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="2"><div class="erp-empty">No status data.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Due pressure</div><h3 class="erp-section-title">Overdue and due-soon jobs</h3></div></div>
+        <div class="erp-grid erp-grid-2cols" style="gap:12px;">
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
+                    <thead><tr><th>Overdue</th><th>Due date</th><th>Machine</th></tr></thead>
+                    <tbody>
+                        {% for job in overdue_jobs %}
+                        <tr><td><strong>{{ job.jc_number }}</strong><div class="erp-muted">{{ job.job_name|default:'-' }}</div></td><td>{{ job.delivery_date|default:'-'|date:'Y-m-d' }}</td><td>{{ job.machine_name|default:'-' }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="3"><div class="erp-empty">No overdue jobs.</div></td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
+                    <thead><tr><th>Due soon</th><th>Due date</th><th>Status</th></tr></thead>
+                    <tbody>
+                        {% for job in due_soon_jobs %}
+                        <tr><td><strong>{{ job.jc_number }}</strong><div class="erp-muted">{{ job.job_name|default:'-' }}</div></td><td>{{ job.delivery_date|default:'-'|date:'Y-m-d' }}</td><td>{{ job.get_status_display }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="3"><div class="erp-empty">No jobs due soon.</div></td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Readiness</div><h3 class="erp-section-title">Jobs missing planning fields</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Job</th><th>Machine</th><th>Plate</th><th>Colors</th><th>UPS</th><th>Aging</th></tr></thead>
+                <tbody>
+                    {% for job in missing_readiness %}
+                    <tr><td><strong>{{ job.jc_number }}</strong><div class="erp-muted">{{ job.job_name|default:'-' }}</div></td><td>{{ job.machine_name|default:'-' }}</td><td>{{ job.plate_set_no|default:'-' }}</td><td>{{ job.total_colors|default:'-' }}</td><td>{{ job.ups|default:'-' }}</td><td>{{ job.aging_days|default:'-' }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="6"><div class="erp-empty">No readiness gaps found.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {% elif report.key == 'plates-planning' %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Plate readiness</div><h3 class="erp-section-title">Plate set coverage</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Missing plate</th><th>Machine</th><th>Status</th><th>Due date</th><th>Aging</th></tr></thead>
+                <tbody>
+                    {% for job in missing_plate_jobs %}
+                    <tr><td><strong>{{ job.jc_number }}</strong><div class="erp-muted">{{ job.job_name|default:'-' }}</div></td><td>{{ job.machine_name|default:'-' }}</td><td>{{ job.get_status_display }}</td><td>{{ job.delivery_date|default:job.plan_date|date:'Y-m-d' }}</td><td>{{ job.aging_days|default:'-' }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="5"><div class="erp-empty">No jobs are missing plate information.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Ready jobs</div><h3 class="erp-section-title">Jobs with plate sets assigned</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Job</th><th>Plate set</th><th>Machine</th><th>Status</th></tr></thead>
+                <tbody>
+                    {% for job in ready_jobs %}
+                    <tr><td><strong>{{ job.jc_number }}</strong><div class="erp-muted">{{ job.job_name|default:'-' }}</div></td><td>{{ job.plate_set_no }}</td><td>{{ job.machine_name|default:'-' }}</td><td>{{ job.get_status_display }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="4"><div class="erp-empty">No plate-ready jobs found.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">QC blockers</div><h3 class="erp-section-title">Jobs blocked by missing plates</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Job</th><th>Status</th><th>Machine</th></tr></thead>
+                <tbody>
+                    {% for job in qc_blocked_jobs %}
+                    <tr><td><strong>{{ job.jc_number }}</strong><div class="erp-muted">{{ job.job_name|default:'-' }}</div></td><td>{{ job.get_status_display }}</td><td>{{ job.machine_name|default:'-' }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="3"><div class="erp-empty">No QC-blocked jobs found.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {% elif report.key == 'production-insights' %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Machine output</div><h3 class="erp-section-title">Production by machine</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Machine</th><th>Runs</th><th>Output</th><th>Waste</th><th>Waste %</th><th>Throughput/hr</th><th>Utilization</th></tr></thead>
+                <tbody>
+                    {% for row in by_machine %}
+                    <tr><td><strong>{{ row.machine_display }}</strong></td><td>{{ row.run_count|default:0 }}</td><td>{{ row.output_sheets|default:0 }}</td><td>{{ row.waste_sheets|default:0 }}</td><td>{{ row.waste_rate }}%</td><td>{{ row.throughput_per_hour|default:0 }}</td><td>{{ row.capacity_utilization|default:'-' }}{% if row.capacity_utilization %}%{% endif %}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="7"><div class="erp-empty">No production entries found.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Shift mix</div><h3 class="erp-section-title">Production by shift</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Shift</th><th>Runs</th><th>Output</th><th>Waste</th><th>Impressions</th><th>Run time</th></tr></thead>
+                <tbody>
+                    {% for row in by_shift %}
+                    <tr><td>{{ row.shift|default:'-' }}</td><td>{{ row.run_count|default:0 }}</td><td>{{ row.output_sheets|default:0 }}</td><td>{{ row.waste_sheets|default:0 }}</td><td>{{ row.impressions|default:0 }}</td><td>{{ row.run_time|default:0 }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="6"><div class="erp-empty">No shift data available.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-grid erp-grid-2cols" style="gap:12px;">
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
+                    <thead><tr><th>Waste reason</th><th>Runs</th><th>Waste sheets</th></tr></thead>
+                    <tbody>
+                        {% for row in waste_by_reason %}
+                        <tr><td>{{ row.waste_reason|default:'-' }}</td><td>{{ row.count }}</td><td>{{ row.waste_sheets|default:0 }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="3"><div class="erp-empty">No waste data found.</div></td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
+                    <thead><tr><th>Downtime category</th><th>Rows</th><th>Minutes</th></tr></thead>
+                    <tbody>
+                        {% for row in downtime_by_category %}
+                        <tr><td>{{ row.category|default:'-' }}</td><td>{{ row.count }}</td><td>{{ row.minutes|default:0 }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="3"><div class="erp-empty">No downtime details found.</div></td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Top runs</div><h3 class="erp-section-title">Largest production entries</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Job card</th><th>Machine</th><th>Date</th><th>Output</th><th>Waste</th><th>Impressions</th></tr></thead>
+                <tbody>
+                    {% for run in top_runs %}
+                    <tr><td><strong>{{ run.job_card.job_card_no }}</strong><div class="erp-muted">{{ run.job_card.SKU }}</div></td><td>{{ run.machine|default:'-' }}</td><td>{{ run.date|date:'Y-m-d' }}</td><td>{{ run.output_sheets }}</td><td>{{ run.waste_sheets }}</td><td>{{ run.impressions }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="6"><div class="erp-empty">No top runs to display.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {% elif report.key == 'qc-approvals' %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Status breakdown</div><h3 class="erp-section-title">QC workflow status</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Status</th><th>Count</th></tr></thead>
+                <tbody>
+                    {% for row in status_rows %}
+                    <tr><td>{{ row.status|default:'-' }}</td><td>{{ row.count }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="2"><div class="erp-empty">No QC status data.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Pending QC</div><h3 class="erp-section-title">Jobs awaiting QC review</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Created</th></tr></thead>
+                <tbody>
+                    {% for job in pending_qc_jobs %}
+                    <tr><td><strong>{{ job.job_card_no }}</strong></td><td>{{ job.PO_No|default:'-' }}</td><td>{{ job.SKU }}</td><td>{{ job.machine_name|default:'-' }}</td><td>{{ job.created_at|date:'Y-m-d' }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="5"><div class="erp-empty">No pending QC jobs.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-grid erp-grid-2cols" style="gap:12px;">
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
+                    <thead><tr><th>Rejected jobs</th><th>Status</th><th>Updated</th></tr></thead>
+                    <tbody>
+                        {% for job in rejected_jobs %}
+                        <tr><td><strong>{{ job.job_card_no }}</strong><div class="erp-muted">{{ job.SKU }}</div></td><td>{{ job.get_status_display }}</td><td>{{ job.updated_at|date:'Y-m-d' }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="3"><div class="erp-empty">No rejected jobs.</div></td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <div class="erp-table-wrap">
+                <table class="erp-table erp-table-dense">
+                    <thead><tr><th>Recently approved</th><th>Status</th><th>Updated</th></tr></thead>
+                    <tbody>
+                        {% for job in approved_recent %}
+                        <tr><td><strong>{{ job.job_card_no }}</strong><div class="erp-muted">{{ job.SKU }}</div></td><td>{{ job.get_status_display }}</td><td>{{ job.updated_at|date:'Y-m-d' }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="3"><div class="erp-empty">No recently approved jobs.</div></td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    {% elif report.key == 'dispatch-tracking' %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Dispatch volume</div><h3 class="erp-section-title">Dispatch by date</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Date</th><th>Dispatch count</th><th>Total qty</th></tr></thead>
+                <tbody>
+                    {% for row in by_date %}
+                    <tr><td>{{ row.dispatch_date|date:'Y-m-d' }}</td><td>{{ row.dispatch_count }}</td><td>{{ row.total_qty|default:0 }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="3"><div class="erp-empty">No dispatch data for selected period.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Dispatch by DC</div><h3 class="erp-section-title">Top dispatch challans</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>DC No</th><th>Dispatch count</th><th>Total qty</th></tr></thead>
+                <tbody>
+                    {% for row in by_dc %}
+                    <tr><td>{{ row.dc_no }}</td><td>{{ row.dispatch_count }}</td><td>{{ row.total_qty|default:0 }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="3"><div class="erp-empty">No DC data found.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Recent activity</div><h3 class="erp-section-title">Latest dispatches</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Job Card</th><th>DC No</th><th>Date</th><th>Qty</th><th>SKU</th></tr></thead>
+                <tbody>
+                    {% for dispatch in recent_dispatches %}
+                    <tr><td><strong>{{ dispatch.job_card.job_card_no }}</strong></td><td>{{ dispatch.dc_no|default:'-' }}</td><td>{{ dispatch.dispatch_date|date:'Y-m-d' }}</td><td>{{ dispatch.dispatch_qty }}</td><td>{{ dispatch.job_card.SKU }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="5"><div class="erp-empty">No recent dispatches.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Backlog</div><h3 class="erp-section-title">Jobs ready but not dispatched</h3></div></div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead><tr><th>Job Card</th><th>SKU</th><th>Status</th><th>Order Qty</th><th>Updated</th></tr></thead>
+                <tbody>
+                    {% for job in backlog_jobs %}
+                    <tr><td><strong>{{ job.job_card_no }}</strong></td><td>{{ job.SKU }}</td><td>{{ job.get_status_display }}</td><td>{{ job.order_qty }}</td><td>{{ job.updated_at|date:'Y-m-d' }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="5"><div class="erp-empty">No backlog jobs found.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

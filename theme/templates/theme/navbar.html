@@ -27,6 +27,12 @@
                 Planning
             </a>
             {% endif %}
+            {% if nav.can_access_reports %}
+            <a href="{% url 'reports:home' %}"
+               class="erp-topnav-module {% if app == 'reports' %}is-active{% endif %}">
+                Reports
+            </a>
+            {% endif %}
             {% if nav.can_access_qc %}
             <a href="{% url 'qc:qc_home' %}"
                class="erp-topnav-module {% if app == 'qc' %}is-active{% endif %}">
@@ -108,6 +114,30 @@
     </div>
 
     {% include 'theme/planning_context_nav.html' %}
+
+    {% elif app == 'reports' and nav.can_access_reports %}
+    <div class="erp-subnav">
+        <a href="{% url 'reports:home' %}"
+           class="erp-subnav-link {% if url == 'home' %}is-active{% endif %}">
+            Overview
+        </a>
+        <a href="{% url 'reports:detail' 'machine-planning' %}"
+           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'machine-planning' %}is-active{% endif %}">
+            Machine Planning
+        </a>
+        <a href="{% url 'reports:detail' 'job-planning' %}"
+           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'job-planning' %}is-active{% endif %}">
+            Job Planning
+        </a>
+        <a href="{% url 'reports:detail' 'plates-planning' %}"
+           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'plates-planning' %}is-active{% endif %}">
+            Plates Planning
+        </a>
+        <a href="{% url 'reports:detail' 'production-insights' %}"
+           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'production-insights' %}is-active{% endif %}">
+            Production Insights
+        </a>
+    </div>
 
     {% elif app == 'qc' and nav.can_access_qc %}
     <div class="erp-subnav">

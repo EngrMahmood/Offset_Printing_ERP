@@ -3013,11 +3013,7 @@ def po_inbox(request):
             break
 
     page_number_int = _to_optional_positive_int(page_number) or 1
-    if search_query:
-        docs_to_load = deduped_docs
-    else:
-        start = (page_number_int - 1) * per_page
-        docs_to_load = deduped_docs[start:start + per_page]
+    docs_to_load = deduped_docs
 
     doc_items = []
     all_sku_keys = set()
@@ -3081,11 +3077,9 @@ def po_inbox(request):
             if lower_search in row['po_number'].lower()
             or lower_search in row['supplier'].lower()
         ]
-        paginator = Paginator(rows, per_page)
-        page_obj = paginator.get_page(page_number)
-    else:
-        paginator = Paginator(range(len(deduped_docs)), per_page)
-        page_obj = paginator.get_page(page_number)
+
+    paginator = Paginator(rows, per_page)
+    page_obj = paginator.get_page(page_number)
 
     return render(
         request,

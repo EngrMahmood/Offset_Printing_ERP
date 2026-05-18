@@ -1,0 +1,112 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Reports — Offset Printing ERP{% endblock %}
+{% block header_title %}Reports Center{% endblock %}
+{% block header_subtitle %}Operational reporting for planning, execution, QC readiness, production efficiency, and master data health.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Reports</div>
+                <h3 class="erp-section-title">High-value operational views</h3>
+                <p class="erp-section-desc">These are the report areas that can improve planning accuracy and efficiency fastest.</p>
+            </div>
+            <div>
+                <form method="get" style="display:inline;">
+                    <select name="year" onchange="this.form.submit()">
+                        <option value="">Select year</option>
+                        <option value="2024" {% if year == 2024 %}selected{% endif %}>2024</option>
+                        <option value="2025" {% if year == 2025 %}selected{% endif %}>2025</option>
+                        <option value="2026" {% if year == 2026 %}selected{% endif %}>2026</option>
+                    </select>
+                </form>
+            </div>
+        </div>
+        <div class="erp-grid erp-grid-2cols" style="gap:16px;">
+            {% for report in report_cards %}
+            <a href="{% url 'reports:detail' report.key %}?year={{ year }}" class="erp-card erp-card-hover" style="display:block; text-decoration:none; color:inherit;">
+                <div class="erp-card-content">
+                    <div class="erp-eyebrow">{{ report.focus }}</div>
+                    <h4>{{ report.title }}</h4>
+                    <p>{{ report.description }}</p>
+                </div>
+                <div class="erp-card-footer">Open report</div>
+            </a>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Health snapshot ({{ year }})</div>
+                <h3 class="erp-section-title">Module health and workload</h3>
+                <p class="erp-section-desc">A quick read on where work is piling up across the ERP.</p>
+            </div>
+        </div>
+        <div class="erp-grid erp-grid-3cols" style="gap:12px;">
+            {% for item in module_cards %}
+            <div class="erp-card">
+                <div class="erp-card-content">
+                    <div class="erp-eyebrow">{{ item.title }}</div>
+                    <h4 style="font-size:30px; margin:6px 0 2px;">{{ item.value }}</h4>
+                    <p style="margin:0;">{{ item.subtitle }}</p>
+                </div>
+                <div class="erp-card-footer">{{ item.hint }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Attention</div>
+                <h3 class="erp-section-title">Items that usually hurt efficiency</h3>
+            </div>
+        </div>
+        <div class="erp-grid erp-grid-2cols" style="gap:12px;">
+            {% for item in attention_cards %}
+            <div class="erp-card">
+                <div class="erp-card-content">
+                    <div class="erp-eyebrow">{{ item.title }}</div>
+                    <h4 style="font-size:30px; margin:6px 0 2px;">{{ item.value }}</h4>
+                </div>
+                <div class="erp-card-footer">{{ item.hint }}</div>
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Recent activity</div>
+                <h3 class="erp-section-title">Change log trail</h3>
+            </div>
+        </div>
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense">
+                <thead>
+                    <tr><th>Type</th><th>Record</th><th>Action</th><th>By</th><th>Date</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in recent_changes %}
+                    <tr>
+                        <td>{{ item.get_entity_type_display }}</td>
+                        <td>{{ item.record_label }}</td>
+                        <td>{{ item.get_action_display }}</td>
+                        <td>{{ item.changed_by|default:'-' }}</td>
+                        <td>{{ item.created_at|date:'Y-m-d H:i' }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5"><div class="erp-empty">No recent changes found.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
