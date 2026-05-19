@@ -135,7 +135,7 @@
                     <button type="submit" class="erp-btn erp-btn-warning">Approve All</button>
                 </form>
                 {% if can_admin_actions %}
-                <form id="bulk-delete-planning-form" method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                <form id="bulk-delete-planning-form" method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                     {% csrf_token %}
                     <input type="hidden" name="action" value="bulk_delete_job_cards">
                     <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete selected Job Cards from the planning queue? This cannot be undone.');">Delete Selected</button>
@@ -173,20 +173,22 @@
                                 <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>
                                 <a href="{% url 'planning:job_edit' job.planning_job.id %}" class="erp-btn erp-btn-secondary">Edit</a>
                             {% endif %}
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            {% if user_can_approve_planning %}
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="approve_planning">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
                                 <button type="submit" class="erp-btn erp-btn-success">Approve</button>
                             </form>
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="reject_planning">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
                                 <button type="submit" class="erp-btn erp-btn-warning">Send Back</button>
                             </form>
+                            {% endif %}
                             {% if can_admin_actions %}
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="delete_job_card">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
@@ -210,7 +212,7 @@
         <div class="erp-panel__header">
             <h3 class="erp-panel__title">QC Approval Queue</h3>
             {% if qc_jobs and can_admin_actions %}
-            <form id="bulk-delete-qc-form" method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+            <form id="bulk-delete-qc-form" method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="bulk_delete_job_cards">
                 <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete selected Job Cards from the QC queue? This cannot be undone.');">Delete Selected</button>
@@ -246,20 +248,22 @@
                                 <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>
                                 <a href="{% url 'planning:job_edit' job.planning_job.id %}" class="erp-btn erp-btn-secondary">Edit</a>
                             {% endif %}
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            {% if user_can_approve_qc %}
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="approve_qc">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
                                 <button type="submit" class="erp-btn erp-btn-success">Approve QC</button>
                             </form>
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="reject_qc">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
                                 <button type="submit" class="erp-btn erp-btn-danger">Reject QC</button>
                             </form>
+                            {% endif %}
                             {% if can_admin_actions %}
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="delete_job_card">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
@@ -283,7 +287,7 @@
         <div class="erp-panel__header">
             <h3 class="erp-panel__title">Production Manager Approval Queue</h3>
             {% if pm_jobs and can_admin_actions %}
-            <form id="bulk-delete-pm-form" method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+            <form id="bulk-delete-pm-form" method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="bulk_delete_job_cards">
                 <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete selected Job Cards from the PM queue? This cannot be undone.');">Delete Selected</button>
@@ -318,20 +322,22 @@
                             {% if job.planning_job %}
                                 <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>
                             {% endif %}
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            {% if user_can_approve_pm %}
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="approve_pm">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
                                 <button type="submit" class="erp-btn erp-btn-success">Approve PM</button>
                             </form>
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="reject_pm">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
                                 <button type="submit" class="erp-btn erp-btn-danger">Reject PM</button>
                             </form>
+                            {% endif %}
                             {% if can_admin_actions %}
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="delete_job_card">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
@@ -355,7 +361,7 @@
         <div class="erp-panel__header">
             <h3 class="erp-panel__title">Release for Production</h3>
             {% if release_jobs and can_admin_actions %}
-            <form id="bulk-delete-release-form" method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+            <form id="bulk-delete-release-form" method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="bulk_delete_job_cards">
                 <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Delete selected Job Cards from the release queue? This cannot be undone.');">Delete Selected</button>
@@ -391,14 +397,16 @@
                                 <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>
                                 <a href="{% url 'planning:job_card_print' job.planning_job.id %}" class="erp-btn erp-btn-secondary" target="_blank" rel="noopener">A4 Print</a>
                             {% endif %}
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            {% if user_can_approve_pm %}
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="release_for_production">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
                                 <button type="submit" class="erp-btn erp-btn-success">Release</button>
                             </form>
+                            {% endif %}
                             {% if can_admin_actions %}
-                            <form method="post" action="{% url 'qc:approval_queue' %}" class="m-0">
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="delete_job_card">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">

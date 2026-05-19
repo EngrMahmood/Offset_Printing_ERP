@@ -26,9 +26,11 @@
             gap: 10px;
             justify-content: flex-end;
             align-items: center;
+            flex-wrap: wrap;
         }
-        .erp-pending-filters .erp-filter-controls a {
-            height: 36px;
+        .erp-pending-filters .erp-filter-controls a,
+        .erp-pending-filters .erp-filter-controls button {
+            height: 38px;
         }
         .erp-kpi-card--pending {
             border-color: rgba(56, 124, 255, 0.17);
@@ -52,6 +54,17 @@
         .erp-pending-card input {
             min-height: 42px;
         }
+        .erp-pending-card .erp-table-wrap {
+            overflow-x: auto;
+        }
+        .erp-pending-card .erp-table {
+            min-width: 860px;
+            width: 100%;
+        }
+        .erp-pending-card .erp-table-dense th,
+        .erp-pending-card .erp-table-dense td {
+            white-space: nowrap;
+        }
         @media (max-width: 920px) {
             .erp-pending-filters {
                 grid-template-columns: 1fr;
@@ -60,15 +73,13 @@
             .erp-pending-filters .erp-filter-controls {
                 justify-content: flex-start;
                 width: 100%;
-                flex-wrap: wrap;
             }
-            .erp-kpi-row--inline {
-                flex-direction: column;
-                align-items: stretch;
+            .erp-pending-card .erp-table-dense th,
+            .erp-pending-card .erp-table-dense td {
+                white-space: normal;
             }
-            .erp-kpi-row--inline .erp-kpi-text {
-                justify-content: space-between;
-                width: 100%;
+            .erp-pending-card .erp-table {
+                min-width: auto;
             }
         }
     </style>
@@ -128,7 +139,7 @@
             <span class="erp-status-chip info"><span class="erp-status-dot"></span>Planner Action</span>
         </div>
 
-        <div class="erp-table-wrap">
+        <div class="erp-table-wrap erp-table-scroll">
             <table class="erp-table erp-table-dense">
                 <thead>
                     <tr>

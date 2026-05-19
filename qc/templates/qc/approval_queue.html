@@ -4,19 +4,14 @@
 {% block title %}Job Card Approval Queue - ERP{% endblock %}
 {% block header_title %}Job Card Approval{% endblock %}
 {% block header_subtitle %}QC review queue for planner-submitted job cards before production release.{% endblock %}
+{% block header_actions %}
+<a class="erp-btn erp-btn-secondary" href="{% url 'planning:approval_queue' %}">Planning Approval</a>
+<a class="erp-btn erp-btn-secondary" href="{% url 'qc:history' %}">Approval History</a>
+{% endblock %}
 {% block content %}
 <div class="erp-page-stack">
 
     <section class="erp-kpi-grid-compact">
-        <div class="erp-kpi-card erp-kpi-card-compact">
-            <div class="erp-kpi-row">
-                <div>
-                    <div class="erp-kpi-label">Pending SKU Approval</div>
-                    <div class="erp-kpi-value">{{ pending_sku_approval_count }}</div>
-                </div>
-                <span class="erp-kpi-icon">S</span>
-            </div>
-        </div>
         <div class="erp-kpi-card erp-kpi-card-compact">
             <div class="erp-kpi-row">
                 <div>
@@ -51,7 +46,22 @@
         </form>
     </section>
 
-    <section id="qc-panel" class="tab-panel">
+    <section class="erp-section-shell">
+        <div class="erp-wf-guide">
+            <div class="erp-wf-step">
+                <div class="erp-wf-step__key">Step 4b — QC Approval</div>
+                <div class="erp-wf-step__value">QC validates job cards before they move to planning/production approval.</div>
+            </div>
+        </div>
+        <div class="erp-route-grid erp-route-grid--1">
+            <div class="erp-route-card">
+                <div class="erp-route-card__key">Pending QC Jobs</div>
+                <div class="erp-route-card__value">{{ pending_qc_jobs_count }}</div>
+            </div>
+        </div>
+    </section>
+
+    <section id="qc-panel" class="erp-tab-panel is-active">
         <div class="erp-section-shell">
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
@@ -78,8 +88,8 @@
                                 <div class="erp-actions" style="flex-wrap:nowrap; gap:5px;">
                                     {% if job.planning_job %}<a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary sm">View</a>{% endif %}
                                     {% if user_can_approve_qc %}
-                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_qc"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success sm">Approve</button></form>
-                                    <button type="button" class="erp-btn erp-btn-danger sm" onclick="openRejectModal('reject_qc', '{{ job.id }}', '{{ job.job_card_no }}')">Send Back</button>
+                                    <form method="post" action="{% url 'qc:approval_queue' %}" class="erp-inline-form">{% csrf_token %}<input type="hidden" name="action" value="approve_qc"><input type="hidden" name="job_card_id" value="{{ job.id }}"><button type="submit" class="erp-btn erp-btn-success sm">Approve QC</button></form>
+                                    <button type="button" class="erp-btn erp-btn-danger sm" onclick="openRejectModal('reject_qc', '{{ job.id }}', '{{ job.job_card_no }}')">Reject QC</button>
                                     {% endif %}
                                 </div>
                                 {% if job.latest_rejection_reason %}
@@ -96,6 +106,7 @@
             {% endif %}
         </div>
     </section>
+
 </div>
 
 <div class="modal-overlay" id="rejectModal" hidden>
@@ -136,6 +147,21 @@
         if (!modal.hidden && event.target === modal) {
             closeRejectModal();
         }
+    });
+
+    document.querySelectorAll('.erp-tab').forEach(function(tab) {
+        tab.addEventListener('click', function() {
+            const target = tab.dataset.target;
+            if (!target) {
+                return;
+            }
+            document.querySelectorAll('.erp-tab').forEach(function(item) {
+                item.classList.toggle('is-active', item === tab);
+            });
+            document.querySelectorAll('.erp-tab-panel').forEach(function(panel) {
+                panel.classList.toggle('is-active', panel.id === target);
+            });
+        });
     });
 </script>
 {% endblock %}

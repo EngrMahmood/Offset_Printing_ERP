@@ -13,6 +13,7 @@
                     <div class="erp-nav-dropdown">
                         <a href="{% url 'planning:home' %}">Planning Overview</a>
                         <a href="{% url 'planning:jobs' %}" class="{% if request.resolver_match.url_name == 'jobs' %}is-active{% endif %}">Planning Jobs</a>
+                        <a href="{% url 'planning:approval_queue' %}" class="{% if request.resolver_match.url_name == 'approval_queue' %}is-active{% endif %}">Approval Queue</a>
                         <a href="{% url 'planning:po_inbox' %}" class="{% if request.resolver_match.url_name == 'po_inbox' %}is-active{% endif %}">PO Intake</a>
                         <a href="{% url 'planning:import_sheet' %}" class="{% if request.resolver_match.url_name == 'import_sheet' %}is-active{% endif %}">Import Sheet</a>
                         <a href="{% url 'planning:jobs_archived' %}" class="{% if request.resolver_match.url_name == 'jobs_archived' %}is-active{% endif %}">Archived Jobs</a>

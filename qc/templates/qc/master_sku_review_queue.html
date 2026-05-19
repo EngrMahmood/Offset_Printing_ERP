@@ -10,7 +10,7 @@
 {% endblock %}
 
 {% block content %}
-<div class="erp-page-stack">
+<div class="erp-page-stack qc-master-review">
     <section class="erp-kpi-grid-compact">
         <div class="erp-kpi-card erp-kpi-card-compact">
             <div class="erp-kpi-row">
@@ -32,7 +32,7 @@
     {% endif %}
 
     <section class="erp-section-shell">
-        <form method="get" class="erp-form-grid" style="margin-bottom: 12px;">
+        <form method="get" class="erp-form-grid" style="margin-bottom: 12px; gap:12px;">
             <div>
                 <label>PO</label>
                 <select name="po">
@@ -63,8 +63,8 @@
             <span class="erp-status-chip warning"><span class="erp-status-dot"></span>QC Action Required</span>
         </div>
 
-        <div class="erp-table-wrap">
-            <table class="erp-table erp-table-dense">
+        <div class="erp-table-wrap erp-table-scroll" style="overflow-x:auto;">
+            <table class="erp-table erp-table-dense" style="min-width:860px; width:100%;">
                 <thead>
                     <tr>
                         <th>PO</th>
@@ -148,6 +148,43 @@
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block extra_css %}
+<style>
+.qc-master-review .erp-form-grid {
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+}
+.qc-master-review .erp-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-end;
+}
+.qc-master-review .erp-table-wrap {
+    overflow-x: auto;
+}
+.qc-master-review .erp-table {
+    min-width: 860px;
+    width: 100%;
+}
+.qc-master-review .erp-table-dense th,
+.qc-master-review .erp-table-dense td {
+    white-space: nowrap;
+}
+@media (max-width: 900px) {
+    .qc-master-review .erp-form-grid {
+        grid-template-columns: 1fr;
+    }
+    .qc-master-review .erp-form-actions {
+        justify-content: stretch;
+    }
+    .qc-master-review .erp-actions {
+        flex-wrap: wrap;
+    }
+}
+</style>
 {% endblock %}
 
 {% block extra_js %}

@@ -49,7 +49,8 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
 
 from core.jc_numbering import allocate_next_jc_number
-from core.models import ChangeLog
+from core.models import ChangeLog, JobCard
+from core.jobcard_service import job_card_queue_queryset, execute_job_card_action
 from core.views import permission_required
 from .forms import JobCardLayoutForm, PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeForm
 from .services import (
@@ -60,7 +61,7 @@ from .services import (
     _annotate_items_with_recipe, _deduplicate_po_items_by_sku,
     _history_repeat_new_counts, _sync_repeat_jobs_from_po,
     _sync_new_jobs_for_approved_sku, _merge_po_items_for_existing_po,
-    _collect_pending_sku_rows
+    _collect_pending_sku_rows, _normalize_po_number
 )
 from .models import (
     PLANNING_QC_GATE_STATUSES,
@@ -1155,7 +1156,7 @@ def planning_job_detail(request, job_id):
     )
     status_now = _normalize_status(job.status)
     job_card = getattr(job, 'job_card', None)
-    can_print_from_job = status_now in {'qc_approved', 'released', 'in_production', 'completed'}
+    can_print_from_job = status_now in {'released', 'in_production', 'completed'}
     can_print_from_card = job_card.can_print_job_card() if job_card else False
 
     return render(
@@ -1365,10 +1366,10 @@ def planning_job_card_print(request, job_id):
     )
     status_now = _normalize_status(job.status)
     job_card = getattr(job, 'job_card', None)
-    can_print_from_job = status_now in {'qc_approved', 'released', 'in_production', 'completed'}
+    can_print_from_job = status_now in {'released', 'in_production', 'completed'}
     can_print_from_card = job_card.can_print_job_card() if job_card else False
     if not (can_print_from_job or can_print_from_card):
-        messages.error(request, 'Job card print is available only after QC approval or production approval.')
+        messages.error(request, 'Job card print is available only after production approval.')
         return redirect('planning:job_detail', job_id=job.id)
 
     missing_qc_fields = job.qc_missing_fields()
@@ -1512,10 +1513,10 @@ def planning_job_card_pdf(request, job_id):
     )
     status_now = _normalize_status(job.status)
     job_card = getattr(job, 'job_card', None)
-    can_print_from_job = status_now in {'qc_approved', 'released', 'in_production', 'completed'}
+    can_print_from_job = status_now in {'released', 'in_production', 'completed'}
     can_print_from_card = job_card.can_print_job_card() if job_card else False
     if not (can_print_from_job or can_print_from_card):
-        messages.error(request, 'Job card print is available only after QC approval or production approval.')
+        messages.error(request, 'Job card print is available only after production approval.')
         return redirect('planning:job_detail', job_id=job.id)
 
     missing_qc_fields = job.qc_missing_fields()
@@ -1553,7 +1554,108 @@ def planning_job_card_pdf(request, job_id):
 @login_required
 @permission_required('can_view_approval_queue')
 def approval_queue(request):
-    return redirect('qc:approval_queue')
+    planning_jobs = job_card_queue_queryset('planning')
+    qc_jobs = job_card_queue_queryset('qc')
+    pm_jobs = job_card_queue_queryset('production_manager')
+    release_jobs = job_card_queue_queryset('production')
+    queue_q = (request.GET.get('q') or '').strip()
+
+    profile = getattr(request.user, 'profile', None)
+    user_can_approve_planning = profile.can_approve_planning() if profile else False
+    user_can_approve_qc = profile.can_approve_qc() if profile else False
+    user_can_approve_pm = profile.can_approve_pm() if profile else False
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        job_card_id = (request.POST.get('job_card_id') or '').strip()
+        reason = (request.POST.get('reason') or request.POST.get('change_reason') or '').strip()
+
+        def _get_job_card():
+            if not job_card_id:
+                raise ValueError('Job Card is required.')
+            return get_object_or_404(JobCard, pk=job_card_id, is_active=True)
+
+        def _sync_status(job_card, transition_name):
+            return execute_job_card_action(job_card, transition_name, actor=request.user, reason=reason)
+
+        if action in {
+            'approve_planning', 'reject_planning',
+            'approve_qc', 'reject_qc',
+            'approve_pm', 'reject_pm', 'release_for_production',
+        }:
+            if action in {'reject_planning', 'reject_qc', 'reject_pm'} and not reason:
+                messages.error(request, 'Rejection reason is required.')
+                return redirect('planning:approval_queue')
+
+            if action in {'approve_planning', 'reject_planning'} and not user_can_approve_planning:
+                messages.error(request, 'You do not have permission to approve planning jobs.')
+                return redirect('planning:approval_queue')
+            if action in {'approve_qc', 'reject_qc'} and not user_can_approve_qc:
+                messages.error(request, 'You do not have permission to approve QC jobs.')
+                return redirect('planning:approval_queue')
+            if action in {'approve_pm', 'reject_pm', 'release_for_production'} and not user_can_approve_pm:
+                messages.error(request, 'You do not have permission to approve production manager jobs.')
+                return redirect('planning:approval_queue')
+
+            job_card = _get_job_card()
+            try:
+                _sync_status(job_card, action)
+                messages.success(request, f'Job Card {job_card.job_card_no} moved successfully.')
+            except ValidationError as exc:
+                error_dict = getattr(exc, 'message_dict', None)
+                if error_dict:
+                    for field_errors in error_dict.values():
+                        for error_message in field_errors:
+                            messages.error(request, error_message)
+                else:
+                    messages.error(request, str(exc))
+            return redirect('planning:approval_queue')
+
+    if queue_q:
+        queue_filter = (
+            Q(job_card_no__icontains=queue_q)
+            | Q(PO_No__icontains=queue_q)
+            | Q(SKU__icontains=queue_q)
+            | Q(planning_job__po_number__icontains=queue_q)
+            | Q(planning_job__sku__icontains=queue_q)
+        )
+        planning_jobs = planning_jobs.filter(queue_filter)
+        qc_jobs = qc_jobs.filter(queue_filter)
+        pm_jobs = pm_jobs.filter(queue_filter)
+        release_jobs = release_jobs.filter(queue_filter)
+
+    planning_jobs = planning_jobs.order_by('-updated_at', '-id')[:300]
+    qc_jobs = qc_jobs.order_by('-updated_at', '-id')[:300]
+    pm_jobs = pm_jobs.order_by('-updated_at', '-id')[:300]
+    release_jobs = release_jobs.order_by('-updated_at', '-id')[:300]
+
+    pending_qc_jobs_count = qc_jobs.count()
+    approved_qc_jobs_count = JobCard.objects.filter(is_active=True, status='qc_approved').count()
+    pending_pm_jobs_count = pm_jobs.count()
+    released_jobs_count = JobCard.objects.filter(is_active=True, status='released').count()
+    pending_sku_approval_count = SkuRecipe.objects.filter(is_active=True, master_data_status='pending_review').count()
+    sku_reviewed_count = SkuRecipe.objects.filter(is_active=True, master_data_status='reviewed').count()
+    sku_approved_count = SkuRecipe.objects.filter(is_active=True, master_data_status='approved').count()
+
+    context = {
+        'planning_jobs': planning_jobs,
+        'qc_jobs': qc_jobs,
+        'pm_jobs': pm_jobs,
+        'release_jobs': release_jobs,
+        'queue_q': queue_q,
+        'pending_qc_jobs_count': pending_qc_jobs_count,
+        'approved_qc_jobs_count': approved_qc_jobs_count,
+        'pending_pm_jobs_count': pending_pm_jobs_count,
+        'released_jobs_count': released_jobs_count,
+        'pending_sku_approval_count': pending_sku_approval_count,
+        'sku_reviewed_count': sku_reviewed_count,
+        'sku_approved_count': sku_approved_count,
+        'user_can_approve_planning': user_can_approve_planning,
+        'user_can_approve_qc': user_can_approve_qc,
+        'user_can_approve_pm': user_can_approve_pm,
+    }
+    context['can_admin_actions'] = _user_is_admin(request.user)
+    return render(request, 'planning/approval_queue.html', context)
 
 
 @login_required
@@ -1888,7 +1990,6 @@ def sku_recipes_list(request):
             Q(sku__icontains=q)
             | Q(job_name__icontains=q)
             | Q(material__icontains=q)
-            | Q(machine_name__icontains=q)
         )
     if status_filter in ('draft', 'pending_review', 'reviewed', 'approved'):
         qs = qs.filter(master_data_status=status_filter)
@@ -2031,7 +2132,6 @@ def sku_recipes_archived(request):
             Q(sku__icontains=q)
             | Q(job_name__icontains=q)
             | Q(material__icontains=q)
-            | Q(machine_name__icontains=q)
         )
     if status_filter in ('draft', 'pending_review', 'reviewed', 'approved'):
         qs = qs.filter(master_data_status=status_filter)
@@ -2604,18 +2704,26 @@ def pending_skus(request):
     q = (request.GET.get('q') or '').strip()
 
     po_docs = PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('-created_at')[:400]
-    deduped_docs = []
-    seen_po_numbers = set()
+    grouped_docs = {}
     for doc in po_docs:
         payload = doc.extracted_payload or {}
-        po_number = (payload.get('po_number') or '').strip().upper()
-        if po_number:
-            if po_number in seen_po_numbers:
+        po_number = (payload.get('po_number') or '').strip()
+        po_key = _normalize_po_number(po_number) or f'__doc_{doc.id}'
+        grouped_docs.setdefault(po_key, []).append(doc)
+
+    all_pending_rows = []
+    for po_key, docs in grouped_docs.items():
+        rows = _collect_pending_sku_rows(docs)
+        display_po_number = (docs[0].extracted_payload or {}).get('po_number') or '-'
+        seen_skus = set()
+        for row in rows:
+            sku_key = _sku_key(row.get('sku'))
+            if sku_key and sku_key in seen_skus:
                 continue
-            seen_po_numbers.add(po_number)
-        deduped_docs.append(doc)
-    po_docs = deduped_docs[:200]
-    all_pending_rows = _collect_pending_sku_rows(po_docs)
+            if sku_key:
+                seen_skus.add(sku_key)
+            row['po_number'] = display_po_number
+            all_pending_rows.append(row)
 
     po_summary_map = {}
     for row in all_pending_rows:
@@ -2632,7 +2740,12 @@ def pending_skus(request):
 
     pending_rows = all_pending_rows
     if po_filter:
-        pending_rows = [row for row in pending_rows if (row.get('po_number') or '') == po_filter]
+        po_filter_key = _normalize_po_number(po_filter)
+        pending_rows = [
+            row
+            for row in pending_rows
+            if _normalize_po_number(row.get('po_number')) == po_filter_key
+        ]
     if q:
         q_upper = q.upper()
         pending_rows = [
@@ -2729,7 +2842,12 @@ def pending_skus_ignored(request):
             })
 
     if po_filter:
-        rows = [row for row in rows if row['po_number'] == po_filter]
+        po_filter_key = _normalize_po_number(po_filter)
+        rows = [
+            row
+            for row in rows
+            if _normalize_po_number(row['po_number']) == po_filter_key
+        ]
     if q:
         q_upper = q.upper()
         rows = [

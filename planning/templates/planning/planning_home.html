@@ -68,8 +68,10 @@
                                         </form>
                                     {% endif %}
                                 {% endif %}
-                                {% if job.effective_status == 'qc_approved' or job.effective_status == 'released' %}
-                                    <a href="{% url 'planning:job_card_print' job.id %}" class="erp-btn erp-btn-success sm">Print</a>
+                                {% if job.job_card %}
+                                    {% if job.job_card.workflow_status == 'production_approved' or job.job_card.workflow_status == 'released' or job.job_card.workflow_status == 'in_production' or job.job_card.workflow_status == 'completed' or job.job_card.workflow_status == 'closed' %}
+                                        <a href="{% url 'planning:job_card_print' job.id %}" class="erp-btn erp-btn-success sm">Print</a>
+                                    {% endif %}
                                 {% endif %}
                             </div>
                         </td>

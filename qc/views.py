@@ -49,10 +49,8 @@ logger = logging.getLogger(__name__)
 @login_required
 @permission_required('can_view_approval_queue')
 def approval_queue(request):
-    """JobCard approval queue for QC, production manager, and release gates."""
+    """JobCard approval queue for QC inspection only."""
     qc_jobs = job_card_queue_queryset('qc')
-    pm_jobs = job_card_queue_queryset('production_manager')
-    release_jobs = job_card_queue_queryset('production')
     queue_q = (request.GET.get('q') or '').strip()
 
     if request.method == 'POST':
@@ -131,39 +129,21 @@ def approval_queue(request):
             | Q(planning_job__sku__icontains=queue_q)
         )
         qc_jobs = qc_jobs.filter(queue_filter)
-        pm_jobs = pm_jobs.filter(queue_filter)
-        release_jobs = release_jobs.filter(queue_filter)
 
     qc_jobs = qc_jobs.order_by('-updated_at', '-id')[:300]
-    pm_jobs = pm_jobs.order_by('-updated_at', '-id')[:300]
-    release_jobs = release_jobs.order_by('-updated_at', '-id')[:300]
 
-    if queue_q and not (qc_jobs or pm_jobs or release_jobs):
+    if queue_q and not qc_jobs:
         logger.info('QC queue search had no matches for query="%s"', queue_q)
 
     # Dashboard counters (display only)
     profile = getattr(request.user, 'profile', None)
     pending_qc_jobs_count = qc_jobs.count()
-    pending_pm_jobs_count = pm_jobs.count()
-    released_jobs_count = JobCard.objects.filter(is_active=True, status='released').count()
-    pending_sku_approval_count = SkuRecipe.objects.filter(is_active=True, master_data_status='pending_review').count()
-
-    sku_reviewed_count = SkuRecipe.objects.filter(is_active=True, master_data_status='reviewed').count()
-    sku_approved_count = SkuRecipe.objects.filter(is_active=True, master_data_status='approved').count()
 
     context = {
         'qc_jobs': qc_jobs,
-        'pm_jobs': pm_jobs,
-        'release_jobs': release_jobs,
         'queue_q': queue_q,
         'pending_qc_jobs_count': pending_qc_jobs_count,
-        'pending_pm_jobs_count': pending_pm_jobs_count,
-        'released_jobs_count': released_jobs_count,
-        'pending_sku_approval_count': pending_sku_approval_count,
-        'sku_reviewed_count': sku_reviewed_count,
-        'sku_approved_count': sku_approved_count,
         'user_can_approve_qc': profile.can_approve_qc() if profile else False,
-        'user_can_approve_pm': profile.can_approve_pm() if profile else False,
     }
     context['can_admin_actions'] = _user_is_admin(request.user)
     return render(request, 'qc/approval_queue.html', context)

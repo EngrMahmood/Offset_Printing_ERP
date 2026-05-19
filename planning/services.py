@@ -1,8 +1,10 @@
 import io
 import json
+import re
 from datetime import datetime, date
 from decimal import Decimal
 from collections import defaultdict
+from difflib import SequenceMatcher
 from django.db import transaction
 from django.db.models import Sum, Q
 from django.db.models.functions import Upper
@@ -44,6 +46,17 @@ def _normalize_purchase_material_origin(raw_value):
     if value in {'import', 'imported'}:
         return 'import'
     return ''
+
+
+def _normalize_po_number(raw_value):
+    value = (raw_value or '').strip().upper()
+    if not value:
+        return ''
+    if value.startswith('PO'):
+        match = re.search(r'(\d+)$', value)
+        if match:
+            return match.group(1)
+    return re.sub(r'[^A-Z0-9]+', '', value)
 
 
 def _build_job_card_pdf_bytes(job, scan_url):
