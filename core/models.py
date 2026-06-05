@@ -923,6 +923,7 @@ class UserProfile(models.Model):
         ('planner', 'Planner — Create & manage job cards, view analytics'),
         ('production_manager', 'Production Manager — Final approval and release'),
         ('production', 'Production Supervisor — Manage production entries & team'),
+        ('graphics_designer', 'Graphics Designer — Manage plate request workflow'),
         ('operator', 'Machine Operator — Production entry only'),
         ('dispatch', 'Dispatch Coordinator — Dispatch approval & tracking'),
         ('qc', 'QC Inspector — Quality checks & approvals'),
@@ -942,24 +943,23 @@ class UserProfile(models.Model):
         default=False,
         help_text="Allow this user to approve/reject SKUs in master review"
     )
-    can_create_plate_request = models.BooleanField(
-        default=False,
-        help_text="Allow this user to create printing plate requests"
-    )
-    can_send_plate = models.BooleanField(
-        default=False,
-        help_text="Allow this user to mark plate requests as sent to vendor"
-    )
-    can_receive_plate = models.BooleanField(
-        default=False,
-        help_text="Allow this user to mark plate requests as received from vendor"
-    )
-    can_archive_plate = models.BooleanField(
-        default=False,
-        help_text="Allow this user to archive printing plate requests"
-    )
-    
+
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def can_view_plate_queue(self):
+        return self.normalized_role in ('admin', 'manager', 'planner', 'production_manager', 'graphics_designer')
+
+    def can_create_plate_request(self):
+        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
+
+    def can_send_plate(self):
+        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
+
+    def can_receive_plate(self):
+        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
+
+    def can_archive_plate(self):
+        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:

@@ -10,7 +10,7 @@ from .models import PlateRequest
 class GraphicsDesignerAccessMixin(UserPassesTestMixin):
     def test_func(self):
         profile = getattr(self.request.user, 'profile', None)
-        return bool(profile and getattr(profile, 'can_view_plate_queue', False))
+        return bool(profile and profile.can_view_plate_queue())
 
 
 class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
