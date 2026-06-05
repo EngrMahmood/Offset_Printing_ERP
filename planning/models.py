@@ -796,19 +796,3 @@ class PlateRequest(models.Model):
         if self.planning_job and self.planning_job.planned_total_impressions is not None:
             return self.planning_job.planned_total_impressions
         return None
-
-
-class PoDocument(models.Model):
-    STATUS_CHOICES = [
-        ('pending', 'Pending'),
-        ('processed', 'Processed'),
-        ('failed', 'Failed'),
-    ]
-
-    planning_job = models.ForeignKey(
-        PlanningJob,
-        on_delete=models.SET_NULL,
-        null=True,
-        blank=True,
-        related_name='po_documents',
-    )
