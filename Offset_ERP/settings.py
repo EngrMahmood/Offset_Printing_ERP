@@ -39,6 +39,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'core',
     'planning',
+    'printing_plates',
     'migration',
     'qc',
     'workflow',

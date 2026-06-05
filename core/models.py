@@ -869,6 +869,7 @@ class ChangeLog(models.Model):
         ('job_card', 'Job Card'),
         ('production', 'Production'),
         ('dispatch', 'Dispatch'),
+        ('plate_request', 'Plate Request'),
     ]
 
     ACTION_CHOICES = [
@@ -883,6 +884,10 @@ class ChangeLog(models.Model):
         ('start_production', 'Start Production'),
         ('complete', 'Completed'),
         ('close', 'Closed'),
+        ('send_plate', 'Sent to Vendor'),
+        ('receive_plate', 'Received from Vendor'),
+        ('mark_available', 'Available for Production'),
+        ('archive', 'Archived'),
     ]
 
     entity_type = models.CharField(max_length=20, choices=ENTITY_CHOICES)
