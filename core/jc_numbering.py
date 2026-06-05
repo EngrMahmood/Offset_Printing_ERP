@@ -7,7 +7,7 @@ from django.utils import timezone
 from core.models import JobCard, SequenceCounter
 
 
-_JC_PATTERN = re.compile(r'^JC-\d{2}-\d{2}-(\d+)(?:\.\d+)?$')
+_JC_PATTERN = re.compile(r'^JC-\d{2}-\d{2}-(?:PP-)?(\d+)(?:\.\d+)?$')
 
 
 def _extract_serial(jc_number):
@@ -45,7 +45,7 @@ def _max_existing_jc_serial():
 
 @transaction.atomic
 def allocate_next_jc_number(for_date=None):
-    """Allocate the next JC number in format JC-MM-YY-#### with DB locking."""
+    """Allocate the next JC number in format JC-MM-YY-PP-#### with DB locking."""
     counter, _ = SequenceCounter.objects.select_for_update().get_or_create(
         key='jc_global',
         defaults={'last_value': 0},
@@ -59,4 +59,5 @@ def allocate_next_jc_number(for_date=None):
     counter.save(update_fields=['last_value', 'updated_at'])
 
     date_value = for_date or timezone.localdate()
-    return f"JC-{date_value:%m}-{date_value:%y}-{counter.last_value:04d}"
+    suffix = 'PP-'
+    return f"JC-{date_value:%m}-{date_value:%y}-{suffix}{counter.last_value:04d}"

@@ -461,6 +461,8 @@ def sync_job_card_for_planning_status(job, target_status, actor):
 
     if job_card.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES:
         submit_to_qc(job_card, actor=actor, reason='Planning job sent to QC')
+    elif job_card.workflow_status == 'planning_approved':
+        submit_to_qc(job_card, actor=actor, reason='Planning job sent to QC')
     elif job_card.workflow_status == 'qc_rejected':
         submit_to_qc(job_card, actor=actor, reason='Reopened QC rejected job card for QC resubmit')
     return job_card

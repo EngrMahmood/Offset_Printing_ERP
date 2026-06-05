@@ -67,6 +67,7 @@ from .models import (
     PLANNING_QC_GATE_STATUSES,
     PLANNING_STATUS_ALIASES,
     PLANNING_STATUS_CHOICES,
+    PLANNING_STAGE_CHOICES,
     JobCardLayout,
     PlanningDispatchRun,
     PlanningJob,
@@ -98,6 +99,23 @@ from workflow.services import (
     _user_is_admin,
 )
 from .po_extractor import extract_po_from_pdf
+
+
+def _clear_ignored_sku_from_po_docs(po_number, sku):
+    if not po_number or not sku:
+        return 0
+    normalized_sku = _sku_key(sku)
+    updated_count = 0
+    for doc in PoDocument.objects.filter(extracted_payload__po_number__iexact=po_number):
+        payload = doc.extracted_payload or {}
+        current_ignored = [s for s in (payload.get('new_skus_ignored') or []) if s]
+        remaining_ignored = [s for s in current_ignored if _sku_key(s) != normalized_sku]
+        if len(remaining_ignored) != len(current_ignored):
+            payload['new_skus_ignored'] = sorted(remaining_ignored)
+            doc.extracted_payload = payload
+            doc.save(update_fields=['extracted_payload'])
+            updated_count += 1
+    return updated_count
 
 
 PLANNING_STATUSES = PLANNING_STATUS_CHOICES
@@ -255,7 +273,7 @@ def _job_card_layout_field_labels():
         'po_number': 'PO Number',
         'pr_reference': 'PR Reference',
         'order_qty': 'Order Qty',
-        'po_received_date': 'PO Received',
+        'po_delivery_date': 'PO Delivery Date',
         'delivery_date': 'Delivery Date',
         'destination': 'Delivery Location',
         'department': 'Department',
@@ -306,7 +324,7 @@ def _build_job_card_layout_context(job):
         'po_number': _format_layout_field_value(job.po_number),
         'pr_reference': _format_layout_field_value(job.pr_reference),
         'order_qty': _format_layout_field_value(job.order_qty),
-        'po_received_date': _format_layout_field_value(job.po_received_date),
+        'po_delivery_date': _format_layout_field_value(job.plan_date),
         'delivery_date': _format_layout_field_value(job.delivery_date),
         'destination': job.destination,
         'department': job.department,
@@ -624,6 +642,7 @@ def planning_sku_recipes_list(request):
 @login_required
 def planning_home(request):
     _user_can_plan = getattr(getattr(request.user, 'profile', None), 'can_plan', lambda: False)()
+    user_can_release = _user_can_plan
     queryset = PlanningJob.objects.select_related('job_card').filter(
         is_active=True,
     )
@@ -729,7 +748,7 @@ def planning_home(request):
             messages.success(request, f'Bulk delete complete. Deleted {deleted_count} jobs.')
             return redirect('planning:jobs')
 
-        if action in {'hold', 'release_hold', 'archive', 'delete'}:
+        if action in {'hold', 'release_hold', 'archive', 'delete', 'update_planning_stage', 'request_change'}:
             job_id = request.POST.get('job_id')
             try:
                 job_id = int(job_id)
@@ -740,6 +759,31 @@ def planning_home(request):
             job = get_object_or_404(PlanningJob, id=job_id)
             if action == 'delete' and not _user_is_admin(request.user):
                 messages.error(request, 'Only administrators can delete planning jobs.')
+                return redirect('planning:jobs')
+
+            if action == 'request_change':
+                change_reason = (request.POST.get('change_reason') or '').strip()
+                if not change_reason:
+                    messages.error(request, 'A reason is required to request a change.')
+                    return redirect('planning:jobs')
+                job.change_request_pending = True
+                job.change_request_reason = change_reason
+                job.change_requested_by = request.user
+                job.change_requested_at = timezone.now()
+                job.save(update_fields=['change_request_pending', 'change_request_reason', 'change_requested_by', 'change_requested_at', 'updated_at'])
+                messages.success(request, f'Change request for {job.jc_number} has been submitted to administrators.')
+                return redirect('planning:jobs')
+
+            if action == 'update_planning_stage':
+                planning_stage = (request.POST.get('planning_stage') or '').strip()
+                valid_stages = [choice[0] for choice in PLANNING_STAGE_CHOICES]
+                if planning_stage not in valid_stages:
+                    messages.error(request, 'Please select a valid planning stage.')
+                    return redirect('planning:jobs')
+                job.planning_stage = planning_stage
+                job.save(update_fields=['planning_stage', 'updated_at'])
+                stage_display = dict(PLANNING_STAGE_CHOICES).get(planning_stage, 'Not Set')
+                messages.success(request, f'Planning job {job.jc_number} stage updated to: {stage_display}.')
                 return redirect('planning:jobs')
 
             if action == 'hold':
@@ -764,6 +808,30 @@ def planning_home(request):
                 messages.success(request, f'Planning job {job.jc_number} hold was released.')
                 return redirect('planning:jobs')
 
+            if action == 'release_for_production':
+                if not user_can_release:
+                    messages.error(request, 'You do not have permission to release jobs for production.')
+                    return redirect('planning:jobs')
+                if not job.job_card:
+                    messages.error(request, f'Job Card missing for planning job {job.jc_number}.')
+                    return redirect('planning:jobs')
+                plate_set_no = (request.POST.get('plate_set_no') or '').strip()
+                if plate_set_no:
+                    job.plate_set_no = plate_set_no
+                    job.save(update_fields=['plate_set_no', 'updated_at'])
+                try:
+                    execute_job_card_action(job.job_card, 'release_for_production', actor=request.user, reason='Released from planning jobs list')
+                    messages.success(request, f'Planning job {job.jc_number} was released for production.')
+                except ValidationError as exc:
+                    error_dict = getattr(exc, 'message_dict', None)
+                    if error_dict:
+                        for field_errors in error_dict.values():
+                            for error_message in field_errors:
+                                messages.error(request, f'{job.jc_number}: {error_message}')
+                    else:
+                        messages.error(request, f'{job.jc_number}: {exc}')
+                return redirect('planning:jobs')
+
             if action == 'archive':
                 reason = (request.POST.get('reason') or '').strip()
                 job.is_active = False
@@ -781,6 +849,7 @@ def planning_home(request):
 
     q = (request.GET.get('q') or '').strip()
     status_filter = _normalize_status(request.GET.get('status'), default='')
+    stage_filter = (request.GET.get('planning_stage') or '').strip()
     department_filter = (request.GET.get('department') or '').strip()
     machine_filter = (request.GET.get('machine') or '').strip()
     from_date = _parse_date_filter(request.GET.get('from_date'))
@@ -795,6 +864,13 @@ def planning_home(request):
         )
     if status_filter:
         queryset = queryset.filter(status__in=_planning_status_filter_values(status_filter))
+    if stage_filter:
+        if stage_filter == 'in_production':
+            queryset = queryset.filter(
+                Q(planning_stage='in_production') | Q(status='in_production')
+            )
+        else:
+            queryset = queryset.filter(planning_stage=stage_filter)
     if department_filter:
         queryset = queryset.filter(department__icontains=department_filter)
     if machine_filter:
@@ -851,11 +927,13 @@ def planning_home(request):
                 (value, label)
                 for value, label in PLANNING_STATUSES
             ],
+            'stage_choices': PLANNING_STAGE_CHOICES,
             'can_admin_actions': _user_is_admin(request.user),
             'user_can_plan': _user_can_plan,
             'filters': {
                 'q': q,
                 'status': status_filter,
+                'planning_stage': stage_filter,
                 'department': department_filter,
                 'machine': machine_filter,
                 'from_date': request.GET.get('from_date', ''),
@@ -891,6 +969,7 @@ def planning_jobs_archived(request):
                     job.restored_at = timezone.now()
                     job.restore_reason = reason
                     job.save(update_fields=['is_active', 'restored_by', 'restored_at', 'restore_reason', 'updated_at'])
+                    _clear_ignored_sku_from_po_docs(job.po_number, job.sku)
                     restored_count += 1
                 messages.success(request, f'Bulk restore complete. Restored {restored_count} jobs.')
                 return redirect('planning:jobs_archived')
@@ -919,6 +998,7 @@ def planning_jobs_archived(request):
             job.restored_at = timezone.now()
             job.restore_reason = reason
             job.save(update_fields=['is_active', 'restored_by', 'restored_at', 'restore_reason', 'updated_at'])
+            _clear_ignored_sku_from_po_docs(job.po_number, job.sku)
             messages.success(request, f'Planning job {job.jc_number} was restored from archive.')
             return redirect('planning:jobs_archived')
 
@@ -1185,9 +1265,12 @@ def planning_job_edit(request, job_id):
     _repair_rejected_job_status(job)
     current_status = _normalize_status(job.status)
 
-    if current_status in {'qc_approved', 'released', 'in_production', 'completed'}:
+    locked_statuses = {'qc_approved', 'released', 'in_production', 'completed'}
+    if current_status in locked_statuses and not job.change_request_pending:
         messages.error(request, 'QC approved and released records are locked. Reopen the job before editing.')
         return redirect('planning:job_detail', job_id=job.id)
+    if current_status in locked_statuses and job.change_request_pending:
+        messages.warning(request, 'This job has a pending change request. You may edit the job details and save changes to resolve the request.')
 
     if request.method == 'POST':
         form = PlanningJobEditForm(request.POST, instance=job)
@@ -1230,6 +1313,12 @@ def planning_job_edit(request, job_id):
                 else:
                     form.add_error(None, str(exc))
             else:
+                if request.POST.get('submit_to_qc'):
+                    return _submit_job_to_qc(
+                        edited,
+                        request,
+                        next_url=reverse('planning:job_detail', kwargs={'job_id': edited.id}),
+                    )
                 messages.success(request, f'Planning job {edited.jc_number} updated.')
                 if edited.has_edits_since_creation and (edited.repeat_flag or '').lower() == 'repeat':
                     messages.info(request, f"Changes detected and flagged for production team: {', '.join(edited.edited_fields_list)}")
@@ -1251,6 +1340,78 @@ def planning_job_edit(request, job_id):
             'can_admin_delete': _user_is_admin(request.user),
         },
     )
+
+
+def _submit_job_to_qc(job, request, next_url=None):
+    current_status = _normalize_status(job.status)
+    if current_status != 'draft':
+        messages.error(request, 'Job must be in draft before QC submission.')
+        return redirect(next_url or 'planning:job_detail', job_id=job.id)
+
+    approved_recipe = SkuRecipe.objects.filter(
+        sku__iexact=job.sku,
+        is_active=True,
+        master_data_status='approved',
+    ).first()
+    if not approved_recipe:
+        messages.error(request, f'SKU recipe for {job.sku or "this job"} is missing or not approved.')
+        return redirect(next_url or 'planning:job_detail', job_id=job.id)
+
+    planning_required_fields = [
+        ('machine_name', 'Machine Name'),
+        ('wastage_sheets', 'Wastage Sheets'),
+        ('plate_set_no', 'Plate Set No'),
+        ('purchase_material_origin', 'Purchase Material Origin'),
+    ]
+    missing_planning_fields = []
+    for field_name, field_label in planning_required_fields:
+        value = getattr(job, field_name, None)
+        if value is None or (isinstance(value, str) and not value.strip()):
+            missing_planning_fields.append(field_label)
+
+    if missing_planning_fields:
+        messages.error(
+            request,
+            f'Complete planning fields before Submit to QC: {", ".join(missing_planning_fields)}.',
+        )
+        return redirect(next_url or 'planning:job_edit', job_id=job.id)
+
+    qc_validation_errors = job.qc_validation_errors()
+    if qc_validation_errors:
+        for field_errors in qc_validation_errors.values():
+            for error_message in field_errors if isinstance(field_errors, list) else [field_errors]:
+                messages.error(request, error_message)
+        return redirect(next_url or 'planning:job_edit', job_id=job.id)
+
+    job.status = 'pending_qc'
+    job.issued_to_production = False
+    try:
+        with transaction.atomic():
+            job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
+            try:
+                sync_job_card_for_planning_status(job, 'pending_qc', request.user)
+            except ValidationError as exc:
+                transaction.set_rollback(True)
+                error_dict = getattr(exc, 'message_dict', None)
+                if error_dict:
+                    for field_errors in error_dict.values():
+                        for error_message in field_errors:
+                            messages.error(request, error_message)
+                else:
+                    messages.error(request, str(exc))
+                return redirect(next_url or 'planning:job_edit', job_id=job.id)
+    except ValidationError as exc:
+        error_dict = getattr(exc, 'message_dict', None)
+        if error_dict:
+            for field_errors in error_dict.values():
+                for error_message in field_errors:
+                    messages.error(request, error_message)
+        else:
+            messages.error(request, str(exc))
+        return redirect(next_url or 'planning:job_edit', job_id=job.id)
+
+    messages.success(request, f'Job status updated: draft -> pending_qc.')
+    return redirect(next_url or 'planning:job_detail', job_id=job.id)
 
 
 @login_required
@@ -1430,7 +1591,8 @@ def planning_job_card_print(request, job_id):
             return str(value)
 
     repeat_flag = (job.repeat_flag or '').strip().lower()
-    if 'repeat' in repeat_flag or repeat_flag in {'r', 'old', 'existing'}:
+    is_repeat = 'repeat' in repeat_flag or repeat_flag in {'r', 'old', 'existing'}
+    if is_repeat:
         production_type_tag = 'REPEAT'
     else:
         production_type_tag = 'NEW'
@@ -1440,13 +1602,10 @@ def planning_job_card_print(request, job_id):
     color_spec_clean = (job.color_spec_display or '').strip() or '-'
 
     special_notes = []
-    if recipe:
+    if recipe and not is_repeat:
         recipe_special = (getattr(recipe, 'special_instructions', '') or '').strip()
-        recipe_notes = (getattr(recipe, 'notes', '') or '').strip()
         if recipe_special:
             special_notes.append(recipe_special)
-        if recipe_notes and recipe_notes not in special_notes:
-            special_notes.append(recipe_notes)
     requirement_note = (job.requirement or '').strip()
     if requirement_note and requirement_note not in special_notes:
         special_notes.append(requirement_note)
@@ -1489,7 +1648,7 @@ def planning_job_card_print(request, job_id):
             'job_scan_url': job_scan_url,
             'job_qr_data_uri': job_qr_data_uri,
             'production_type_tag': production_type_tag,
-            'po_received_date_display': job.po_received_date,
+            'plan_date': job.plan_date,
             'po_approval_date_display': po_approval_date,
             'material_type_clean': material_type_clean,
             'color_spec_clean': color_spec_clean,
@@ -1564,10 +1723,14 @@ def approval_queue(request):
     user_can_approve_planning = profile.can_approve_planning() if profile else False
     user_can_approve_qc = profile.can_approve_qc() if profile else False
     user_can_approve_pm = profile.can_approve_pm() if profile else False
+    user_can_release = user_can_approve_pm or (profile.can_plan() if profile else False)
+
+    change_requests = PlanningJob.objects.filter(is_active=True, change_request_pending=True).order_by('-change_requested_at')
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         job_card_id = (request.POST.get('job_card_id') or '').strip()
+        planning_job_id = (request.POST.get('planning_job_id') or '').strip()
         reason = (request.POST.get('reason') or request.POST.get('change_reason') or '').strip()
 
         def _get_job_card():
@@ -1575,8 +1738,29 @@ def approval_queue(request):
                 raise ValueError('Job Card is required.')
             return get_object_or_404(JobCard, pk=job_card_id, is_active=True)
 
+        def _get_planning_job():
+            if not planning_job_id:
+                raise ValueError('Planning job is required.')
+            return get_object_or_404(PlanningJob, pk=planning_job_id, is_active=True)
+
         def _sync_status(job_card, transition_name):
             return execute_job_card_action(job_card, transition_name, actor=request.user, reason=reason)
+
+        if action == 'resolve_change_request':
+            if not _user_is_admin(request.user):
+                messages.error(request, 'Only administrators can resolve change requests.')
+                return redirect('planning:approval_queue')
+            try:
+                planning_job = _get_planning_job()
+                planning_job.change_request_pending = False
+                planning_job.change_request_reason = ''
+                planning_job.change_requested_by = None
+                planning_job.change_requested_at = None
+                planning_job.save(update_fields=['change_request_pending', 'change_request_reason', 'change_requested_by', 'change_requested_at', 'updated_at'])
+                messages.success(request, f'Change request for {planning_job.jc_number} has been resolved.')
+            except (ValueError, Http404):
+                messages.error(request, 'Invalid planning job selected.')
+            return redirect('planning:approval_queue')
 
         if action in {
             'approve_planning', 'reject_planning',
@@ -1593,11 +1777,21 @@ def approval_queue(request):
             if action in {'approve_qc', 'reject_qc'} and not user_can_approve_qc:
                 messages.error(request, 'You do not have permission to approve QC jobs.')
                 return redirect('planning:approval_queue')
-            if action in {'approve_pm', 'reject_pm', 'release_for_production'} and not user_can_approve_pm:
+            if action in {'approve_pm', 'reject_pm'} and not user_can_approve_pm:
                 messages.error(request, 'You do not have permission to approve production manager jobs.')
+                return redirect('planning:approval_queue')
+            if action == 'release_for_production' and not user_can_release:
+                messages.error(request, 'You do not have permission to release jobs for production.')
                 return redirect('planning:approval_queue')
 
             job_card = _get_job_card()
+            if action == 'release_for_production':
+                plate_set_no = (request.POST.get('plate_set_no') or '').strip()
+                planning_job = getattr(job_card, 'planning_job', None)
+                if plate_set_no and planning_job:
+                    planning_job.plate_set_no = plate_set_no
+                    planning_job.save(update_fields=['plate_set_no', 'updated_at'])
+
             try:
                 _sync_status(job_card, action)
                 messages.success(request, f'Job Card {job_card.job_card_no} moved successfully.')
@@ -1633,15 +1827,37 @@ def approval_queue(request):
     approved_qc_jobs_count = JobCard.objects.filter(is_active=True, status='qc_approved').count()
     pending_pm_jobs_count = pm_jobs.count()
     released_jobs_count = JobCard.objects.filter(is_active=True, status='released').count()
-    pending_sku_approval_count = SkuRecipe.objects.filter(is_active=True, master_data_status='pending_review').count()
-    sku_reviewed_count = SkuRecipe.objects.filter(is_active=True, master_data_status='reviewed').count()
-    sku_approved_count = SkuRecipe.objects.filter(is_active=True, master_data_status='approved').count()
+
+    active_sku_keys = set()
+    for payload in PoDocument.objects.exclude(extracted_payload__isnull=True).values_list('extracted_payload', flat=True):
+        for item in _po_payload_items(payload or {}):
+            sku = (item.get('sku') or '').strip()
+            if sku:
+                active_sku_keys.add(_sku_key(sku))
+    active_sku_keys.update(
+        _sku_key(sku)
+        for sku in PlanningJob.objects.filter(is_active=True).values_list('sku', flat=True)
+        if sku
+    )
+
+    if active_sku_keys:
+        sku_query = Q()
+        for sku in active_sku_keys:
+            sku_query |= Q(sku__iexact=sku)
+        pending_sku_approval_count = SkuRecipe.objects.filter(is_active=True, master_data_status='pending_review').filter(sku_query).count()
+        sku_reviewed_count = SkuRecipe.objects.filter(is_active=True, master_data_status='reviewed').filter(sku_query).count()
+        sku_approved_count = SkuRecipe.objects.filter(is_active=True, master_data_status='approved').filter(sku_query).count()
+    else:
+        pending_sku_approval_count = 0
+        sku_reviewed_count = 0
+        sku_approved_count = 0
 
     context = {
         'planning_jobs': planning_jobs,
         'qc_jobs': qc_jobs,
         'pm_jobs': pm_jobs,
         'release_jobs': release_jobs,
+        'change_requests': change_requests,
         'queue_q': queue_q,
         'pending_qc_jobs_count': pending_qc_jobs_count,
         'approved_qc_jobs_count': approved_qc_jobs_count,
@@ -1653,6 +1869,7 @@ def approval_queue(request):
         'user_can_approve_planning': user_can_approve_planning,
         'user_can_approve_qc': user_can_approve_qc,
         'user_can_approve_pm': user_can_approve_pm,
+        'user_can_release': user_can_release,
     }
     context['can_admin_actions'] = _user_is_admin(request.user)
     return render(request, 'planning/approval_queue.html', context)
@@ -1661,7 +1878,7 @@ def approval_queue(request):
 @login_required
 @permission_required('can_edit_jobcard')
 def planning_report(request):
-    queryset = PlanningJob.objects.all()
+    queryset = PlanningJob.objects.filter(is_active=True)
 
     from_date = _parse_date_filter(request.GET.get('from_date'))
     to_date = _parse_date_filter(request.GET.get('to_date'))
@@ -2572,6 +2789,16 @@ def pending_skus(request):
             payload['new_skus_ignored'] = sorted(ignored)
             po_doc.extracted_payload = payload
             po_doc.save(update_fields=['extracted_payload'])
+
+            po_number = (payload.get('po_number') or '').strip()
+            if po_number:
+                PlanningJob.objects.filter(
+                    po_number__iexact=po_number,
+                    sku__iexact=sku,
+                    status__iexact='draft',
+                    is_active=True,
+                ).update(is_active=False, updated_at=timezone.now())
+
             messages.success(request, f'SKU {sku} will be ignored and removed from pending processing.')
             return _redirect_pending()
 
@@ -2802,7 +3029,7 @@ def pending_skus_ignored(request):
 
             if not po_doc or not sku:
                 messages.error(request, 'Invalid PO or SKU for unignore action.')
-                return redirect('qc:pending_skus_ignored')
+                return redirect('planning:pending_skus_ignored')
 
             payload = po_doc.extracted_payload or {}
             ignored = [s for s in (payload.get('new_skus_ignored') or []) if s]
@@ -2811,8 +3038,17 @@ def pending_skus_ignored(request):
             payload['new_skus_ignored'] = sorted(kept)
             po_doc.extracted_payload = payload
             po_doc.save(update_fields=['extracted_payload'])
-            messages.success(request, f'SKU {sku} restored to the pending queue.')
-            return redirect('qc:pending_skus_ignored')
+            
+            # Reactivate archived planning jobs for this SKU and PO
+            po_number = payload.get('po_number') or ''
+            reactivated = PlanningJob.objects.filter(
+                po_number__iexact=po_number,
+                sku__iexact=sku,
+                is_active=False,
+            ).update(is_active=True, updated_at=timezone.now())
+            
+            messages.success(request, f'SKU {sku} restored to the pending queue. Reactivated {reactivated} planning job(s).')
+            return redirect('planning:pending_skus_ignored')
 
     po_filter = (request.GET.get('po') or '').strip()
     q = (request.GET.get('q') or '').strip()
@@ -2875,7 +3111,7 @@ def pending_skus_ignored(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_sku_master_review_queue')
 @transaction.atomic
 def pending_sku_master_entry(request):
     """Open a focused form for one pending SKU and send it through master-data approval flow."""
@@ -2884,6 +3120,17 @@ def pending_sku_master_entry(request):
     return_po = (request.GET.get('return_po') or request.POST.get('return_po') or '').strip()
     return_q = (request.GET.get('return_q') or request.POST.get('return_q') or '').strip()
     is_readonly = (request.GET.get('readonly') or request.POST.get('readonly') or '').strip() in {'1', 'true', 'yes'}
+
+    profile = getattr(request.user, 'profile', None)
+    if not is_readonly and not (profile and profile.can_edit_jobcard()):
+        messages.error(request, 'You do not have permission to edit this SKU master entry.')
+        params = {}
+        if return_po:
+            params['po'] = return_po
+        if return_q:
+            params['q'] = return_q
+        target = reverse('qc:pending_skus')
+        return redirect(f'{target}?{urlencode(params)}' if params else target)
 
     def _redirect_pending():
         params = {}
@@ -3072,6 +3319,7 @@ def po_inbox(request):
 
             po_doc_id = (request.POST.get('po_doc_id') or '').strip()
             po_number = (request.POST.get('po_number') or '').strip()
+            doc = None
 
             if po_doc_id:
                 try:
@@ -3080,35 +3328,43 @@ def po_inbox(request):
                     messages.error(request, 'Invalid PO document selected for delete action.')
                     return redirect('planning:po_inbox')
 
+                payload = doc.extracted_payload or {}
+                po_number = (payload.get('po_number') or '').strip() or po_number
+
+            if po_number:
+                po_number_key = po_number
+                docs_to_delete = PoDocument.objects.filter(extracted_payload__po_number__iexact=po_number_key)
+                deleted_docs = docs_to_delete.count()
+                for po_doc in docs_to_delete:
+                    try:
+                        if po_doc.po_file:
+                            po_doc.po_file.delete(save=False)
+                    except Exception:
+                        pass
+                    po_doc.delete()
+
+                job_cards_deleted = JobCard.objects.filter(
+                    Q(planning_job__po_number__iexact=po_number_key) | Q(PO_No__iexact=po_number_key)
+                ).delete()[0]
+                jobs_deleted = PlanningJob.objects.filter(po_number__iexact=po_number_key).delete()[0]
+
+                messages.success(
+                    request,
+                    f'Deleted PO {po_number_key} from ERP: {deleted_docs} intake document(s), {jobs_deleted} planning job(s), {job_cards_deleted} job card(s).',
+                )
+                return redirect('planning:po_inbox')
+
+            if doc:
                 try:
                     if doc.po_file:
                         doc.po_file.delete(save=False)
                 except Exception:
                     pass
                 doc.delete()
-
                 messages.success(request, f'Deleted PO intake document {doc.id}.')
                 return redirect('planning:po_inbox')
 
-            if not po_number:
-                messages.error(request, 'Invalid PO number for delete action.')
-                return redirect('planning:po_inbox')
-
-            docs_to_delete = PoDocument.objects.filter(extracted_payload__po_number__iexact=po_number)
-            count = docs_to_delete.count()
-            if count == 0:
-                messages.error(request, f'No PO intake found for {po_number}.')
-                return redirect('planning:po_inbox')
-
-            for doc in docs_to_delete:
-                try:
-                    if doc.po_file:
-                        doc.po_file.delete(save=False)
-                except Exception:
-                    pass
-                doc.delete()
-
-            messages.success(request, f'Deleted PO intake {po_number} and {count} document(s).')
+            messages.error(request, 'Invalid PO number for delete action.')
             return redirect('planning:po_inbox')
 
     search_query = (request.GET.get('q') or '').strip()
@@ -3517,6 +3773,16 @@ def po_review(request, doc_id):
             payload['new_skus_ignored'] = sorted(ignored)
             po_doc.extracted_payload = payload
             po_doc.save(update_fields=['extracted_payload'])
+
+            po_number = (payload.get('po_number') or '').strip()
+            if po_number:
+                PlanningJob.objects.filter(
+                    po_number__iexact=po_number,
+                    sku__iexact=sku,
+                    status__iexact='draft',
+                    is_active=True,
+                ).update(is_active=False, updated_at=timezone.now())
+
             messages.success(request, f'SKU {sku} ignored and removed from PO intake review.')
             return redirect('qc:po_review', doc_id=po_doc.id)
 

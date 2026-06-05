@@ -927,6 +927,17 @@ class UserProfile(models.Model):
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='operator')
+    
+    # Custom permissions for granular access control
+    can_view_sku_master_review = models.BooleanField(
+        default=False,
+        help_text="Allow this user to view and manage SKU master review queue"
+    )
+    can_approve_sku_master = models.BooleanField(
+        default=False,
+        help_text="Allow this user to approve/reject SKUs in master review"
+    )
+    
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -937,71 +948,87 @@ class UserProfile(models.Model):
     def __str__(self):
         return f"{self.user.username} — {self.get_role_display()}"
     
+    @property
+    def normalized_role(self):
+        return (self.role or '').strip().lower()
+    
     # Permission helpers
     def can_edit_jobcard(self):
         """Can create/edit job cards"""
-        return self.role in ('admin', 'manager', 'planner', 'production_manager')
+        return self.normalized_role in ('admin', 'manager', 'planner', 'production_manager')
 
     def can_approve_planning(self):
         """Can approve the planning queue."""
-        return self.role in ('admin', 'manager', 'planner')
+        return self.normalized_role in ('admin', 'manager', 'planner')
     
     def can_edit_production(self):
         """Can log production data"""
-        return self.role in ('admin', 'manager', 'production_manager', 'production', 'operator')
+        return self.normalized_role in ('admin', 'manager', 'production_manager', 'production', 'operator')
 
     def can_start_production(self):
         """Can move a released JobCard into production execution."""
-        return self.role in ('admin', 'manager', 'production_manager', 'production')
+        return self.normalized_role in ('admin', 'manager', 'production_manager', 'production')
     
     def can_approve_dispatch(self):
         """Can approve/edit dispatch"""
-        return self.role in ('admin', 'manager', 'dispatch')
+        return self.normalized_role in ('admin', 'manager', 'dispatch')
     
     def can_view_analytics(self):
         """Can view dashboard and analytics"""
-        return self.role in ('admin', 'manager', 'planner', 'production', 'dispatch', 'finance')
+        return self.normalized_role in ('admin', 'manager', 'planner', 'production', 'dispatch', 'finance')
     
     def can_manage_masters(self):
         """Can manage machines, operators, materials, departments"""
-        return self.role in ('admin', 'manager', 'production_manager')
+        return self.normalized_role in ('admin', 'manager', 'production_manager')
     
     def can_approve_qc(self):
         """Can perform QC checks"""
-        return self.role in ('admin', 'qc', 'manager')
+        return self.normalized_role in ('admin', 'qc', 'manager')
 
     def can_approve_pm(self):
         """Can perform production manager approval."""
-        return self.role in ('admin', 'manager', 'production_manager')
+        return self.normalized_role in ('admin', 'manager', 'production_manager')
 
     def can_view_planning_queue(self):
-        return self.role in ('admin', 'manager', 'planner', 'production_manager', 'qc')
+        return self.normalized_role in ('admin', 'manager', 'planner', 'production_manager', 'qc')
 
     def can_view_qc_queue(self):
-        return self.role in ('admin', 'manager', 'qc', 'production_manager')
+        return self.normalized_role in ('admin', 'manager', 'qc', 'production_manager')
 
     def can_view_pm_queue(self):
-        return self.role in ('admin', 'manager', 'production_manager')
+        return self.normalized_role in ('admin', 'manager', 'production_manager')
 
     def can_plan(self):
         """Can create, edit, and manage planning jobs (planner role)."""
-        return self.role in ('admin', 'manager', 'planner')
+        return self.normalized_role in ('admin', 'manager', 'planner')
 
     def can_view_approval_queue(self):
         """Can access the approval queue page (view-only or with actions)."""
-        return self.role in ('admin', 'manager', 'planner', 'qc', 'production_manager')
+        return self.normalized_role in ('admin', 'manager', 'planner', 'qc', 'production_manager')
+    
+    def can_view_sku_master_review_queue(self):
+        """Can view SKU master review queue - role-based or custom permission."""
+        if self.can_view_sku_master_review:
+            return True
+        return self.normalized_role in ('admin', 'qc', 'manager', 'planner')
+    
+    def can_approve_sku_master_review(self):
+        """Can approve/reject SKUs in master review - role-based or custom permission."""
+        if self.can_approve_sku_master:
+            return True
+        return self.normalized_role in ('admin', 'qc', 'manager')
     
     def can_manage_operators(self):
         """Can assign operators to shifts/jobs"""
-        return self.role in ('admin', 'manager', 'production_manager', 'production')
+        return self.normalized_role in ('admin', 'manager', 'production_manager', 'production')
 
     def can_archive_records(self):
         """Can archive and restore operational records"""
-        return self.role in ('admin', 'manager', 'production_manager')
+        return self.normalized_role in ('admin', 'manager', 'production_manager')
     
     def can_view_reports(self):
         """Can view financial/operational reports"""
-        return self.role in ('admin', 'manager', 'finance')
+        return self.normalized_role in ('admin', 'manager', 'finance')
 
 
 # =========================

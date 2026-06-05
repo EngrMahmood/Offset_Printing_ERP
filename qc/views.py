@@ -296,7 +296,7 @@ def planner_pending_skus_ignored_redirect(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_sku_master_review_queue')
 def planner_pending_sku_master_entry_redirect(request):
     target = reverse('planning:pending_sku_master_entry')
     query = request.META.get('QUERY_STRING', '')
@@ -304,11 +304,11 @@ def planner_pending_sku_master_entry_redirect(request):
 
 
 @login_required
-@permission_required('can_view_approval_queue')
+@permission_required('can_view_sku_master_review_queue')
 @transaction.atomic
 def master_sku_review_queue(request):
     profile = getattr(request.user, 'profile', None)
-    user_can_approve_qc = profile.can_approve_qc() if profile else False
+    user_can_approve_qc = profile.can_approve_sku_master_review() if profile else False
 
     po_filter = (request.POST.get('return_po') or request.GET.get('po') or '').strip()
     q = (request.POST.get('return_q') or request.GET.get('q') or '').strip()
@@ -533,6 +533,16 @@ def pending_skus(request):
             payload['new_skus_ignored'] = sorted(ignored)
             po_doc.extracted_payload = payload
             po_doc.save(update_fields=['extracted_payload'])
+
+            po_number = (payload.get('po_number') or '').strip()
+            if po_number:
+                PlanningJob.objects.filter(
+                    po_number__iexact=po_number,
+                    sku__iexact=sku,
+                    status__iexact='draft',
+                    is_active=True,
+                ).update(is_active=False, updated_at=timezone.now())
+
             messages.success(request, f'SKU {sku} will be ignored and removed from pending processing.')
             return _redirect_pending()
 

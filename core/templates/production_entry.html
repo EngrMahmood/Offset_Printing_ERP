@@ -307,12 +307,15 @@
                             Machine override is active. This run will use selected fallback machine instead of Job Card machine.
                         </div>
                         <div id="machine_fallback_group" style="display:none;margin-top:8px;">
-                            <select name="machine" id="machine">
-                                <option value="">Select Fallback Machine</option>
-                                {% for machine in machines %}
-                                    <option value="{{ machine.id }}" {% if edit_record.machine_id == machine.id %}selected{% endif %}>{{ machine.name }}</option>
-                                {% endfor %}
-                            </select>
+                            <div class="select-with-add">
+                                <select name="machine" id="machine">
+                                    <option value="">Select Fallback Machine</option>
+                                    {% for machine in machines %}
+                                        <option value="{{ machine.id }}" {% if edit_record.machine_id == machine.id %}selected{% endif %}>{{ machine.name }}</option>
+                                    {% endfor %}
+                                </select>
+                                <button class="plus-btn" type="button" title="Add new machine" onclick="quickAddMaster('machine', 'machine')">+</button>
+                            </div>
                             <div class="hint">No machine is mapped in Job Card. Select fallback machine for this entry.</div>
                         </div>
                     </div>
@@ -587,10 +590,11 @@
             const machineMeta = jobCardMachineMap[selected] || null;
             const machineName = machineMeta && machineMeta.machine_name ? machineMeta.machine_name : '';
             const machineId = machineMeta && machineMeta.machine_id ? String(machineMeta.machine_id) : '';
+            const hasActualMachine = Boolean(machineId);
 
             const overrideOn = machineOverrideInput.checked;
 
-            if (machineName && !overrideOn) {
+            if (machineName && hasActualMachine && !overrideOn) {
                 machineDisplayInput.value = machineName;
                 machineAutoHint.textContent = 'Machine auto-picked from selected Job Card.';
                 machineFallbackGroup.style.display = 'none';
@@ -778,8 +782,14 @@
             }
 
             let employeeCode = '';
+            let machineIdealSpeed = '';
+            let setupPerColor = '';
             if (type === 'operator') {
                 employeeCode = window.prompt('Enter Operator ID / Employee Code (optional):') || '';
+            }
+            if (type === 'machine') {
+                machineIdealSpeed = window.prompt('Enter machine ideal speed (impressions/hour):', '4000') || '4000';
+                setupPerColor = window.prompt('Enter setup minutes per color:', '15') || '15';
             }
 
             const csrf = document.querySelector('input[name="csrfmiddlewaretoken"]').value;
@@ -788,6 +798,10 @@
             payload.append('name', name.trim());
             if (type === 'operator' && employeeCode.trim()) {
                 payload.append('employee_code', employeeCode.trim());
+            }
+            if (type === 'machine') {
+                payload.append('standard_impressions_per_hour', machineIdealSpeed.trim());
+                payload.append('standard_setup_minutes_per_color', setupPerColor.trim());
             }
 
             try {
@@ -817,6 +831,11 @@
                 }
 
                 select.value = String(data.id);
+
+                if (type === 'machine') {
+                    machineSelect.value = String(data.id);
+                }
+
                 window.alert(data.message || 'Added successfully.');
             } catch (error) {
                 window.alert(error.message || 'Something went wrong.');

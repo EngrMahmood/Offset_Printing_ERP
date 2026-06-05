@@ -121,10 +121,11 @@ def _build_job_card_pdf_bytes(job, scan_url):
     ]))
     story.extend([Paragraph('MATERIAL AND WORK PROCESS', section_title_style), Spacer(1, 4), material_table, Spacer(1, 10)])
 
+    recipe = job.sku_recipe
     application_data = [
         [Paragraph('LAMINATION', label_style), _format_job_value(job.application), Paragraph('DIE CUTTING', label_style), _format_job_value(job.die_cutting_display)],
         [Paragraph('ART WORK NO.', label_style), '-', Paragraph('P SET NO.', label_style), _format_job_value(job.plate_set_no)],
-        [Paragraph('SPECIAL INSTRUCTIONS', label_style), _paragraph_text(job.remarks or job.requirement or '-'), '', ''],
+        [Paragraph('SPECIAL INSTRUCTIONS', label_style), _paragraph_text(job.requirement or '-'), '', ''],
     ]
     application_table = Table(application_data, colWidths=[30 * mm, 67 * mm, 30 * mm, 65 * mm], hAlign='LEFT')
     application_table.setStyle(TableStyle([
@@ -187,7 +188,7 @@ def _build_job_card_pdf_bytes(job, scan_url):
         [Paragraph('CUTTING SLIP', section_title_style), '', '', '', '', ''],
         [Paragraph('Job Card #', label_style), _format_job_value(job.jc_number), Paragraph('Job Name', label_style), _format_job_value(job.job_name), Paragraph('Purch sheet size', label_style), _format_job_value(job.purchase_sheet_size)],
         [Paragraph('Purch sheet Ups', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('Print sheet size', label_style), _format_job_value(job.print_sheet_size), Paragraph('Type', label_style), _format_job_value(job.material)],
-        [Paragraph('Purch sheet Qty', label_style), _format_job_value(job.purchase_sheet_required), Paragraph('Remarks', label_style), _paragraph_text(job.remarks or job.requirement or '-'), '', ''],
+        [Paragraph('Purch sheet Qty', label_style), _format_job_value(job.purchase_sheet_required), Paragraph('Remarks', label_style), _paragraph_text(job.remarks or (recipe.notes if recipe else '') or job.requirement or '-'), '', ''],
     ]
     cutting_table = Table(cutting_data, colWidths=[30 * mm, 35 * mm, 30 * mm, 35 * mm, 30 * mm, 35 * mm], hAlign='LEFT')
     cutting_table.setStyle(TableStyle([
@@ -588,7 +589,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'wastage_sheets': wastage_sheets_value,
             'purchase_sheet_required': purchase_sheet_required_value,
             'pkt_value': pkt_value,
-            'remarks': (item.get('remarks') or '').strip() or (existing_job.remarks if existing_job else ''),
+            'remarks': (item.get('remarks') or '').strip() or (existing_job.remarks if existing_job else '') or (recipe.notes if recipe else ''),
             'purchase_material_origin': purchase_material_origin_value,
             'stock_qty': stock_qty_value,
             'balance_qty': balance_qty_value,
@@ -717,6 +718,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'purchase_sheet_ups': recipe.purchase_sheet_ups,
             'daily_demand': recipe.daily_demand,
             'plate_set_no': existing_job.plate_set_no,
+            'remarks': existing_job.remarks or recipe.notes,
         }
 
         if not forward_as_new:

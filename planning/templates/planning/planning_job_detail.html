@@ -29,7 +29,7 @@
             {% with recipe=job.sku_recipe %}
             <div class="erp-info-grid">
                 <div class="erp-info-item"><div class="erp-info-item__label">Job Name</div><div class="erp-info-item__value">{{ job.job_name|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">PO Received</div><div class="erp-info-item__value">{{ job.po_received_date|date:'d M Y'|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">PO Delivery Date</div><div class="erp-info-item__value">{{ job.plan_date|date:'d M Y'|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ job.material_display|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Color</div><div class="erp-info-item__value">{{ job.color_spec_display|default:'-' }}</div></div>
@@ -60,6 +60,43 @@
                 <div class="erp-info-item"><div class="erp-info-item__label">Rejected Qty</div><div class="erp-info-item__value">{{ job.rejected_qty|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Balance Qty</div><div class="erp-info-item__value">{{ job.balance_qty|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Daily Demand</div><div class="erp-info-item__value">{{ job.daily_demand|default:'-' }}</div></div>
+            </div>
+        </div>
+    </div>
+
+    <div class="erp-route-grid">
+        <div class="erp-panel">
+            <div class="erp-panel__header"><h3 class="erp-panel__title">Approval Details</h3></div>
+            <div class="erp-info-grid">
+                <div class="erp-info-item"><div class="erp-info-item__label">Repeat Flag</div><div class="erp-info-item__value">{{ job.repeat_flag|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Plan Month</div><div class="erp-info-item__value">{{ job.plan_month|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Print Pcs</div><div class="erp-info-item__value">{{ job.print_pcs|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet UPS</div><div class="erp-info-item__value">{{ job.purchase_sheet_ups|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheets Required</div><div class="erp-info-item__value">{{ job.purchase_sheet_required_display|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Actual Sheets Required</div><div class="erp-info-item__value">{{ job.actual_sheet_required_display|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value">{{ job.pkt_value|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Unit Cost</div><div class="erp-info-item__value">{{ job.unit_cost|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Stock Bag</div><div class="erp-info-item__value">{{ job.stock_bag|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Stock Qty</div><div class="erp-info-item__value">{{ job.stock_qty|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Requirement</div><div class="erp-info-item__value">{{ job.requirement|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Remarks</div><div class="erp-info-item__value">{{ job.remarks_display|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Front Colors</div><div class="erp-info-item__value">{{ job.front_colors|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Back Colors</div><div class="erp-info-item__value">{{ job.back_colors|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Total Colors</div><div class="erp-info-item__value">{{ job.total_colors|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Total MR Time</div><div class="erp-info-item__value">{{ job.total_mr_time_minutes|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Front Pass</div><div class="erp-info-item__value">{{ job.front_pass|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Back Pass</div><div class="erp-info-item__value">{{ job.back_pass|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Planned Impressions</div><div class="erp-info-item__value">{{ job.planned_total_impressions|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">MI Quantity</div><div class="erp-info-item__value">{{ job.mi_quantity|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">MI Balance</div><div class="erp-info-item__value">{{ job.mi_balance|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Destination</div><div class="erp-info-item__value">{{ job.destination|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Plate Set No</div><div class="erp-info-item__value">{{ job.plate_set_no|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Aging Days</div><div class="erp-info-item__value">{{ job.aging_days|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Issued To Production</div><div class="erp-info-item__value">{{ job.issued_to_production|yesno:'Yes,No' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Hold Reason</div><div class="erp-info-item__value">{{ job.hold_reason|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Hold At</div><div class="erp-info-item__value">{{ job.hold_at|date:'d M Y H:i'|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Last Edited By</div><div class="erp-info-item__value">{% if last_edited_by %}{{ last_edited_by.username }}{% else %}-{% endif %}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Last Edited At</div><div class="erp-info-item__value">{{ last_edited_at|date:'d M Y H:i'|default:'-' }}</div></div>
             </div>
         </div>
     </div>

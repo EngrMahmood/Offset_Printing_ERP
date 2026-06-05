@@ -57,3 +57,15 @@ class QcWorkflowCompatibilityTests(TestCase):
         job.refresh_from_db()
         self.assertEqual(response.status_code, 302)
         self.assertEqual(job.status, 'pending_qc')
+
+    def test_qc_role_case_insensitive_access_to_master_review(self):
+        qc_user = get_user_model().objects.create_user(username='qc_upper', password='testpass123')
+        profile, _ = UserProfile.objects.get_or_create(user=qc_user)
+        profile.role = 'QC'
+        profile.save(update_fields=['role'])
+
+        self.client.logout()
+        self.client.force_login(qc_user)
+
+        response = self.client.get(reverse('qc:master_review'))
+        self.assertEqual(response.status_code, 200)

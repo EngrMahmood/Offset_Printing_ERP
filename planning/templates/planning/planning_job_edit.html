@@ -23,8 +23,7 @@
             <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Order Quantity</div><div class="erp-info-item__value">{{ job.order_qty|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">PO Received Date</div><div class="erp-info-item__value">{{ job.po_received_date|date:'d-m-Y'|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">Planned Date</div><div class="erp-info-item__value">{{ job.plan_date|date:'d-m-Y'|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PO Delivery Date</div><div class="erp-info-item__value">{{ job.plan_date|date:'d-m-Y'|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Delivery Location</div><div class="erp-info-item__value">{{ job.destination|default:'-' }}</div></div>
         </div>
     </section>
@@ -105,19 +104,14 @@
                 {% endfor %}
             </div>
             <div class="erp-form-actions" style="margin-top:14px;">
-                <button class="erp-btn erp-btn-primary" type="submit">Save Changes</button>
+                <button id="saveBtn" class="erp-btn erp-btn-primary" type="submit">Save Changes</button>
+                {% if job.status == 'draft' %}
+                <button class="erp-btn erp-btn-secondary" type="submit" name="submit_to_qc" value="1">Send to QC Approval</button>
+                {% endif %}
                 <a class="erp-btn erp-btn-secondary" href="{% url 'planning:job_detail' job.id %}">Cancel</a>
             </div>
         </form>
         <div class="erp-actions" style="margin-top:12px; gap:8px;">
-            {% if job.status == 'draft' %}
-            <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="erp-inline-form">
-                {% csrf_token %}
-                <input type="hidden" name="transition" value="submit_qc">
-                <input type="hidden" name="next" value="{% url 'planning:job_edit' job.id %}">
-                <button class="erp-btn erp-btn-secondary" type="submit">Send to QC Approval</button>
-            </form>
-            {% endif %}
             {% if can_admin_delete %}
             <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form">
                 {% csrf_token %}

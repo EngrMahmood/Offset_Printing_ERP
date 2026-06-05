@@ -294,10 +294,23 @@ class DepartmentAdmin(admin.ModelAdmin):
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
     """Manage user roles and permissions"""
-    list_display = ['username', 'email', 'role_display', 'created_at']
-    list_filter = ['role', 'created_at']
+    list_display = ['username', 'email', 'role_display', 'sku_review_status', 'created_at']
+    list_filter = ['role', 'can_view_sku_master_review', 'can_approve_sku_master', 'created_at']
     search_fields = ['user__username', 'user__email']
     readonly_fields = ['user', 'created_at', 'updated_at']
+    fieldsets = (
+        ('User Info', {
+            'fields': ('user', 'role')
+        }),
+        ('SKU Master Review Permissions', {
+            'fields': ('can_view_sku_master_review', 'can_approve_sku_master'),
+            'description': 'Grant custom access to SKU master review functions'
+        }),
+        ('Timestamps', {
+            'fields': ('created_at', 'updated_at'),
+            'classes': ('collapse',)
+        }),
+    )
     
     def username(self, obj):
         return obj.user.username
@@ -323,6 +336,15 @@ class UserProfileAdmin(admin.ModelAdmin):
         html = f'<span style="color:{color};font-weight:bold;">{obj.get_role_display()}</span>'
         return mark_safe(html)
     role_display.short_description = 'Role'
+    
+    def sku_review_status(self, obj):
+        """Display SKU master review permission status"""
+        if obj.can_approve_sku_master:
+            return '✓ View & Approve'
+        elif obj.can_view_sku_master_review:
+            return '✓ View Only'
+        return '✗ No Access'
+    sku_review_status.short_description = 'SKU Review Access'
 
 
 # Extend User admin to include UserProfile

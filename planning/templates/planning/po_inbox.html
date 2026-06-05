@@ -84,7 +84,7 @@
                             {% endif %}
                         </td>
                         <td>{{ row.missing_count }}</td>
-                        <td class="erp-muted">{{ row.uploaded|date:'d M Y H:i' }}</td>
+                        <td class="erp-muted">{{ row.uploaded|date:'d M Y H:i:s' }}</td>
                         <td>
                             <div class="erp-actions">
                                 {% if row.repeat_count > 0 %}
@@ -92,6 +92,14 @@
                                 {% endif %}
                                 {% if row.new_count > 0 %}
                                     <a href="{% url 'planning:pending_skus' %}?po={{ row.po_number|urlencode }}" class="erp-btn erp-btn-warning">Master Data</a>
+                                {% endif %}
+                                {% if can_admin_actions %}
+                                    <form method="post" style="display:inline;" onsubmit="return confirm('Are you sure you want to delete this PO intake? This action cannot be undone.');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete_po_intake">
+                                        <input type="hidden" name="po_number" value="{{ row.po_number }}">
+                                        <button type="submit" class="erp-btn erp-btn-danger">Delete</button>
+                                    </form>
                                 {% endif %}
                             </div>
                         </td>

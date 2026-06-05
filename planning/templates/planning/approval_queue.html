@@ -119,6 +119,9 @@
     <button type="button" class="erp-tab" data-target="qc-panel">QC Approval{% if qc_jobs %} ({{ qc_jobs|length }}){% endif %}</button>
     <button type="button" class="erp-tab" data-target="pm-panel">PM Approval{% if pm_jobs %} ({{ pm_jobs|length }}){% endif %}</button>
     <button type="button" class="erp-tab" data-target="release-panel">Release{% if release_jobs %} ({{ release_jobs|length }}){% endif %}</button>
+    {% if can_admin_actions and change_requests %}
+    <button type="button" class="erp-tab" data-target="requested-panel">Requested Changes ({{ change_requests|length }})</button>
+    {% endif %}
 </div>
 
 <!-- Planning Approval Tab Panel -->
@@ -259,7 +262,8 @@
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="reject_qc">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                                <button type="submit" class="erp-btn erp-btn-danger">Reject QC</button>
+                                <input type="hidden" name="reason" value="">
+                                <button type="submit" class="erp-btn erp-btn-danger" onclick="return promptRejectReason(this.form, '{{ job.job_card_no }}')">Reject QC</button>
                             </form>
                             {% endif %}
                             {% if can_admin_actions %}
@@ -397,12 +401,13 @@
                                 <a href="{% url 'planning:job_detail' job.planning_job.id %}" class="erp-btn erp-btn-secondary">View</a>
                                 <a href="{% url 'planning:job_card_print' job.planning_job.id %}" class="erp-btn erp-btn-secondary" target="_blank" rel="noopener">A4 Print</a>
                             {% endif %}
-                            {% if user_can_approve_pm %}
+                            {% if user_can_release %}
                             <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="release_for_production">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                                <button type="submit" class="erp-btn erp-btn-success">Release</button>
+                                <input type="hidden" name="plate_set_no" value="{{ job.planning_job.plate_set_no|default:'' }}">
+                                <button type="submit" class="erp-btn erp-btn-success" onclick="return promptReleasePlateSetNo(this.form, '{{ job.planning_job.plate_set_no|default:''|escapejs }}', '{{ job.job_card_no|escapejs }}')">Release</button>
                             </form>
                             {% endif %}
                             {% if can_admin_actions %}
@@ -424,10 +429,76 @@
     </div>
 </section>
 
+{% if can_admin_actions and change_requests %}
+<section id="requested-panel" class="erp-tab-panel">
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <h3 class="erp-panel__title">Requested Changes</h3>
+            <p class="erp-section-desc">Planner change requests waiting for administrator review.</p>
+        </div>
+        <div class="erp-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th><th>Requested</th><th>Reason</th><th class="erp-col-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in change_requests %}
+                    <tr>
+                        <td><strong>{{ job.jc_number }}</strong></td>
+                        <td>{{ job.po_number|default:'-' }}</td>
+                        <td>{{ job.sku|default:'-' }}</td>
+                        <td>{{ job.job_name|default:'-' }}</td>
+                        <td class="erp-muted">{{ job.change_requested_at|date:'d M Y H:i' }}{% if job.change_requested_by %} by {{ job.change_requested_by.username }}{% endif %}</td>
+                        <td><span class="erp-badge erp-badge-warning" title="{{ job.change_request_reason|default:'No reason provided' }}">{{ job.change_request_reason|truncatechars:32|default:'Change requested' }}</span></td>
+                        <td class="erp-col-actions">
+                            <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-secondary">View</a>
+                            <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-secondary">Edit</a>
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0" style="display:inline-flex;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="resolve_change_request">
+                                <input type="hidden" name="planning_job_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-success" onclick="return confirm('Resolve change request for {{ job.jc_number }}?');">Resolve</button>
+                            </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endif %}
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    function promptRejectReason(form, jobCardNo) {
+        var reason = prompt('Enter rejection reason for ' + jobCardNo + ':');
+        if (!reason || !reason.trim()) {
+            alert('Rejection reason is required to reject QC.');
+            return false;
+        }
+        form.reason.value = reason.trim();
+        return true;
+    }
+
+    function promptReleasePlateSetNo(form, existingPlateSetNo, jobCardNo) {
+        var plateSetNo = prompt('Enter Plate Set No for ' + jobCardNo + ':', existingPlateSetNo || '');
+        if (plateSetNo === null) {
+            return false;
+        }
+        plateSetNo = plateSetNo.trim();
+        if (!plateSetNo) {
+            alert('Plate Set No is required to release this job.');
+            return false;
+        }
+        form.plate_set_no.value = plateSetNo;
+        return true;
+    }
+
     document.addEventListener('DOMContentLoaded', function () {
         var tabs = document.querySelectorAll('.erp-tab[data-target]');
         var panels = document.querySelectorAll('.erp-tab-panel');

@@ -1,8 +1,11 @@
+from datetime import date
+
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 from django.contrib.auth import get_user_model
 
-from .models import JobCard, Machine, Production, Dispatch
+from .jc_numbering import allocate_next_jc_number
+from .models import JobCard, Machine, Production, Dispatch, SequenceCounter
 
 
 class DispatchValidationTests(TestCase):
@@ -68,4 +71,9 @@ class DispatchValidationTests(TestCase):
         )
         with self.assertRaises(ValidationError):
             dispatch.save()
+
+    def test_allocate_next_jc_number_always_includes_pp(self):
+        SequenceCounter.objects.all().delete()
+        job_card_no = allocate_next_jc_number(date(2026, 6, 26))
+        self.assertRegex(job_card_no, r'^JC-06-26-PP-\d{4}$')
 

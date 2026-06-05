@@ -292,6 +292,7 @@ def execute_job_card_action(job_card, action, actor=None, reason=''):
         'approve_pm': 'production_approved',
         'reject_pm': 'pm_rejected',
         'release_for_production': 'released',
+        'start_production': 'in_production',
         'reopen': 'draft',
     }
     if action not in mapping:
@@ -299,8 +300,24 @@ def execute_job_card_action(job_card, action, actor=None, reason=''):
     return transition_job_card_status(job_card, mapping[action], actor=actor, reason=reason)
 
 
+def enqueue_qc(job_card, actor=None, reason=''):
+    return transition_job_card_status(job_card, 'pending_qc', actor=actor, reason=reason)
+
+
 def submit_to_qc(job_card, actor=None, reason=''):
-    return execute_job_card_action(job_card, 'approve_planning', actor=actor, reason=reason)
+    if job_card.workflow_status == 'pending_qc':
+        return job_card
+
+    if job_card.workflow_status == 'planning_approved':
+        return enqueue_qc(job_card, actor=actor, reason=reason)
+
+    if job_card.workflow_status in {'draft', 'pending_data', 'qc_rejected'}:
+        job_card = execute_job_card_action(job_card, 'approve_planning', actor=actor, reason=reason)
+        if job_card.workflow_status == 'planning_approved':
+            job_card = enqueue_qc(job_card, actor=actor, reason=reason)
+        return job_card
+
+    return job_card
 
 
 def reject_planning(job_card, actor=None, reason=''):

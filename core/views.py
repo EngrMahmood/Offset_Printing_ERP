@@ -76,7 +76,8 @@ def require_role(*allowed_roles):
                 return redirect('login')
             try:
                 profile = request.user.profile
-                if profile.role not in allowed_roles and not request.user.is_staff:
+                user_role = (profile.role or '').strip().lower()
+                if user_role not in [role.lower() for role in allowed_roles] and not request.user.is_staff:
                     add_unique_message(request, messages.ERROR, '❌ You do not have permission to access this page.')
                     return redirect('home')
             except UserProfile.DoesNotExist:
@@ -471,7 +472,8 @@ def job_card_records(request):
             return redirect('job_card_records')
 
     query = (request.GET.get('q') or '').strip()
-    status = (request.GET.get('status') or '').strip()
+    # This page is restricted to released job cards only.
+    status = 'released'
     date_from_raw = (request.GET.get('date_from') or '').strip()
     date_to_raw = (request.GET.get('date_to') or '').strip()
     entry_date_from_raw = (request.GET.get('entry_date_from') or '').strip()
@@ -486,7 +488,7 @@ def job_card_records(request):
     if per_page not in (50, 100):
         per_page = 50
 
-    jobcards = JobCard.objects.filter(is_active=True).select_related('material', 'machine_name', 'department', 'created_by').annotate(
+    jobcards = JobCard.objects.filter(is_active=True, status='released').select_related('material', 'machine_name', 'department', 'created_by').annotate(
         total_dispatch_agg=Coalesce(Sum('dispatch__dispatch_qty', filter=Q(dispatch__is_active=True)), 0),
         total_production_agg=Coalesce(Sum('productions__output_sheets', filter=Q(productions__is_active=True)), 0),
     ).order_by('-created_at')
@@ -497,9 +499,6 @@ def job_card_records(request):
             Q(SKU__icontains=query) |
             Q(PO_No__icontains=query)
         )
-
-    if status:
-        jobcards = jobcards.filter(status=status)
 
     date_from = None
     date_to = None
@@ -624,6 +623,66 @@ def production_entry(request):
     if edit_record and not is_view_mode and not ensure_edit_lock_allowed(request, 'production', edit_record):
         return redirect('production_records')
 
+    def resolve_related_machine(job_card):
+        if job_card.machine_name_id:
+            return job_card.machine_name
+
+        display_name = (job_card.machine_name_display or '').strip()
+        if not display_name:
+            return None
+
+        machine = Machine.objects.filter(name__iexact=display_name).first()
+        if machine:
+            return machine
+
+        machine = Machine.objects.filter(name__istartswith=display_name).first()
+        if machine:
+            return machine
+
+        machine = Machine.objects.filter(name__icontains=display_name).first()
+        if machine:
+            return machine
+
+        normalized = re.sub(r'[^A-Za-z0-9 ]+', ' ', display_name).strip()
+        if normalized and normalized != display_name:
+            machine = Machine.objects.filter(name__icontains=normalized).first()
+            if machine:
+                return machine
+
+        return None
+
+    def get_effective_job_card_plan(job_card):
+        planned_run = float(job_card.estimated_run_time_minutes or 0)
+        planned_setup = float(job_card.estimated_setup_time_minutes or 0)
+        planned_total = float(job_card.estimated_total_time_minutes or 0)
+        machine_obj = resolve_related_machine(job_card)
+
+        if planned_total <= 0 and job_card.total_impressions_required and machine_obj:
+            fallback_run, fallback_setup, fallback_total = compute_planned_minutes(
+                job_card.total_impressions_required,
+                machine_obj,
+                job_card.colour,
+            )
+            planned_run = float(planned_run or fallback_run or 0)
+            planned_setup = float(planned_setup or fallback_setup or 0)
+            planned_total = float(planned_total or fallback_total or 0)
+
+        return {
+            'machine_obj': machine_obj,
+            'planned_total': planned_total,
+            'planned_run': planned_run,
+            'planned_setup': planned_setup,
+        }
+
+    def get_remaining_planned_for_job_card(job_card, planned_total, exclude_production_id=None):
+        if planned_total <= 0:
+            return 0
+        allocated_qs = job_card.productions.filter(is_active=True)
+        if exclude_production_id:
+            allocated_qs = allocated_qs.exclude(pk=exclude_production_id)
+        allocated = float(allocated_qs.aggregate(total=Sum('planned_time'))['total'] or 0)
+        return max(planned_total - allocated, 0)
+
     if request.method == "POST" and not is_view_mode:
         job_card_id = request.POST.get('job_card')
         machine_id = request.POST.get('machine')
@@ -693,8 +752,8 @@ def production_entry(request):
 
             if edit_record and not change_reason:
                 raise ValueError("Change reason is required when editing production data")
-            if planned_time_val < 0:
-                raise ValueError("Planned time cannot be negative")
+            if planned_time_val <= 0:
+                raise ValueError("Planned time must be greater than 0")
             if run_time_val <= 0:
                 raise ValueError("Run time must be greater than 0")
             if downtime_val > 0 and not primary_downtime_category:
@@ -711,20 +770,26 @@ def production_entry(request):
                 machine = get_object_or_404(Machine, pk=machine_id)
             elif job_card.machine_name_id:
                 machine = job_card.machine_name
+            elif job_card.machine_name_display:
+                machine = resolve_related_machine(job_card)
+                if not machine:
+                    raise ValueError("No machine mapped on selected Job Card. Please set machine in Job Card or choose fallback machine.")
             elif machine_id:
                 machine = get_object_or_404(Machine, pk=machine_id)
             elif edit_record and edit_record.machine_id:
                 machine = edit_record.machine
             else:
-                raise ValueError("No machine mapped on selected Job Card. Please set machine in Job Card (or choose fallback machine).")
+                raise ValueError("No machine mapped on selected Job Card. Please set machine in Job Card or choose fallback machine.")
             operator = get_object_or_404(Operator, pk=operator_id)
 
-            remaining_planned = get_remaining_planned_minutes(
+            job_card_plan = get_effective_job_card_plan(job_card)
+            remaining_planned = get_remaining_planned_for_job_card(
                 job_card,
+                job_card_plan['planned_total'],
                 exclude_production_id=edit_record.pk if edit_record else None,
             )
 
-            if job_card.estimated_total_time_minutes and job_card.estimated_total_time_minutes > 0:
+            if job_card_plan['planned_total'] > 0:
                 if edit_record:
                     # Keep current allocation while editing the existing row.
                     planned_time_val = float(edit_record.planned_time or 0)
@@ -831,26 +896,34 @@ def production_entry(request):
     machines = Machine.objects.filter(is_active=True)
     operators = Operator.objects.all()
 
+    job_card_plan_map = {}
+    job_card_machine_map = {}
+    for j in job_cards:
+        plan = get_effective_job_card_plan(j)
+        remaining_planned = get_remaining_planned_for_job_card(
+            j,
+            plan['planned_total'],
+            exclude_production_id=edit_record.pk if edit_record else None,
+        )
+
+        job_card_plan_map[str(j.id)] = {
+            'planned_total': plan['planned_total'],
+            'planned_setup': plan['planned_setup'],
+            'planned_run': plan['planned_run'],
+            'remaining_planned': remaining_planned,
+        }
+        resolved_machine = plan['machine_obj']
+        job_card_machine_map[str(j.id)] = {
+            'machine_id': str(resolved_machine.id) if resolved_machine else (j.machine_name_id or ''),
+            'machine_name': resolved_machine.name if resolved_machine else (j.machine_name_display or ''),
+        }
+
     context = {
         'job_cards': job_cards,
         'machines': machines,
         'operators': operators,
-        'job_card_plan_json': json.dumps({
-            str(j.id): {
-                'planned_total': float(j.estimated_total_time_minutes or 0),
-                'planned_setup': float(j.estimated_setup_time_minutes or 0),
-                'planned_run': float(j.estimated_run_time_minutes or 0),
-                'remaining_planned': float(get_remaining_planned_minutes(j, exclude_production_id=edit_record.pk if edit_record else None)),
-            }
-            for j in job_cards
-        }),
-        'job_card_machine_json': json.dumps({
-            str(j.id): {
-                'machine_id': j.machine_name_id,
-                'machine_name': j.machine_name.name if j.machine_name else '',
-            }
-            for j in job_cards
-        }),
+        'job_card_plan_json': json.dumps(job_card_plan_map),
+        'job_card_machine_json': json.dumps(job_card_machine_map),
         'today': edit_record.date if edit_record else timezone.now().date(),
         'edit_record': edit_record,
         'edit_downtime_rows_json': json.dumps([

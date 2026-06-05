@@ -38,6 +38,14 @@ PURCHASE_MATERIAL_ORIGIN_CHOICES = [
     ('import', 'Import'),
 ]
 
+PLANNING_STAGE_CHOICES = [
+    ('', 'Not Set'),
+    ('jc_ready', 'JC Ready'),
+    ('new_plate_making', 'New Plate Making'),
+    ('repeat_plate_making', 'Repeat Plate Making'),
+    ('in_production', 'In Production'),
+]
+
 
 class PlanningJob(models.Model):
     jc_number = models.CharField(max_length=50, unique=True)
@@ -90,7 +98,18 @@ class PlanningJob(models.Model):
 
     remaining_sheet = models.PositiveIntegerField(null=True, blank=True)
     status = models.CharField(max_length=40, choices=PLANNING_STATUS_CHOICES, default='draft', blank=True)
+    planning_stage = models.CharField(max_length=40, choices=PLANNING_STAGE_CHOICES, default='', blank=True)
     pr_reference = models.CharField(max_length=120, blank=True)
+    change_request_pending = models.BooleanField(default=False)
+    change_request_reason = models.TextField(blank=True)
+    change_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planning_jobs_change_requested',
+    )
+    change_requested_at = models.DateTimeField(null=True, blank=True)
 
     rejected_qty = models.PositiveIntegerField(null=True, blank=True)
     balance_qty = models.PositiveIntegerField(null=True, blank=True)
@@ -377,6 +396,17 @@ class PlanningJob(models.Model):
         if len(numbers) == 2:
             return int(numbers[0]) + int(numbers[1])
         return None
+
+    @property
+    def remarks_display(self):
+        remarks_text = (self.remarks or '').strip()
+        if remarks_text and remarks_text != '-':
+            return remarks_text
+        recipe = self.sku_recipe
+        recipe_notes = (recipe.notes or '').strip() if recipe else ''
+        if recipe_notes and recipe_notes != '-':
+            return recipe_notes
+        return ''
 
     def qc_validation_errors(self):
         if self.workflow_status not in PLANNING_QC_GATE_STATUSES:

@@ -108,7 +108,7 @@
                     {% for job in jobs %}
                         <tr class="{% if job.workflow_status == 'released' %}erp-row--released{% elif job.workflow_status == 'completed' %}erp-row--completed{% endif %}">
                             <td><input type="checkbox" class="bulk-check" value="{{ job.id }}"></td>
-                            <td><strong>{{ job.jc_number }}</strong><div class="muted">{{ job.plan_date|default:"" }}</div></td>
+                            <td><strong>{{ job.jc_number }}</strong><div class="muted">{% if job.delivery_date %}{{ job.delivery_date|date:"Y-m-d" }}{% elif job.plan_date %}{{ job.plan_date|date:"Y-m-d" }}{% endif %}</div></td>
                             <td>{{ job.po_number|default:"-" }}</td>
                             <td>{{ job.sku|default:"-" }}</td>
                             <td>

@@ -60,10 +60,13 @@
         .erp-pending-card .erp-table {
             min-width: 860px;
             width: 100%;
+            table-layout: auto;
         }
         .erp-pending-card .erp-table-dense th,
         .erp-pending-card .erp-table-dense td {
-            white-space: nowrap;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            word-break: break-word;
         }
         @media (max-width: 920px) {
             .erp-pending-filters {
@@ -80,6 +83,19 @@
             }
             .erp-pending-card .erp-table {
                 min-width: auto;
+            }
+        }
+        @media (max-width: 700px) {
+            .erp-actions {
+                flex-wrap: wrap;
+                gap: 6px;
+            }
+            .erp-pending-filters .erp-filter-controls {
+                justify-content: stretch;
+            }
+            .erp-pending-card .erp-table th:last-child,
+            .erp-pending-card .erp-table td:last-child {
+                min-width: 140px;
             }
         }
     </style>

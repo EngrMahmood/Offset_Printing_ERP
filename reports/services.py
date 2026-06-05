@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import timedelta
-from datetime import datetime
 
 from django.db.models import Avg, Count, Q, Sum
 from django.utils import timezone
@@ -47,13 +46,19 @@ REPORT_CATALOG = [
         'description': 'Fulfillment rates, dispatch completion, and delivery backlog.',
         'focus': 'Execution',
     },
+    {
+        'key': 'raw-material-cutting-request',
+        'title': 'Raw Material Cutting Request',
+        'description': 'Material cutting requirements for released jobs, including sheet sizes and quantities.',
+        'focus': 'Execution',
+    },
 ]
 
 
 def _get_year(request):
     """Parse year from request, default to current year."""
     year_value = request.GET.get('year', '')
-    current_year = datetime.now().year
+    current_year = timezone.now().year
     try:
         year = int(year_value) if year_value else current_year
         # Limit to reasonable range (2020-2030)
@@ -597,6 +602,65 @@ def build_dispatch_tracking_context(request):
     }
 
 
+def build_raw_material_cutting_context(request):
+    start, end, days = _date_window(request, default_days=30)
+    year = _get_year(request)
+    search_value = (request.GET.get('q') or '').strip()
+
+    # Get jobs that are released for production
+    jobs = PlanningJob.objects.filter(
+        is_active=True,
+        status__in=['released', 'in_production', 'completed'],
+        plan_date__year=year,
+    ).order_by('plan_date', 'jc_number')
+    
+    jobs = _search_jobs(jobs, search_value)
+
+    # Build the cutting request rows
+    cutting_request_rows = []
+    for idx, job in enumerate(jobs, 1):
+        row = {
+            'sno': idx,
+            'date': job.created_at.strftime('%d/%m/%Y') if job.created_at else '',
+            'po': job.po_number or '-',
+            'jc': job.jc_number or '-',
+            'sku': job.sku or '-',
+            'order_qty': job.order_qty or 0,
+            'material': job.material_display or '-',
+            'purchase_sheet_ups': job.purchase_sheet_ups_display or '-',
+            'purchase_sheet_size': job.purchase_sheet_size_display or '-',
+            'purchase_sheet_required': job.purchase_sheet_required_display or 0,
+            'print_sheet_size': job.print_sheet_size_display or '-',
+            'print_sheet_required': job.calculated_sheets_required or 0,
+            'wastage_sheets': job.wastage_sheets or 0,
+            'plate_set_no': job.plate_set_no or '-',
+            'remarks': job.remarks or '-',
+            'status': job.get_status_display() or '-',
+        }
+        cutting_request_rows.append(row)
+
+    summary = jobs.aggregate(
+        total_jobs=Count('id'),
+        total_order_qty=Sum('order_qty'),
+        total_purchase_sheets=Sum('purchase_sheet_required'),
+        total_print_sheets=Sum('actual_sheet_required'),
+        total_wastage=Sum('wastage_sheets'),
+    )
+
+    return {
+        'report': next(item for item in REPORT_CATALOG if item['key'] == 'raw-material-cutting-request'),
+        'filters': {
+            'q': search_value,
+            'days': days,
+            'start': start,
+            'end': end,
+            'year': year,
+        },
+        'summary': summary,
+        'cutting_request_rows': cutting_request_rows,
+    }
+
+
 def build_report_context(report_type, request):
     builders = {
         'machine-planning': build_machine_planning_context,
@@ -605,6 +669,7 @@ def build_report_context(report_type, request):
         'production-insights': build_production_insights_context,
         'qc-approvals': build_qc_approvals_context,
         'dispatch-tracking': build_dispatch_tracking_context,
+        'raw-material-cutting-request': build_raw_material_cutting_context,
     }
     builder = builders.get(report_type)
     if builder is None:

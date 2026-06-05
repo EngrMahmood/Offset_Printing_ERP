@@ -259,6 +259,47 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertGreaterEqual(response.context['page_obj'].paginator.count, 2)
 		self.assertTrue(any('PO-PAGE-1' in row['po_number'] for row in response.context['rows']))
 
+	def test_qc_user_can_view_pending_sku_master_entry_readonly(self):
+		qc_user = get_user_model().objects.create_user(username='qc_user', password='testpass123')
+		qc_profile, _ = UserProfile.objects.get_or_create(user=qc_user)
+		qc_profile.role = 'qc'
+		qc_profile.save(update_fields=['role'])
+
+		po_doc = self._create_po_document(sku='QC-SKU-001', po_number='PO-QC-1')
+		self.client.force_login(qc_user)
+
+		response = self.client.get(
+			reverse('planning:pending_sku_master_entry') + f'?po_doc_id={po_doc.id}&sku=QC-SKU-001&readonly=1'
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(response.context['is_readonly'])
+		self.assertContains(response, 'QC-SKU-001')
+
+	def test_planner_can_access_pending_sku_master_entry(self):
+		planner_user = get_user_model().objects.create_user(username='planner_user', password='testpass123')
+		planner_profile, _ = UserProfile.objects.get_or_create(user=planner_user)
+		planner_profile.role = 'planner'
+		planner_profile.save(update_fields=['role'])
+
+		po_doc = self._create_po_document(sku='PLAN-SKU-001', po_number='PO-PLAN-1')
+		self.client.force_login(planner_user)
+
+		response = self.client.get(
+			reverse('planning:pending_sku_master_entry') + f'?po_doc_id={po_doc.id}&sku=PLAN-SKU-001'
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertFalse(response.context['is_readonly'])
+		self.assertContains(response, 'PLAN-SKU-001')
+
+	def test_po_inbox_uploaded_timestamp_uses_document_created_time(self):
+		po_doc = self._create_po_document(sku='INBOX-TIME-001', po_number='PO-TIME-1')
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('planning:po_inbox'))
+		self.assertEqual(response.status_code, 200)
+		row = next(row for row in response.context['rows'] if row['po_number'] == 'PO-TIME-1')
+		self.assertEqual(row['uploaded'], po_doc.created_at)
+
 	def test_job_card_created_only_on_submit_to_qc(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-005', po_number='PO-NEW-5')
 		_sync_repeat_jobs_from_po(po_doc, actor=self.user)

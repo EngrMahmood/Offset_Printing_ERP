@@ -4,7 +4,7 @@
 
 {% block title %}Job Card Records - Offset ERP{% endblock %}
 {% block header_title %}Job Card Records{% endblock %}
-{% block header_subtitle %}Dense record view for job card progress, dispatch position, and close-gap actions.{% endblock %}
+{% block header_subtitle %}Released job card records only — track dispatch progress, close-gap actions, and history for released cards.{% endblock %}
 {% block header_actions %}
     {% if user.profile.can_edit_jobcard %}
     <a href="{% url 'job_card_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> Add Job Card</a>
@@ -51,12 +51,10 @@
                             </div>
                             <div class="erp-filter-group">
                                 <label for="status" class="erp-field-label">Status</label>
-                                <select id="status" name="status" class="erp-select">
-                                    <option value="">All Status</option>
-                                    <option value="Open" {% if status == 'Open' %}selected{% endif %}>Open</option>
-                                    <option value="In Progress" {% if status == 'In Progress' %}selected{% endif %}>In Progress</option>
-                                    <option value="Completed" {% if status == 'Completed' %}selected{% endif %}>Completed</option>
+                                <select id="status" name="status" class="erp-select" disabled>
+                                    <option value="released" selected>Released Only</option>
                                 </select>
+                                <input type="hidden" name="status" value="released">
                             </div>
                             <div class="erp-filter-group">
                                 <label for="date_from" class="erp-field-label">PO Date From</label>

@@ -461,6 +461,59 @@
             </table>
         </div>
     </section>
+
+    {% elif report.key == 'raw-material-cutting-request' %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><div class="erp-card-title-stack"><div class="erp-eyebrow">Cutting request data</div><h3 class="erp-section-title">Material cutting requirements for released jobs</h3></div></div>
+        <div class="erp-table-wrap" style="overflow-x: auto;">
+            <table class="erp-table erp-table-dense" style="font-size: 11px;">
+                <thead>
+                    <tr>
+                        <th style="min-width: 40px;">#</th>
+                        <th style="min-width: 80px;">Date</th>
+                        <th style="min-width: 80px;">PO</th>
+                        <th style="min-width: 120px;">JC</th>
+                        <th style="min-width: 200px;">SKU</th>
+                        <th style="min-width: 80px;">Order Qty</th>
+                        <th style="min-width: 100px;">Material</th>
+                        <th style="min-width: 80px;">PKT/Ream</th>
+                        <th style="min-width: 100px;">Purch Sheet Size</th>
+                        <th style="min-width: 100px;">Purch Sheet Req</th>
+                        <th style="min-width: 100px;">Print Sheet Size</th>
+                        <th style="min-width: 100px;">Print Sheet Req</th>
+                        <th style="min-width: 80px;">Wastage</th>
+                        <th style="min-width: 100px;">Plate Set</th>
+                        <th style="min-width: 150px;">Remarks</th>
+                        <th style="min-width: 80px;">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in cutting_request_rows %}
+                    <tr>
+                        <td>{{ row.sno }}</td>
+                        <td>{{ row.date }}</td>
+                        <td><strong>{{ row.po }}</strong></td>
+                        <td><strong>{{ row.jc }}</strong></td>
+                        <td title="{{ row.sku }}">{{ row.sku|truncatewords:3 }}</td>
+                        <td>{{ row.order_qty }}</td>
+                        <td>{{ row.material }}</td>
+                        <td>{{ row.purchase_sheet_ups }}</td>
+                        <td>{{ row.purchase_sheet_size }}</td>
+                        <td><strong>{{ row.purchase_sheet_required }}</strong></td>
+                        <td>{{ row.print_sheet_size }}</td>
+                        <td><strong>{{ row.print_sheet_required }}</strong></td>
+                        <td>{{ row.wastage_sheets }}</td>
+                        <td>{{ row.plate_set_no }}</td>
+                        <td title="{{ row.remarks }}">{{ row.remarks|truncatewords:2 }}</td>
+                        <td><span class="erp-badge is-{{ row.status|lower|cut:' ' }}">{{ row.status }}</span></td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="16"><div class="erp-empty">No released jobs found for cutting request.</div></td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
     {% endif %}
 </div>
 {% endblock %}
