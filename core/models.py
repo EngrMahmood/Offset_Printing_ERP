@@ -937,6 +937,22 @@ class UserProfile(models.Model):
         default=False,
         help_text="Allow this user to approve/reject SKUs in master review"
     )
+    can_create_plate_request = models.BooleanField(
+        default=False,
+        help_text="Allow this user to create printing plate requests"
+    )
+    can_send_plate = models.BooleanField(
+        default=False,
+        help_text="Allow this user to mark plate requests as sent to vendor"
+    )
+    can_receive_plate = models.BooleanField(
+        default=False,
+        help_text="Allow this user to mark plate requests as received from vendor"
+    )
+    can_archive_plate = models.BooleanField(
+        default=False,
+        help_text="Allow this user to archive printing plate requests"
+    )
     
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
