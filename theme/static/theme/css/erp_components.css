@@ -516,7 +516,12 @@
     line-height: 1.5;
 }
 .erp-alert.is-success { background: #e6f4ea; color: #1e6d33; border-color: #bee3c7; }
-.erp-alert.is-warning { background: #fffbe6; color: #7a5600; border-color: #f0c050; }
+.erp-alert.is-warning,
+.erp-alert.erp-alert-warning {
+    background: #fff1f3;
+    color: #8f1f2b !important;
+    border-color: #d82a3b;
+}
 .erp-alert.is-error   { background: #fff3f3; color: #8a1c1c; border-color: #f5c2c7; }
 .erp-alert.is-info    { background: #edf5ff; color: #1a4d87; border-color: #b8d5ef; }
 .erp-alert.is-notice  { background: #f5f9ff; color: #2e3f53; border-color: #c8d7e7; }

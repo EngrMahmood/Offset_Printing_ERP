@@ -3,14 +3,14 @@ from django.db import models
 
 
 class PlateRequest(models.Model):
-    STATUS_DRAFT = 'draft_request'
+    STATUS_DRAFT = 'draft'
     STATUS_SENT = 'sent_to_vendor'
     STATUS_RECEIVED = 'received_from_vendor'
     STATUS_AVAILABLE = 'available_for_production'
     STATUS_ARCHIVED = 'archived'
 
     STATUS_CHOICES = [
-        (STATUS_DRAFT, 'Draft Request'),
+        (STATUS_DRAFT, 'Draft'),
         (STATUS_SENT, 'Sent to Vendor'),
         (STATUS_RECEIVED, 'Received from Vendor'),
         (STATUS_AVAILABLE, 'Available for Production'),
@@ -62,6 +62,8 @@ class PlateRequest(models.Model):
     vendor = models.CharField(max_length=120, blank=True)
     remarks = models.TextField(blank=True)
     source = models.CharField(max_length=120, blank=True)
+    impression = models.CharField(max_length=120, blank=True)
+    progress = models.CharField(max_length=120, blank=True)
     challan = models.CharField(max_length=120, blank=True)
     chalan_sign = models.BooleanField(default=False)
     box = models.CharField(max_length=120, blank=True)
@@ -105,6 +107,11 @@ class PlateRequest(models.Model):
 
     class Meta:
         ordering = ['-requested_at', '-created_at']
+        indexes = [
+            models.Index(fields=['planning_job']),
+            models.Index(fields=['status']),
+            models.Index(fields=['requested_at']),
+        ]
         verbose_name = 'Plate Request'
         verbose_name_plural = 'Plate Requests'
 

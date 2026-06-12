@@ -21,6 +21,12 @@ def _user_is_admin(user):
     return getattr(user, 'is_superuser', False) or (profile is not None and getattr(profile, 'role', None) == 'admin')
 
 
+def trigger_plate_request_for_planning_job(planning_job, user):
+    """Create or return an active plate request when planning stage requires it."""
+    from printing_plates.services import create_or_get_plate_request_from_planning_job
+
+    return create_or_get_plate_request_from_planning_job(planning_job, user)
+
 
 def _planning_status_filter_values(status):
     normalized_status = _normalize_status(status, default='')

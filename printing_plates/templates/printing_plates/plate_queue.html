@@ -1,0 +1,58 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Printing Plates Queue{% endblock %}
+
+{% block content %}
+<div class="erp-card">
+    <div class="erp-card-header">
+        <h2>Printing Plates Queue</h2>
+        <p>Jobs currently waiting for plate making and designer review.</p>
+    </div>
+    <div class="erp-card-body">
+        {% if planning_jobs %}
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Job</th>
+                        <th>AWC No</th>
+                        <th>Stage</th>
+                        <th>Plate Set</th>
+                        <th>Colors</th>
+                        <th>Impression</th>
+                        <th>Progress</th>
+                        <th>Requested</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in planning_jobs %}
+                    <tr>
+                        <td>{{ job.job_name|default:'—' }}</td>
+                        <td>{{ job.awc_no_display|default:'—' }}</td>
+                        <td>{{ job.planning_stage|default:'—' }}</td>
+                        <td>{{ job.plate_set_no|default:'—' }}</td>
+                        <td>{{ job.total_colors|default:'—' }}</td>
+                        <td>{{ job.planned_total_impressions|default:'—' }}</td>
+                        <td>{% if job.plate_requests.exists %}{{ job.plate_requests.first.progress|default:'—' }}{% else %}—{% endif %}</td>
+                        <td>{{ job.updated_at|date:'Y-m-d H:i' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        {% else %}
+            <p>No plate-related jobs are active in the queue.</p>
+        {% endif %}
+
+        {% if is_paginated %}
+        <nav class="erp-pagination" aria-label="Page navigation">
+            {% if page_obj.has_previous %}
+                <a href="?page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary">Previous</a>
+            {% endif %}
+            <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            {% if page_obj.has_next %}
+                <a href="?page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary">Next</a>
+            {% endif %}
+        </nav>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

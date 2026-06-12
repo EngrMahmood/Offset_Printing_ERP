@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     'migration',
     'qc',
     'workflow',
+    'manual_working',
     'reports',
     'theme',
 ]
@@ -62,7 +63,11 @@ ROOT_URLCONF = 'Offset_ERP.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'core/templates', BASE_DIR / 'Job_card_html'],
+        'DIRS': [
+            BASE_DIR / 'core/templates',
+            BASE_DIR / 'Job_card_html',
+            BASE_DIR / 'printing_plates/templates',
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [

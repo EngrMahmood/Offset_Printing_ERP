@@ -1,0 +1,32 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Plate Request Detail{% endblock %}
+
+{% block content %}
+<div class="erp-card">
+    <div class="erp-card-header">
+        <h2>Plate Request #{{ plate_request.pk }}</h2>
+        <p>{{ plate_request.job_name|default:'Plate request details' }}</p>
+    </div>
+    <div class="erp-card-body">
+        <dl class="erp-details-list">
+            <dt>Status</dt><dd>{{ plate_request.get_status_display }}</dd>
+            <dt>Job</dt><dd>{{ plate_request.job_name|default:'—' }}</dd>
+            <dt>AWC No</dt><dd>{{ plate_request.awc_no|default:'—' }}</dd>
+            <dt>Material</dt><dd>{{ plate_request.material_name|default:'—' }}</dd>
+            <dt>Plate Quantity</dt><dd>{{ plate_request.plate_quantity|default:'—' }}</dd>
+            <dt>Plate Color</dt><dd>{{ plate_request.plate_color|default:'—' }}</dd>
+            <dt>Vendor</dt><dd>{{ plate_request.vendor|default:'—' }}</dd>
+            <dt>Requested By</dt><dd>{{ plate_request.requested_by.username|default:'—' }}</dd>
+            <dt>Requested At</dt><dd>{{ plate_request.requested_at|date:'Y-m-d H:i'|default:'—' }}</dd>
+            <dt>Remarks</dt><dd>{{ plate_request.remarks|default:'—' }}</dd>
+            <dt>Source</dt><dd>{{ plate_request.source|default:'—' }}</dd>
+            <dt>Impression</dt><dd>{{ plate_request.impression|default:'—' }}</dd>
+            <dt>Progress</dt><dd>{{ plate_request.progress|default:'—' }}</dd>
+            <dt>Challan</dt><dd>{{ plate_request.challan|default:'—' }}</dd>
+            <dt>Box</dt><dd>{{ plate_request.box|default:'—' }}</dd>
+            <dt>Link</dt><dd>{% if plate_request.link %}<a href="{{ plate_request.link }}" target="_blank">Open link</a>{% else %}—{% endif %}</dd>
+        </dl>
+    </div>
+</div>
+{% endblock %}

@@ -29,7 +29,7 @@
             {% with recipe=job.sku_recipe %}
             <div class="erp-info-grid">
                 <div class="erp-info-item"><div class="erp-info-item__label">Job Name</div><div class="erp-info-item__value">{{ job.job_name|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">PO Delivery Date</div><div class="erp-info-item__value">{{ job.plan_date|date:'d M Y'|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">PO Approval Date</div><div class="erp-info-item__value">{{ po_approval_date_display|date:'d M Y'|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ job.material_display|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Color</div><div class="erp-info-item__value">{{ job.color_spec_display|default:'-' }}</div></div>

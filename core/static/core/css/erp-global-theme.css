@@ -288,7 +288,12 @@ html, body {
 }
 .erp-alert-info { border-left-color: var(--erp-info); background: #f4f9ff; }
 .erp-alert-success { border-left-color: var(--erp-success); background: #f1fcf4; }
-.erp-alert-warning { border-left-color: var(--erp-warning); background: #fff9f0; }
+.erp-alert-warning,
+.erp-alert.erp-alert-warning {
+    border-left-color: #d82a3b;
+    background: #fff1f3;
+    color: #8f1f2b !important;
+}
 .erp-alert-danger { border-left-color: var(--erp-danger); background: #fff4f6; }
 
 .erp-workflow {

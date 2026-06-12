@@ -23,7 +23,7 @@
             <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Order Quantity</div><div class="erp-info-item__value">{{ job.order_qty|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">PO Delivery Date</div><div class="erp-info-item__value">{{ job.plan_date|date:'d-m-Y'|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PO Approval Date</div><div class="erp-info-item__value">{{ po_approval_date_display|date:'d-m-Y'|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Delivery Location</div><div class="erp-info-item__value">{{ job.destination|default:'-' }}</div></div>
         </div>
     </section>
@@ -57,7 +57,7 @@
             SKU is locked. To change master data: <a href="{% url 'qc:sku_recipe_edit' recipe.id %}">Reopen SKU</a> &rarr; edit &rarr; re-approve.
         </div>
         {% else %}
-        <div class="erp-alert erp-alert-warning">No approved SKU master found for <strong>{{ job.sku }}</strong>. Create and approve a SKU recipe before finalizing this job.</div>
+        <div class="erp-alert erp-alert-warning" style="background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">No approved SKU master found for <strong>{{ job.sku }}</strong>. Create and approve a SKU recipe before finalizing this job.</div>
         {% endif %}
     </section>
 
@@ -86,9 +86,9 @@
             </div>
         </div>
         {% if form.non_field_errors %}
-        <div class="erp-alert erp-alert-warning">{{ form.non_field_errors|striptags }}</div>
+        <div class="erp-alert erp-alert-warning" style="background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">{{ form.non_field_errors|striptags }}</div>
         {% elif form.errors %}
-        <div class="erp-alert erp-alert-warning">Please correct the highlighted fields before saving.</div>
+        <div class="erp-alert erp-alert-warning" style="background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">Please correct the highlighted fields before saving.</div>
         {% endif %}
         <form method="post">
             {% csrf_token %}
@@ -103,13 +103,16 @@
                 </div>
                 {% endfor %}
             </div>
-            <div class="erp-form-actions" style="margin-top:14px;">
+            <div class="erp-form-actions" style="margin-top:14px; gap:12px;">
                 <button id="saveBtn" class="erp-btn erp-btn-primary" type="submit">Save Changes</button>
                 {% if job.status == 'draft' %}
-                <button class="erp-btn erp-btn-secondary" type="submit" name="submit_to_qc" value="1">Send to QC Approval</button>
+                <button class="erp-btn erp-btn-secondary" type="submit" name="submit_to_qc" value="1"{% if qc_recipe_warning %} disabled title="QC submission is blocked until recipe approval."{% endif %}>Send to QC Approval</button>
                 {% endif %}
                 <a class="erp-btn erp-btn-secondary" href="{% url 'planning:job_detail' job.id %}">Cancel</a>
             </div>
+            {% if qc_recipe_warning %}
+            <div class="erp-alert erp-alert-warning" style="margin-top:12px; background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">{{ qc_recipe_warning }}</div>
+            {% endif %}
         </form>
         <div class="erp-actions" style="margin-top:12px; gap:8px;">
             {% if can_admin_delete %}

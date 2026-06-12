@@ -33,6 +33,8 @@ from .models import (
     Operator,
     Production,
     ProductionDowntime,
+    ProductionWipStatus,
+    JobCardWipStatus,
     ShiftConfig,
     UserProfile,
 )
@@ -1085,6 +1087,84 @@ def production_records(request):
         'approved_override_ids': approved_ids,
     }
     return render(request, 'production_records.html', context)
+
+
+@login_required
+@permission_required('can_edit_production')
+def production_wip(request):
+    default_status_names = ['Printing', 'Dispatch']
+    for status_name in default_status_names:
+        ProductionWipStatus.objects.get_or_create(
+            name=status_name,
+            defaults={'created_by': request.user},
+        )
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        if action == 'add_status':
+            if request.user.profile.role != 'admin':
+                add_unique_message(request, messages.ERROR, '❌ Only admin can add WIP statuses.')
+                return redirect('production_wip')
+            new_status_name = (request.POST.get('status_name') or '').strip()
+            if not new_status_name:
+                add_unique_message(request, messages.ERROR, 'Status name cannot be blank.')
+            else:
+                ProductionWipStatus.objects.get_or_create(
+                    name=new_status_name,
+                    defaults={'created_by': request.user},
+                )
+                add_unique_message(request, messages.SUCCESS, f'Added status: {new_status_name}')
+            return redirect('production_wip')
+
+        if action == 'set_job_status':
+            job_card_id = request.POST.get('job_card_id')
+            status_id = request.POST.get('status_id')
+            if not job_card_id or not status_id:
+                add_unique_message(request, messages.ERROR, 'Job and status selection are required.')
+                return redirect('production_wip')
+            job_card = get_object_or_404(
+                JobCard,
+                id=job_card_id,
+                is_active=True,
+                status__in=['released', 'in_production'],
+            )
+            status = get_object_or_404(ProductionWipStatus, id=status_id, is_active=True)
+            JobCardWipStatus.objects.update_or_create(
+                job_card=job_card,
+                defaults={
+                    'status': status,
+                    'updated_by': request.user,
+                },
+            )
+            add_unique_message(request, messages.SUCCESS, f"{job_card.job_card_no} set to {status.name}.")
+            return redirect('production_wip')
+
+    query = (request.GET.get('q') or '').strip()
+    status_filter = (request.GET.get('wip_status') or '').strip()
+
+    job_cards = JobCard.objects.filter(is_active=True, status__in=['released', 'in_production']).select_related('planning_job')
+
+    if query:
+        job_cards = job_cards.filter(
+            Q(job_card_no__icontains=query) |
+            Q(SKU__icontains=query) |
+            Q(planning_job__job_name__icontains=query)
+        )
+
+    statuses = list(ProductionWipStatus.objects.filter(is_active=True).order_by('name'))
+    if status_filter:
+        job_cards = job_cards.filter(production_wip_status__status_id=status_filter)
+
+    job_cards = job_cards.order_by('-updated_at')
+    job_cards = list(job_cards)
+
+    context = {
+        'job_cards': job_cards,
+        'statuses': statuses,
+        'status_filter': status_filter,
+        'q': query,
+    }
+    return render(request, 'production_wip.html', context)
 
 
 @login_required

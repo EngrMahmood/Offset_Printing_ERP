@@ -1,0 +1,21 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}New Plate Request{% endblock %}
+
+{% block content %}
+<div class="erp-card">
+    <div class="erp-card-header">
+        <h2>Create New Plate Request</h2>
+        <p>Submit a new plate request for production jobs.</p>
+    </div>
+    <div class="erp-card-body">
+        <form method="post" enctype="multipart/form-data" class="erp-form">
+            {% csrf_token %}
+            {{ form.as_p }}
+            <div class="erp-form-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Submit Request</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

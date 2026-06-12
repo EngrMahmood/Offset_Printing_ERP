@@ -331,6 +331,12 @@ class JobCard(models.Model):
                 missing_fields.append(label)
         return missing_fields
 
+    @property
+    def wip_status_name(self):
+        if hasattr(self, 'production_wip_status') and self.production_wip_status.status:
+            return self.production_wip_status.status.name
+        return 'Not Set'
+
     def planning_validation_errors(self):
         missing_fields = self.planning_missing_fields()
         if not missing_fields:
@@ -779,6 +785,58 @@ class ProductionDowntime(models.Model):
     def __str__(self):
         return f"{self.production} - {self.get_category_display()} ({self.minutes:g}m)"
 
+
+class ProductionWipStatus(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='production_wip_statuses_created',
+        editable=False,
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Production WIP Status'
+        verbose_name_plural = 'Production WIP Statuses'
+
+    def __str__(self):
+        return self.name
+
+
+class JobCardWipStatus(models.Model):
+    job_card = models.OneToOneField(
+        JobCard,
+        on_delete=models.CASCADE,
+        related_name='production_wip_status',
+    )
+    status = models.ForeignKey(
+        ProductionWipStatus,
+        on_delete=models.PROTECT,
+        related_name='job_card_wip_statuses',
+    )
+    updated_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='job_card_wip_status_updates',
+        editable=False,
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Job Card WIP Status'
+        verbose_name_plural = 'Job Card WIP Statuses'
+
+    def __str__(self):
+        return f"{self.job_card.job_card_no} => {self.status.name}"
+
+
 # ========================= 
 # DISPATCH 
 # =========================
@@ -947,7 +1005,7 @@ class UserProfile(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def can_view_plate_queue(self):
-        return self.normalized_role in ('admin', 'manager', 'planner', 'production_manager', 'graphics_designer')
+        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
 
     def can_create_plate_request(self):
         return self.normalized_role in ('admin', 'manager', 'graphics_designer')

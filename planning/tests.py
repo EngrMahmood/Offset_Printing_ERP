@@ -37,6 +37,9 @@ class PoExtractorSkuGuardTests(SimpleTestCase):
 	def test_regular_sku_is_valid(self):
 		self.assertTrue(_looks_like_sku_token('SKU-AB12-9901'))
 
+	def test_raw_item_description_can_be_used_as_sku(self):
+		self.assertEqual(_extract_best_sku_token('A3 PAPER RIM'), 'A3 PAPER RIM')
+
 	def test_header_word_is_not_sku(self):
 		self.assertFalse(_looks_like_sku_token('Dated'))
 
@@ -45,6 +48,9 @@ class PoExtractorSkuGuardTests(SimpleTestCase):
 
 	def test_alphabetic_long_sku_is_valid(self):
 		self.assertTrue(_looks_like_sku_token('LABELCAREUBMICROBIBERBEDSKIRT'))
+
+	def test_year_token_is_not_sku(self):
+		self.assertFalse(_looks_like_sku_token('2026'))
 
 	def test_extract_best_sku_ignores_dimension_fragment(self):
 		raw = 'LABELCAREUBMICROBIBERBEDSKIRT / MATERIAL: TAFFETA SIZE: 95x45 MM'
@@ -94,6 +100,17 @@ class PoExtractorLineCountTests(SimpleTestCase):
 		self.assertAlmostEqual(float(items[1]['unit_cost']), 1.20, places=2)
 		self.assertEqual(items[2]['sku'], 'LABELCAREUBMICROFIBERFITTEDQUEENMIG1')
 		self.assertAlmostEqual(float(items[2]['unit_cost']), 0.95, places=2)
+
+	def test_extract_two_row_item_with_blank_sku_cell_uses_job_name(self):
+		table_rows = [
+			['#', 'SKU', 'DELIVERY DATE', 'QUANTITY', 'UNIT COST', 'SUBTOTAL', 'GST AMOUNT', 'NET TOTAL'],
+			['1', 'A3 PAPER RIM', None, None, None, None, None, None],
+			[None, '', 'Jun 30, 2026', '4.0 PIECE', 'Rs 1,780.00', 'Rs 7,120.00', 'Rs 0.00', 'Rs 7,120.00'],
+		]
+		items = _extract_items_from_table_rows(table_rows)
+		self.assertEqual(len(items), 1)
+		self.assertEqual(items[0]['sku'], 'A3 PAPER RIM')
+		self.assertEqual(items[0]['job_name'], 'A3 PAPER RIM')
 
 
 class PlanningWorkflowSyncTests(TestCase):

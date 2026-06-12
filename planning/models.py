@@ -51,6 +51,7 @@ class PlanningJob(models.Model):
     jc_number = models.CharField(max_length=50, unique=True)
     plan_month = models.CharField(max_length=20, blank=True)
     plan_date = models.DateField(null=True, blank=True)
+    po_approval_date = models.DateField(null=True, blank=True)
     delivery_date = models.DateField(null=True, blank=True)
 
     po_number = models.CharField(max_length=120, blank=True)

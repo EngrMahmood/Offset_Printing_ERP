@@ -1,4 +1,5 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.db.models import Q
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.views.generic import ListView, DetailView, CreateView, TemplateView
@@ -17,22 +18,31 @@ class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
     model = PlanningJob
     template_name = 'printing_plates/plate_queue.html'
     context_object_name = 'planning_jobs'
+    paginate_by = 50
 
     def get_queryset(self):
+        active_statuses = [
+            PlateRequest.STATUS_DRAFT,
+            PlateRequest.STATUS_SENT,
+            PlateRequest.STATUS_RECEIVED,
+        ]
         return PlanningJob.objects.filter(
             planning_stage__in=['new_plate_making', 'repeat_plate_making']
-        ).select_related('job_card')
+        ).filter(
+            Q(plate_requests__status__in=active_statuses) | Q(plate_requests__isnull=True)
+        ).select_related('job_card').prefetch_related('plate_requests').distinct()
 
 
 class PlateStatusBoardView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
     model = PlateRequest
     template_name = 'printing_plates/plate_status_board.html'
     context_object_name = 'plate_requests'
+    paginate_by = 50
 
     def get_queryset(self):
         return PlateRequest.objects.select_related(
-            'planning_job', 'job_card', 'sku_recipe', 'machine', 'department'
-        )
+            'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by'
+        ).order_by('-requested_at')
 
 
 class PlateRequestDetailView(LoginRequiredMixin, GraphicsDesignerAccessMixin, DetailView):

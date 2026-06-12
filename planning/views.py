@@ -61,7 +61,8 @@ from .services import (
     _annotate_items_with_recipe, _deduplicate_po_items_by_sku,
     _history_repeat_new_counts, _sync_repeat_jobs_from_po,
     _sync_new_jobs_for_approved_sku, _merge_po_items_for_existing_po,
-    _collect_pending_sku_rows, _normalize_po_number
+    _collect_pending_sku_rows, _normalize_po_number,
+    trigger_plate_request_for_planning_job
 )
 from .models import (
     PLANNING_QC_GATE_STATUSES,
@@ -116,6 +117,50 @@ def _clear_ignored_sku_from_po_docs(po_number, sku):
             doc.save(update_fields=['extracted_payload'])
             updated_count += 1
     return updated_count
+
+
+def _get_po_approval_date_for_job(job):
+    if getattr(job, 'po_approval_date', None):
+        return job.po_approval_date
+
+    approval_date = None
+    if hasattr(job, 'po_documents'):
+        po_document = job.po_documents.order_by('-created_at').first()
+        if po_document:
+            payload = po_document.extracted_payload or {}
+            approval_date = _parse_iso_date(payload.get('approval_date'))
+            if approval_date:
+                return approval_date
+
+    if not approval_date and job.po_number:
+        po_document = PoDocument.objects.filter(
+            extracted_payload__po_number__iexact=job.po_number,
+            extraction_status='processed',
+        ).order_by('-created_at').first()
+        if po_document:
+            payload = po_document.extracted_payload or {}
+            approval_date = _parse_iso_date(payload.get('approval_date'))
+            if approval_date:
+                return approval_date
+
+    job_card = getattr(job, 'job_card', None)
+    if not job_card:
+        return None
+
+    logs = ChangeLog.objects.filter(
+        entity_type='job_card',
+        record_id=job_card.pk,
+    ).order_by('-created_at')
+    for log in logs:
+        field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
+        status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
+        if not isinstance(status_change, dict):
+            continue
+        to_status = str(status_change.get('to') or '').strip().lower()
+        if to_status in {'production_approved', 'qc_approved'} and log.created_at:
+            return log.created_at.date()
+    return None
+    return None
 
 
 PLANNING_STATUSES = PLANNING_STATUS_CHOICES
@@ -782,6 +827,7 @@ def planning_home(request):
                     return redirect('planning:jobs')
                 job.planning_stage = planning_stage
                 job.save(update_fields=['planning_stage', 'updated_at'])
+                trigger_plate_request_for_planning_job(job, request.user)
                 stage_display = dict(PLANNING_STAGE_CHOICES).get(planning_stage, 'Not Set')
                 messages.success(request, f'Planning job {job.jc_number} stage updated to: {stage_display}.')
                 return redirect('planning:jobs')
@@ -1114,6 +1160,7 @@ def import_planning_sheet(request):
             defaults = {
                 'plan_month': (row.get('Month') or '').strip(),
                 'plan_date': _to_date(row.get('Date')),
+                'po_approval_date': _to_date(row.get('Approval Date') or row.get('po_approval_date')),
                 'delivery_date': _to_date(row.get('Delivery Date')),
                 'po_number': (row.get('Po') or '').strip(),
                 'sku': (row.get('SKU') or '').strip(),
@@ -1239,12 +1286,15 @@ def planning_job_detail(request, job_id):
     can_print_from_job = status_now in {'released', 'in_production', 'completed'}
     can_print_from_card = job_card.can_print_job_card() if job_card else False
 
+    po_approval_date_display = _get_po_approval_date_for_job(job)
+
     return render(
         request,
         'planning/planning_job_detail.html',
         {
             'job': job,
             'status_now': status_now,
+            'po_approval_date_display': po_approval_date_display,
             'can_edit_job': status_now in {'draft', 'pending_qc'},
             'is_repeat_with_changes': is_repeat_with_changes,
             'changed_fields': job.edited_fields_list or [],
@@ -1326,9 +1376,25 @@ def planning_job_edit(request, job_id):
     else:
         form = PlanningJobEditForm(instance=job)
 
-    recipe = SkuRecipe.objects.filter(
+    approved_recipe = SkuRecipe.objects.filter(
         sku__iexact=job.sku, is_active=True, master_data_status='approved',
     ).first()
+    active_recipe = SkuRecipe.objects.filter(
+        sku__iexact=job.sku, is_active=True,
+    ).first()
+    qc_recipe_warning = ''
+    if active_recipe and not approved_recipe:
+        qc_recipe_warning = (
+            'Active SKU recipe exists but is not approved. ' \
+            'QC submission is blocked until the recipe is approved.'
+        )
+    elif not active_recipe:
+        qc_recipe_warning = (
+            'No active SKU recipe exists for this job. ' \
+            'QC submission is blocked until a recipe is created and approved.'
+        )
+
+    po_approval_date_display = _get_po_approval_date_for_job(job)
 
     return render(
         request,
@@ -1336,8 +1402,10 @@ def planning_job_edit(request, job_id):
         {
             'job': job,
             'form': form,
-            'recipe': recipe,
+            'recipe': active_recipe,
+            'qc_recipe_warning': qc_recipe_warning,
             'can_admin_delete': _user_is_admin(request.user),
+            'po_approval_date_display': po_approval_date_display,
         },
     )
 
@@ -1353,9 +1421,19 @@ def _submit_job_to_qc(job, request, next_url=None):
         is_active=True,
         master_data_status='approved',
     ).first()
+    recipe = approved_recipe or SkuRecipe.objects.filter(
+        sku__iexact=job.sku,
+        is_active=True,
+    ).first()
+    if not recipe:
+        messages.error(request, f'SKU recipe for {job.sku or "this job"} is missing.')
+        return redirect(next_url or 'planning:job_edit', job_id=job.id)
     if not approved_recipe:
-        messages.error(request, f'SKU recipe for {job.sku or "this job"} is missing or not approved.')
-        return redirect(next_url or 'planning:job_detail', job_id=job.id)
+        messages.error(
+            request,
+            f'SKU recipe for {job.sku or "this job"} exists but is not approved; QC submission is blocked until approval.',
+        )
+        return redirect(next_url or 'planning:job_edit', job_id=job.id)
 
     planning_required_fields = [
         ('machine_name', 'Machine Name'),
@@ -1450,8 +1528,18 @@ def planning_job_status_update(request, job_id):
             is_active=True,
             master_data_status='approved',
         ).first()
+        recipe = approved_recipe or SkuRecipe.objects.filter(
+            sku__iexact=job.sku,
+            is_active=True,
+        ).first()
+        if not recipe:
+            messages.error(request, f'SKU recipe for {job.sku or "this job"} is missing.')
+            return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
         if not approved_recipe:
-            messages.error(request, f'SKU recipe for {job.sku or "this job"} is missing or not approved.')
+            messages.error(
+                request,
+                f'SKU recipe for {job.sku or "this job"} exists but is not approved; QC submission is blocked until approval.',
+            )
             return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
         planning_required_fields = [
@@ -1611,11 +1699,7 @@ def planning_job_card_print(request, job_id):
         special_notes.append(requirement_note)
     special_instructions_text = ' | '.join(special_notes) if special_notes else '-'
 
-    po_approval_date = (
-        _workflow_date_for_status('production_approved')
-        or _workflow_date_for_status('qc_approved')
-        or job.delivery_date
-    )
+    po_approval_date = _get_po_approval_date_for_job(job)
 
     prepared_by_display = _display_user_identity(job.last_edited_by or job.created_by)
     checked_by_display = _workflow_actor_for_status('qc_approved')
@@ -3420,12 +3504,17 @@ def po_inbox(request):
             for key in item_sku_keys
             if key in recipe_map_all
         }
-        _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map)
+        _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map=recipe_map)
         repeat_count, new_count = _history_repeat_new_counts(items, recipe_map=recipe_map)
+
+        uploaded_at = doc['created_at']
+        if uploaded_at and getattr(uploaded_at, 'tzinfo', None) is not None:
+            uploaded_at = uploaded_at.astimezone().replace(tzinfo=None)
+
         rows.append(
             {
                 'po_doc_id': doc['id'],
-                'uploaded': doc['created_at'],
+                'uploaded': uploaded_at,
                 'po_number': payload.get('po_number') or '-',
                 'supplier': payload.get('supplier_name') or '-',
                 'item_count': len(items),
@@ -3861,6 +3950,8 @@ def po_review(request, doc_id):
                 missing_recipe_count = 0
                 po_date_raw = payload.get('po_date')
                 po_date = _parse_iso_date(po_date_raw)
+                approval_date_raw = payload.get('approval_date')
+                approval_date = _parse_iso_date(approval_date_raw)
                 delivery_location = payload.get('delivery_location', '')
                 department = payload.get('department', '')
 
@@ -3923,6 +4014,7 @@ def po_review(request, doc_id):
                         'order_qty': order_qty,
                         'department': department,
                         'destination': delivery_location,
+                        'po_approval_date': approval_date,
                         'delivery_date': delivery_date,
                         'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
                         'status': 'draft',
