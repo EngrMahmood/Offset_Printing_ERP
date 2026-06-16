@@ -1,6 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse, Http404
+from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
@@ -55,6 +56,17 @@ from .services import (
     run_bulk_archive, run_bulk_permanent_delete
 )
 
+
+def _parse_optional_decimal(raw_value):
+    if raw_value is None:
+        return None
+    raw_text = str(raw_value).strip().replace(',', '')
+    if not raw_text:
+        return None
+    try:
+        return Decimal(raw_text)
+    except InvalidOperation:
+        return None
 
 try:
     import openpyxl
@@ -350,11 +362,11 @@ def job_card_entry(request):
                 'estimated_run_time_minutes': estimated_run_minutes,
                 'estimated_setup_time_minutes': estimated_setup_minutes,
                 'estimated_total_time_minutes': estimated_total_minutes,
-                'ups': int(request.POST.get('ups') or 0) or None,
+                'ups': _parse_optional_decimal(request.POST.get('ups')),
                 'print_sheet_size': (request.POST.get('print_sheet_size') or '').strip() or None,
                 'wastage': int(request.POST.get('wastage') or 0),
                 'purchase_sheet_size': (request.POST.get('purchase_sheet_size') or '').strip() or None,
-                'purchase_sheet_ups': int(request.POST.get('purchase_sheet_ups') or 0) or None,
+                'purchase_sheet_ups': _parse_optional_decimal(request.POST.get('purchase_sheet_ups')),
                 'remarks': (request.POST.get('remarks') or '').strip() or None,
                 'destination': (request.POST.get('destination') or '').strip() or None,
                 'machine_name': machine,
@@ -1090,8 +1102,12 @@ def production_records(request):
 
 
 @login_required
-@permission_required('can_edit_production')
 def production_wip(request):
+    profile = getattr(request.user, 'profile', None)
+    if not profile or profile.normalized_role not in ('admin', 'manager', 'planner', 'production_manager', 'production', 'operator'):
+        messages.error(request, '❌ You do not have permission to access this feature.')
+        return redirect('planning:home')
+
     default_status_names = ['Printing', 'Dispatch']
     for status_name in default_status_names:
         ProductionWipStatus.objects.get_or_create(
@@ -1142,7 +1158,17 @@ def production_wip(request):
     query = (request.GET.get('q') or '').strip()
     status_filter = (request.GET.get('wip_status') or '').strip()
 
+    printing_status = ProductionWipStatus.objects.filter(name='Printing', is_active=True).first()
     job_cards = JobCard.objects.filter(is_active=True, status__in=['released', 'in_production']).select_related('planning_job')
+    if printing_status:
+        for job_card in job_cards.filter(production_wip_status__isnull=True, status='released'):
+            JobCardWipStatus.objects.update_or_create(
+                job_card=job_card,
+                defaults={
+                    'status': printing_status,
+                    'updated_by': request.user,
+                },
+            )
 
     if query:
         job_cards = job_cards.filter(

@@ -2,6 +2,7 @@ import csv
 import re
 import math
 import calendar
+from decimal import Decimal, InvalidOperation
 from io import BytesIO
 from dateutil import parser
 from datetime import datetime, date
@@ -37,6 +38,18 @@ def parse_int(value):
         return int(value)
     except:
         return 0
+
+def parse_decimal(value):
+    if value is None:
+        return None
+    raw = str(value).strip()
+    if raw == '':
+        return None
+    try:
+        normalized = raw.replace(',', '')
+        return Decimal(normalized)
+    except (InvalidOperation, ValueError):
+        return None
 
 
 def parse_bool(value):
@@ -486,7 +499,7 @@ def process_jobcard_upload(file, uploaded_by=None):
             # FIELD PARSING
             # ----------------------------
             order_qty = parse_int(get_field_value(row, 'order_qty', column_mapping))
-            ups = parse_int(get_field_value(row, 'ups', column_mapping))
+            ups = parse_decimal(get_field_value(row, 'ups', column_mapping))
             sku_value = get_field_value(row, 'sku', column_mapping)
             colour_raw = get_field_value(row, 'colour', column_mapping)
             colour_value = normalize_colour_value(colour_raw)
@@ -520,7 +533,7 @@ def process_jobcard_upload(file, uploaded_by=None):
                 missing_row_fields.append('SKU')
             if order_qty <= 0:
                 missing_row_fields.append('Order Qty (>0)')
-            if ups <= 0:
+            if ups is None or ups <= 0:
                 missing_row_fields.append('UPS (>0)')
             if not colour_value:
                 missing_row_fields.append('Colour')
@@ -535,7 +548,7 @@ def process_jobcard_upload(file, uploaded_by=None):
                 error_count += 1
                 continue
 
-            if ups <= 0:
+            if ups is None or ups <= 0:
                 errors.append({
                     "row": index,
                     "errors": "UPS must be greater than 0"
@@ -575,7 +588,7 @@ def process_jobcard_upload(file, uploaded_by=None):
                 wastage=calculate_wastage_sheets(row, column_mapping, order_qty, ups),
 
                 purchase_sheet_size=get_field_value(row, 'purchase_sheet_size', column_mapping),
-                purchase_sheet_ups=parse_int(get_field_value(row, 'purchase_sheet_ups', column_mapping)),
+                purchase_sheet_ups=parse_decimal(get_field_value(row, 'purchase_sheet_ups', column_mapping)),
 
                 remarks=get_field_value(row, 'remarks', column_mapping),
                 destination=get_field_value(row, 'destination', column_mapping),

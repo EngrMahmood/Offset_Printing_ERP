@@ -51,6 +51,15 @@
             </select>
         </div>
         <div class="erp-form-field">
+            <label>Stage</label>
+            <select name="planning_stage">
+                <option value="">All stages</option>
+                {% for value, label in stage_choices %}
+                    <option value="{{ value }}" {% if filters.planning_stage == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="erp-form-field">
             <label>PO Approval Date From</label>
             <input type="date" name="date_from" value="{{ filters.date_from }}">
         </div>
@@ -148,7 +157,7 @@
                     <th>Machine Name</th>
                     <th>Purchase Material</th>
                     <th>Stock</th>
-                    <th>Free</th>
+                    <th>Stage</th>
                     <th>Department</th>
                     <th>Plate Set No</th>
                     <th>AWC No.</th>
@@ -239,7 +248,7 @@
                         <td>{{ row.machine_name }}</td>
                         <td>{{ row.purchase_material_origin }}</td>
                         <td>{{ row.stock_qty }}</td>
-                        <td>{{ row.free }}</td>
+                        <td>{{ row.planning_stage }}</td>
                         <td>{{ row.department }}</td>
                         <td>{{ row.plate_set_no }}</td>
                         <td>{{ row.awc_no }}</td>

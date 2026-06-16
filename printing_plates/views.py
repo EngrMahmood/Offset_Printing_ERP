@@ -5,6 +5,7 @@ from django.utils import timezone
 from django.views.generic import ListView, DetailView, CreateView, TemplateView
 
 from planning.models import PlanningJob
+from .forms import PlateRequestForm
 from .models import PlateRequest
 
 
@@ -53,27 +54,16 @@ class PlateRequestDetailView(LoginRequiredMixin, GraphicsDesignerAccessMixin, De
 
 class PlateRequestCreateView(LoginRequiredMixin, GraphicsDesignerAccessMixin, CreateView):
     model = PlateRequest
+    form_class = PlateRequestForm
     template_name = 'printing_plates/plate_request_form.html'
-    fields = [
-        'planning_job',
-        'job_card',
-        'sku_recipe',
-        'machine',
-        'department',
-        'set_no',
-        'new_set_no',
-        'plate_quantity',
-        'plate_color',
-        'vendor',
-        'remarks',
-        'source',
-        'challan',
-        'chalan_sign',
-        'box',
-        'image',
-        'link',
-    ]
     success_url = reverse_lazy('printing_plates:queue')
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        form.fields['planning_job'].queryset = PlanningJob.objects.filter(
+            planning_stage__in=['new_plate_making', 'repeat_plate_making']
+        ).order_by('jc_number')
+        return form
 
     def form_valid(self, form):
         form.instance.requested_by = self.request.user

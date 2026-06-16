@@ -491,7 +491,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             continue
 
         delivery_date = _parse_iso_date(item.get('delivery_date'))
-        plan_date = delivery_date or po_date
+        plan_date = po_doc.created_at.date() if po_doc and getattr(po_doc, 'created_at', None) else (delivery_date or po_date)
         qty = item.get('quantity')
         order_qty = int(qty) if qty is not None else None
         unit_cost_val = item.get('unit_cost')
@@ -537,10 +537,10 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
         application_value = (item.get('application') or '').strip() or (recipe.application if recipe else (existing_job.application if existing_job else ''))
         size_w_mm_value = _to_decimal(item.get('size_w_mm') or '') or (recipe.size_w_mm if recipe else (existing_job.size_w_mm if existing_job else None))
         size_h_mm_value = _to_decimal(item.get('size_h_mm') or '') or (recipe.size_h_mm if recipe else (existing_job.size_h_mm if existing_job else None))
-        ups_value = _to_int(item.get('ups') or item.get('no_of_ups')) or (recipe.ups if recipe else (existing_job.ups if existing_job else None))
+        ups_value = _to_decimal(item.get('ups') or item.get('no_of_ups')) or (recipe.ups if recipe else (existing_job.ups if existing_job else None))
         print_sheet_size_value = (item.get('print_sheet_size') or '').strip() or (recipe.print_sheet_size if recipe else (existing_job.print_sheet_size if existing_job else ''))
         purchase_sheet_size_value = (item.get('purchase_sheet_size') or '').strip() or (recipe.purchase_sheet_size if recipe else (existing_job.purchase_sheet_size if existing_job else ''))
-        purchase_sheet_ups_value = _to_int(item.get('purchase_sheet_ups') or '') or (recipe.purchase_sheet_ups if recipe else (existing_job.purchase_sheet_ups if existing_job else None))
+        purchase_sheet_ups_value = _to_decimal(item.get('purchase_sheet_ups') or '') or (recipe.purchase_sheet_ups if recipe else (existing_job.purchase_sheet_ups if existing_job else None))
         daily_demand_value = _to_decimal(item.get('daily_demand') or '') or (recipe.daily_demand if recipe else (existing_job.daily_demand if existing_job else None))
         unit_cost_value = unit_cost_dec if unit_cost_dec is not None else (recipe.default_unit_cost if recipe else (existing_job.unit_cost if existing_job else None))
         actual_sheet_required_value = _to_int(item.get('actual_sheet_required') or item.get('actual_sheet_require') or item.get('sheet')) or (existing_job.actual_sheet_required if existing_job else None)
@@ -686,7 +686,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
 
         delivery_date = _parse_iso_date(target_item.get('delivery_date'))
         po_date = _parse_iso_date(payload.get('po_date'))
-        plan_date = delivery_date or po_date
+        plan_date = po_doc.created_at.date() if po_doc and getattr(po_doc, 'created_at', None) else (delivery_date or po_date)
         qty = target_item.get('quantity')
         order_qty = int(qty) if qty is not None else None
         unit_cost_val = target_item.get('unit_cost')

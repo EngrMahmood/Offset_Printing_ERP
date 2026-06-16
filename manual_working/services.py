@@ -4,7 +4,7 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 from django.utils.dateparse import parse_date
 
-from planning.models import PlanningJob, PoDocument, SkuRecipe
+from planning.models import PLANNING_STAGE_CHOICES, PlanningJob, PoDocument, SkuRecipe
 
 
 def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
@@ -41,32 +41,30 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
     if status:
         queryset = queryset.filter(status=status)
 
-    date_from = filters.get('date_from')
-    if date_from:
-        parsed_from = parse_date(date_from)
-        if parsed_from:
-            queryset = queryset.filter(
-                Q(po_approval_date__gte=parsed_from)
-                | Q(job_card__po_date__gte=parsed_from)
-                | Q(plan_date__gte=parsed_from)
-            )
-
-    date_to = filters.get('date_to')
-    if date_to:
-        parsed_to = parse_date(date_to)
-        if parsed_to:
-            queryset = queryset.filter(
-                Q(po_approval_date__lte=parsed_to)
-                | Q(job_card__po_date__lte=parsed_to)
-                | Q(plan_date__lte=parsed_to)
-            )
+    planning_stage = filters.get('planning_stage')
+    if planning_stage:
+        queryset = queryset.filter(planning_stage=planning_stage)
 
     queryset = queryset.order_by('-plan_date', '-jc_number')
     jobs = list(queryset)
     recipe_map = _build_recipe_map(jobs)
     approval_map = _build_job_card_approval_date_map(jobs)
 
-    return [_build_row(item, recipe_map, approval_map) for item in jobs]
+    rows = [_build_row(item, recipe_map, approval_map) for item in jobs]
+
+    date_from = filters.get('date_from')
+    if date_from:
+        parsed_from = parse_date(date_from)
+        if parsed_from:
+            rows = [row for row in rows if row.get('po_approval_date_obj') and row['po_approval_date_obj'] >= parsed_from]
+
+    date_to = filters.get('date_to')
+    if date_to:
+        parsed_to = parse_date(date_to)
+        if parsed_to:
+            rows = [row for row in rows if row.get('po_approval_date_obj') and row['po_approval_date_obj'] <= parsed_to]
+
+    return rows
 
 
 def _build_job_card_approval_date_map(jobs):
@@ -219,10 +217,12 @@ def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map:
         'jc_number': _format_text(job.jc_number),
         'month': _format_month(job_card_month or job.plan_month, po_approval_date),
         'date': _format_date(po_approval_date),
+        'po_approval_date_obj': po_approval_date,
         'po_number': _format_text(job.po_number),
         'sku': _format_text(job.sku),
         'job_name': _format_text(job.job_name),
         'repeat_flag': _resolve_repeat_flag(job.repeat_flag, recipe),
+        'planning_stage': _format_text(dict(PLANNING_STAGE_CHOICES).get(job.planning_stage, job.planning_stage)),
         'material': _resolve_job_or_recipe(job.material, getattr(recipe, 'material', None)),
         'color_spec': _resolve_job_or_recipe(job.color_spec, getattr(recipe, 'color_spec', None)),
         'application': _resolve_job_or_recipe(job.application, getattr(recipe, 'application', None)),

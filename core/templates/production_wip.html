@@ -114,8 +114,11 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="erp-filter-actions">
+                    <div class="erp-filter-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
                         <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                        {% if q or status_filter %}
+                        <a href="{% url 'production_wip' %}" class="erp-btn erp-btn-secondary">Clear</a>
+                        {% endif %}
                     </div>
                 </form>
             </aside>

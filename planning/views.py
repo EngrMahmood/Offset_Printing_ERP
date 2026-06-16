@@ -160,6 +160,21 @@ def _get_po_approval_date_for_job(job):
         if to_status in {'production_approved', 'qc_approved'} and log.created_at:
             return log.created_at.date()
     return None
+
+
+def _get_po_upload_date_for_job(job):
+    if hasattr(job, 'po_documents'):
+        po_document = job.po_documents.order_by('created_at').first()
+        if po_document and po_document.created_at:
+            return po_document.created_at.date()
+
+    if job.po_number:
+        po_document = PoDocument.objects.filter(
+            extracted_payload__po_number__iexact=job.po_number,
+        ).order_by('created_at').first()
+        if po_document and po_document.created_at:
+            return po_document.created_at.date()
+
     return None
 
 
@@ -825,8 +840,10 @@ def planning_home(request):
                 if planning_stage not in valid_stages:
                     messages.error(request, 'Please select a valid planning stage.')
                     return redirect('planning:jobs')
+
                 job.planning_stage = planning_stage
-                job.save(update_fields=['planning_stage', 'updated_at'])
+                job.planning_stage_changed_at = timezone.now()
+                job.save(update_fields=['planning_stage', 'planning_stage_changed_at', 'updated_at'])
                 trigger_plate_request_for_planning_job(job, request.user)
                 stage_display = dict(PLANNING_STAGE_CHOICES).get(planning_stage, 'Not Set')
                 messages.success(request, f'Planning job {job.jc_number} stage updated to: {stage_display}.')
@@ -858,7 +875,8 @@ def planning_home(request):
                 if not user_can_release:
                     messages.error(request, 'You do not have permission to release jobs for production.')
                     return redirect('planning:jobs')
-                if not job.job_card:
+                job_card = getattr(job, 'job_card', None)
+                if not job_card:
                     messages.error(request, f'Job Card missing for planning job {job.jc_number}.')
                     return redirect('planning:jobs')
                 plate_set_no = (request.POST.get('plate_set_no') or '').strip()
@@ -866,7 +884,7 @@ def planning_home(request):
                     job.plate_set_no = plate_set_no
                     job.save(update_fields=['plate_set_no', 'updated_at'])
                 try:
-                    execute_job_card_action(job.job_card, 'release_for_production', actor=request.user, reason='Released from planning jobs list')
+                    execute_job_card_action(job_card, 'release_for_production', actor=request.user, reason='Released from planning jobs list')
                     messages.success(request, f'Planning job {job.jc_number} was released for production.')
                 except ValidationError as exc:
                     error_dict = getattr(exc, 'message_dict', None)
@@ -921,21 +939,50 @@ def planning_home(request):
         queryset = queryset.filter(department__icontains=department_filter)
     if machine_filter:
         queryset = queryset.filter(machine_name__icontains=machine_filter)
-    if from_date:
-        queryset = queryset.filter(plan_date__gte=from_date)
-    if to_date:
-        queryset = queryset.filter(plan_date__lte=to_date)
 
-    status_rows = queryset.values('status').annotate(total=Count('id')).order_by('status')
-    status_counts = {}
-    for row in status_rows:
-        normalized_status = _normalize_status(row['status'])
-        status_counts[normalized_status] = status_counts.get(normalized_status, 0) + (row['total'] or 0)
+    if from_date or to_date:
+        queryset = queryset.select_related('job_card')
+        jobs_list = list(queryset)
+        for job in jobs_list:
+            job.po_approval_date_display = _get_po_approval_date_for_job(job)
+            po_uploaded_date = _get_po_upload_date_for_job(job)
+            if po_uploaded_date:
+                job.plan_date_display = po_uploaded_date
+            else:
+                job.plan_date_display = job.plan_date or (job.created_at.date() if job.created_at else None)
 
-    queryset = queryset.select_related('job_card')
-    paginator = Paginator(queryset, 50)
-    page_number = request.GET.get('page')
-    jobs = paginator.get_page(page_number)
+        if from_date:
+            jobs_list = [job for job in jobs_list if job.po_approval_date_display and job.po_approval_date_display >= from_date]
+        if to_date:
+            jobs_list = [job for job in jobs_list if job.po_approval_date_display and job.po_approval_date_display <= to_date]
+
+        status_counts = {}
+        for job in jobs_list:
+            normalized_status = _normalize_status(job.status)
+            status_counts[normalized_status] = status_counts.get(normalized_status, 0) + 1
+
+        paginator = Paginator(jobs_list, 50)
+        page_number = request.GET.get('page')
+        jobs = paginator.get_page(page_number)
+    else:
+        status_rows = queryset.values('status').annotate(total=Count('id')).order_by('status')
+        status_counts = {}
+        for row in status_rows:
+            normalized_status = _normalize_status(row['status'])
+            status_counts[normalized_status] = status_counts.get(normalized_status, 0) + (row['total'] or 0)
+
+        queryset = queryset.select_related('job_card')
+        paginator = Paginator(queryset, 50)
+        page_number = request.GET.get('page')
+        jobs = paginator.get_page(page_number)
+
+        for job in jobs:
+            job.po_approval_date_display = _get_po_approval_date_for_job(job)
+            po_uploaded_date = _get_po_upload_date_for_job(job)
+            if po_uploaded_date:
+                job.plan_date_display = po_uploaded_date
+            else:
+                job.plan_date_display = job.plan_date or (job.created_at.date() if job.created_at else None)
 
     job_skus = {
         _sku_key(job.sku)
@@ -953,6 +1000,13 @@ def planning_home(request):
     }
 
     for job in jobs:
+        job.po_approval_date_display = _get_po_approval_date_for_job(job)
+        po_uploaded_date = _get_po_upload_date_for_job(job)
+        if po_uploaded_date:
+            job.plan_date_display = po_uploaded_date
+        else:
+            job.plan_date_display = job.plan_date or (job.created_at.date() if job.created_at else None)
+
         job.effective_status = _effective_planning_status(job)
         job.effective_status_label = _effective_planning_status_label(job, job.effective_status)
         job.can_submit_qc = True
@@ -962,6 +1016,50 @@ def planning_home(request):
             if not has_approved_recipe:
                 job.can_submit_qc = False
                 job.submit_qc_block_reason = 'SKU master is pending review/approval in QC.'
+
+    # Build a last-status-change audit map for linked job cards.
+    job_card_ids = [job.job_card.id for job in jobs if getattr(job, 'job_card', None)]
+    status_logs = {}
+    if job_card_ids:
+        logs = ChangeLog.objects.filter(
+            entity_type='job_card',
+            record_id__in=job_card_ids,
+        ).select_related('changed_by').order_by('-created_at')
+        for log in logs:
+            if log.record_id in status_logs:
+                continue
+            field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
+            status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
+            if not isinstance(status_change, dict):
+                continue
+            status_logs[log.record_id] = log
+
+    def _display_user_identity(user):
+        if not user:
+            return ''
+        full_name = (user.get_full_name() or '').strip()
+        if full_name:
+            return full_name
+        return (user.username or '').strip()
+
+    for job in jobs:
+        job_card = getattr(job, 'job_card', None)
+        job.job_card_display_machine_name = job.machine_name or (job_card.machine_name_display if job_card else None)
+        job.job_card_workflow_status = job_card.workflow_status if job_card else ''
+        job.has_job_card = bool(job_card)
+        if job_card:
+            job.job_card_status_label = job_card.workflow_status_label
+            log = status_logs.get(job_card.id)
+            if log:
+                job.status_changed_by = _display_user_identity(log.changed_by)
+                job.status_changed_at = log.created_at
+            else:
+                job.status_changed_by = ''
+                job.status_changed_at = None
+        else:
+            job.job_card_status_label = ''
+            job.status_changed_by = ''
+            job.status_changed_at = None
 
     return render(
         request,
@@ -1082,9 +1180,9 @@ def planning_jobs_archived(request):
     if machine_filter:
         queryset = queryset.filter(machine_name__icontains=machine_filter)
     if from_date:
-        queryset = queryset.filter(plan_date__gte=from_date)
+        queryset = queryset.filter(po_approval_date__gte=from_date)
     if to_date:
-        queryset = queryset.filter(plan_date__lte=to_date)
+        queryset = queryset.filter(po_approval_date__lte=to_date)
 
     status_rows = queryset.values('status').annotate(total=Count('id')).order_by('status')
     status_counts = {}
@@ -1175,13 +1273,13 @@ def import_planning_sheet(request):
                 'size_h_inch': _to_decimal(row.get('Size H Inch')),
                 'order_qty': _to_int(row.get('Order Qty')),
                 'print_pcs': _to_int(row.get('Print Pcs')),
-                'ups': _to_int(row.get('Ups')),
+                'ups': _to_decimal(row.get('Ups')),
                 'print_sheet_size': (row.get('Print Sheet Size') or '').strip(),
                 'print_sheets': _to_int(row.get('Print Sheets')),
                 'wastage_sheets': _to_int(row.get('Wastage')),
                 'actual_sheet_required': _to_int(row.get('Actual Sheet require')),
                 'purchase_sheet_size': (row.get('Purchase Sheet Size') or '').strip(),
-                'purchase_sheet_ups': _to_int(row.get('Purchase Sheet ups')),
+                'purchase_sheet_ups': _to_decimal(row.get('Purchase Sheet ups')),
                 'purchase_sheet_required': _to_int(row.get('Purchase Sheet require')),
                 'pkt_value': _to_decimal(row.get('PKT')),
                 'remarks': (row.get('Remarks  ') or '').strip(),
@@ -1906,6 +2004,48 @@ def approval_queue(request):
     qc_jobs = qc_jobs.order_by('-updated_at', '-id')[:300]
     pm_jobs = pm_jobs.order_by('-updated_at', '-id')[:300]
     release_jobs = release_jobs.order_by('-updated_at', '-id')[:300]
+
+    job_card_ids = set()
+    for qs in [planning_jobs, qc_jobs, pm_jobs, release_jobs]:
+        job_card_ids.update(qs.values_list('id', flat=True))
+
+    status_logs = {}
+    if job_card_ids:
+        logs = ChangeLog.objects.filter(
+            entity_type='job_card',
+            record_id__in=job_card_ids,
+        ).select_related('changed_by').order_by('-created_at')
+        for log in logs:
+            if log.record_id in status_logs:
+                continue
+            field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
+            status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
+            if not isinstance(status_change, dict):
+                continue
+            status_logs[log.record_id] = log
+
+    def _display_user_identity(user):
+        if not user:
+            return ''
+        full_name = (user.get_full_name() or '').strip()
+        if full_name:
+            return full_name
+        return (user.username or '').strip()
+
+    def _attach_status_audit(qs):
+        for job in qs:
+            log = status_logs.get(job.id)
+            if log:
+                job.status_changed_by = _display_user_identity(log.changed_by)
+                job.status_changed_at = log.created_at
+            else:
+                job.status_changed_by = ''
+                job.status_changed_at = None
+
+    _attach_status_audit(planning_jobs)
+    _attach_status_audit(qc_jobs)
+    _attach_status_audit(pm_jobs)
+    _attach_status_audit(release_jobs)
 
     pending_qc_jobs_count = qc_jobs.count()
     approved_qc_jobs_count = JobCard.objects.filter(is_active=True, status='qc_approved').count()
@@ -2632,7 +2772,7 @@ def sku_recipe_bulk_upload(request):
             'Die': 'die_cutting',
             'Notes': 'notes',
         }
-        int_clean_fields = {'size_w_mm', 'size_h_mm', 'size_w_inch', 'size_h_inch', 'ups', 'purchase_sheet_ups', 'daily_demand'}
+        int_clean_fields = {'size_w_mm', 'size_h_mm', 'size_w_inch', 'size_h_inch'}
         def clean_intlike(val):
             try:
                 if val is None or str(val).strip() == '':
@@ -2953,8 +3093,8 @@ def pending_skus(request):
         department = (request.POST.get('department') or '').strip()
         print_sheet_size = (request.POST.get('print_sheet_size') or '').strip()
         purchase_sheet_size = (request.POST.get('purchase_sheet_size') or '').strip()
-        purchase_sheet_ups = _to_optional_positive_int(request.POST.get('purchase_sheet_ups'))
-        ups = _to_optional_positive_int(request.POST.get('ups'))
+        purchase_sheet_ups = _to_optional_decimal(request.POST.get('purchase_sheet_ups'))
+        ups = _to_optional_decimal(request.POST.get('ups'))
         daily_demand = _to_optional_decimal(request.POST.get('daily_demand'))
         awc_no = (request.POST.get('awc_no') or '').strip()
         die_cutting = (request.POST.get('die_cutting') or '').strip()
@@ -3916,7 +4056,7 @@ def po_review(request, doc_id):
                 'net_total': _format_decimal_string(net_total_value),
                 'print_sheet_size': (request.POST.get('manual_print_sheet_size') or '').strip() or '',
                 'purchase_sheet_size': (request.POST.get('manual_purchase_sheet_size') or '').strip() or '',
-                'ups': _to_optional_positive_int(request.POST.get('manual_ups')),
+                'ups': _to_optional_decimal(request.POST.get('manual_ups')),
                 'machine_name': (request.POST.get('manual_machine_name') or '').strip() or '',
             }
             payload['items'] = list(payload.get('items', []))
@@ -3981,7 +4121,7 @@ def po_review(request, doc_id):
                     )
 
                     delivery_date = _parse_iso_date(item.get('delivery_date'))
-                    plan_date = delivery_date or po_date
+                    plan_date = po_doc.created_at.date() if po_doc and getattr(po_doc, 'created_at', None) else (delivery_date or po_date)
 
                     existing_job = existing_jobs_by_sku.get(sku_key)
                     if existing_job:
@@ -4122,7 +4262,7 @@ def po_new_skus(request, doc_id):
             application = (request.POST.get(f"{prefix}_application") or '').strip()
             print_sheet_size = (request.POST.get(f"{prefix}_print_sheet_size") or '').strip()
             purchase_sheet_size = (request.POST.get(f"{prefix}_purchase_sheet_size") or '').strip()
-            ups = _to_optional_positive_int(request.POST.get(f"{prefix}_ups"))
+            ups = _to_optional_decimal(request.POST.get(f"{prefix}_ups"))
 
             unit_cost_raw = (request.POST.get(f"{prefix}_default_unit_cost") or '').strip()
             unit_cost = None

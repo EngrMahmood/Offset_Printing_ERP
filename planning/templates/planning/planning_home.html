@@ -92,7 +92,10 @@
             </div>
         </div>
         <form method="get" class="erp-form-grid" style="grid-template-columns:1fr 1fr auto; gap:12px; margin-bottom:12px;">
-            <input type="text" name="q" placeholder="Search JC / PO / SKU / Job" value="{{ filters.q }}">
+            <div style="display:grid; gap:8px;">
+                <input type="text" name="q" placeholder="Search JC / PO / SKU / Job" value="{{ filters.q }}">
+                <input type="text" name="machine" placeholder="Machine Name" value="{{ filters.machine }}">
+            </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                 <select name="status">
                     <option value="">All Statuses</option>
@@ -107,6 +110,16 @@
                     {% endfor %}
                 </select>
             </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                <div>
+                    <label>PO Approval Date From</label>
+                    <input type="date" name="from_date" value="{{ filters.from_date }}" placeholder="From PO Approval Date">
+                </div>
+                <div>
+                    <label>PO Approval Date To</label>
+                    <input type="date" name="to_date" value="{{ filters.to_date }}" placeholder="To PO Approval Date">
+                </div>
+            </div>
             <div class="erp-actions" style="gap:8px;">
                 <button type="submit" class="erp-btn erp-btn-primary">Filter</button>
                 <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-secondary">Reset</a>
@@ -118,8 +131,8 @@
             <table class="erp-table">
                 <thead>
                     <tr>
-                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
-                        <th>Status</th><th>Delivery Date</th><th>Plan Date</th><th>Stage</th><th style="width:200px;">Actions</th>
+                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th><th>Machine</th>
+                        <th>Status</th><th>Stage Changed</th><th>Last Change</th><th>PO Approval Date</th><th>Delivery Date</th><th>Plan Date</th><th>Stage</th><th style="width:200px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -129,9 +142,13 @@
                         <td>{{ job.po_number|default:'-' }}</td>
                         <td>{{ job.sku|default:'-' }}</td>
                         <td title="{{ job.job_name }}">{{ job.job_name|default:'-' }}</td>
+                        <td>{{ job.job_card_display_machine_name|default:'-' }}</td>
                         <td><span class="erp-badge {{ job.effective_status|jc_status_badge }}">{{ job.effective_status_label }}</span></td>
-                        <td>{% if job.delivery_date %}{{ job.delivery_date|date:'Y-m-d' }}{% elif job.plan_date %}{{ job.plan_date|date:'Y-m-d' }}{% else %}-{% endif %}</td>
-                        <td>{{ job.created_at|date:'Y-m-d'|default:'-' }}</td>
+                        <td>{% if job.planning_stage_changed_at %}{{ job.planning_stage_changed_at|date:'Y-m-d H:i' }}{% else %}-{% endif %}</td>
+                        <td>{% if job.status_changed_by %}{{ job.status_changed_by }}{% if job.status_changed_at %} @ {{ job.status_changed_at|date:'Y-m-d H:i' }}{% endif %}{% else %}-{% endif %}</td>
+                        <td>{% if job.po_approval_date_display %}{{ job.po_approval_date_display|date:'Y-m-d' }}{% else %}-{% endif %}</td>
+                        <td>{% if job.delivery_date %}{{ job.delivery_date|date:'Y-m-d' }}{% else %}-{% endif %}</td>
+                        <td>{% if job.plan_date_display %}{{ job.plan_date_display|date:'Y-m-d' }}{% else %}-{% endif %}</td>
                         <td>
                             {% if job.planning_stage %}
                                 {% if job.planning_stage == 'jc_ready' %}<span class="erp-badge erp-badge-success">JC Ready</span>
@@ -183,7 +200,7 @@
                                         </form>
                                     {% endif %}
                                 {% endif %}
-                                {% if user_can_release and job.job_card and job.job_card.workflow_status == 'qc_approved' %}
+                                {% if user_can_release and job.has_job_card and job.job_card_workflow_status == 'qc_approved' %}
                                     <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form" onsubmit="return promptReleasePlateSetNo(this, '{{ job.jc_number|escapejs }}');">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="release_for_production">
@@ -192,8 +209,8 @@
                                         <button type="submit" class="erp-btn erp-btn-success sm">Release</button>
                                     </form>
                                 {% endif %}
-                                {% if job.job_card %}
-                                    {% if job.job_card.workflow_status == 'production_approved' or job.job_card.workflow_status == 'released' or job.job_card.workflow_status == 'in_production' or job.job_card.workflow_status == 'completed' or job.job_card.workflow_status == 'closed' %}
+                                {% if job.has_job_card %}
+                                    {% if job.job_card_workflow_status == 'production_approved' or job.job_card_workflow_status == 'released' or job.job_card_workflow_status == 'in_production' or job.job_card_workflow_status == 'completed' or job.job_card_workflow_status == 'closed' %}
                                         <a href="{% url 'planning:job_card_print' job.id %}" class="erp-btn erp-btn-success sm">Print</a>
                                     {% endif %}
                                 {% endif %}
@@ -209,8 +226,8 @@
         {% if jobs.has_other_pages %}
         <div class="erp-pager">
             <span style="color:#666;">Page {{ jobs.number }} of {{ jobs.paginator.num_pages }}</span>
-            {% if jobs.has_previous %}<a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}" class="erp-btn erp-btn-secondary">← Previous</a>{% endif %}
-            {% if jobs.has_next %}<a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}" class="erp-btn erp-btn-primary">Next →</a>{% endif %}
+            {% if jobs.has_previous %}<a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-secondary">← Previous</a>{% endif %}
+            {% if jobs.has_next %}<a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-primary">Next →</a>{% endif %}
         </div>
         {% endif %}
     </section>

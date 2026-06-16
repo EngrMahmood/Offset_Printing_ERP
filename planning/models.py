@@ -70,7 +70,7 @@ class PlanningJob(models.Model):
 
     order_qty = models.PositiveIntegerField(null=True, blank=True)
     print_pcs = models.PositiveIntegerField(null=True, blank=True)
-    ups = models.PositiveIntegerField(null=True, blank=True)
+    ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     print_sheet_size = models.CharField(max_length=80, blank=True)
     print_sheets = models.PositiveIntegerField(null=True, blank=True)
@@ -78,7 +78,7 @@ class PlanningJob(models.Model):
     actual_sheet_required = models.PositiveIntegerField(null=True, blank=True)
 
     purchase_sheet_size = models.CharField(max_length=80, blank=True)
-    purchase_sheet_ups = models.PositiveIntegerField(null=True, blank=True)
+    purchase_sheet_ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     purchase_sheet_required = models.PositiveIntegerField(null=True, blank=True)
 
     pkt_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -100,6 +100,7 @@ class PlanningJob(models.Model):
     remaining_sheet = models.PositiveIntegerField(null=True, blank=True)
     status = models.CharField(max_length=40, choices=PLANNING_STATUS_CHOICES, default='draft', blank=True)
     planning_stage = models.CharField(max_length=40, choices=PLANNING_STAGE_CHOICES, default='', blank=True)
+    planning_stage_changed_at = models.DateTimeField(null=True, blank=True)
     pr_reference = models.CharField(max_length=120, blank=True)
     change_request_pending = models.BooleanField(default=False)
     change_request_reason = models.TextField(blank=True)
@@ -570,11 +571,11 @@ class SkuRecipe(models.Model):
 
     size_w_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     size_h_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    ups = models.PositiveIntegerField(null=True, blank=True)
+    ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     print_sheet_size = models.CharField(max_length=80, blank=True)
     purchase_sheet_size = models.CharField(max_length=80, blank=True)
-    purchase_sheet_ups = models.PositiveIntegerField(null=True, blank=True)
+    purchase_sheet_ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     default_unit_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     daily_demand = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)

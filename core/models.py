@@ -166,7 +166,7 @@ class JobCard(models.Model):
         help_text="Allowed extra production over planned sheets in percent"
     )
 
-    ups = models.IntegerField(null=True, blank=True)
+    ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     print_sheet_size = models.CharField(max_length=50, null=True, blank=True)
     plate_set_no = models.CharField(max_length=120, null=True, blank=True)
 
@@ -175,7 +175,7 @@ class JobCard(models.Model):
     total_colors = models.PositiveIntegerField(null=True, blank=True)
 
     purchase_sheet_size = models.CharField(max_length=50, null=True, blank=True)
-    purchase_sheet_ups = models.IntegerField(null=True, blank=True)
+    purchase_sheet_ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     remarks = models.TextField(null=True, blank=True)
 
@@ -1005,19 +1005,19 @@ class UserProfile(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
     def can_view_plate_queue(self):
-        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
+        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
 
     def can_create_plate_request(self):
-        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
+        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
 
     def can_send_plate(self):
-        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
+        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
 
     def can_receive_plate(self):
-        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
+        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
 
     def can_archive_plate(self):
-        return self.normalized_role in ('admin', 'manager', 'graphics_designer')
+        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:

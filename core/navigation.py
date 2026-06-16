@@ -4,7 +4,7 @@ from typing import Any
 
 PLANNING_NAV_ROLES = {'admin', 'manager', 'planner'}
 QC_NAV_ROLES = {'admin', 'manager', 'qc', 'production_manager'}
-PRODUCTION_NAV_ROLES = {'admin', 'manager', 'production_manager', 'production', 'operator'}
+PRODUCTION_NAV_ROLES = {'admin', 'manager', 'planner', 'production_manager', 'production', 'operator'}
 DISPATCH_NAV_ROLES = {'admin', 'manager', 'dispatch'}
 MASTER_DATA_NAV_ROLES = {'admin', 'manager', 'production_manager'}
 MIGRATION_NAV_ROLES = {'admin', 'manager', 'planner'}

@@ -1,5 +1,5 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+{% load static tz %}
 
 {% block title %}Job Card Approval Queue — ERP{% endblock %}
 {% block header_title %}Job Card Approval Queue{% endblock %}
@@ -39,6 +39,24 @@
         <div class="erp-alert is-notice">{{ msg }}</div>
     {% endfor %}
 {% endif %}
+
+<form method="get" class="erp-form" style="margin-bottom:24px;">
+    <div class="erp-form-row" style="gap:12px; flex-wrap:wrap;">
+        <div style="flex:1; min-width:250px;">
+            <label for="queue_q">Search approval queue</label>
+            <input id="queue_q" type="text" name="q" class="erp-input" placeholder="JC / PO / SKU / Job" value="{{ queue_q }}">
+        </div>
+        <div style="display:flex; align-items:flex-end; gap:8px;">
+            <button type="submit" class="erp-btn erp-btn-primary">Search</button>
+            {% if queue_q %}
+            <a href="{% url 'planning:approval_queue' %}" class="erp-btn erp-btn-secondary">Clear</a>
+            {% endif %}
+        </div>
+    </div>
+</form>
+<div class="erp-alert is-info" style="margin-bottom:24px;">
+    <strong>Note:</strong> the Release tab shows PM-approved job cards that are ready to be released for production. It does not mean the job has started production yet.
+</div>
 
 <!-- ─── SECTION A: SKU Approval Queue ─────────────────────── -->
 <div class="erp-section-divider">
@@ -153,7 +171,7 @@
                     <tr>
                         <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
                         <th>Status</th><th>Sheets</th><th>Colors</th><th>Machine</th>
-                        <th>Updated</th><th class="erp-col-actions">Action</th>
+                        <th>Last Changed</th><th>Updated</th><th class="erp-col-actions">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -166,8 +184,9 @@
                         <td><span class="erp-badge">{{ job.workflow_status_label }}</span></td>
                         <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
                         <td>{{ job.number_of_colors|default:'-' }}</td>
-                        <td>{{ job.machine_name|default:'-' }}</td>
-                        <td class="erp-muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
+                        <td>{{ job.machine_name_display|default:'-' }}</td>
+                        <td>{% if job.status_changed_by %}{{ job.status_changed_by }}{% if job.status_changed_at %} @ {{ job.status_changed_at|date:'d M Y H:i' }}{% endif %}{% else %}-{% endif %}</td>
+                        <td class="erp-muted">{{ job.updated_at|date:'d M Y H:i' }}</td>
                         <td class="erp-col-actions aq-action-cell">
                             {% if can_admin_actions %}
                             <input form="bulk-delete-planning-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="planning" aria-label="Select {{ job.job_card_no }}">
@@ -228,7 +247,7 @@
                     <tr>
                         <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
                         <th>Status</th><th>Sheets</th><th>Colors</th><th>Machine</th>
-                        <th>Updated</th><th class="erp-col-actions">Action</th>
+                        <th>Last Changed</th><th>Updated</th><th class="erp-col-actions">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -241,8 +260,9 @@
                         <td><span class="erp-badge">{{ job.workflow_status_label }}</span></td>
                         <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
                         <td>{{ job.number_of_colors|default:'-' }}</td>
-                        <td>{{ job.machine_name|default:'-' }}</td>
-                        <td class="erp-muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
+                        <td>{{ job.machine_name_display|default:'-' }}</td>
+                        <td>{% if job.status_changed_by %}{{ job.status_changed_by }}{% if job.status_changed_at %} @ {{ job.status_changed_at|date:'d M Y H:i' }}{% endif %}{% else %}-{% endif %}</td>
+                        <td class="erp-muted">{{ job.updated_at|date:'d M Y H:i' }}</td>
                         <td class="erp-col-actions aq-action-cell">
                             {% if can_admin_actions %}
                             <input form="bulk-delete-qc-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="qc" aria-label="Select {{ job.job_card_no }}">
@@ -304,7 +324,7 @@
                     <tr>
                         <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
                         <th>Status</th><th>Sheets</th><th>Colors</th><th>Machine</th>
-                        <th>Updated</th><th class="erp-col-actions">Action</th>
+                        <th>Last Changed</th><th>Updated</th><th class="erp-col-actions">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -317,8 +337,9 @@
                         <td><span class="erp-badge">{{ job.workflow_status_label }}</span></td>
                         <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
                         <td>{{ job.number_of_colors|default:'-' }}</td>
-                        <td>{{ job.machine_name|default:'-' }}</td>
-                        <td class="erp-muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
+                        <td>{{ job.machine_name_display|default:'-' }}</td>
+                        <td>{% if job.status_changed_by %}{{ job.status_changed_by }}{% if job.status_changed_at %} @ {{ job.status_changed_at|date:'d M Y H:i' }}{% endif %}{% else %}-{% endif %}</td>
+                        <td class="erp-muted">{{ job.updated_at|date:'d M Y H:i' }}</td>
                         <td class="erp-col-actions aq-action-cell">
                             {% if can_admin_actions %}
                             <input form="bulk-delete-pm-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="pm" aria-label="Select {{ job.job_card_no }}">
@@ -378,7 +399,7 @@
                     <tr>
                         <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
                         <th>Status</th><th>Sheets</th><th>Colors</th><th>Machine</th>
-                        <th>Updated</th><th class="erp-col-actions">Action</th>
+                        <th>Last Changed</th><th>Updated</th><th class="erp-col-actions">Action</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -391,8 +412,9 @@
                         <td><span class="erp-badge">{{ job.workflow_status_label }}</span></td>
                         <td>{{ job.total_sheet_quantity|default:job.total_impressions_required|default:'-' }}</td>
                         <td>{{ job.number_of_colors|default:'-' }}</td>
-                        <td>{{ job.machine_name|default:'-' }}</td>
-                        <td class="erp-muted">{{ job.planning_job.updated_at|default:job.created_at|date:'d M Y H:i' }}</td>
+                        <td>{{ job.machine_name_display|default:'-' }}</td>
+                        <td>{% if job.status_changed_by %}{{ job.status_changed_by }}{% if job.status_changed_at %} @ {{ job.status_changed_at|date:'d M Y H:i' }}{% endif %}{% else %}-{% endif %}</td>
+                        <td class="erp-muted">{{ job.updated_at|date:'d M Y H:i' }}</td>
                         <td class="erp-col-actions aq-action-cell">
                             {% if can_admin_actions %}
                             <input form="bulk-delete-release-form" type="checkbox" name="job_card_ids" value="{{ job.id }}" data-select-group="release" aria-label="Select {{ job.job_card_no }}">
