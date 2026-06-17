@@ -33,6 +33,7 @@ from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
 from django.db import OperationalError, transaction
 from django.db.models import Count, Q, Sum
+from django.db.models.deletion import ProtectedError
 from django.http import Http404, HttpResponse
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
@@ -76,6 +77,7 @@ from .models import (
     PoDocument,
     SkuRecipe,
 )
+from printing_plates.models import PlateRequest
 from workflow.services import (
     _annotate_items_with_recipe,
     _build_cost_mismatch_note,
@@ -703,7 +705,7 @@ def planning_sku_recipes_list(request):
 def planning_home(request):
     _user_can_plan = getattr(getattr(request.user, 'profile', None), 'can_plan', lambda: False)()
     user_can_release = _user_can_plan
-    queryset = PlanningJob.objects.select_related('job_card').filter(
+    queryset = PlanningJob.objects.select_related('job_card', 'planning_stage_changed_by').filter(
         is_active=True,
     )
 
@@ -821,6 +823,27 @@ def planning_home(request):
                 messages.error(request, 'Only administrators can delete planning jobs.')
                 return redirect('planning:jobs')
 
+            if action == 'delete':
+                try:
+                    job.delete()
+                    messages.success(request, f'Planning job {job.jc_number} was permanently deleted.')
+                except ProtectedError:
+                    if _user_is_admin(request.user):
+                        protected_plate_requests = PlateRequest.objects.filter(planning_job=job)
+                        if protected_plate_requests.exists():
+                            protected_count = protected_plate_requests.count()
+                            protected_plate_requests.delete()
+                            job.delete()
+                            messages.success(
+                                request,
+                                f'Planning job {job.jc_number} and {protected_count} linked plate request(s) were permanently deleted.',
+                            )
+                        else:
+                            messages.error(request, f'Cannot delete planning job {job.jc_number} because it is referenced by other records.')
+                    else:
+                        messages.error(request, 'Only administrators can delete planning jobs.')
+                return redirect('planning:jobs')
+
             if action == 'request_change':
                 change_reason = (request.POST.get('change_reason') or '').strip()
                 if not change_reason:
@@ -843,7 +866,8 @@ def planning_home(request):
 
                 job.planning_stage = planning_stage
                 job.planning_stage_changed_at = timezone.now()
-                job.save(update_fields=['planning_stage', 'planning_stage_changed_at', 'updated_at'])
+                job.planning_stage_changed_by = request.user
+                job.save(update_fields=['planning_stage', 'planning_stage_changed_at', 'planning_stage_changed_by', 'updated_at'])
                 trigger_plate_request_for_planning_job(job, request.user)
                 stage_display = dict(PLANNING_STAGE_CHOICES).get(planning_stage, 'Not Set')
                 messages.success(request, f'Planning job {job.jc_number} stage updated to: {stage_display}.')
@@ -933,6 +957,8 @@ def planning_home(request):
             queryset = queryset.filter(
                 Q(planning_stage='in_production') | Q(status='in_production')
             )
+        elif stage_filter == 'not_set':
+            queryset = queryset.filter(planning_stage='')
         else:
             queryset = queryset.filter(planning_stage=stage_filter)
     if department_filter:
@@ -1047,6 +1073,7 @@ def planning_home(request):
         job.job_card_display_machine_name = job.machine_name or (job_card.machine_name_display if job_card else None)
         job.job_card_workflow_status = job_card.workflow_status if job_card else ''
         job.has_job_card = bool(job_card)
+        job.planning_stage_changed_by_display = _display_user_identity(getattr(job, 'planning_stage_changed_by', None))
         if job_card:
             job.job_card_status_label = job_card.workflow_status_label
             log = status_logs.get(job_card.id)
@@ -3570,11 +3597,17 @@ def po_inbox(request):
                 job_cards_deleted = JobCard.objects.filter(
                     Q(planning_job__po_number__iexact=po_number_key) | Q(PO_No__iexact=po_number_key)
                 ).delete()[0]
-                jobs_deleted = PlanningJob.objects.filter(po_number__iexact=po_number_key).delete()[0]
+
+                plate_requests_deleted = PlateRequest.objects.filter(
+                    planning_job__po_number__iexact=po_number_key
+                ).delete()[0]
+
+                planning_job_qs = PlanningJob.objects.filter(po_number__iexact=po_number_key)
+                jobs_deleted = planning_job_qs.delete()[0]
 
                 messages.success(
                     request,
-                    f'Deleted PO {po_number_key} from ERP: {deleted_docs} intake document(s), {jobs_deleted} planning job(s), {job_cards_deleted} job card(s).',
+                    f'Deleted PO {po_number_key} from ERP: {deleted_docs} intake document(s), {jobs_deleted} planning job(s), {job_cards_deleted} job card(s), {plate_requests_deleted} plate request(s).',
                 )
                 return redirect('planning:po_inbox')
 

@@ -101,6 +101,13 @@ class PlanningJob(models.Model):
     status = models.CharField(max_length=40, choices=PLANNING_STATUS_CHOICES, default='draft', blank=True)
     planning_stage = models.CharField(max_length=40, choices=PLANNING_STAGE_CHOICES, default='', blank=True)
     planning_stage_changed_at = models.DateTimeField(null=True, blank=True)
+    planning_stage_changed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planning_jobs_stage_changed',
+    )
     pr_reference = models.CharField(max_length=120, blank=True)
     change_request_pending = models.BooleanField(default=False)
     change_request_reason = models.TextField(blank=True)
