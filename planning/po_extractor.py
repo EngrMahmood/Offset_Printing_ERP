@@ -52,6 +52,10 @@ def _looks_like_date_token(value):
     if re.match(r'^(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)\s+\d{1,2},\s+\d{4}$', token, re.IGNORECASE):
         return True
 
+    # Plain year tokens often come from noisy worksheet rows and are not SKUs.
+    if re.fullmatch(r'\d{4}', token) and 1900 <= int(token) <= 2099:
+        return True
+
     return False
 
 
@@ -168,6 +172,19 @@ def _looks_like_sku_token(value):
     return True
 
 
+def _looks_like_contact_line(text):
+    if not text:
+        return False
+    token = str(text or '').strip()
+    if '@' in token:
+        return True
+    if re.search(r'\b(phone|contact|billing|invoice|enquiry|payment|accounts?)\b', token, re.IGNORECASE):
+        return True
+    if re.search(r'\b\d{3,}\b', token) and ('/' in token or ' ' in token):
+        return True
+    return False
+
+
 def _extract_best_sku_token(raw_value):
     """Extract a single token that looks like a real SKU from noisy text."""
     text = str(raw_value or '').strip()
@@ -181,6 +198,8 @@ def _extract_best_sku_token(raw_value):
     tokens = re.findall(r'[A-Za-z0-9._/-]+', text)
     candidates = [tok for tok in tokens if _looks_like_sku_token(tok)]
     if not candidates:
+        if ' ' in text and not _looks_like_date_token(text) and not _looks_like_contact_line(text):
+            return text
         return None
 
     # Avoid dimension fragments like 95x45 when a real SKU token exists.
@@ -197,7 +216,11 @@ def _extract_best_sku_token(raw_value):
         ),
         reverse=True,
     )
-    return pool[0]
+    best = pool[0]
+    if ' ' in text and not _looks_like_contact_line(text):
+        if best.isalpha() and len(best) <= 5:
+            return text
+    return best
 
 
 def _build_sku_jobname_map(text, table_blobs=None):
@@ -696,6 +719,8 @@ def _extract_items_from_table_rows(table_rows, sku_jobname_map=None):
 
                     if date_idx is not None:
                         delivery_date_raw = data_cells[date_idx]
+                        if date_idx == 0 and job_name_raw:
+                            sku_raw = job_name_raw
                         after = data_cells[date_idx + 1:]
 
                         qty_raw = None
@@ -707,8 +732,7 @@ def _extract_items_from_table_rows(table_rows, sku_jobname_map=None):
                                 cell, re.IGNORECASE,
                             )
                             if m:
-                                qty_raw = m.group(1)
-                                unit_raw = m.group(2)
+                                qty_raw, unit_raw = m.group(1), m.group(2)
                                 qty_cell_idx = cell_idx
                                 break
 
@@ -822,6 +846,9 @@ def _extract_items_from_text_windows(text, sku_jobname_map=None):
     for idx, line in enumerate(lines):
         m_date = date_re.search(line)
         if not m_date:
+            continue
+
+        if re.search(r'pdf was generated on|generated on|page \d+ of \d+', line, re.IGNORECASE):
             continue
 
         if blocked_headers.search(line) and not unit_re.search(line):

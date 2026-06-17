@@ -2,7 +2,7 @@
   Layer 3: Production contextual navigation.
   Render Production operations only for production-related screens.
 {% endcomment %}
-{% if url == 'production_dashboard' or url == 'production_entry' or url == 'production_records' or url == 'job_card_entry' or url == 'job_card_records' %}
+{% if url == 'production_dashboard' or url == 'production_entry' or url == 'production_wip' or url == 'production_records' or url == 'job_card_entry' or url == 'job_card_records' %}
 <div class="erp-subnav erp-subnav-context" aria-label="Production context navigation">
     <span class="erp-subnav-context-label">Production Context</span>
     <a href="{% url 'production_dashboard' %}"
@@ -20,6 +20,10 @@
     <a href="{% url 'production_entry' %}"
        class="erp-subnav-link erp-subnav-context-link {% if url == 'production_entry' %}is-active{% endif %}">
         Production Entry
+    </a>
+    <a href="{% url 'production_wip' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'production_wip' %}is-active{% endif %}">
+        Production WIP
     </a>
     <a href="{% url 'production_records' %}"
        class="erp-subnav-link erp-subnav-context-link {% if url == 'production_records' %}is-active{% endif %}">

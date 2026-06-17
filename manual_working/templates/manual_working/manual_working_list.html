@@ -1,0 +1,271 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}Manual Working Transition Board{% endblock %}
+{% block header_title %}Manual Working Transition Board{% endblock %}
+{% block header_subtitle %}Read-only planning matrix matching the temporary Google Sheet transition screen.{% endblock %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css">
+{% endblock %}
+
+{% block content %}
+    <div class="erp-section-divider">
+        Manual Working Transition Board
+        <span class="erp-badge is-count">{{ rows|length }}</span>
+    </div>
+
+    <form method="get" class="erp-form-grid" style="gap:12px; margin-bottom:16px;">
+        <div class="erp-form-field">
+            <label>JC No</label>
+            <input type="text" name="jc_number" value="{{ filters.jc_number }}" placeholder="Job Card Number">
+        </div>
+        <div class="erp-form-field">
+            <label>Month</label>
+            <input type="text" name="plan_month" value="{{ filters.plan_month }}" placeholder="Plan Month">
+        </div>
+        <div class="erp-form-field">
+            <label>Customer</label>
+            <input type="text" name="customer" value="{{ filters.customer }}" placeholder="Customer / PO / Destination">
+        </div>
+        <div class="erp-form-field">
+            <label>SKU</label>
+            <input type="text" name="sku" value="{{ filters.sku }}" placeholder="SKU">
+        </div>
+        <div class="erp-form-field">
+            <label>Job Name</label>
+            <input type="text" name="job_name" value="{{ filters.job_name }}" placeholder="Job Name">
+        </div>
+        <div class="erp-form-field">
+            <label>Machine</label>
+            <input type="text" name="machine_name" value="{{ filters.machine_name }}" placeholder="Machine Name">
+        </div>
+        <div class="erp-form-field">
+            <label>Status</label>
+            <select name="status">
+                <option value="">All statuses</option>
+                {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="erp-form-field">
+            <label>Stage</label>
+            <select name="planning_stage">
+                <option value="">All stages</option>
+                {% for value, label in stage_choices %}
+                    <option value="{{ value }}" {% if filters.planning_stage == value %}selected{% endif %}>{{ label }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="erp-form-field">
+            <label>PO Approval Date From</label>
+            <input type="date" name="date_from" value="{{ filters.date_from }}">
+        </div>
+        <div class="erp-form-field">
+            <label>PO Approval Date To</label>
+            <input type="date" name="date_to" value="{{ filters.date_to }}">
+        </div>
+        <div class="erp-form-actions" style="grid-column: 1 / -1; justify-content:flex-start; gap:12px;">
+            <button type="submit" class="erp-btn erp-btn-primary">Apply filters</button>
+            <a href="?" class="erp-btn erp-btn-secondary">Reset</a>
+        </div>
+    </form>
+
+    <div class="erp-table-wrap" style="overflow-x:auto;">
+        <table id="manual-working-table" class="erp-table erp-table-dense" style="min-width:3000px; width:100%; white-space:nowrap;">
+            <thead>
+                <tr>
+                    <th>JC No</th>
+                    <th>Month</th>
+                    <th>PO Approval Date</th>
+                    <th>PO</th>
+                    <th>SKU</th>
+                    <th>Job Name</th>
+                    <th>Repeat</th>
+                    <th>Material</th>
+                    <th>Color</th>
+                    <th>Application</th>
+                    <th>Size W mm</th>
+                    <th>Size H mm</th>
+                    <th>Size W Inch</th>
+                    <th>Size H Inch</th>
+                    <th>Order Qty</th>
+                    <th>Print Pcs</th>
+                    <th>Ups</th>
+                    <th>Print Sheet Size</th>
+                    <th>Print Sheets</th>
+                    <th>Wastage</th>
+                    <th>Actual Sheet require</th>
+                    <th>Purchase Sheet Size</th>
+                    <th>Purchase Sheet ups</th>
+                    <th>Purchase Sheet require</th>
+                    <th>PKT</th>
+                    <th>Remarks</th>
+                    <th>Requirement</th>
+                    <th>No. of Clrs Front</th>
+                    <th>No. Of Clrs Back</th>
+                    <th>Total Crls</th>
+                    <th>Total M/R Time (15m/clr)</th>
+                    <th>Front Pass</th>
+                    <th>Back Pass</th>
+                    <th>Total Impressions</th>
+                    <th>MI Quantity</th>
+                    <th>MI Balance</th>
+                    <th>Print Date 1</th>
+                    <th>Print Qty 1</th>
+                    <th>Wastage 1</th>
+                    <th>Print Date 2</th>
+                    <th>Print Qty 2</th>
+                    <th>Wastage 2</th>
+                    <th>Print Date 3</th>
+                    <th>Print Qty 3</th>
+                    <th>Wastage 3</th>
+                    <th>Print Date 4</th>
+                    <th>Print Qty 4</th>
+                    <th>Wastage 4</th>
+                    <th>Print Date 5</th>
+                    <th>Print Qty 5</th>
+                    <th>Wastage 5</th>
+                    <th>Remaining sheet</th>
+                    <th>status</th>
+                    <th>PR</th>
+                    <th>Date Delivery 01</th>
+                    <th>DC 01</th>
+                    <th>Delivered Quantity 01</th>
+                    <th>Date Delivery 02</th>
+                    <th>DC 02</th>
+                    <th>Delivered Quantity 02</th>
+                    <th>Date Delivery 03</th>
+                    <th>DC 03</th>
+                    <th>Delivered Quantity 03</th>
+                    <th>Date Delivery 04</th>
+                    <th>DC 04</th>
+                    <th>Delivered Quantity 04</th>
+                    <th>Date Delivery 05</th>
+                    <th>DC 05</th>
+                    <th>Delivered Quantity 05</th>
+                    <th>Date Delivery 06</th>
+                    <th>DC 06</th>
+                    <th>Delivered Quantity 06</th>
+                    <th>Rejected</th>
+                    <th>Balance</th>
+                    <th>Destination</th>
+                    <th>Cost</th>
+                    <th>Stock Bag</th>
+                    <th>Machine Name</th>
+                    <th>Purchase Material</th>
+                    <th>Stock</th>
+                    <th>Stage</th>
+                    <th>Department</th>
+                    <th>Plate Set No</th>
+                    <th>AWC No.</th>
+                    <th>Aging</th>
+                    <th>Die cutting</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td>{{ row.jc_number }}</td>
+                        <td>{{ row.month }}</td>
+                        <td>{{ row.date }}</td>
+                        <td>{{ row.po_number }}</td>
+                        <td>{{ row.sku }}</td>
+                        <td>{{ row.job_name }}</td>
+                        <td>{{ row.repeat_flag }}</td>
+                        <td>{{ row.material }}</td>
+                        <td>{{ row.color_spec }}</td>
+                        <td>{{ row.application }}</td>
+                        <td>{{ row.size_w_mm }}</td>
+                        <td>{{ row.size_h_mm }}</td>
+                        <td>{{ row.size_w_inch }}</td>
+                        <td>{{ row.size_h_inch }}</td>
+                        <td>{{ row.order_qty }}</td>
+                        <td>{{ row.print_pcs }}</td>
+                        <td>{{ row.ups }}</td>
+                        <td>{{ row.print_sheet_size }}</td>
+                        <td>{{ row.print_sheets }}</td>
+                        <td>{{ row.wastage_sheets }}</td>
+                        <td>{{ row.actual_sheet_required }}</td>
+                        <td>{{ row.purchase_sheet_size }}</td>
+                        <td>{{ row.purchase_sheet_ups }}</td>
+                        <td>{{ row.purchase_sheet_required }}</td>
+                        <td>{{ row.pkt_value }}</td>
+                        <td>{{ row.remarks }}</td>
+                        <td>{{ row.requirement }}</td>
+                        <td>{{ row.front_colors }}</td>
+                        <td>{{ row.back_colors }}</td>
+                        <td>{{ row.total_colors }}</td>
+                        <td>{{ row.total_mr_time_minutes }}</td>
+                        <td>{{ row.front_pass }}</td>
+                        <td>{{ row.back_pass }}</td>
+                        <td>{{ row.total_impressions }}</td>
+                        <td>{{ row.mi_quantity }}</td>
+                        <td>{{ row.mi_balance }}</td>
+                        <td>{{ row.print_date_1 }}</td>
+                        <td>{{ row.print_qty_1 }}</td>
+                        <td>{{ row.wastage_1 }}</td>
+                        <td>{{ row.print_date_2 }}</td>
+                        <td>{{ row.print_qty_2 }}</td>
+                        <td>{{ row.wastage_2 }}</td>
+                        <td>{{ row.print_date_3 }}</td>
+                        <td>{{ row.print_qty_3 }}</td>
+                        <td>{{ row.wastage_3 }}</td>
+                        <td>{{ row.print_date_4 }}</td>
+                        <td>{{ row.print_qty_4 }}</td>
+                        <td>{{ row.wastage_4 }}</td>
+                        <td>{{ row.print_date_5 }}</td>
+                        <td>{{ row.print_qty_5 }}</td>
+                        <td>{{ row.wastage_5 }}</td>
+                        <td>{{ row.remaining_sheet }}</td>
+                        <td>{{ row.status }}</td>
+                        <td>{{ row.pr_reference }}</td>
+                        <td>{{ row.delivery_date_1 }}</td>
+                        <td>{{ row.dc_1 }}</td>
+                        <td>{{ row.delivered_qty_1 }}</td>
+                        <td>{{ row.delivery_date_2 }}</td>
+                        <td>{{ row.dc_2 }}</td>
+                        <td>{{ row.delivered_qty_2 }}</td>
+                        <td>{{ row.delivery_date_3 }}</td>
+                        <td>{{ row.dc_3 }}</td>
+                        <td>{{ row.delivered_qty_3 }}</td>
+                        <td>{{ row.delivery_date_4 }}</td>
+                        <td>{{ row.dc_4 }}</td>
+                        <td>{{ row.delivered_qty_4 }}</td>
+                        <td>{{ row.delivery_date_5 }}</td>
+                        <td>{{ row.dc_5 }}</td>
+                        <td>{{ row.delivered_qty_5 }}</td>
+                        <td>{{ row.delivery_date_6 }}</td>
+                        <td>{{ row.dc_6 }}</td>
+                        <td>{{ row.delivered_qty_6 }}</td>
+                        <td>{{ row.rejected_qty }}</td>
+                        <td>{{ row.balance_qty }}</td>
+                        <td>{{ row.destination }}</td>
+                        <td>{{ row.unit_cost }}</td>
+                        <td>{{ row.stock_bag }}</td>
+                        <td>{{ row.machine_name }}</td>
+                        <td>{{ row.purchase_material_origin }}</td>
+                        <td>{{ row.stock_qty }}</td>
+                        <td>{{ row.planning_stage }}</td>
+                        <td>{{ row.department }}</td>
+                        <td>{{ row.plate_set_no }}</td>
+                        <td>{{ row.awc_no }}</td>
+                        <td>{{ row.aging_days }}</td>
+                        <td>{{ row.die_cutting }}</td>
+                    </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
+    <script src="{% static 'manual_working/js/manual_working_datatables.js' %}"></script>
+{% endblock %}

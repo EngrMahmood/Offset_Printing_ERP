@@ -10,9 +10,11 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     path('', home, name='home'),
     path('planning/', include('planning.urls', namespace='planning')),
+    path('printing-plates/', include('printing_plates.urls', namespace='printing_plates')),
     path('reports/', include('reports.urls', namespace='reports')),
     path('migration/', include('migration.urls', namespace='migration')),
     path('qc/', include('qc.urls', namespace='qc')),
+    path('manual-working/', include('manual_working.urls', namespace='manual_working')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),
 
@@ -23,6 +25,7 @@ urlpatterns = [
     ),
 
     path('production-entry/', views.production_entry, name='production_entry'),
+    path('production-wip/', views.production_wip, name='production_wip'),
     path('production-dashboard/', views.production_dashboard, name='production_dashboard'),
     path('production-records/', views.production_records, name='production_records'),
     path('job-card-entry/', views.job_card_entry, name='job_card_entry'),

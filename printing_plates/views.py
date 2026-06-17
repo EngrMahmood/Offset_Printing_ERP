@@ -1,0 +1,71 @@
+from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
+from django.db.models import Q
+from django.urls import reverse_lazy
+from django.utils import timezone
+from django.views.generic import ListView, DetailView, CreateView, TemplateView
+
+from planning.models import PlanningJob
+from .forms import PlateRequestForm
+from .models import PlateRequest
+
+
+class GraphicsDesignerAccessMixin(UserPassesTestMixin):
+    def test_func(self):
+        profile = getattr(self.request.user, 'profile', None)
+        return bool(profile and profile.can_view_plate_queue())
+
+
+class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
+    model = PlanningJob
+    template_name = 'printing_plates/plate_queue.html'
+    context_object_name = 'planning_jobs'
+    paginate_by = 50
+
+    def get_queryset(self):
+        active_statuses = [
+            PlateRequest.STATUS_DRAFT,
+            PlateRequest.STATUS_SENT,
+            PlateRequest.STATUS_RECEIVED,
+        ]
+        return PlanningJob.objects.filter(
+            planning_stage__in=['new_plate_making', 'repeat_plate_making']
+        ).filter(
+            Q(plate_requests__status__in=active_statuses) | Q(plate_requests__isnull=True)
+        ).select_related('job_card').prefetch_related('plate_requests').distinct()
+
+
+class PlateStatusBoardView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
+    model = PlateRequest
+    template_name = 'printing_plates/plate_status_board.html'
+    context_object_name = 'plate_requests'
+    paginate_by = 50
+
+    def get_queryset(self):
+        return PlateRequest.objects.select_related(
+            'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by'
+        ).order_by('-requested_at')
+
+
+class PlateRequestDetailView(LoginRequiredMixin, GraphicsDesignerAccessMixin, DetailView):
+    model = PlateRequest
+    template_name = 'printing_plates/plate_request_detail.html'
+    context_object_name = 'plate_request'
+
+
+class PlateRequestCreateView(LoginRequiredMixin, GraphicsDesignerAccessMixin, CreateView):
+    model = PlateRequest
+    form_class = PlateRequestForm
+    template_name = 'printing_plates/plate_request_form.html'
+    success_url = reverse_lazy('printing_plates:queue')
+
+    def get_form(self, form_class=None):
+        form = super().get_form(form_class)
+        form.fields['planning_job'].queryset = PlanningJob.objects.filter(
+            planning_stage__in=['new_plate_making', 'repeat_plate_making']
+        ).order_by('jc_number')
+        return form
+
+    def form_valid(self, form):
+        form.instance.requested_by = self.request.user
+        form.instance.requested_at = form.instance.requested_at or timezone.now()
+        return super().form_valid(form)

@@ -1,0 +1,51 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}New Plate Request{% endblock %}
+
+{% block content %}
+<div class="erp-card">
+    <div class="erp-card-header">
+        <h2>Create New Plate Request</h2>
+        <p>Submit a new plate request for production jobs.</p>
+    </div>
+        <div class="erp-card-body">
+        <form method="post" enctype="multipart/form-data" class="erp-form">
+            {% csrf_token %}
+            <div class="erp-form-grid" style="grid-template-columns:1fr 1fr; gap:20px;">
+                <section>
+                    <h3>Request Details</h3>
+                    <div class="erp-form-field">{{ form.planning_job.label_tag }}{{ form.planning_job }}</div>
+                    <div class="erp-form-field">{{ form.job_card.label_tag }}{{ form.job_card }}</div>
+                    <div class="erp-form-field">{{ form.sku_recipe.label_tag }}{{ form.sku_recipe }}</div>
+                    <div class="erp-form-field">{{ form.machine.label_tag }}{{ form.machine }}</div>
+                    <div class="erp-form-field">{{ form.department.label_tag }}{{ form.department }}</div>
+                    <div class="erp-form-field">{{ form.requested_at.label_tag }}{{ form.requested_at }}</div>
+                    <div class="erp-form-field">{{ form.status.label_tag }}{{ form.status }}</div>
+                </section>
+                <section>
+                    <h3>Plate Information</h3>
+                    <div class="erp-form-field">{{ form.set_no.label_tag }}{{ form.set_no }}</div>
+                    <div class="erp-form-field">{{ form.new_set_no.label_tag }}{{ form.new_set_no }}</div>
+                    <div class="erp-form-field">{{ form.plate_quantity.label_tag }}{{ form.plate_quantity }}</div>
+                    <div class="erp-form-field">{{ form.plate_color.label_tag }}{{ form.plate_color }}</div>
+                    <div class="erp-form-field">{{ form.impression.label_tag }}{{ form.impression }}</div>
+                </section>
+                <section>
+                    <h3>Vendor</h3>
+                    <div class="erp-form-field">{{ form.vendor.label_tag }}{{ form.vendor }}</div>
+                    <div class="erp-form-field">{{ form.link.label_tag }}{{ form.link }}</div>
+                </section>
+                <section>
+                    <h3>Notes</h3>
+                    <div class="erp-form-field">{{ form.progress.label_tag }}{{ form.progress }}</div>
+                    <div class="erp-form-field">{{ form.remarks.label_tag }}{{ form.remarks }}</div>
+                    <div class="erp-form-field">{{ form.image.label_tag }}{{ form.image }}</div>
+                </section>
+            </div>
+            <div class="erp-form-actions" style="margin-top:24px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Submit Request</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

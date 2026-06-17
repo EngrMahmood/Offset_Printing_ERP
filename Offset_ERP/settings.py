@@ -39,9 +39,11 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'core',
     'planning',
+    'printing_plates',
     'migration',
     'qc',
     'workflow',
+    'manual_working',
     'reports',
     'theme',
 ]
@@ -61,7 +63,11 @@ ROOT_URLCONF = 'Offset_ERP.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [BASE_DIR / 'core/templates', BASE_DIR / 'Job_card_html'],
+        'DIRS': [
+            BASE_DIR / 'core/templates',
+            BASE_DIR / 'Job_card_html',
+            BASE_DIR / 'printing_plates/templates',
+        ],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -112,7 +118,7 @@ AUTH_PASSWORD_VALIDATORS = [
 
 LANGUAGE_CODE = 'en-us'
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'Asia/Karachi'
 
 USE_I18N = True
 

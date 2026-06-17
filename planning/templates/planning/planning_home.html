@@ -52,6 +52,43 @@
             white-space: normal;
             overflow-wrap: anywhere;
             word-break: break-word;
+            padding: 8px 10px;
+            font-size: 0.82rem;
+            vertical-align: middle;
+        }
+
+        .erp-table th {
+            font-weight: 600;
+            letter-spacing: 0.01em;
+            text-align: left;
+            color: #2b3440;
+            border-bottom: 1px solid rgba(115, 115, 115, 0.16);
+        }
+
+        .erp-table td {
+            border-bottom: 1px solid rgba(115, 115, 115, 0.08);
+        }
+
+        .erp-table td a.erp-btn.sm,
+        .erp-table td button.erp-btn.sm,
+        .erp-table td select {
+            font-size: 0.78rem;
+            padding: 3px 6px;
+        }
+
+        .erp-table td select {
+            min-width: 130px;
+        }
+
+        .erp-table {
+            width: 100%;
+            min-width: 0;
+            table-layout: auto;
+            font-size: 0.84rem;
+        }
+
+        .erp-actions {
+            gap: 6px;
         }
 
         @media (max-width: 980px) {
@@ -61,6 +98,10 @@
             .erp-table th,
             .erp-table td {
                 font-size: 13px;
+            }
+            .erp-table td select {
+                min-width: auto;
+                width: 100%;
             }
         }
 
@@ -92,7 +133,10 @@
             </div>
         </div>
         <form method="get" class="erp-form-grid" style="grid-template-columns:1fr 1fr auto; gap:12px; margin-bottom:12px;">
-            <input type="text" name="q" placeholder="Search JC / PO / SKU / Job" value="{{ filters.q }}">
+            <div style="display:grid; gap:8px;">
+                <input type="text" name="q" placeholder="Search JC / PO / SKU / Job" value="{{ filters.q }}">
+                <input type="text" name="machine" placeholder="Machine Name" value="{{ filters.machine }}">
+            </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                 <select name="status">
                     <option value="">All Statuses</option>
@@ -102,10 +146,21 @@
                 </select>
                 <select name="planning_stage">
                     <option value="">All Stages</option>
+                    <option value="not_set" {% if filters.planning_stage == 'not_set' %}selected{% endif %}>Not Set</option>
                     {% for value, label in stage_choices %}
                     {% if value %}<option value="{{ value }}" {% if filters.planning_stage == value %}selected{% endif %}>{{ label }}</option>{% endif %}
                     {% endfor %}
                 </select>
+            </div>
+            <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                <div>
+                    <label>PO Approval Date From</label>
+                    <input type="date" name="from_date" value="{{ filters.from_date }}" placeholder="From PO Approval Date">
+                </div>
+                <div>
+                    <label>PO Approval Date To</label>
+                    <input type="date" name="to_date" value="{{ filters.to_date }}" placeholder="To PO Approval Date">
+                </div>
             </div>
             <div class="erp-actions" style="gap:8px;">
                 <button type="submit" class="erp-btn erp-btn-primary">Filter</button>
@@ -118,8 +173,8 @@
             <table class="erp-table">
                 <thead>
                     <tr>
-                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th>
-                        <th>Status</th><th>Delivery Date</th><th>Plan Date</th><th>Stage</th><th style="width:200px;">Actions</th>
+                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th><th>Machine</th>
+                        <th>Status</th><th>Status Updated</th><th>Stage</th><th>Stage Updated</th><th>PO Approval Date</th><th>Delivery Date</th><th>Plan Date</th><th style="width:200px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -129,9 +184,9 @@
                         <td>{{ job.po_number|default:'-' }}</td>
                         <td>{{ job.sku|default:'-' }}</td>
                         <td title="{{ job.job_name }}">{{ job.job_name|default:'-' }}</td>
+                        <td>{{ job.job_card_display_machine_name|default:'-' }}</td>
                         <td><span class="erp-badge {{ job.effective_status|jc_status_badge }}">{{ job.effective_status_label }}</span></td>
-                        <td>{% if job.delivery_date %}{{ job.delivery_date|date:'Y-m-d' }}{% elif job.plan_date %}{{ job.plan_date|date:'Y-m-d' }}{% else %}-{% endif %}</td>
-                        <td>{{ job.created_at|date:'Y-m-d'|default:'-' }}</td>
+                        <td>{% if job.status_changed_by %}{{ job.status_changed_by }}{% if job.status_changed_at %} @ {{ job.status_changed_at|date:'Y-m-d H:i' }}{% endif %}{% else %}-{% endif %}</td>
                         <td>
                             {% if job.planning_stage %}
                                 {% if job.planning_stage == 'jc_ready' %}<span class="erp-badge erp-badge-success">JC Ready</span>
@@ -145,14 +200,30 @@
                                 <span style="color:#999;">—</span>
                             {% endif %}
                         </td>
-                        <td style="white-space:nowrap;">
-                            <div class="erp-actions" style="gap:4px; align-items:center;">
-                                <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-secondary sm">View</a>
-                                <form method="post" action="{% url 'planning:jobs' %}" style="display:inline;">
+                        <td>{% if job.planning_stage_changed_by_display %}{{ job.planning_stage_changed_by_display }}{% if job.planning_stage_changed_at %} @ {{ job.planning_stage_changed_at|date:'Y-m-d H:i' }}{% endif %}{% else %}-{% endif %}</td>
+                        <td>{% if job.po_approval_date_display %}{{ job.po_approval_date_display|date:'Y-m-d' }}{% else %}-{% endif %}</td>
+                        <td>{% if job.delivery_date %}{{ job.delivery_date|date:'Y-m-d' }}{% else %}-{% endif %}</td>
+                        <td>{% if job.plan_date_display %}{{ job.plan_date_display|date:'Y-m-d' }}{% else %}-{% endif %}</td>
+                        <td>
+                            <div style="display:flex; flex-direction:column; gap:4px; min-width:130px;">
+                                <div>
+                                    {% if job.planning_stage %}
+                                        {% if job.planning_stage == 'jc_ready' %}<span class="erp-badge erp-badge-success">JC Ready</span>
+                                        {% elif job.planning_stage == 'new_plate_making' %}<span class="erp-badge erp-badge-info">New Plate Making</span>
+                                        {% elif job.planning_stage == 'repeat_plate_making' %}<span class="erp-badge erp-badge-warning">Repeat Plate Making</span>
+                                        {% elif job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'in_production' %}<span class="erp-badge erp-badge-dark">In Production</span>
+                                        {% endif %}
+                                    {% elif job.status == 'in_production' %}
+                                        <span class="erp-badge erp-badge-dark">In Production</span>
+                                    {% else %}
+                                        <span style="color:#999;">—</span>
+                                    {% endif %}
+                                </div>
+                                <form method="post" action="{% url 'planning:jobs' %}" style="display:inline-block; width:100%;">
                                     {% csrf_token %}
                                     <input type="hidden" name="action" value="update_planning_stage">
                                     <input type="hidden" name="job_id" value="{{ job.id }}">
-                                    <select name="planning_stage" onchange="this.form.submit();" style="padding:4px 8px; border:1px solid #ccc; border-radius:3px; font-size:12px; cursor:pointer;">
+                                    <select name="planning_stage" onchange="this.form.submit();" style="width:100%; padding:4px 6px; border:1px solid #ccc; border-radius:3px; font-size:12px;">
                                         <option value="">Stage: Not Set</option>
                                         <option value="jc_ready" {% if job.planning_stage == 'jc_ready' %}selected{% endif %}>JC Ready</option>
                                         <option value="new_plate_making" {% if job.planning_stage == 'new_plate_making' %}selected{% endif %}>New Plate Making</option>
@@ -160,18 +231,11 @@
                                         <option value="in_production" {% if job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'in_production' %}selected{% endif %}>In Production</option>
                                     </select>
                                 </form>
-                                {% if user_can_plan and job.planning_stage == '' and not job.change_request_pending %}
-                                    <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form" onsubmit="return promptRequestChange(this, '{{ job.jc_number|escapejs }}');">
-                                        {% csrf_token %}
-                                        <input type="hidden" name="action" value="request_change">
-                                        <input type="hidden" name="job_id" value="{{ job.id }}">
-                                        <input type="hidden" name="change_reason" value="">
-                                        <button type="submit" class="erp-btn erp-btn-warning sm">Request Change</button>
-                                    </form>
-                                {% endif %}
-                                {% if user_can_plan and job.change_request_pending %}
-                                    <span class="erp-badge erp-badge-warning" title="{{ job.change_request_reason|default:'Change request submitted' }}">Change Requested</span>
-                                {% endif %}
+                            </div>
+                        </td>
+                        <td style="white-space:nowrap;">
+                            <div class="erp-actions" style="gap:4px; align-items:center; flex-wrap:wrap;">
+                                <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-secondary sm">View</a>
                                 {% if user_can_plan and job.effective_status == 'draft' %}
                                     <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-secondary sm">Edit</a>
                                     {% if job.can_submit_qc %}
@@ -183,8 +247,8 @@
                                         </form>
                                     {% endif %}
                                 {% endif %}
-                                {% if user_can_release and job.job_card and job.job_card.workflow_status == 'qc_approved' %}
-                                    <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form" onsubmit="return promptReleasePlateSetNo(this, '{{ job.jc_number|escapejs }}');">
+                                {% if user_can_release and job.has_job_card and job.job_card_workflow_status == 'qc_approved' %}
+                                    <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="release_for_production">
                                         <input type="hidden" name="job_id" value="{{ job.id }}">
@@ -192,8 +256,16 @@
                                         <button type="submit" class="erp-btn erp-btn-success sm">Release</button>
                                     </form>
                                 {% endif %}
-                                {% if job.job_card %}
-                                    {% if job.job_card.workflow_status == 'production_approved' or job.job_card.workflow_status == 'released' or job.job_card.workflow_status == 'in_production' or job.job_card.workflow_status == 'completed' or job.job_card.workflow_status == 'closed' %}
+                                {% if can_admin_actions %}
+                                    <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form" onsubmit="return confirm('Delete planning job {{ job.jc_number }} and all related plate requests? This cannot be undone.');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="action" value="delete">
+                                        <input type="hidden" name="job_id" value="{{ job.id }}">
+                                        <button type="submit" class="erp-btn erp-btn-danger sm">Delete</button>
+                                    </form>
+                                {% endif %}
+                                {% if job.has_job_card %}
+                                    {% if job.job_card_workflow_status == 'production_approved' or job.job_card_workflow_status == 'released' or job.job_card_workflow_status == 'in_production' or job.job_card_workflow_status == 'completed' or job.job_card_workflow_status == 'closed' %}
                                         <a href="{% url 'planning:job_card_print' job.id %}" class="erp-btn erp-btn-success sm">Print</a>
                                     {% endif %}
                                 {% endif %}
@@ -209,8 +281,8 @@
         {% if jobs.has_other_pages %}
         <div class="erp-pager">
             <span style="color:#666;">Page {{ jobs.number }} of {{ jobs.paginator.num_pages }}</span>
-            {% if jobs.has_previous %}<a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}" class="erp-btn erp-btn-secondary">← Previous</a>{% endif %}
-            {% if jobs.has_next %}<a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}" class="erp-btn erp-btn-primary">Next →</a>{% endif %}
+            {% if jobs.has_previous %}<a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-secondary">← Previous</a>{% endif %}
+            {% if jobs.has_next %}<a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-primary">Next →</a>{% endif %}
         </div>
         {% endif %}
     </section>

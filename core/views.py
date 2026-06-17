@@ -1,6 +1,7 @@
 from django.shortcuts import render, get_object_or_404, redirect
 from django.conf import settings
 from django.http import HttpResponse, JsonResponse, Http404
+from decimal import Decimal, InvalidOperation
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
@@ -33,6 +34,8 @@ from .models import (
     Operator,
     Production,
     ProductionDowntime,
+    ProductionWipStatus,
+    JobCardWipStatus,
     ShiftConfig,
     UserProfile,
 )
@@ -53,6 +56,17 @@ from .services import (
     run_bulk_archive, run_bulk_permanent_delete
 )
 
+
+def _parse_optional_decimal(raw_value):
+    if raw_value is None:
+        return None
+    raw_text = str(raw_value).strip().replace(',', '')
+    if not raw_text:
+        return None
+    try:
+        return Decimal(raw_text)
+    except InvalidOperation:
+        return None
 
 try:
     import openpyxl
@@ -348,11 +362,11 @@ def job_card_entry(request):
                 'estimated_run_time_minutes': estimated_run_minutes,
                 'estimated_setup_time_minutes': estimated_setup_minutes,
                 'estimated_total_time_minutes': estimated_total_minutes,
-                'ups': int(request.POST.get('ups') or 0) or None,
+                'ups': _parse_optional_decimal(request.POST.get('ups')),
                 'print_sheet_size': (request.POST.get('print_sheet_size') or '').strip() or None,
                 'wastage': int(request.POST.get('wastage') or 0),
                 'purchase_sheet_size': (request.POST.get('purchase_sheet_size') or '').strip() or None,
-                'purchase_sheet_ups': int(request.POST.get('purchase_sheet_ups') or 0) or None,
+                'purchase_sheet_ups': _parse_optional_decimal(request.POST.get('purchase_sheet_ups')),
                 'remarks': (request.POST.get('remarks') or '').strip() or None,
                 'destination': (request.POST.get('destination') or '').strip() or None,
                 'machine_name': machine,
@@ -1085,6 +1099,98 @@ def production_records(request):
         'approved_override_ids': approved_ids,
     }
     return render(request, 'production_records.html', context)
+
+
+@login_required
+def production_wip(request):
+    profile = getattr(request.user, 'profile', None)
+    if not profile or profile.normalized_role not in ('admin', 'manager', 'planner', 'production_manager', 'production', 'operator'):
+        messages.error(request, '❌ You do not have permission to access this feature.')
+        return redirect('planning:home')
+
+    default_status_names = ['Printing', 'Dispatch']
+    for status_name in default_status_names:
+        ProductionWipStatus.objects.get_or_create(
+            name=status_name,
+            defaults={'created_by': request.user},
+        )
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        if action == 'add_status':
+            if request.user.profile.role != 'admin':
+                add_unique_message(request, messages.ERROR, '❌ Only admin can add WIP statuses.')
+                return redirect('production_wip')
+            new_status_name = (request.POST.get('status_name') or '').strip()
+            if not new_status_name:
+                add_unique_message(request, messages.ERROR, 'Status name cannot be blank.')
+            else:
+                ProductionWipStatus.objects.get_or_create(
+                    name=new_status_name,
+                    defaults={'created_by': request.user},
+                )
+                add_unique_message(request, messages.SUCCESS, f'Added status: {new_status_name}')
+            return redirect('production_wip')
+
+        if action == 'set_job_status':
+            job_card_id = request.POST.get('job_card_id')
+            status_id = request.POST.get('status_id')
+            if not job_card_id or not status_id:
+                add_unique_message(request, messages.ERROR, 'Job and status selection are required.')
+                return redirect('production_wip')
+            job_card = get_object_or_404(
+                JobCard,
+                id=job_card_id,
+                is_active=True,
+                status__in=['released', 'in_production'],
+            )
+            status = get_object_or_404(ProductionWipStatus, id=status_id, is_active=True)
+            JobCardWipStatus.objects.update_or_create(
+                job_card=job_card,
+                defaults={
+                    'status': status,
+                    'updated_by': request.user,
+                },
+            )
+            add_unique_message(request, messages.SUCCESS, f"{job_card.job_card_no} set to {status.name}.")
+            return redirect('production_wip')
+
+    query = (request.GET.get('q') or '').strip()
+    status_filter = (request.GET.get('wip_status') or '').strip()
+
+    printing_status = ProductionWipStatus.objects.filter(name='Printing', is_active=True).first()
+    job_cards = JobCard.objects.filter(is_active=True, status__in=['released', 'in_production']).select_related('planning_job')
+    if printing_status:
+        for job_card in job_cards.filter(production_wip_status__isnull=True, status='released'):
+            JobCardWipStatus.objects.update_or_create(
+                job_card=job_card,
+                defaults={
+                    'status': printing_status,
+                    'updated_by': request.user,
+                },
+            )
+
+    if query:
+        job_cards = job_cards.filter(
+            Q(job_card_no__icontains=query) |
+            Q(SKU__icontains=query) |
+            Q(planning_job__job_name__icontains=query)
+        )
+
+    statuses = list(ProductionWipStatus.objects.filter(is_active=True).order_by('name'))
+    if status_filter:
+        job_cards = job_cards.filter(production_wip_status__status_id=status_filter)
+
+    job_cards = job_cards.order_by('-updated_at')
+    job_cards = list(job_cards)
+
+    context = {
+        'job_cards': job_cards,
+        'statuses': statuses,
+        'status_filter': status_filter,
+        'q': query,
+    }
+    return render(request, 'production_wip.html', context)
 
 
 @login_required

@@ -73,7 +73,7 @@
                 <div class="field-row"><span class="field-label">PO Number</span><span>{{ job.po_number|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">PR Reference</span><span>{{ job.pr_reference|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">Order Qty</span><span>{{ job.order_qty|default:'-' }}</span></div>
-                <div class="field-row"><span class="field-label">PO Delivery Date</span><span>{{ job.plan_date|date:'d M Y'|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">PO Approval Date</span><span>{{ po_approval_date|date:'d M Y'|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">Delivery Date</span><span>{{ job.delivery_date|date:'d M Y'|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">Delivery Location</span><span>{{ job.destination|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">Department</span><span>{{ job.department|default:'-' }}</span></div>

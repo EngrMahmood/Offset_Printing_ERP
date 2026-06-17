@@ -654,8 +654,8 @@ def pending_skus(request):
         department = (request.POST.get('department') or '').strip()
         print_sheet_size = (request.POST.get('print_sheet_size') or '').strip()
         purchase_sheet_size = (request.POST.get('purchase_sheet_size') or '').strip()
-        purchase_sheet_ups = _to_optional_positive_int(request.POST.get('purchase_sheet_ups'))
-        ups = _to_optional_positive_int(request.POST.get('ups'))
+        purchase_sheet_ups = _to_optional_decimal(request.POST.get('purchase_sheet_ups'))
+        ups = _to_optional_decimal(request.POST.get('ups'))
         purchase_material = (request.POST.get('purchase_material') or '').strip()
         daily_demand = _to_optional_decimal(request.POST.get('daily_demand'))
         awc_no = (request.POST.get('awc_no') or '').strip()
@@ -1555,7 +1555,7 @@ def sku_recipe_bulk_upload(request):
             'Die': 'die_cutting',
             'Notes': 'notes',
         }
-        int_clean_fields = {'size_w_mm', 'size_h_mm', 'size_w_inch', 'size_h_inch', 'ups', 'purchase_sheet_ups', 'daily_demand'}
+        int_clean_fields = {'size_w_mm', 'size_h_mm', 'size_w_inch', 'size_h_inch'}
         def clean_intlike(val):
             try:
                 if val is None or str(val).strip() == '':

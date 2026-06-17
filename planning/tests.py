@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -37,6 +38,9 @@ class PoExtractorSkuGuardTests(SimpleTestCase):
 	def test_regular_sku_is_valid(self):
 		self.assertTrue(_looks_like_sku_token('SKU-AB12-9901'))
 
+	def test_raw_item_description_can_be_used_as_sku(self):
+		self.assertEqual(_extract_best_sku_token('A3 PAPER RIM'), 'A3 PAPER RIM')
+
 	def test_header_word_is_not_sku(self):
 		self.assertFalse(_looks_like_sku_token('Dated'))
 
@@ -45,6 +49,9 @@ class PoExtractorSkuGuardTests(SimpleTestCase):
 
 	def test_alphabetic_long_sku_is_valid(self):
 		self.assertTrue(_looks_like_sku_token('LABELCAREUBMICROBIBERBEDSKIRT'))
+
+	def test_year_token_is_not_sku(self):
+		self.assertFalse(_looks_like_sku_token('2026'))
 
 	def test_extract_best_sku_ignores_dimension_fragment(self):
 		raw = 'LABELCAREUBMICROBIBERBEDSKIRT / MATERIAL: TAFFETA SIZE: 95x45 MM'
@@ -95,6 +102,17 @@ class PoExtractorLineCountTests(SimpleTestCase):
 		self.assertEqual(items[2]['sku'], 'LABELCAREUBMICROFIBERFITTEDQUEENMIG1')
 		self.assertAlmostEqual(float(items[2]['unit_cost']), 0.95, places=2)
 
+	def test_extract_two_row_item_with_blank_sku_cell_uses_job_name(self):
+		table_rows = [
+			['#', 'SKU', 'DELIVERY DATE', 'QUANTITY', 'UNIT COST', 'SUBTOTAL', 'GST AMOUNT', 'NET TOTAL'],
+			['1', 'A3 PAPER RIM', None, None, None, None, None, None],
+			[None, '', 'Jun 30, 2026', '4.0 PIECE', 'Rs 1,780.00', 'Rs 7,120.00', 'Rs 0.00', 'Rs 7,120.00'],
+		]
+		items = _extract_items_from_table_rows(table_rows)
+		self.assertEqual(len(items), 1)
+		self.assertEqual(items[0]['sku'], 'A3 PAPER RIM')
+		self.assertEqual(items[0]['job_name'], 'A3 PAPER RIM')
+
 
 class PlanningWorkflowSyncTests(TestCase):
 	def setUp(self):
@@ -133,16 +151,13 @@ class PlanningWorkflowSyncTests(TestCase):
 			material='Paper',
 			color_spec='4+0',
 			application='UV',
-			machine_name='Machine A',
 			ups=2,
 			print_sheet_size='25x36',
 			purchase_sheet_size='25x36',
 			purchase_sheet_ups=2,
-			purchase_material='Art Paper',
 			default_unit_cost='1.40',
 			daily_demand='100',
 			awc_no='AWC-1',
-			plate_set_no='PLATE-1',
 			die_cutting='NO',
 			master_data_status='approved',
 			approved_by=self.user,
@@ -177,6 +192,37 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(refreshed_job.repeat_flag, 'New')
 		self.assertEqual(refreshed_job.material, 'Paper')
 		self.assertEqual(refreshed_job.plate_set_no, 'PLATE-1')
+
+	def test_decimal_ups_in_recipe_persists_and_calculates_sheets(self):
+		sku = 'DEC-SKU-001'
+		SkuRecipe.objects.create(
+			sku=sku,
+			job_name=f'{sku} Approved',
+			material='Paper',
+			color_spec='4+0',
+			application='UV',
+			ups=Decimal('1.5'),
+			print_sheet_size='25x36',
+			purchase_sheet_size='25x36',
+			purchase_sheet_ups=Decimal('2.5'),
+			default_unit_cost='1.40',
+			daily_demand='100',
+			awc_no='AWC-1',
+			die_cutting='NO',
+			master_data_status='approved',
+			approved_by=self.user,
+			created_by=self.user,
+		)
+		po_doc = self._create_po_document(sku=sku, po_number='PO-DEC-1', quantity=15)
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		result = _sync_new_jobs_for_approved_sku(sku, actor=self.user)
+
+		job = PlanningJob.objects.get(po_number='PO-DEC-1', sku=sku)
+		self.assertEqual(job.ups, Decimal('1.5'))
+		self.assertEqual(job.purchase_sheet_ups, Decimal('2.5'))
+		self.assertEqual(job.calculated_sheets_required, 10)
+		self.assertEqual(job.calculated_purchase_sheet_required, 4)
+		self.assertEqual(result['updated'], 1)
 
 	def test_approved_sku_sync_does_not_create_missing_planning_job(self):
 		self._create_po_document(sku='NEW-SKU-003', po_number='PO-NEW-3')
