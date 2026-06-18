@@ -42,11 +42,10 @@
                 </div>
 
                 <div class="erp-nav-item">
-                    <a href="{% url 'dispatch_records' %}" class="{% if request.resolver_match.url_name == 'dispatch_records' or request.resolver_match.url_name == 'dispatch_entry' or request.resolver_match.url_name == 'job_card_records' %}is-active{% endif %}">Dispatch <span class="erp-nav-caret">&#9660;</span></a>
+                    <a href="{% url 'dispatch_records' %}" class="{% if request.resolver_match.url_name == 'dispatch_records' or request.resolver_match.url_name == 'dispatch_entry' %}is-active{% endif %}">Dispatch <span class="erp-nav-caret">&#9660;</span></a>
                     <div class="erp-nav-dropdown">
                         <a href="{% url 'dispatch_records' %}" class="{% if request.resolver_match.url_name == 'dispatch_records' %}is-active{% endif %}">Dispatch Records</a>
                         <a href="{% url 'dispatch_entry' %}" class="{% if request.resolver_match.url_name == 'dispatch_entry' %}is-active{% endif %}">Dispatch Entry</a>
-                        <a href="{% url 'job_card_records' %}" class="{% if request.resolver_match.url_name == 'job_card_records' %}is-active{% endif %}">Job Card Records</a>
                     </div>
                 </div>
 

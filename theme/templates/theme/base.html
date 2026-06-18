@@ -21,6 +21,7 @@
     <link rel="stylesheet" href="{% static 'theme/css/responsive.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/erp_components.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/planning_phase2.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/production.css' %}?v=2">
     <style>
         /* Two-tier topnav — override Tailwind CDN and any cache */
         .erp-shell { display: flex !important; flex-direction: column !important; }
@@ -118,5 +119,6 @@
     <script src="{% static 'theme/js/table.js' %}"></script>
     <script src="{% static 'theme/js/workflow.js' %}"></script>
     {% block extra_js %}{% endblock %}
+    <script src="{% static 'production/js/production_entry.js' %}?v=3"></script>
 </body>
 </html>

@@ -11,16 +11,12 @@
         <i class="fas fa-plus"></i> Add Status
     </button>
     {% endif %}
-    <a href="{% url 'production_records' %}" class="erp-btn erp-btn-secondary">Production Records</a>
 {% endblock %}
 
 {% block content %}
-<div class="erp-page-stack">
-    <div class="erp-actions" style="gap:12px; flex-wrap:wrap;">
-        <a href="{% url 'home' %}" class="erp-btn erp-btn-secondary">Home</a>
-        <a href="{% url 'production_dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
-        <a href="{% url 'production_entry' %}" class="erp-btn erp-btn-success">Add Production</a>
-    </div>
+{% include 'theme/production_context_nav.html' %}
+<div class="erp-page-stack production-wip">
+    {# top action links are provided by the global header_actions; remove duplicate actions here #}
 
     <section class="erp-section-shell">
         <div class="erp-card-header">
@@ -38,28 +34,28 @@
         {% endif %}
 
         {% if user.profile.role == 'admin' %}
-        <div id="add-status-panel" class="erp-section-shell erp-box is-hidden" style="margin-bottom:20px;">
+        <div id="add-status-panel" class="erp-section-shell erp-box is-hidden">
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
                     <div class="erp-eyebrow">Status Management</div>
                     <h3 class="erp-section-title">Add a New WIP Status</h3>
                 </div>
             </div>
-            <form method="post" action="{% url 'production_wip' %}" class="erp-form-grid" style="gap:12px;">
+            <form method="post" action="{% url 'production_wip' %}" class="erp-form-grid">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="add_status">
                 <div class="erp-form-field">
                     <label class="erp-form-label" for="status_name">Status Label</label>
                     <input id="status_name" name="status_name" class="erp-input" placeholder="e.g. Ready for Dispatch" required>
                 </div>
-                <div class="erp-form-field" style="align-self:flex-end;">
+                <div class="erp-form-field erp-form-field-end">
                     <button type="submit" class="erp-btn erp-btn-primary">Create Status</button>
                 </div>
             </form>
         </div>
         {% endif %}
 
-        <div class="erp-section-shell" style="margin-bottom:20px;">
+        <div class="erp-section-shell section-spaced">
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
                     <div class="erp-eyebrow">Active Status Options</div>
@@ -114,7 +110,7 @@
                             {% endfor %}
                         </select>
                     </div>
-                    <div class="erp-filter-actions" style="display:flex; gap:8px; flex-wrap:wrap;">
+                    <div class="erp-filter-actions">
                         <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
                         {% if q or status_filter %}
                         <a href="{% url 'production_wip' %}" class="erp-btn erp-btn-secondary">Clear</a>
@@ -157,7 +153,7 @@
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="set_job_status">
                                         <input type="hidden" name="job_card_id" value="{{ job.id }}">
-                                        <select name="status_id" class="erp-select" style="min-width:180px;">
+                                        <select name="status_id" class="erp-select min-w-180">
                                             {% for status in statuses %}
                                             <option value="{{ status.id }}" {% if job.production_wip_status and status.id == job.production_wip_status.status_id %}selected{% endif %}>{{ status.name }}</option>
                                             {% endfor %}

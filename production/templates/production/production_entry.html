@@ -1,0 +1,334 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %} - Offset ERP{% endblock %}
+{% block extra_head %}{% endblock %}
+{% block header_title %}{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %}{% endblock %}
+{% block header_subtitle %}Log shift output, waste, downtime, and machine execution data against released job cards.{% endblock %}
+{% block header_actions %}{% endblock %}
+
+{% block content %}
+    {% include 'theme/production_context_nav.html' %}
+    <style>
+        /* Inline override to enforce job info compact layout immediately */
+        .job-info-card { font-size: 11pt !important; }
+        .job-info-card .job-info-grid { display: grid !important; grid-template-columns: repeat(4, 1fr) !important; gap: 0.5rem 1rem !important; }
+        .job-info-card strong, .job-info-value, .job-info-badge { font-size: 11pt !important; }
+        @media (max-width:900px){ .job-info-card .job-info-grid{ grid-template-columns: repeat(2,1fr) !important;} }
+        @media (max-width:520px){ .job-info-card .job-info-grid{ grid-template-columns: 1fr !important;} .job-info-card strong, .job-info-value, .job-info-badge{ font-size:10.5pt !important;} }
+    </style>
+    <div class="erp-page-stack production-entry">
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+
+        {# SECTION 1 — JOB INFORMATION (read-only) #}
+        <div class="erp-card-shell job-info-card is-hidden" id="job_info_card">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h2 class="erp-section-title">Job Information</h2>
+                    <p class="erp-card-subtitle">Read-only summary for the selected Job Card</p>
+                </div>
+            </div>
+            <div class="job-info-grid">
+                <div class="job-info-row">
+                    <div><strong>Job Card</strong><div id="ji_job_card" class="job-info-value"></div></div>
+                    <div><strong>Customer</strong><div id="ji_customer" class="job-info-value"></div></div>
+                    <div><strong>Product</strong><div id="ji_product" class="job-info-value"></div></div>
+                </div>
+                <div class="job-info-row">
+                    <div><strong>Machine</strong><div id="ji_machine" class="job-info-value"></div></div>
+                    <div><strong>Paper</strong><div id="ji_paper" class="job-info-value"></div></div>
+                    <div><strong>GSM</strong><div id="ji_gsm" class="job-info-value"></div></div>
+                </div>
+                <div class="job-info-row">
+                    <div><strong>Colors</strong><div id="ji_colors" class="job-info-value"></div></div>
+                    <div><strong>Job Type</strong><div id="ji_job_type" class="job-info-value"></div></div>
+                    <div><strong>Due Date</strong><div id="ji_due_date" class="job-info-value"></div></div>
+                </div>
+                <div class="job-info-row">
+                    <div><strong>Order Qty</strong><div id="ji_order_qty" class="job-info-badge"></div></div>
+                    <div><strong>Required (Shts)</strong><div id="ji_required_sheets" class="job-info-badge"></div></div>
+                    <div><strong>Produced</strong><div id="ji_produced" class="job-info-badge produced"></div></div>
+                    <div><strong>Remaining</strong><div id="ji_remaining" class="job-info-badge balance"></div></div>
+                </div>
+            </div>
+        </div>
+
+        <form id="production_form" method="POST" action="{% url 'production_entry' %}">
+            {% csrf_token %}
+            <input type="hidden" name="edit_id" value="{{ edit_record.id|default:'' }}">
+
+            <div class="erp-card-shell">
+                <div class="erp-card-header">
+                    <h2 class="erp-section-title">Production Entry</h2>
+                </div>
+
+                <div class="erp-form-grid">
+                    <div class="erp-form-field">
+                        <label for="job_card_search">Search Job Card</label>
+                        <input id="job_card_search" type="text" class="erp-input" placeholder="Search job card by number, SKU, customer...">
+                    </div>
+                    <div class="erp-form-field">
+                        <label for="job_card">Job Card</label>
+                        <select id="job_card" name="job_card" class="erp-select" required>
+                            <option value="">Select job card</option>
+                            {% for card in job_cards %}
+                            <option value="{{ card.id }}" {% if edit_record and edit_record.job_card_id == card.id %}selected{% endif %}>
+                                {{ card.job_card_no }} - {{ card.SKU }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="operator">Operator</label>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <select id="operator" name="operator" class="erp-select" required style="flex:1;">
+                                <option value="">Select operator</option>
+                                {% for operator in operators %}
+                                <option value="{{ operator.id }}" {% if edit_record and edit_record.operator_id == operator.id %}selected{% endif %}>{{ operator.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="button" class="erp-btn master-add" onclick="openMasterModal('operator')" data-type="operator" title="Add Operator">+</button>
+                        </div>
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="shift">Shift</label>
+                        <select id="shift" name="shift" class="erp-select" required>
+                            <option value="">Choose shift</option>
+                            <option value="A" {% if edit_record and edit_record.shift == 'A' %}selected{% endif %}>Shift A</option>
+                            <option value="B" {% if edit_record and edit_record.shift == 'B' %}selected{% endif %}>Shift B</option>
+                        </select>
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="date">Date</label>
+                        <input id="date" name="date" type="date" value="{{ today|date:'Y-m-d' }}" required>
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="supervisor">Supervisor</label>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <select id="supervisor" name="supervisor" class="erp-select" style="flex:1;">
+                                <option value="">Select supervisor</option>
+                                {% for sup in supervisors %}
+                                <option value="{{ sup.id }}" {% if edit_record and edit_record.supervisor_id == sup.id %}selected{% endif %}>
+                                    {{ sup.name }}{% if sup.employee_code %} ({{ sup.employee_code }}){% endif %}
+                                </option>
+                                {% endfor %}
+                            </select>
+                            <button type="button" class="erp-btn master-add" onclick="openMasterModal('supervisor')" data-type="supervisor" title="Add Supervisor">+</button>
+                        </div>
+                    </div>
+
+                    <div class="erp-form-field" style="grid-column: span 2;">
+                        <label>Machine (auto from Job Card)</label>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <div id="machine_auto_display" class="erp-input" style="flex:1;padding:8px;border:1px solid rgba(148,163,184,0.4);border-radius:6px;background:#fff;">No machine mapped in Job Card</div>
+                            <label style="display:flex;align-items:center;gap:6px;margin:0 8px 0 0;font-weight:600;color:#7c3aed;">
+                                <input type="checkbox" id="machine_override" name="machine_override"> Use different machine for this production run
+                            </label>
+                        </div>
+                        <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
+                            <select id="machine" name="machine" class="erp-select" style="flex:1;" disabled>
+                                <option value="">Select Fallback Machine</option>
+                                {% for m in machines %}
+                                <option value="{{ m.id }}" {% if edit_record and edit_record.machine_id == m.id %}selected{% endif %}>{{ m.name }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="button" class="erp-btn master-add" onclick="openMasterModal('machine')" data-type="machine" title="Add Machine">+</button>
+                        </div>
+                    </div>
+
+                    <div class="erp-form-field erp-form-field-full" style="margin-top:1rem;">
+                        <h3 class="erp-section-title" style="margin:0;font-size:1rem;">Production Output & Quality</h3>
+                        <p class="erp-card-subtitle" style="margin:0.25rem 0 0;color:#475569;">Record impressions, good sheets, waste and intermediate pass status.</p>
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="impressions">Impressions Produced</label>
+                        <input id="impressions" name="impressions" type="number" min="0" value="{{ edit_record.impressions|default:'' }}" required>
+                        <p class="erp-help-text">Minimum impressions are advisory only for the selected pass type; the entry will still save unless the total exceeds the allowed maximum.</p>
+                    </div>
+
+                    <div class="erp-form-field" style="display:flex;align-items:center;gap:8px;">
+                        <input id="intermediate_pass" name="intermediate_pass" type="checkbox" {% if edit_record.intermediate_pass %}checked{% endif %}>
+                        <label for="intermediate_pass" style="margin:0;cursor:pointer;">Intermediate pass (no final usable output)</label>
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="output_sheets">Good Sheets Produced</label>
+                        <input id="output_sheets" name="output_sheets" type="number" min="0" value="{{ edit_record.output_sheets|default:'' }}">
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="waste_sheets">Waste Sheets</label>
+                        <input id="waste_sheets" name="waste_sheets" type="number" min="0" value="{{ edit_record.waste_sheets|default:0 }}">
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="waste_reason">Waste Reason</label>
+                        <select id="waste_reason" name="waste_reason" class="erp-select">
+                            <option value="">Select reason</option>
+                            <option value="paper_jam" {% if edit_record.waste_reason == 'paper_jam' %}selected{% endif %}>Paper Jam (Affects OEE Quality)</option>
+                            <option value="color_issue" {% if edit_record.waste_reason == 'color_issue' %}selected{% endif %}>Color/Registration Issue (Affects OEE Quality)</option>
+                            <option value="material_defect" {% if edit_record.waste_reason == 'material_defect' %}selected{% endif %}>Material Defect (External - Excluded from OEE)</option>
+                            <option value="operator_error" {% if edit_record.waste_reason == 'operator_error' %}selected{% endif %}>Operator Error (Affects OEE Quality)</option>
+                            <option value="machine_issue" {% if edit_record.waste_reason == 'machine_issue' %}selected{% endif %}>Machine Issue (Affects OEE Quality)</option>
+                            <option value="other" {% if edit_record.waste_reason == 'other' %}selected{% endif %}>Other (Affects OEE Quality)</option>
+                        </select>
+                        <input id="waste_reason_other" name="waste_reason_other" type="text" class="erp-input {% if not edit_record.waste_reason_other %}is-hidden{% endif %}" value="{{ edit_record.waste_reason_other|default:'' }}" placeholder="Describe other waste reason">
+                    </div>
+
+                    <div class="erp-form-field erp-form-field-full" style="margin-top:1rem;">
+                        <h3 class="erp-section-title" style="margin:0;font-size:1rem;">Time Capture & Downtime</h3>
+                        <p class="erp-card-subtitle" style="margin:0.25rem 0 0;color:#475569;">Record run time, make ready time and any downtime with reason.</p>
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="run_time">Run Time (minutes)</label>
+                        <input id="run_time" name="run_time" type="number" min="0.1" step="0.1" value="{{ edit_record.run_time|default:'' }}" required>
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="make_ready_time">Make Ready Time (minutes)</label>
+                        <input id="make_ready_time" name="make_ready_time" type="number" min="0" step="0.1" value="{{ edit_record.make_ready_time|default:0 }}">
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="downtime_minutes">Downtime Minutes</label>
+                        <input id="downtime_minutes" name="downtime_minutes" type="number" min="0" step="0.1" value="{{ edit_record.downtime_minutes|default:0 }}">
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="downtime_category">Downtime Category</label>
+                        <select id="downtime_category" name="downtime_category" class="erp-select">
+                            <option value="">Select category</option>
+                            <option value="maintenance" {% if edit_record.downtime_category == 'maintenance' %}selected{% endif %}>Maintenance (Planned - Excluded from OEE)</option>
+                            <option value="breakdown" {% if edit_record.downtime_category == 'breakdown' %}selected{% endif %}>Machine Breakdown (Unplanned - Affects OEE)</option>
+                            <option value="material" {% if edit_record.downtime_category == 'material' %}selected{% endif %}>Material Issue (External - Excluded from OEE)</option>
+                            <option value="operator" {% if edit_record.downtime_category == 'operator' %}selected{% endif %}>Operator Issue (Affects OEE)</option>
+                            <option value="other" {% if edit_record.downtime_category == 'other' %}selected{% endif %}>Other (Affects OEE)</option>
+                        </select>
+                        <input id="downtime_category_other" name="downtime_category_other" type="text" class="erp-input {% if not edit_record.downtime_category_other %}is-hidden{% endif %}" value="{{ edit_record.downtime_category_other|default:'' }}" placeholder="Describe other downtime reason">
+                    </div>
+
+                    <div class="erp-form-field">
+                        <label for="status">Production Status</label>
+                        <select id="status" name="status" class="erp-select">
+                            <option value="in_progress" {% if edit_record.status == 'in_progress' %}selected{% endif %}>In Progress</option>
+                            <option value="completed" {% if edit_record.status == 'completed' %}selected{% endif %}>Completed</option>
+                            <option value="hold" {% if edit_record.status == 'hold' %}selected{% endif %}>Hold</option>
+                            <option value="cancelled" {% if edit_record.status == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                        </select>
+                    </div>
+
+                    <div class="erp-form-field erp-form-field-full">
+                        <label for="remarks">Remarks</label>
+                        <textarea id="remarks" name="remarks" rows="2" class="erp-textarea">{{ edit_record.remark_notes|default:'' }}</textarea>
+                    </div>
+
+                    {% if edit_record %}
+                    <div class="erp-form-field erp-form-field-full">
+                        <label for="change_reason">Change Reason (Required for Edit)</label>
+                        <textarea id="change_reason" name="change_reason" rows="2" class="erp-textarea" required></textarea>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </form>
+
+        <!-- LIVE PRODUCTION SUMMARY -->
+        <div class="erp-card-shell production-summary-card" id="production_summary">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h2 class="erp-section-title">Live Production Summary</h2>
+                </div>
+            </div>
+            <div class="production-summary-grid">
+                <div>Order Qty: <span id="sum_order_qty">-</span></div>
+                <div>Produced Before: <span id="sum_produced_before">-</span></div>
+                <div>Current Entry: <span id="sum_current_entry">0</span></div>
+                <div>After Save: <span id="sum_after_save">-</span></div>
+                <div>Remaining: <span id="sum_remaining">-</span></div>
+                <div>Waste %: <span id="sum_waste_pct">0%</span></div>
+                <div>Net Impressions: <span id="sum_net_impressions">0</span></div>
+                <div>Pass Count: <span id="sum_pass_type">Single-pass</span></div>
+                <div>Suggested Min Impressions: <span id="sum_min_impressions">0</span></div>
+                <div>Allowed Impressions: <span id="sum_allowed_impressions">0</span></div>
+                <div>Remaining Impressions: <span id="sum_remaining_impressions">0</span></div>
+                <div>Run Time: <span id="sum_runtime">0 min</span></div>
+                <div>Make Ready: <span id="sum_make_ready">0 min</span></div>
+                <div>Downtime: <span id="sum_downtime">0 min</span></div>
+            </div>
+            <div class="production-progress">
+                <div class="progress-bar" role="progressbar">
+                    <div class="progress-fill" id="progress_fill" style="width:0%"></div>
+                </div>
+                <div class="progress-label" id="progress_label">0%</div>
+            </div>
+            <div id="summary_warnings" class="summary-warnings"></div>
+        </div>
+
+        <!-- PREVIOUS PRODUCTION HISTORY -->
+        <div class="erp-card-shell history-card is-hidden" id="history_card">
+            <div class="erp-card-header">
+                <h2 class="erp-section-title">Previous Production History</h2>
+                <p class="erp-card-subtitle">Last 5 entries for the selected Job Card</p>
+            </div>
+            <div class="erp-table-wrapper">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Shift</th>
+                            <th>Impressions</th>
+                            <th>Good</th>
+                            <th>Waste</th>
+                            <th>Intermediate</th>
+                            <th>Run Time</th>
+                            <th>Make Ready</th>
+                            <th>Downtime</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history_body">
+                        <!-- Dynamic content -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Sticky actions -->
+        <div class="sticky-actions">
+            <button id="submit_production" class="erp-btn erp-btn-primary" type="button">Save Production</button>
+            <div id="action_status" class="action-status" aria-live="polite"></div>
+        </div>
+    </div>
+
+    <script>
+        window.JOB_INFO_MAP = {{ job_card_info_json|safe }};
+        window.JOB_MACHINE_MAP = {{ job_card_machine_json|safe }};
+    </script>
+    <!-- Master-data modal -->
+    <div id="master_modal" class="modal is-hidden" role="dialog" aria-modal="true" aria-hidden="true" style="position:fixed;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;z-index:2000;">
+        <div class="modal-backdrop" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);"></div>
+        <div class="modal-panel" style="position:relative;z-index:2001;background:#fff;padding:20px;border-radius:8px;width:420px;max-width:95%;box-shadow:0 8px 30px rgba(2,6,23,0.2);">
+            <h3 id="master_modal_title">Add</h3>
+            <form id="master_modal_form">
+                <div id="master_fields" style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
+                    <!-- dynamic fields -->
+                </div>
+                <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                    <button type="button" id="master_cancel" class="erp-btn" onclick="closeMasterModal()">Cancel</button>
+                    <button type="submit" id="master_save" class="erp-btn erp-btn-primary">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+{% endblock %}

@@ -9,24 +9,12 @@
     {% if user.profile.can_edit_production %}
     <a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> Add Production</a>
     {% endif %}
-    {% if user.profile.can_view_analytics %}
-    <a href="{% url 'production_dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
-    {% endif %}
+    {# Dashboard link removed from page header to avoid duplication with module subnav #}
 {% endblock %}
 {% block content %}
-        <div class="erp-page-stack">
-            <div class="erp-actions">
-                <a href="{% url 'home' %}" class="erp-btn erp-btn-secondary">Home</a>
-                {% if user.profile.can_edit_production %}
-                <a href="{% url 'production_entry' %}" class="erp-btn erp-btn-success">Add Production</a>
-                {% endif %}
-                {% if user.profile.can_view_analytics %}
-                <a href="{% url 'production_dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
-                {% endif %}
-                {% if user.profile.can_archive_records %}
-                <a href="{% url 'archived_records' %}?entity=production" class="erp-btn erp-btn-secondary">Archived</a>
-                {% endif %}
-            </div>
+    {% include 'theme/production_context_nav.html' %}
+    <div class="erp-page-stack">
+            {# rely on header_actions for top-level page actions; remove duplicate action bar #}
 
             <section class="erp-section-shell">
                 <div class="erp-card-header">
@@ -228,5 +216,3 @@
         }
     </script>
 {% endblock %}
-
-

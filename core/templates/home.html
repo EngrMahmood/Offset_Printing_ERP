@@ -6,9 +6,6 @@
 {% block header_subtitle %}Production operations workspace — manage job cards, production, dispatch, and QC{% endblock %}
 
 {% block header_actions %}
-{% if user.profile.can_edit_jobcard %}
-<a href="{% url 'job_card_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> New Job Card</a>
-{% endif %}
 <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-book"></i> Guides</a>
 {% endblock %}
 
@@ -23,18 +20,6 @@
 </div>
 
 <div class="erp-route-grid erp-route-grid--3">
-    {% if user.profile.can_edit_jobcard %}
-    <a href="{% url 'job_card_entry' %}" class="erp-route-card erp-route-card--link">
-        <div class="erp-route-card__key"><i class="fas fa-file-alt"></i> Job Card Entry</div>
-        <div class="erp-route-card__value">Create job cards</div>
-        <div class="erp-card-subtitle" style="margin-top:4px;">Capture PO details and schedule production accurately.</div>
-    </a>
-    <a href="{% url 'job_card_records' %}" class="erp-route-card erp-route-card--link">
-        <div class="erp-route-card__key"><i class="fas fa-list-alt"></i> Tracking</div>
-        <div class="erp-route-card__value">Job Card Records</div>
-        <div class="erp-card-subtitle" style="margin-top:4px;">View production history, balances, and dispatch status.</div>
-    </a>
-    {% endif %}
     <a href="{% url 'planning:home' %}" class="erp-route-card erp-route-card--link">
         <div class="erp-route-card__key"><i class="fas fa-calendar-check"></i> Planning</div>
         <div class="erp-route-card__value">Planning Workspace</div>

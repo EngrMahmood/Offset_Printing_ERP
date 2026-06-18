@@ -24,10 +24,7 @@ urlpatterns = [
         name='jobcard_template_download'   # âœ… ADD THIS
     ),
 
-    path('production-entry/', views.production_entry, name='production_entry'),
-    path('production-wip/', views.production_wip, name='production_wip'),
-    path('production-dashboard/', views.production_dashboard, name='production_dashboard'),
-    path('production-records/', views.production_records, name='production_records'),
+    path('', include('production.urls')),
     path('job-card-entry/', views.job_card_entry, name='job_card_entry'),
     path('job-card-records/', views.job_card_records, name='job_card_records'),
     path('dispatch-entry/', views.dispatch_entry, name='dispatch_entry'),
