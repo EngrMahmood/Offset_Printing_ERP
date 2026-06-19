@@ -8,6 +8,7 @@
 {% block header_actions %}{% endblock %}
 
 {% block content %}
+    <!-- TEMPLATE_COPY_PRODUCTION_ENTRY_HTML -->
     {% include 'theme/production_context_nav.html' %}
     <style>
         /* Inline override to enforce job info compact layout immediately */
@@ -58,9 +59,10 @@
             </div>
         </div>
 
-        <form id="production_form" method="POST" action="{% url 'production_entry' %}">
+        <form id="production_form" method="POST" action="{% url 'production_entry' %}" {% if is_view_mode %}onsubmit="return false;"{% endif %}>
             {% csrf_token %}
             <input type="hidden" name="edit_id" value="{{ edit_record.id|default:'' }}">
+            {% with view_disabled=is_view_mode|yesno:"disabled," %}
 
             <div class="erp-card-shell">
                 <div class="erp-card-header">
@@ -70,11 +72,11 @@
                 <div class="erp-form-grid">
                     <div class="erp-form-field">
                         <label for="job_card_search">Search Job Card</label>
-                        <input id="job_card_search" type="text" class="erp-input" placeholder="Search job card by number, SKU, customer...">
+                        <input id="job_card_search" type="text" class="erp-input" placeholder="Search job card by number, SKU, customer..." {{ view_disabled }}>
                     </div>
                     <div class="erp-form-field">
                         <label for="job_card">Job Card</label>
-                        <select id="job_card" name="job_card" class="erp-select" required>
+                        <select id="job_card" name="job_card" class="erp-select" required {{ view_disabled }}>
                             <option value="">Select job card</option>
                             {% for card in job_cards %}
                             <option value="{{ card.id }}" {% if edit_record and edit_record.job_card_id == card.id %}selected{% endif %}>
@@ -87,19 +89,19 @@
                     <div class="erp-form-field">
                         <label for="operator">Operator</label>
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <select id="operator" name="operator" class="erp-select" required style="flex:1;">
+                            <select id="operator" name="operator" class="erp-select" required style="flex:1;" {{ view_disabled }}>
                                 <option value="">Select operator</option>
                                 {% for operator in operators %}
                                 <option value="{{ operator.id }}" {% if edit_record and edit_record.operator_id == operator.id %}selected{% endif %}>{{ operator.name }}</option>
                                 {% endfor %}
                             </select>
-                            <button type="button" class="erp-btn master-add" onclick="openMasterModal('operator')" data-type="operator" title="Add Operator">+</button>
+                            <button type="button" class="erp-btn master-add" onclick="openMasterModal('operator')" data-type="operator" title="Add Operator" {{ view_disabled }}>+</button>
                         </div>
                     </div>
 
                     <div class="erp-form-field">
                         <label for="shift">Shift</label>
-                        <select id="shift" name="shift" class="erp-select" required>
+                        <select id="shift" name="shift" class="erp-select" required {{ view_disabled }}>
                             <option value="">Choose shift</option>
                             <option value="A" {% if edit_record and edit_record.shift == 'A' %}selected{% endif %}>Shift A</option>
                             <option value="B" {% if edit_record and edit_record.shift == 'B' %}selected{% endif %}>Shift B</option>
@@ -108,13 +110,13 @@
 
                     <div class="erp-form-field">
                         <label for="date">Date</label>
-                        <input id="date" name="date" type="date" value="{{ today|date:'Y-m-d' }}" required>
+                        <input id="date" name="date" type="date" value="{{ today|date:'Y-m-d' }}" required {{ view_disabled }}>
                     </div>
 
                     <div class="erp-form-field">
                         <label for="supervisor">Supervisor</label>
                         <div style="display:flex;gap:8px;align-items:center;">
-                            <select id="supervisor" name="supervisor" class="erp-select" style="flex:1;">
+                            <select id="supervisor" name="supervisor" class="erp-select" style="flex:1;" {{ view_disabled }}>
                                 <option value="">Select supervisor</option>
                                 {% for sup in supervisors %}
                                 <option value="{{ sup.id }}" {% if edit_record and edit_record.supervisor_id == sup.id %}selected{% endif %}>
@@ -122,7 +124,7 @@
                                 </option>
                                 {% endfor %}
                             </select>
-                            <button type="button" class="erp-btn master-add" onclick="openMasterModal('supervisor')" data-type="supervisor" title="Add Supervisor">+</button>
+                            <button type="button" class="erp-btn master-add" onclick="openMasterModal('supervisor')" data-type="supervisor" title="Add Supervisor" {{ view_disabled }}>+</button>
                         </div>
                     </div>
 
@@ -131,11 +133,11 @@
                         <div style="display:flex;gap:8px;align-items:center;">
                             <div id="machine_auto_display" class="erp-input" style="flex:1;padding:8px;border:1px solid rgba(148,163,184,0.4);border-radius:6px;background:#fff;">No machine mapped in Job Card</div>
                             <label style="display:flex;align-items:center;gap:6px;margin:0 8px 0 0;font-weight:600;color:#7c3aed;">
-                                <input type="checkbox" id="machine_override" name="machine_override"> Use different machine for this production run
+                                <input type="checkbox" id="machine_override" name="machine_override" {{ view_disabled }}> Use different machine for this production run
                             </label>
                         </div>
                         <div style="margin-top:8px;display:flex;gap:8px;align-items:center;">
-                            <select id="machine" name="machine" class="erp-select" style="flex:1;" disabled>
+                            <select id="machine" name="machine" class="erp-select" style="flex:1;" {{ view_disabled }}>
                                 <option value="">Select Fallback Machine</option>
                                 {% for m in machines %}
                                 <option value="{{ m.id }}" {% if edit_record and edit_record.machine_id == m.id %}selected{% endif %}>{{ m.name }}</option>
@@ -152,28 +154,28 @@
 
                     <div class="erp-form-field">
                         <label for="impressions">Impressions Produced</label>
-                        <input id="impressions" name="impressions" type="number" min="0" value="{{ edit_record.impressions|default:'' }}" required>
+                        <input id="impressions" name="impressions" type="number" min="0" value="{{ edit_record.impressions|default:'' }}" required {{ view_disabled }}>
                         <p class="erp-help-text">Minimum impressions are advisory only for the selected pass type; the entry will still save unless the total exceeds the allowed maximum.</p>
                     </div>
 
                     <div class="erp-form-field" style="display:flex;align-items:center;gap:8px;">
-                        <input id="intermediate_pass" name="intermediate_pass" type="checkbox" {% if edit_record.intermediate_pass %}checked{% endif %}>
+                        <input id="intermediate_pass" name="intermediate_pass" type="checkbox" {% if edit_record.intermediate_pass %}checked{% endif %} {{ view_disabled }}>
                         <label for="intermediate_pass" style="margin:0;cursor:pointer;">Intermediate pass (no final usable output)</label>
                     </div>
 
                     <div class="erp-form-field">
                         <label for="output_sheets">Good Sheets Produced</label>
-                        <input id="output_sheets" name="output_sheets" type="number" min="0" value="{{ edit_record.output_sheets|default:'' }}">
+                        <input id="output_sheets" name="output_sheets" type="number" min="0" value="{{ edit_record.output_sheets|default:'' }}" {{ view_disabled }}>
                     </div>
 
                     <div class="erp-form-field">
                         <label for="waste_sheets">Waste Sheets</label>
-                        <input id="waste_sheets" name="waste_sheets" type="number" min="0" value="{{ edit_record.waste_sheets|default:0 }}">
+                        <input id="waste_sheets" name="waste_sheets" type="number" min="0" value="{{ edit_record.waste_sheets|default:0 }}" {{ view_disabled }}>
                     </div>
 
                     <div class="erp-form-field">
                         <label for="waste_reason">Waste Reason</label>
-                        <select id="waste_reason" name="waste_reason" class="erp-select">
+                        <select id="waste_reason" name="waste_reason" class="erp-select" {{ view_disabled }}>
                             <option value="">Select reason</option>
                             <option value="paper_jam" {% if edit_record.waste_reason == 'paper_jam' %}selected{% endif %}>Paper Jam (Affects OEE Quality)</option>
                             <option value="color_issue" {% if edit_record.waste_reason == 'color_issue' %}selected{% endif %}>Color/Registration Issue (Affects OEE Quality)</option>
@@ -182,7 +184,7 @@
                             <option value="machine_issue" {% if edit_record.waste_reason == 'machine_issue' %}selected{% endif %}>Machine Issue (Affects OEE Quality)</option>
                             <option value="other" {% if edit_record.waste_reason == 'other' %}selected{% endif %}>Other (Affects OEE Quality)</option>
                         </select>
-                        <input id="waste_reason_other" name="waste_reason_other" type="text" class="erp-input {% if not edit_record.waste_reason_other %}is-hidden{% endif %}" value="{{ edit_record.waste_reason_other|default:'' }}" placeholder="Describe other waste reason">
+                        <input id="waste_reason_other" name="waste_reason_other" type="text" class="erp-input {% if not edit_record.waste_reason_other %}is-hidden{% endif %}" value="{{ edit_record.waste_reason_other|default:'' }}" placeholder="Describe other waste reason" {{ view_disabled }}>
                     </div>
 
                     <div class="erp-form-field erp-form-field-full" style="margin-top:1rem;">
@@ -192,22 +194,22 @@
 
                     <div class="erp-form-field">
                         <label for="run_time">Run Time (minutes)</label>
-                        <input id="run_time" name="run_time" type="number" min="0.1" step="0.1" value="{{ edit_record.run_time|default:'' }}" required>
+                        <input id="run_time" name="run_time" type="number" min="0.1" step="0.1" value="{{ edit_record.run_time|default:'' }}" required {{ view_disabled }}>
                     </div>
 
                     <div class="erp-form-field">
                         <label for="make_ready_time">Make Ready Time (minutes)</label>
-                        <input id="make_ready_time" name="make_ready_time" type="number" min="0" step="0.1" value="{{ edit_record.make_ready_time|default:0 }}">
+                        <input id="make_ready_time" name="make_ready_time" type="number" min="0" step="0.1" value="{{ edit_record.make_ready_time|default:0 }}" {{ view_disabled }}>
                     </div>
 
                     <div class="erp-form-field">
                         <label for="downtime_minutes">Downtime Minutes</label>
-                        <input id="downtime_minutes" name="downtime_minutes" type="number" min="0" step="0.1" value="{{ edit_record.downtime_minutes|default:0 }}">
+                        <input id="downtime_minutes" name="downtime_minutes" type="number" min="0" step="0.1" value="{{ edit_record.downtime_minutes|default:0 }}" {{ view_disabled }}>
                     </div>
 
                     <div class="erp-form-field">
                         <label for="downtime_category">Downtime Category</label>
-                        <select id="downtime_category" name="downtime_category" class="erp-select">
+                        <select id="downtime_category" name="downtime_category" class="erp-select" {{ view_disabled }}>
                             <option value="">Select category</option>
                             <option value="maintenance" {% if edit_record.downtime_category == 'maintenance' %}selected{% endif %}>Maintenance (Planned - Excluded from OEE)</option>
                             <option value="breakdown" {% if edit_record.downtime_category == 'breakdown' %}selected{% endif %}>Machine Breakdown (Unplanned - Affects OEE)</option>
@@ -215,12 +217,12 @@
                             <option value="operator" {% if edit_record.downtime_category == 'operator' %}selected{% endif %}>Operator Issue (Affects OEE)</option>
                             <option value="other" {% if edit_record.downtime_category == 'other' %}selected{% endif %}>Other (Affects OEE)</option>
                         </select>
-                        <input id="downtime_category_other" name="downtime_category_other" type="text" class="erp-input {% if not edit_record.downtime_category_other %}is-hidden{% endif %}" value="{{ edit_record.downtime_category_other|default:'' }}" placeholder="Describe other downtime reason">
+                        <input id="downtime_category_other" name="downtime_category_other" type="text" class="erp-input {% if not edit_record.downtime_category_other %}is-hidden{% endif %}" value="{{ edit_record.downtime_category_other|default:'' }}" placeholder="Describe other downtime reason" {{ view_disabled }}>
                     </div>
 
                     <div class="erp-form-field">
                         <label for="status">Production Status</label>
-                        <select id="status" name="status" class="erp-select">
+                        <select id="status" name="status" class="erp-select" {{ view_disabled }}>
                             <option value="in_progress" {% if edit_record.status == 'in_progress' %}selected{% endif %}>In Progress</option>
                             <option value="completed" {% if edit_record.status == 'completed' %}selected{% endif %}>Completed</option>
                             <option value="hold" {% if edit_record.status == 'hold' %}selected{% endif %}>Hold</option>
@@ -306,14 +308,21 @@
 
         <!-- Sticky actions -->
         <div class="sticky-actions">
+            {% if not is_view_mode %}
             <button id="submit_production" class="erp-btn erp-btn-primary" type="button">Save Production</button>
+            {% endif %}
             <div id="action_status" class="action-status" aria-live="polite"></div>
         </div>
     </div>
+    {% endwith %}
 
     <script>
         window.JOB_INFO_MAP = {{ job_card_info_json|safe }};
         window.JOB_MACHINE_MAP = {{ job_card_machine_json|safe }};
+        window.CURRENT_RECORD_IMPRESSIONS = {{ edit_record.impressions|default:'null' }};
+        window.CURRENT_RECORD_ID = {{ edit_record.id|default:'null' }};
+        window.IS_VIEW_MODE = {{ is_view_mode|yesno:"true,false" }};
+        // TEMPLATE_UPDATED_VIEW_MODE
     </script>
     <!-- Master-data modal -->
     <div id="master_modal" class="modal is-hidden" role="dialog" aria-modal="true" aria-hidden="true" style="position:fixed;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;z-index:2000;">

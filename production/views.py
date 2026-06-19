@@ -35,6 +35,8 @@ from core.services import (
     get_record_edit_lock_cutoff,
     get_record_edit_lock_days,
     log_change,
+    record_is_time_locked,
+    run_bulk_permanent_delete,
     user_can_archive_records,
     user_can_bypass_edit_lock,
 )

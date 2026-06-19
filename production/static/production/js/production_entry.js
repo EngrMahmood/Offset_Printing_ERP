@@ -5,11 +5,33 @@ document.addEventListener('DOMContentLoaded', function(){
     const historyCard = document.getElementById('history_card');
     const ji = id => document.getElementById(id);
     const originalJobCardOptions = jobSelect ? Array.from(jobSelect.options).map(opt => ({ value: opt.value, text: opt.text, selected: opt.selected })) : [];
-
+    window.__productionEntryLoaded = true;
     function parseNumber(v){
         if(!v) return 0;
         const n = parseFloat(v.toString().replace(/,/g, ''));
         return isNaN(n)?0:n;
+    }
+
+    const isViewMode = new URLSearchParams(window.location.search).has('view');
+    const initialImpressions = parseNumber(ji('impressions')?.value);
+
+    function applyViewModeRestrictions(){
+        Array.from(document.querySelectorAll('#production_form input, #production_form select, #production_form textarea, #production_form button')).forEach(el => {
+            if(el.type === 'hidden') return;
+            if(el.id === 'submit_production') return;
+            el.disabled = true;
+        });
+        document.getElementById('submit_production')?.remove();
+        const masterButtons = document.querySelectorAll('.master-add');
+        masterButtons.forEach(btn => btn.disabled = true);
+        const form = document.getElementById('production_form');
+        if(form){
+            form.addEventListener('submit', function(e){
+                if(isViewMode){
+                    e.preventDefault();
+                }
+            });
+        }
     }
 
     function populateJobInfo(){
@@ -102,14 +124,23 @@ document.addEventListener('DOMContentLoaded', function(){
         const info = window.JOB_INFO_MAP ? window.JOB_INFO_MAP[jobId] : null;
         if(!info) return;
 
-        const orderQty = parseNumber(info.order_qty);
-        const producedBefore = parseNumber(info.produced_qty);
+        const orderQtyRaw = info.order_qty;
+        const producedBeforeRaw = info.produced_qty;
+        const orderQty = parseNumber(orderQtyRaw);
+        const producedBefore = parseNumber(producedBeforeRaw);
         const good = parseNumber(ji('output_sheets').value);
         const waste = parseNumber(ji('waste_sheets').value);
         const impressions = parseNumber(ji('impressions').value);
         const makeReady = parseNumber(ji('make_ready_time').value);
         const downtime = parseNumber(ji('downtime_minutes').value);
         const intermediatePass = ji('intermediate_pass')?.checked;
+        const currentEntryOutput = parseNumber(ji('output_sheets').value);
+
+        const displayProducedBefore = isViewMode ? Math.max(0, producedBefore - currentEntryOutput) : producedBefore;
+        const displayAfterSave = isViewMode ? producedBefore : producedBefore + (intermediatePass ? 0 : currentEntryOutput);
+
+        ji('sum_order_qty').textContent = orderQtyRaw ? orderQty.toLocaleString() : '-';
+        ji('sum_produced_before').textContent = displayProducedBefore ? displayProducedBefore.toLocaleString() : '-';
 
         // Net Impressions
         let netImpressions = impressions;
@@ -130,12 +161,21 @@ document.addEventListener('DOMContentLoaded', function(){
         const minImpressions = totalHandled > 0 ? totalHandled * effectivePassCount : 0;
         ji('sum_pass_type').textContent = intermediatePass ? `Intermediate pass (${effectivePassCount}-pass)` : `${effectivePassCount}-pass`;
         ji('sum_min_impressions').textContent = minImpressions.toLocaleString();
-        ji('sum_allowed_impressions').textContent = parseNumber(info.allowed_impressions).toLocaleString();
-        ji('sum_remaining_impressions').textContent = parseNumber(info.remaining_impressions).toLocaleString();
+
+        const allowedImpressions = parseNumber(info.allowed_impressions);
+        const remainingAllowedBefore = parseNumber(info.remaining_impressions);
+        const currentRecordImpressions = parseNumber(window.CURRENT_RECORD_IMPRESSIONS);
+        const hasCurrentRecord = window.CURRENT_RECORD_ID !== null && window.CURRENT_RECORD_ID !== undefined;
+        const remainingAllowedAfter = hasCurrentRecord
+            ? Math.max(0, remainingAllowedBefore + currentRecordImpressions - impressions)
+            : Math.max(0, remainingAllowedBefore - impressions);
+
+        ji('sum_allowed_impressions').textContent = allowedImpressions.toLocaleString();
+        ji('sum_remaining_impressions').textContent = remainingAllowedAfter.toLocaleString();
 
         const progressGood = intermediatePass ? 0 : good;
         const currentEntry = progressGood;
-        const afterSave = producedBefore + progressGood;
+        const afterSave = isViewMode ? producedBefore : producedBefore + progressGood;
         const remaining = Math.max(0, orderQty - afterSave);
 
         const warnings = [];
@@ -161,7 +201,8 @@ document.addEventListener('DOMContentLoaded', function(){
         ji('sum_after_save').textContent = afterSave.toLocaleString();
         ji('sum_remaining').textContent = remaining.toLocaleString();
 
-        const pct = orderQty > 0 ? Math.round((afterSave / orderQty) * 100) : 0;
+        const rawPct = orderQty > 0 ? Math.round((afterSave / orderQty) * 100) : 0;
+        const pct = rawPct;
         ji('progress_fill').style.width = Math.min(100, pct) + '%';
         ji('progress_label').textContent = pct + '%';
 
@@ -209,6 +250,14 @@ document.addEventListener('DOMContentLoaded', function(){
             }
         });
     }
+    if(isViewMode){
+        applyViewModeRestrictions();
+    }
+
+    if(jobSelect && jobSelect.value){
+        populateJobInfo();
+    }
+
     ['output_sheets','waste_sheets','impressions','run_time','make_ready_time','downtime_minutes'].forEach(id=>{
         const el = ji(id);
         el && el.addEventListener('input', updateSummary);
