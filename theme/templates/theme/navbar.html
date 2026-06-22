@@ -41,7 +41,7 @@
             {% endif %}
             {% if nav.can_access_production %}
             <a href="{% url 'production_dashboard' %}"
-               class="erp-topnav-module {% if url == 'production_dashboard' or url == 'production_entry' or url == 'production_wip' or url == 'production_records' or url == 'job_card_entry' or url == 'job_card_records' %}is-active{% endif %}">
+               class="erp-topnav-module {% if url == 'production_dashboard' or url == 'production_entry' or url == 'production_wip' or url == 'production_records' %}is-active{% endif %}">
                 Production
             </a>
             <a href="{% url 'manual_working:manual_working_list' %}"
@@ -183,19 +183,11 @@
         </a>
     </div>
 
-    {% elif url == 'production_dashboard' or url == 'production_entry' or url == 'production_wip' or url == 'production_records' or url == 'job_card_entry' or url == 'job_card_records' %}
+    {% elif url == 'production_dashboard' or url == 'production_entry' or url == 'production_wip' or url == 'production_records' %}
     <div class="erp-subnav">
         <a href="{% url 'production_dashboard' %}"
            class="erp-subnav-link {% if url == 'production_dashboard' %}is-active{% endif %}">
             Dashboard
-        </a>
-        <a href="{% url 'job_card_entry' %}"
-           class="erp-subnav-link {% if url == 'job_card_entry' %}is-active{% endif %}">
-            Job Card Entry
-        </a>
-        <a href="{% url 'job_card_records' %}"
-           class="erp-subnav-link {% if url == 'job_card_records' %}is-active{% endif %}">
-            Job Card Records
         </a>
         <a href="{% url 'production_entry' %}"
            class="erp-subnav-link {% if url == 'production_entry' %}is-active{% endif %}">
@@ -205,9 +197,12 @@
            class="erp-subnav-link {% if url == 'production_wip' %}is-active{% endif %}">
             Production WIP
         </a>
+        <a href="{% url 'production_records' %}"
+           class="erp-subnav-link {% if url == 'production_records' %}is-active{% endif %}">
+            Production Records
+        </a>
     </div>
 
-    {% include 'theme/production_context_nav.html' %}
 
     {% elif url == 'dispatch_records' or url == 'dispatch_entry' %}
     <div class="erp-subnav">

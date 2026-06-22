@@ -7,7 +7,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 
-from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, Material, Operator, UserProfile, ChangeLog, EditOverrideRequest
+from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, Material, Operator, Supervisor, UserProfile, ChangeLog, EditOverrideRequest
 
 User = get_user_model()
 
@@ -210,23 +210,26 @@ class ProductionAdmin(admin.ModelAdmin):
     inlines = [ProductionDowntimeInline]
 
     list_display = (
-    'job_card',
-    'date',
-    'shift',
-    'machine',
-    'output_sheets',
-    'waste_sheets',
-    'waste_reason',
-    'pcs_produced',
-    'impressions',
-    'oee'
-)
+        'job_card',
+        'date',
+        'shift',
+        'machine',
+        'operator',
+        'supervisor',
+        'output_sheets',
+        'waste_sheets',
+        'waste_reason',
+        'pcs_produced',
+        'impressions',
+        'oee'
+    )
 
     list_filter = (
         'date',
         'shift',
         'machine',
         'operator',
+        'supervisor',
         'waste_reason',
         'downtime_category',
     )
@@ -235,9 +238,10 @@ class ProductionAdmin(admin.ModelAdmin):
         'job_card__job_card_no',
         'machine__name',
         'operator__name',
+        'supervisor__name',
     )
 
-    autocomplete_fields = ['job_card', 'machine', 'operator']
+    autocomplete_fields = ['job_card', 'machine', 'operator', 'supervisor']
 
     date_hierarchy = 'date'
 
@@ -248,7 +252,8 @@ class ProductionAdmin(admin.ModelAdmin):
                 "date",
                 "shift",
                 "machine",
-                "operator"
+                "operator",
+                "supervisor",
             )
         }),
         ("Output & Waste", {
@@ -263,15 +268,22 @@ class ProductionAdmin(admin.ModelAdmin):
             "fields": (
                 "planned_time",
                 "run_time",
-                "downtime",
+                "downtime_minutes",
                 "downtime_category",
-                "setup_time"
+                "make_ready_time"
             )
         }),
     )
     
 @admin.register(Operator)
 class OperatorAdmin(admin.ModelAdmin):
+    list_display = ['name', 'employee_code', 'is_active']
+    search_fields = ['name', 'employee_code']
+    list_filter = ['is_active']
+
+
+@admin.register(Supervisor)
+class SupervisorAdmin(admin.ModelAdmin):
     list_display = ['name', 'employee_code', 'is_active']
     search_fields = ['name', 'employee_code']
     list_filter = ['is_active']

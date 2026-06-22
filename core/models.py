@@ -6,6 +6,8 @@ from django.core.exceptions import ValidationError
 from django.db.models import Sum
 from django.contrib.auth import get_user_model
 
+from production.services import OEECalculator
+
 
 # =========================
 # MASTER TABLES
@@ -40,6 +42,15 @@ class Material(models.Model):
 
 
 class Operator(models.Model):
+    name = models.CharField(max_length=100)
+    employee_code = models.CharField(max_length=50, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+class Supervisor(models.Model):
     name = models.CharField(max_length=100)
     employee_code = models.CharField(max_length=50, null=True, blank=True)
     is_active = models.BooleanField(default=True)
@@ -420,9 +431,31 @@ class JobCard(models.Model):
         return self.total_sheets_planned + self.tolerance_sheets
 
     @property
+    def impression_pass_multiplier(self):
+        """Compute the number of passes that should be applied when calculating impressions."""
+        if self.planning_job:
+            front_pass = int(self.planning_job.front_pass or 0)
+            back_pass = int(self.planning_job.back_pass or 0)
+            if front_pass > 0 or back_pass > 0:
+                return max(1, front_pass + back_pass)
+
+        colour = (self.colour or '').strip().lower()
+        if colour:
+            match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', colour)
+            if match:
+                front = int(match.group(1))
+                back = int(match.group(2))
+                return max(1, front + back)
+            match = re.search(r'(\d+)', colour)
+            if match:
+                return max(1, int(match.group(1)))
+
+        return 1
+
+    @property
     def total_impressions_allowed_with_tolerance(self):
         tolerance = float(self.production_tolerance_percent or 0) / 100
-        return int(round(self.total_impressions_required * (1 + tolerance)))
+        return int(round(self.total_impressions_required * self.impression_pass_multiplier * (1 + tolerance)))
 
     @property
     def extra_sheets_used(self):
@@ -514,6 +547,7 @@ class Production(models.Model):
 
     output_sheets = models.PositiveIntegerField()
     waste_sheets = models.PositiveIntegerField(default=0)
+    intermediate_pass = models.BooleanField(default=False, help_text="Mark as an intermediate print pass with no final usable output")
 
     WASTE_CHOICES = [
         ('paper_jam', 'Paper Jam (Affects OEE Quality)'),
@@ -536,11 +570,10 @@ class Production(models.Model):
 
     planned_time = models.FloatField(help_text="in minutes")
     run_time = models.FloatField(help_text="in minutes")
-    downtime = models.FloatField(default=0,help_text="in minutes")
-    setup_time = models.FloatField(default=0,help_text="in minutes")
+    downtime_minutes = models.FloatField(default=0, help_text="in minutes")
+    make_ready_time = models.FloatField(default=0, help_text="in minutes")
 
     DOWNTIME_CHOICES = [
-        ('setup', 'Setup Time (Planned - Excluded from OEE)'),
         ('maintenance', 'Maintenance (Planned - Excluded from OEE)'),
         ('breakdown', 'Machine Breakdown (Unplanned - Affects OEE)'),
         ('material', 'Material Issue (External - Excluded from OEE)'),
@@ -555,6 +588,33 @@ class Production(models.Model):
         blank=True,
         help_text="Category of downtime"
     )
+
+    downtime_category_other = models.CharField(max_length=255, null=True, blank=True)
+    waste_reason_other = models.CharField(max_length=255, null=True, blank=True)
+
+    counter_start = models.PositiveIntegerField(default=0)
+    counter_end = models.PositiveIntegerField(default=0)
+    start_time = models.TimeField(null=True, blank=True)
+    end_time = models.TimeField(null=True, blank=True)
+
+    PRODUCTION_STATUS_CHOICES = [
+        ('in_progress', 'In Progress'),
+        ('completed', 'Completed'),
+        ('hold', 'Hold'),
+        ('cancelled', 'Cancelled'),
+    ]
+    status = models.CharField(max_length=20, choices=PRODUCTION_STATUS_CHOICES, default='in_progress')
+
+    supervisor = models.ForeignKey(
+        'Supervisor',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={'is_active': True}
+    )
+
+    remark_notes = models.TextField(null=True, blank=True)
+    change_reason = models.TextField(null=True, blank=True)
 
     ideal_run_rate = models.FloatField(null=True, blank=True)
 
@@ -588,6 +648,28 @@ class Production(models.Model):
     def total_sheets(self):
         return self.output_sheets + self.waste_sheets
 
+    def minimum_impressions_for_output(self):
+        """Calculate the minimum impressions required for the current output based on pass count."""
+        if not self.job_card or self.output_sheets <= 0:
+            return 0
+
+        passes = 1
+        if getattr(self.job_card, 'planning_job', None):
+            front_pass = int(self.job_card.planning_job.front_pass or 0)
+            back_pass = int(self.job_card.planning_job.back_pass or 0)
+            if front_pass > 0 and back_pass > 0:
+                passes = 2
+        else:
+            colour = (self.job_card.colour or '').strip()
+            match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', colour)
+            if match:
+                front = int(match.group(1))
+                back = int(match.group(2))
+                if front > 0 and back > 0:
+                    passes = 2
+
+        return self.output_sheets * passes
+
     def clean(self):
         errors = {}
 
@@ -617,10 +699,8 @@ class Production(models.Model):
             )
 
         # Impressions validation
-        if self.impressions <= 0:
-            errors['impressions'] = "Impressions must be greater than 0"
-        if self.impressions < self.output_sheets:
-            errors['impressions'] = "Impressions should be at least equal to output sheets"
+        if self.impressions < 0:
+            errors['impressions'] = "Impressions must be greater than or equal to 0"
 
         existing_impressions = Production.objects.filter(
             job_card=self.job_card,
@@ -670,10 +750,11 @@ class Production(models.Model):
 
     @property
     def availability(self):
-        if self.planned_time == 0:
-            return 0
-        unplanned_downtime = self.unplanned_downtime_minutes
-        return (self.planned_time - unplanned_downtime) / self.planned_time
+        return OEECalculator.availability(self.run_time, self.downtime_minutes)
+
+    @property
+    def press_utilization(self):
+        return OEECalculator.press_utilization(self.make_ready_time, self.run_time, self.downtime_minutes)
 
     @property
     def unplanned_downtime_minutes(self):
@@ -685,7 +766,7 @@ class Production(models.Model):
                 row.minutes for row in detail_rows
                 if row.category in unplanned_categories
             ))
-        return float(self.downtime or 0) if self.downtime_category in unplanned_categories else 0.0
+        return float(self.downtime_minutes or 0) if self.downtime_category in unplanned_categories else 0.0
 
     @property
     def downtime_breakdown_text(self):
@@ -697,9 +778,9 @@ class Production(models.Model):
                 f"{labels.get(row.category, row.category)}: {row.minutes:g}m"
                 for row in detail_rows
             )
-        if self.downtime and self.downtime_category:
+        if self.downtime_minutes and self.downtime_category:
             labels = dict(self.DOWNTIME_CHOICES)
-            return f"{labels.get(self.downtime_category, self.downtime_category)}: {float(self.downtime):g}m"
+            return f"{labels.get(self.downtime_category, self.downtime_category)}: {float(self.downtime_minutes):g}m"
         return '-'
 
     @property
@@ -741,13 +822,13 @@ class Production(models.Model):
     @property
     def overrun_minutes(self):
         """Minutes by which total time exceeded planned time (0 if on schedule)."""
-        total = (self.run_time or 0) + (self.downtime or 0) + (self.setup_time or 0)
+        total = (self.run_time or 0) + (self.downtime_minutes or 0) + (self.make_ready_time or 0)
         return max(0, total - (self.planned_time or 0))
 
     @property
     def actual_total_time_minutes(self):
         """Actual consumed time for this production entry."""
-        return (self.run_time or 0) + (self.downtime or 0) + (self.setup_time or 0)
+        return (self.run_time or 0) + (self.downtime_minutes or 0) + (self.make_ready_time or 0)
 
     @property
     def planned_variance_minutes(self):

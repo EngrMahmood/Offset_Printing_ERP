@@ -1,0 +1,294 @@
+.production-dashboard {
+    display: grid;
+    gap: 0.75rem;
+    width: 100%;
+    max-width: calc(100vw - 2rem);
+    box-sizing: border-box;
+}
+
+.production-dashboard,
+.production-dashboard * {
+    box-sizing: border-box;
+}
+
+.production-dashboard .pd-filters,
+.production-dashboard .pd-table-wrap,
+.production-dashboard .pd-chart-card,
+.production-dashboard .pd-metric-card {
+    background: #fff;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(221, 229, 239, 1);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+
+.production-dashboard .pd-filters {
+    display: flex;
+    flex-wrap: wrap;
+    padding: 0.7rem 0.85rem;
+    gap: 0.45rem;
+    align-items: flex-end;
+    font-size: 0.84rem;
+}
+
+.production-dashboard .pd-filters > div {
+    flex: 1 1 140px;
+    min-width: 120px;
+}
+
+.production-dashboard .pd-filters .erp-btn {
+    min-width: 0;
+}
+
+.production-dashboard .pd-filters label {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.production-dashboard .pd-filters select,
+.production-dashboard .pd-filters input[type=date] {
+    width: 100%;
+    min-height: 2.1rem;
+    padding: 0.3rem 0.65rem;
+    border-radius: 0.75rem;
+    border: 1px solid rgba(148, 163, 184, 0.5);
+    background: #fff;
+    color: #1f2937;
+    font-size: 0.9rem;
+}
+
+.production-dashboard .pd-metrics-grid,
+.production-dashboard .pd-charts-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.65rem;
+    min-width: 0;
+}
+
+.production-dashboard .pd-metric-card,
+.production-dashboard .pd-chart-card,
+.production-dashboard .pd-table-wrap {
+    padding: 0.85rem;
+    min-width: 0;
+}
+
+.production-dashboard .pd-metric-label {
+    color: #475569;
+    font-size: 0.78rem;
+    margin-bottom: 0.35rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    white-space: normal;
+    word-break: break-word;
+}
+
+.production-dashboard .pd-metric-value {
+    font-size: 1.3rem;
+    font-weight: 700;
+    color: #0f172a;
+    line-height: 1.15;
+    word-break: break-word;
+}
+
+.production-dashboard .chart-container {
+    min-height: 200px;
+    position: relative;
+}
+
+.production-dashboard .pd-table-wrap {
+    overflow-x: auto;
+}
+
+.production-dashboard .pd-table-wrap h3 {
+    margin-bottom: 0.65rem;
+    font-size: 1rem;
+}
+
+.production-dashboard .pd-top-actions {
+    display: flex;
+    gap: 0.65rem;
+    flex-wrap: wrap;
+    align-items: flex-start;
+}
+
+.production-dashboard .pd-top-actions .erp-btn {
+    white-space: nowrap;
+    min-width: 0;
+}
+
+.production-dashboard .erp-table th,
+.production-dashboard .erp-table td {
+    padding: 0.3rem 0.4rem !important;
+    font-size: 0.78rem !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+}
+
+.production-dashboard .erp-table {
+    width: 100%;
+    overflow-x: auto;
+    border-collapse: collapse;
+    table-layout: auto;
+    min-width: 0;
+}
+
+.production-dashboard .erp-table-wrap {
+    overflow-x: auto;
+    min-width: 0;
+}
+
+.production-dashboard .erp-table-wrap table {
+    display: table;
+    width: auto !important;
+    max-width: 100% !important;
+    min-width: 0;
+}
+
+.production-dashboard .shift-comparison-table {
+    display: inline-table !important;
+    width: auto !important;
+    max-width: 100% !important;
+    margin: 0 auto;
+    table-layout: auto !important;
+}
+
+.production-dashboard .shift-comparison-table th,
+.production-dashboard .shift-comparison-table td {
+    padding: 0.22rem 0.35rem !important;
+    font-size: 0.78rem !important;
+    line-height: 1.25 !important;
+    white-space: normal !important;
+    word-break: break-word !important;
+}
+
+.production-dashboard .shift-comparison-table th:first-child,
+.production-dashboard .shift-comparison-table td:first-child {
+    width: auto !important;
+    max-width: 11rem !important;
+}
+
+.production-dashboard .shift-comparison-table th:nth-child(2),
+.production-dashboard .shift-comparison-table td:nth-child(2),
+.production-dashboard .shift-comparison-table th:nth-child(3),
+.production-dashboard .shift-comparison-table td:nth-child(3) {
+    width: 1px !important;
+    white-space: nowrap !important;
+}
+
+.production-dashboard .pd-table-wrap {
+    overflow-x: auto;
+    min-width: 0;
+}
+
+@media (max-width: 1100px) {
+    .production-dashboard .pd-metric-value {
+        font-size: 1.25rem;
+    }
+
+    .production-dashboard .chart-container {
+        min-height: 180px;
+    }
+
+    .production-dashboard .pd-metrics-grid,
+    .production-dashboard .pd-charts-grid {
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)) !important;
+    }
+}
+
+@media (max-width: 960px) {
+    .production-dashboard .pd-filters {
+        font-size: 0.8rem;
+        gap: 0.45rem;
+    }
+
+    .production-dashboard .pd-filters > div {
+        flex: 1 1 100%;
+        min-width: 0;
+    }
+
+    .production-dashboard .pd-metrics-grid,
+    .production-dashboard .pd-charts-grid {
+        grid-template-columns: 1fr !important;
+    }
+
+    .production-dashboard .chart-container {
+        min-height: 160px;
+    }
+}
+
+@media (max-width: 640px) {
+    .production-dashboard {
+        gap: 0.65rem;
+    }
+
+    .production-dashboard .pd-filters {
+        padding: 0.7rem;
+    }
+
+    .production-dashboard .pd-metric-label {
+        font-size: 0.72rem;
+    }
+
+    .production-dashboard .pd-metric-value {
+        font-size: 1.05rem;
+    }
+
+    .production-dashboard .erp-table th,
+    .production-dashboard .erp-table td {
+        padding: 0.25rem 0.35rem;
+        font-size: 0.72rem;
+    }
+}
+
+/* Production WIP helpers */
+#add-status-panel { margin-bottom: 20px; }
+#add-status-panel .erp-form-grid { gap: 12px; }
+.erp-form-field-end { align-self: flex-end; }
+.section-spaced { margin-bottom: 20px; }
+.production-wip .erp-filter-actions { display:flex; gap:8px; flex-wrap:wrap; }
+.min-w-180 { min-width: 180px; }
+/* Dashboard filter actions */
+.production-dashboard .pd-filter-actions { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
+
+.job-info-card {
+    font-size: 11pt; /* Use 11pt as requested */
+}
+.job-info-card .job-info-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 0.5rem 1rem;
+    padding: 0.6rem 0.75rem;
+    align-items: start;
+}
+.job-info-row { display: contents; }
+.job-info-card strong { display:block; font-size:11pt; font-weight:700; color:#0f172a; margin-bottom:6px; }
+.job-info-value { color: #0f172a; font-weight:600; font-size:11pt; }
+.job-info-badge { background:#fff; border-radius:6px; padding:4px 6px; display:inline-block; font-weight:700; font-size:11pt; }
+.job-info-badge.produced { color:#047857; }
+.job-info-badge.balance { color:#b91c1c; }
+.job-info-card .job-info-grid { grid-auto-rows: minmax(28px, auto); }
+
+@media (max-width: 900px) {
+    .job-info-card .job-info-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 520px) {
+    .job-info-card .job-info-grid {
+        grid-template-columns: 1fr;
+    }
+    .job-info-card strong, .job-info-value, .job-info-badge { font-size: 10.5pt; }
+}
+.production-summary-card .production-summary-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:0.5rem; padding:0.75rem; }
+.production-progress { display:flex; align-items:center; gap:12px; padding:0.5rem 0.75rem; }
+.progress-bar { background:#e6e7ea; width:100%; height:14px; border-radius:8px; overflow:hidden; }
+.progress-fill { height:100%; background:#10b981; width:0%; transition:width 300ms ease; }
+.progress-label { min-width:48px; text-align:right; font-weight:600; }
+.sticky-actions { position:sticky; bottom:0; display:flex; gap:12px; padding:10px 16px; background:linear-gradient(180deg, rgba(255,255,255,0), #f8fafc); justify-content:flex-end; }
+.action-status { margin-left:12px; align-self:center; color:#374151; }
+.is-hidden { display:none !important; }

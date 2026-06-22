@@ -1,0 +1,201 @@
+{% extends 'theme/base.html' %}
+
+{% load theme_tags %}
+
+{% block title %}Production Dashboard — Offset Printing ERP{% endblock %}
+{% block extra_head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{% endblock %}
+
+{% block header_title %}Production Dashboard{% endblock %}
+{% block header_subtitle %}Live OEE metrics, output trends and dispatch visibility{% endblock %}
+{% block header_actions %}
+{% if user.profile.can_edit_production %}
+<a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus-circle"></i> Add Production Data</a>
+{% endif %}
+<a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-book"></i> Guide</a>
+{% endblock %}
+
+{% block content %}
+    {% include 'theme/production_context_nav.html' %}
+    <div class="erp-page-stack production-dashboard">
+        <section class="erp-section-shell">
+            <form class="pd-filters" method="GET">
+                <div>
+                    <label>Time Period:</label>
+                    <select id="days" onchange="changePeriod(this.value)">
+                        <option value="1" {% if days == 1 %}selected{% endif %}>Today</option>
+                        <option value="7" {% if days == 7 %}selected{% endif %}>Last 7 Days</option>
+                        <option value="30" {% if days == 30 %}selected{% endif %}>Last 30 Days</option>
+                    </select>
+                </div>
+                <div>
+                    <label for="start_date">Start Date:</label>
+                    <input type="date" id="start_date" name="start_date" value="{{ start_date }}">
+                </div>
+                <div>
+                    <label for="end_date">End Date:</label>
+                    <input type="date" id="end_date" name="end_date" value="{{ end_date }}">
+                </div>
+                <div class="pd-filter-actions">
+                    <button type="submit" class="erp-btn erp-btn-secondary">Apply Date Filter</button>
+                    <a href="{% url 'production_dashboard' %}?days=7" class="erp-btn erp-btn-secondary">Reset</a>
+                </div>
+                {% if user.profile.can_edit_production %}
+                <a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary">➕ Add Production Data</a>
+                {% endif %}
+            </form>
+        </section>
+
+        <!-- Period OEE Metrics -->
+        <div class="pd-metrics-grid">
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">{{ period_label }} OEE</div>
+                <div class="pd-metric-value oee-value">{{ oee_value }}%</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Availability</div>
+                <div class="pd-metric-value availability-value">{{ availability_value }}%</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Performance</div>
+                <div class="pd-metric-value performance-value">{{ performance_value }}%</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Quality</div>
+                <div class="pd-metric-value quality-value">{{ quality_value }}%</div>
+            </div>
+        </div>
+
+        <!-- Period Production Summary -->
+        <div class="pd-metrics-grid">
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">{{ period_label }} Impressions</div>
+                <div class="pd-metric-value">{{ total_impressions|floatformat:0 }}</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">{{ period_label }} Output</div>
+                <div class="pd-metric-value">{{ total_output|floatformat:0 }}</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">{{ period_label }} Waste</div>
+                <div class="pd-metric-value">{{ total_waste|floatformat:0 }}</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Total Downtime</div>
+                <div class="pd-metric-value">{{ total_downtime|floatformat:1 }} min</div>
+            </div>
+        </div>
+
+        <div class="pd-metrics-grid">
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Planned Time</div>
+                <div class="pd-metric-value">{{ total_planned_minutes|floatformat:1 }} min</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Run Time</div>
+                <div class="pd-metric-value">{{ total_run_minutes|floatformat:1 }} min</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Setup Time</div>
+                <div class="pd-metric-value">{{ total_setup_minutes|floatformat:1 }} min</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Dispatch Qty</div>
+                <div class="pd-metric-value">{{ total_dispatch_qty|floatformat:0 }}</div>
+            </div>
+        </div>
+
+        <div class="pd-charts-grid">
+            <div class="pd-chart-card">
+                <div class="chart-container"><canvas id="oeeChart"></canvas></div>
+            </div>
+            <div class="pd-chart-card">
+                <div class="chart-container"><canvas id="productionTrendChart"></canvas></div>
+            </div>
+        </div>
+
+        <div class="pd-table-wrap">
+            <h3>Dispatch Summary</h3>
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Dispatch Count</th>
+                        <th>Distinct Job Cards</th>
+                        <th>Average Dispatch Qty</th>
+                        <th>Dispatch Fulfillment</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>{{ dispatch_count }}</td>
+                        <td>{{ dispatched_job_cards_count }}</td>
+                        <td>{{ avg_dispatch_qty|floatformat:0 }}</td>
+                        <td>{{ dispatch_fulfillment_pct|floatformat:2 }}%</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pd-table-wrap">
+            <h3>Shift Comparison</h3>
+            <table class="erp-table shift-comparison-table">
+                <thead>
+                    <tr>
+                        <th>Category</th>
+                        <th>Shift A</th>
+                        <th>Shift B</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in shift_comparison_data %}
+                    <tr>
+                        <td>{{ row.label }}</td>
+                        <td>{{ row.shift_a|floatformat:1 }}</td>
+                        <td>{{ row.shift_b|floatformat:1 }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="pd-table-wrap">
+            <h3>At-risk Jobs</h3>
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Job Card</th>
+                        <th>Issue</th>
+                        <th>Expected Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for job in at_risk_jobs %}
+                    <tr>
+                        <td>{{ job.job_card_no }}</td>
+                        <td>{{ job.issue }}</td>
+                        <td>{{ job.action }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="3">No at-risk jobs found for this period.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    const daysEl = document.getElementById('days');
+    function changePeriod(value) {
+        const search = new URLSearchParams(window.location.search);
+        search.set('days', value);
+        search.delete('start_date');
+        search.delete('end_date');
+        window.location.search = search.toString();
+    }
+</script>
+{% endblock %}

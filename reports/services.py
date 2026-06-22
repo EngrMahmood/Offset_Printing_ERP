@@ -245,8 +245,8 @@ def build_machine_planning_context(request):
             waste_sheets=Sum('waste_sheets'),
             impressions=Sum('impressions'),
             run_time=Sum('run_time'),
-            downtime=Sum('downtime'),
-            setup_time=Sum('setup_time'),
+            downtime_minutes=Sum('downtime_minutes'),
+            make_ready_time=Sum('make_ready_time'),
         )
         .order_by('-output_sheets', '-run_count')
     )
@@ -414,8 +414,8 @@ def build_production_insights_context(request):
         total_impressions=Sum('impressions'),
         total_planned_time=Sum('planned_time'),
         total_run_time=Sum('run_time'),
-        total_downtime=Sum('downtime'),
-        total_setup_time=Sum('setup_time'),
+        total_downtime=Sum('downtime_minutes'),
+        total_make_ready_time=Sum('make_ready_time'),
         avg_run_rate=Avg('ideal_run_rate'),
     )
 
@@ -428,8 +428,8 @@ def build_production_insights_context(request):
             impressions=Sum('impressions'),
             planned_time=Sum('planned_time'),
             run_time=Sum('run_time'),
-            downtime=Sum('downtime'),
-            setup_time=Sum('setup_time'),
+            downtime_minutes=Sum('downtime_minutes'),
+            make_ready_time=Sum('make_ready_time'),
             avg_ideal_rate=Avg('ideal_run_rate'),
         )
         .order_by('-output_sheets', '-run_count')
@@ -448,7 +448,7 @@ def build_production_insights_context(request):
         output_sheets=Sum('output_sheets'),
         waste_sheets=Sum('waste_sheets'),
         impressions=Sum('impressions'),
-        downtime=Sum('downtime'),
+        downtime_minutes=Sum('downtime_minutes'),
         run_time=Sum('run_time'),
     ).order_by('shift')
 
