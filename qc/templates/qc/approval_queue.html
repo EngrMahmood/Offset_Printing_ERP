@@ -5,7 +5,7 @@
 {% block header_title %}Job Card Approval{% endblock %}
 {% block header_subtitle %}QC review queue for planner-submitted job cards before production release.{% endblock %}
 {% block header_actions %}
-<a class="erp-btn erp-btn-secondary" href="{% url 'planning:approval_queue' %}">Planning Approval</a>
+<a class="erp-btn erp-btn-secondary" href="{% url 'planning:approval_queue' %}">Job Card Workflow Overview</a>
 <a class="erp-btn erp-btn-secondary" href="{% url 'qc:history' %}">Approval History</a>
 {% endblock %}
 {% block content %}
@@ -50,7 +50,7 @@
         <div class="erp-wf-guide">
             <div class="erp-wf-step">
                 <div class="erp-wf-step__key">Step 4b — QC Approval</div>
-                <div class="erp-wf-step__value">QC validates job cards before they move to planning/production approval.</div>
+                <div class="erp-wf-step__value">QC validates job cards before they move to production manager approval.</div>
             </div>
         </div>
         <div class="erp-route-grid erp-route-grid--1">
@@ -165,6 +165,7 @@
     });
 </script>
 {% endblock %}
+
 
 
 

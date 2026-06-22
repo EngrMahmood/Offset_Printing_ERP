@@ -1,9 +1,9 @@
 {% extends 'theme/base.html' %}
 {% load static tz %}
 
-{% block title %}Job Card Approval Queue — ERP{% endblock %}
-{% block header_title %}Job Card Approval Queue{% endblock %}
-{% block header_subtitle %}Planning approval creates the approval trail, QC validates the card, PM authorizes release, and production starts only after release.{% endblock %}
+{% block title %}Job Card Workflow Overview — ERP{% endblock %}
+{% block header_title %}Job Card Workflow Overview{% endblock %}
+{% block header_subtitle %}Overview of planning sign-off, QC validation, PM authorization, and production release for job cards.{% endblock %}
 
 {% block header_actions %}
 <a class="erp-btn erp-btn-secondary" href="{% url 'planning:po_inbox' %}">PO Intake Queue</a>
@@ -43,7 +43,7 @@
 <form method="get" class="erp-form" style="margin-bottom:24px;">
     <div class="erp-form-row" style="gap:12px; flex-wrap:wrap;">
         <div style="flex:1; min-width:250px;">
-            <label for="queue_q">Search approval queue</label>
+            <label for="queue_q">Search job card workflow</label>
             <input id="queue_q" type="text" name="q" class="erp-input" placeholder="JC / PO / SKU / Job" value="{{ queue_q }}">
         </div>
         <div style="display:flex; align-items:flex-end; gap:8px;">
@@ -58,10 +58,10 @@
     <strong>Note:</strong> the Release tab shows PM-approved job cards that are ready to be released for production. It does not mean the job has started production yet.
 </div>
 
-<!-- ─── SECTION A: SKU Approval Queue ─────────────────────── -->
+<!-- ─── SECTION A: SKU Review Status ─────────────────────── -->
 <div class="erp-section-divider">
     <span class="erp-badge is-count">Step 2</span>
-    SKU Approval Queue
+    SKU Review Status
 </div>
 
 {% if pending_sku_approval_count or sku_reviewed_count %}
@@ -92,7 +92,7 @@
     </div>
     <div class="erp-action-strip__actions">
         <a class="erp-btn erp-btn-warning" href="{% url 'planning:pending_skus' %}">Open SKU Queue</a>
-        <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes_pending_review' %}">Open SKU Review</a>
+        <a class="erp-btn erp-btn-secondary" href="{% url 'qc:master_review' %}">Open QC SKU Approval</a>
     </div>
 </div>
 {% else %}
@@ -102,15 +102,15 @@
         <div class="erp-action-strip__sub">All incoming SKUs have been reviewed and approved. No action needed.</div>
     </div>
     <div class="erp-action-strip__actions">
-        <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">View SKU Master</a>
+        <a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipes' %}">View SKU Master</a>
     </div>
 </div>
 {% endif %}
 
-<!-- ─── SECTION B: Job Card Approval Queue ─────────────────── -->
+<!-- ─── SECTION B: Job Card Workflow ─────────────────── -->
 <div class="erp-section-divider">
     <span class="erp-badge is-count">Step 4</span>
-    Job Card Approval Queue
+    Job Card Workflow
 </div>
 
 <div class="erp-route-grid erp-route-grid--4">
@@ -429,7 +429,7 @@
                                 <input type="hidden" name="action" value="release_for_production">
                                 <input type="hidden" name="job_card_id" value="{{ job.id }}">
                                 <input type="hidden" name="plate_set_no" value="{{ job.planning_job.plate_set_no|default:'' }}">
-                                <button type="submit" class="erp-btn erp-btn-success" onclick="return promptReleasePlateSetNo(this.form, '{{ job.planning_job.plate_set_no|default:''|escapejs }}', '{{ job.job_card_no|escapejs }}')">Release</button>
+                                <button type="submit" class="erp-btn erp-btn-success" onclick="return promptReleasePlateSetNo(this.form, this.form.plate_set_no.value, '{{ job.job_card_no|escapejs }}')">Release</button>
                             </form>
                             {% endif %}
                             {% if can_admin_actions %}

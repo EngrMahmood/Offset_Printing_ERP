@@ -93,16 +93,13 @@ def approval_queue(request):
                 messages.error(request, 'No valid Job Cards were selected for deletion.')
             return redirect('qc:approval_queue')
 
-        if action in {'approve_qc', 'reject_qc', 'approve_pm', 'reject_pm', 'release_for_production'}:
-            if action in {'reject_qc', 'reject_pm'} and not reason:
+        if action in {'approve_qc', 'reject_qc'}:
+            if action == 'reject_qc' and not reason:
                 messages.error(request, 'Rejection reason is required.')
                 return redirect('qc:approval_queue')
             job_card = _get_job_card()
-            if action in {'approve_qc', 'reject_qc'} and (not profile or not profile.can_approve_qc()):
+            if not profile or not profile.can_approve_qc():
                 messages.error(request, 'You do not have permission to approve QC jobs.')
-                return redirect('qc:approval_queue')
-            if action in {'approve_pm', 'reject_pm', 'release_for_production'} and (not profile or not profile.can_approve_pm()):
-                messages.error(request, 'You do not have permission to approve production manager jobs.')
                 return redirect('qc:approval_queue')
 
             try:
@@ -427,6 +424,7 @@ def master_sku_review_queue(request):
 
     review_rows = []
     po_summary_map = {}
+    seen_review_skus = set()
     for row in all_rows:
         recipe = recipes_by_sku.get(_sku_key(row.get('sku')))
         if not recipe:
@@ -444,6 +442,29 @@ def master_sku_review_queue(request):
         po_summary_map.setdefault(po_number, {'po_number': po_number, 'count': 0})
         po_summary_map[po_number]['count'] += 1
         review_rows.append(row)
+        seen_review_skus.add(_sku_key(row.get('sku')))
+
+    # Include submitted master records even when they are not tied to the latest PO pending rows.
+    submitted_recipes = SkuRecipe.objects.filter(
+        is_active=True,
+        master_data_status__in=['pending_review', 'reviewed'],
+    ).order_by('sku')
+    for recipe in submitted_recipes:
+        sku_key = _sku_key(recipe.sku)
+        if sku_key in seen_review_skus:
+            continue
+        review_rows.append({
+            'po_doc_id': None,
+            'po_number': '-',
+            'sku': recipe.sku,
+            'job_name': recipe.job_name,
+            'qty': '-',
+            'delivery_date': '-',
+            'recipe': recipe,
+            'recipe_status': recipe.master_data_status,
+            'missing_required_fields': _missing_required_master_fields(recipe, recipe.job_name),
+        })
+        seen_review_skus.add(sku_key)
 
     if po_filter:
         review_rows = [row for row in review_rows if (row.get('po_number') or '') == po_filter]
@@ -1393,9 +1414,7 @@ def sku_recipe_edit(request, recipe_id=None):
         page_title = 'Add New SKU Recipe'
 
     is_admin_user = _user_is_admin(request.user)
-    can_edit_approved = True
-    if recipe and recipe.master_data_status == 'approved' and not is_admin_user:
-        can_edit_approved = False
+    can_edit_approved = not (recipe and recipe.master_data_status == 'approved')
     can_admin_actions = is_admin_user
 
     if request.method == 'POST':
@@ -1407,22 +1426,22 @@ def sku_recipe_edit(request, recipe_id=None):
             else:
                 recipe.delete()
                 messages.success(request, f'SKU Recipe "{recipe.sku}" deleted.')
-            return redirect('qc:sku_recipes')
+            return redirect('planning:sku_recipes')
 
         if recipe and action == 'archive':
             if recipe.master_data_status == 'approved' and not is_admin_user:
                 messages.error(request, 'Approved records can only be archived by admin users.')
-                return redirect('qc:sku_recipes')
+                return redirect('planning:sku_recipes')
             recipe.is_active = False
             recipe.archived_by = request.user
             recipe.archived_at = timezone.now()
             recipe.archive_reason = (request.POST.get('archive_reason') or '').strip()
             recipe.save(update_fields=['is_active', 'archived_by', 'archived_at', 'archive_reason', 'updated_at'])
             messages.success(request, f'SKU Recipe "{recipe.sku}" archived.')
-            return redirect('qc:sku_recipes')
+            return redirect('planning:sku_recipes')
 
-        if recipe and recipe.master_data_status == 'approved' and not is_admin_user:
-            messages.error(request, 'Approved master records can only be changed by admin users.')
+        if recipe and recipe.master_data_status == 'approved' and action != 'reopen_sku':
+            messages.error(request, 'Approved SKU is locked. Use Reopen SKU before making edits.')
             return render(request, 'planning/sku_recipe_edit.html', {'form': SkuRecipeForm(instance=recipe), 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
 
         form = SkuRecipeForm(request.POST, instance=recipe)
@@ -1463,7 +1482,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.approved_at = timezone.now()
                     _do_sync_on_approve = True
                     messages.success(request, f'SKU Recipe "{obj.sku}" approved for master data usage.')
-                elif action == 'back_to_draft' and current_status in ('pending_review', 'reviewed', 'approved'):
+                elif action == 'back_to_draft' and current_status in ('pending_review', 'reviewed'):
                     comment = (request.POST.get('rejection_comment') or '').strip()
                     if not comment:
                         messages.error(request, 'Please provide a reason when sending a record back to Draft.')
@@ -1477,6 +1496,20 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.last_rejected_by = request.user
                     obj.last_rejected_at = timezone.now()
                     messages.success(request, f'SKU Recipe "{obj.sku}" moved back to Draft.')
+                elif action == 'reopen_sku' and current_status == 'approved':
+                    comment = (request.POST.get('rejection_comment') or '').strip()
+                    if not comment:
+                        messages.error(request, 'Please provide a reopen reason before moving approved SKU back to Draft.')
+                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
+                    obj.master_data_status = 'draft'
+                    obj.reviewed_by = None
+                    obj.reviewed_at = None
+                    obj.approved_by = None
+                    obj.approved_at = None
+                    obj.rejection_comment = comment
+                    obj.last_rejected_by = request.user
+                    obj.last_rejected_at = timezone.now()
+                    messages.success(request, f'SKU Recipe "{obj.sku}" reopened to Draft.')
                 else:
                     messages.info(request, f'SKU Recipe "{obj.sku}" saved without changing workflow status.')
             else:
@@ -1501,7 +1534,7 @@ def sku_recipe_edit(request, recipe_id=None):
                 except Exception:
                     logger.exception('Approved SKU sync to planning failed for %s', obj.sku)
                     messages.error(request, 'Error while sending approved SKU to Planning; check logs.')
-            return redirect('qc:sku_recipes')
+            return redirect('planning:sku_recipes')
         else:
             messages.error(request, 'There are errors in the form. Please correct the highlighted fields and try again.')
     else:
@@ -1525,7 +1558,7 @@ def sku_recipe_bulk_upload(request):
         upload_file = request.FILES.get('upload_file')
         if not upload_file:
             messages.error(request, 'Please choose a CSV or XLSX file to upload.')
-            return redirect('qc:sku_recipe_bulk_upload')
+            return redirect('planning:sku_recipe_bulk_upload')
 
         name = (upload_file.name or '').lower()
         rows = []
@@ -1575,7 +1608,7 @@ def sku_recipe_bulk_upload(request):
                     import openpyxl
                 except ImportError:
                     messages.error(request, 'openpyxl is required for XLSX upload.')
-                    return redirect('qc:sku_recipe_bulk_upload')
+                    return redirect('planning:sku_recipe_bulk_upload')
                 wb = openpyxl.load_workbook(upload_file, data_only=True)
                 ws = wb.active
                 header_row_idx = None
@@ -1587,7 +1620,7 @@ def sku_recipe_bulk_upload(request):
                         break
                 if not header_row_idx:
                     messages.error(request, 'Could not find header row in Excel file. Make sure it matches the template.')
-                    return redirect('qc:sku_recipe_bulk_upload')
+                    return redirect('planning:sku_recipe_bulk_upload')
                 for values in ws.iter_rows(min_row=header_row_idx+1, values_only=True):
                     row = {}
                     for idx, key in enumerate(header):
@@ -1596,14 +1629,14 @@ def sku_recipe_bulk_upload(request):
                     rows.append(row)
             else:
                 messages.error(request, 'Unsupported file type. Please upload CSV or XLSX.')
-                return redirect('qc:sku_recipe_bulk_upload')
+                return redirect('planning:sku_recipe_bulk_upload')
         except Exception as exc:
             messages.error(request, f'Could not read upload file: {exc}')
-            return redirect('qc:sku_recipe_bulk_upload')
+            return redirect('planning:sku_recipe_bulk_upload')
 
         if not rows:
             messages.error(request, 'No rows found in upload file.')
-            return redirect('qc:sku_recipe_bulk_upload')
+            return redirect('planning:sku_recipe_bulk_upload')
 
         created = 0
         updated = 0
@@ -1701,7 +1734,7 @@ def sku_recipe_bulk_upload(request):
         if failed and sample_errors:
             messages.error(request, 'Sample row errors: ' + ' | '.join(sample_errors))
 
-        return redirect('qc:sku_recipes')
+        return redirect('planning:sku_recipes')
 
     return render(request, 'planning/sku_recipe_bulk_upload.html')
 

@@ -1,3 +1,4 @@
+from django.views.generic import RedirectView
 from django.urls import path
 from . import views
 
@@ -19,14 +20,14 @@ urlpatterns = [
     path('pending-skus/ignored/', views.planner_pending_skus_ignored_redirect, name='pending_skus_ignored'),
     path('pending-skus/master-entry/', views.planner_pending_sku_master_entry_redirect, name='pending_sku_master_entry'),
     path('history/', views.approval_history, name='history'),
-    path('sku-recipes/', views.sku_recipes_list, name='sku_recipes'),
-    path('sku-recipes/draft/', views.sku_recipes_status, {'status': 'draft'}, name='sku_recipes_draft'),
-    path('sku-recipes/pending-review/', views.sku_recipes_status, {'status': 'pending_review'}, name='sku_recipes_pending_review'),
-    path('sku-recipes/reviewed/', views.sku_recipes_status, {'status': 'reviewed'}, name='sku_recipes_reviewed'),
-    path('sku-recipes/approved/', views.sku_recipes_status, {'status': 'approved'}, name='sku_recipes_approved'),
-    path('sku-recipes/archived/', views.sku_recipes_archived, name='sku_recipes_archived'),
-    path('sku-recipes/bulk-upload/', views.sku_recipe_bulk_upload, name='sku_recipe_bulk_upload'),
-    path('sku-recipes/template/', views.sku_recipe_template_download, name='sku_recipe_template_download'),
-    path('sku-recipes/add/', views.sku_recipe_edit, name='sku_recipe_add'),
-    path('sku-recipes/<int:recipe_id>/edit/', views.sku_recipe_edit, name='sku_recipe_edit'),
+    path('sku-recipes/', RedirectView.as_view(pattern_name='planning:sku_recipes', permanent=False), name='sku_recipes'),
+    path('sku-recipes/draft/', RedirectView.as_view(pattern_name='planning:sku_recipes_draft', permanent=False), name='sku_recipes_draft'),
+    path('sku-recipes/pending-review/', RedirectView.as_view(pattern_name='planning:sku_recipes_pending_review', permanent=False), name='sku_recipes_pending_review'),
+    path('sku-recipes/reviewed/', RedirectView.as_view(pattern_name='planning:sku_recipes_reviewed', permanent=False), name='sku_recipes_reviewed'),
+    path('sku-recipes/approved/', RedirectView.as_view(pattern_name='planning:sku_recipes_approved', permanent=False), name='sku_recipes_approved'),
+    path('sku-recipes/archived/', RedirectView.as_view(pattern_name='planning:sku_recipes_archived', permanent=False), name='sku_recipes_archived'),
+    path('sku-recipes/bulk-upload/', RedirectView.as_view(pattern_name='planning:sku_recipe_bulk_upload', permanent=False), name='sku_recipe_bulk_upload'),
+    path('sku-recipes/template/', RedirectView.as_view(pattern_name='planning:sku_recipe_template_download', permanent=False), name='sku_recipe_template_download'),
+    path('sku-recipes/add/', RedirectView.as_view(pattern_name='planning:sku_recipe_add', permanent=False), name='sku_recipe_add'),
+    path('sku-recipes/<int:recipe_id>/edit/', RedirectView.as_view(pattern_name='planning:sku_recipe_edit', permanent=False), name='sku_recipe_edit'),
 ]

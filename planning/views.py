@@ -698,7 +698,7 @@ def planning_sku_queue(request):
 @login_required
 @permission_required('can_edit_jobcard')
 def planning_sku_recipes_list(request):
-    return redirect('qc:sku_recipes')
+    return redirect('planning:sku_recipes')
 
 
 @login_required
@@ -2638,19 +2638,19 @@ def sku_recipe_edit(request, recipe_id=None):
             else:
                 recipe.delete()
                 messages.success(request, f'SKU Recipe "{recipe.sku}" deleted.')
-            return redirect('qc:sku_recipes')
+            return redirect('planning:sku_recipes')
 
         if recipe and action == 'archive':
             if recipe.master_data_status == 'approved' and not is_admin_user:
                 messages.error(request, 'Approved records can only be archived by admin users.')
-                return redirect('qc:sku_recipes')
+                return redirect('planning:sku_recipes')
             recipe.is_active = False
             recipe.archived_by = request.user
             recipe.archived_at = timezone.now()
             recipe.archive_reason = (request.POST.get('archive_reason') or '').strip()
             recipe.save(update_fields=['is_active', 'archived_by', 'archived_at', 'archive_reason', 'updated_at'])
             messages.success(request, f'SKU Recipe "{recipe.sku}" archived.')
-            return redirect('qc:sku_recipes')
+            return redirect('planning:sku_recipes')
 
         if recipe and recipe.master_data_status == 'approved' and action != 'reopen_sku':
             messages.error(request, 'Approved SKU is locked. Use Reopen SKU before making edits.')
@@ -2747,7 +2747,7 @@ def sku_recipe_edit(request, recipe_id=None):
                 except Exception:
                     logger.exception('Approved SKU sync to planning failed for %s', obj.sku)
                     messages.error(request, 'Error while sending approved SKU to Planning; check logs.')
-            return redirect('qc:sku_recipes')
+            return redirect('planning:sku_recipes')
         else:
             # Surface a clear top-level message so users notice validation errors
             messages.error(request, 'There are errors in the form. Please correct the highlighted fields and try again.')
@@ -2771,7 +2771,7 @@ def sku_recipe_bulk_upload(request):
         upload_file = request.FILES.get('upload_file')
         if not upload_file:
             messages.error(request, 'Please choose a CSV or XLSX file to upload.')
-            return redirect('qc:sku_recipe_bulk_upload')
+            return redirect('planning:sku_recipe_bulk_upload')
 
 
         name = (upload_file.name or '').lower()
@@ -2819,7 +2819,7 @@ def sku_recipe_bulk_upload(request):
                     import openpyxl
                 except ImportError:
                     messages.error(request, 'openpyxl is required for XLSX upload.')
-                    return redirect('qc:sku_recipe_bulk_upload')
+                    return redirect('planning:sku_recipe_bulk_upload')
                 wb = openpyxl.load_workbook(upload_file, data_only=True)
                 ws = wb.active
                 # Find header row: look for row with 'SKU' and 'JOB NAME'
@@ -2832,7 +2832,7 @@ def sku_recipe_bulk_upload(request):
                         break
                 if not header_row_idx:
                     messages.error(request, 'Could not find header row in Excel file. Make sure it matches the template.')
-                    return redirect('qc:sku_recipe_bulk_upload')
+                    return redirect('planning:sku_recipe_bulk_upload')
                 for values in ws.iter_rows(min_row=header_row_idx+1, values_only=True):
                     row = {}
                     for idx, key in enumerate(header):
@@ -2841,14 +2841,14 @@ def sku_recipe_bulk_upload(request):
                     rows.append(row)
             else:
                 messages.error(request, 'Unsupported file type. Please upload CSV or XLSX.')
-                return redirect('qc:sku_recipe_bulk_upload')
+                return redirect('planning:sku_recipe_bulk_upload')
         except Exception as exc:
             messages.error(request, f'Could not read upload file: {exc}')
-            return redirect('qc:sku_recipe_bulk_upload')
+            return redirect('planning:sku_recipe_bulk_upload')
 
         if not rows:
             messages.error(request, 'No rows found in upload file.')
-            return redirect('qc:sku_recipe_bulk_upload')
+            return redirect('planning:sku_recipe_bulk_upload')
 
         created = 0
         updated = 0
@@ -2948,7 +2948,7 @@ def sku_recipe_bulk_upload(request):
         if failed and sample_errors:
             messages.error(request, 'Sample row errors: ' + ' | '.join(sample_errors))
 
-        return redirect('qc:sku_recipes')
+        return redirect('planning:sku_recipes')
 
     return render(request, 'planning/sku_recipe_bulk_upload.html')
 

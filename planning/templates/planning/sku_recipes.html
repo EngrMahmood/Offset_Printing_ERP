@@ -6,9 +6,9 @@
 {% block header_subtitle %}All saved SKU master records used when routing PO jobs to planning. Only <strong>Approved</strong> records are used for PO matching.{% endblock %}
 {% block header_actions %}
     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:home' %}">Planning Home</a>
-    <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes_archived' %}">Archived Recipes</a>
-    <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipe_bulk_upload' %}">&#8679; Bulk Upload</a>
-    <a class="erp-btn erp-btn-primary" href="{% url 'qc:sku_recipe_add' %}">+ Add SKU Recipe</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipes_archived' %}">Archived Recipes</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipe_bulk_upload' %}">&#8679; Bulk Upload</a>
+    <a class="erp-btn erp-btn-primary" href="{% url 'planning:sku_recipe_add' %}">+ Add SKU Recipe</a>
     <a class="erp-btn erp-btn-secondary" href="{% url 'erp_readme' %}">Guide</a>
 {% endblock %}
 
@@ -22,7 +22,7 @@
 
     <!-- Sub-tabs: Master / Pending SKUs -->
     <div class="erp-tab-strip">
-        <a class="erp-tab is-active" href="{% url 'qc:sku_recipes' %}">Master</a>
+        <a class="erp-tab is-active" href="{% url 'planning:sku_recipes' %}">Master</a>
         <a class="erp-tab" href="{% url 'planning:pending_skus' %}">Pending SKUs</a>
     </div>
 
@@ -34,7 +34,7 @@
         <aside class="erp-filter-sidebar">
             <div class="erp-filter-sidebar__title">Status</div>
             <div class="erp-filter-sidebar__nav">
-                <a class="{% if not status_filter %}is-active{% endif %}" href="{% url 'qc:sku_recipes' %}{% if q %}?q={{ q }}{% endif %}">All</a>
+                <a class="{% if not status_filter %}is-active{% endif %}" href="{% url 'planning:sku_recipes' %}{% if q %}?q={{ q }}{% endif %}">All</a>
                 <a class="{% if status_filter == 'draft' %}is-active{% endif %}" href="?status=draft{% if q %}&amp;q={{ q }}{% endif %}">Draft ({{ draft_count }})</a>
                 <a class="{% if status_filter == 'pending_review' %}is-active{% endif %}" href="?status=pending_review{% if q %}&amp;q={{ q }}{% endif %}">Pending Review ({{ pending_review_count }})</a>
                 <a class="{% if status_filter == 'reviewed' %}is-active{% endif %}" href="?status=reviewed{% if q %}&amp;q={{ q }}{% endif %}">Pending Approval ({{ reviewed_count }})</a>
@@ -48,7 +48,7 @@
                 </div>
                 <div class="erp-form-actions">
                     <button class="erp-btn erp-btn-primary erp-btn-block" type="submit">Search</button>
-                    {% if q or status_filter %}<a class="erp-btn erp-btn-secondary erp-btn-block" href="{% url 'qc:sku_recipes' %}">Clear All</a>{% endif %}
+                    {% if q or status_filter %}<a class="erp-btn erp-btn-secondary erp-btn-block" href="{% url 'planning:sku_recipes' %}">Clear All</a>{% endif %}
                 </div>
             </form>
         </aside>
@@ -125,7 +125,7 @@
                         <td class="erp-col-actions">
                             <div class="erp-actions erp-actions--compact">
                                 {# Admin-only gate removed: all users can reopen approved SKUs via the edit page #}
-                                <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipe_edit' recipe.id %}">Edit</a>
+                                <a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipe_edit' recipe.id %}">Edit</a>
                                 <form method="post" action="">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="delete">
@@ -158,7 +158,7 @@
                         <div class="erp-empty">
                             <div class="erp-empty__icon">📚</div>
                             <div class="erp-empty__title">No SKU recipes found{% if q %} matching “{{ q }}”{% endif %}{% if status_filter %} with status “{{ status_filter }}”{% endif %}</div>
-                            <div class="erp-empty__body"><a href="{% url 'qc:sku_recipe_add' %}">Add your first SKU recipe</a> to get started.</div>
+                            <div class="erp-empty__body"><a href="{% url 'planning:sku_recipe_add' %}">Add your first SKU recipe</a> to get started.</div>
                         </div>
                     </td></tr>
                     {% endfor %}
