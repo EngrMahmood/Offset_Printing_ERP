@@ -13,7 +13,7 @@ from migration.services.importer import (
     get_imported_planning_jobs,
     rollback_imported_planning_jobs,
 )
-from workflow.services import _sync_new_jobs_for_approved_sku
+from workflow.services import _po_payload_items, _sync_new_jobs_for_approved_sku
 
 from .models import PlanningJob, PoDocument, SkuRecipe
 from .services import _sync_repeat_jobs_from_po
@@ -293,6 +293,23 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(row['repeat_count'], 1)
 		self.assertEqual(row['new_count'], 0)
 		self.assertEqual(row['missing_count'], 0)
+
+	def test_po_inbox_keeps_alphanumeric_skus_that_only_differ_by_trailing_digit(self):
+		payload = {
+			'po_number': 'PO-ALNUM-1',
+			'expected_line_count': 4,
+			'items': [
+				{'line_no': 1, 'sku': 'LABELCAREUB7DPSFPOLYFILLFILLING1000GEU', 'quantity': 1500, 'delivery_date': '2026-06-24'},
+				{'line_no': 2, 'sku': 'LABELCAREUB7DPSFPOLYFILLFILLING500GEU', 'quantity': 1000, 'delivery_date': '2026-06-24'},
+				{'line_no': 3, 'sku': 'LABELCAREUB7DPSFPOLYFILLFILLING500GEU1', 'quantity': 1000, 'delivery_date': '2026-06-24'},
+				{'line_no': 4, 'sku': 'LABELCAREUB7DPSFPOLYFILLFILLING1000GEU1', 'quantity': 1500, 'delivery_date': '2026-06-24'},
+			],
+		}
+
+		items = _po_payload_items(payload)
+
+		self.assertEqual(len(items), 4)
+		self.assertEqual([item['sku'] for item in items], [line['sku'] for line in payload['items']])
 
 	def test_po_inbox_supports_search_and_pagination(self):
 		for index in range(25):

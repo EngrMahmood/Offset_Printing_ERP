@@ -113,7 +113,7 @@
         </a>
         <a href="{% url 'planning:approval_queue' %}"
            class="erp-subnav-link {% if url == 'approval_queue' %}is-active{% endif %}">
-            Approval Queue
+            Job Card Workflow
         </a>
         {% if nav.role == 'admin' or nav.role == 'manager' %}
         <a href="{% url 'planning:reports' %}"

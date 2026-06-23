@@ -44,7 +44,7 @@
             <div class="muted">View SKU master records that were archived from the active master list.</div>
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap;">
-            <a class="btn secondary" href="{% url 'qc:sku_recipes' %}">Active Recipes</a>
+            <a class="btn secondary" href="{% url 'planning:sku_recipes' %}">Active Recipes</a>
             <a class="btn" href="{% url 'planning:home' %}">Planning Home</a>
         </div>
     </div>
@@ -56,7 +56,7 @@
     <form method="get" class="search-row">
         <input type="text" name="q" placeholder="Search SKU, job name, material, machine…" value="{{ q }}">
         <button class="btn" type="submit">Search</button>
-        {% if q or status_filter %}<a class="btn secondary" href="{% url 'qc:sku_recipes_archived' %}">Clear</a>{% endif %}
+        {% if q or status_filter %}<a class="btn secondary" href="{% url 'planning:sku_recipes_archived' %}">Clear</a>{% endif %}
     </form>
 
     <form method="post" id="archived_bulk_actions_form" style="display:flex; gap:10px; flex-wrap:wrap; align-items:center; margin-bottom:12px;">
@@ -69,7 +69,7 @@
     </form>
 
     <div class="stats-strip">
-        <a class="stat-chip {% if not status_filter %}active{% endif %}" href="{% url 'qc:sku_recipes_archived' %}{% if q %}?q={{ q }}{% endif %}">All</a>
+        <a class="stat-chip {% if not status_filter %}active{% endif %}" href="{% url 'planning:sku_recipes_archived' %}{% if q %}?q={{ q }}{% endif %}">All</a>
         <a class="stat-chip {% if status_filter == 'draft' %}active{% endif %}" href="?status=draft{% if q %}&q={{ q }}{% endif %}">Draft</a>
         <a class="stat-chip {% if status_filter == 'pending_review' %}active{% endif %}" href="?status=pending_review{% if q %}&q={{ q }}{% endif %}">Pending Review</a>
         <a class="stat-chip {% if status_filter == 'reviewed' %}active{% endif %}" href="?status=reviewed{% if q %}&q={{ q }}{% endif %}">Pending Approval</a>

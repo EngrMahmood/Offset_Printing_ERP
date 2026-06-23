@@ -821,6 +821,7 @@ def production_wip(request):
     if query:
         job_cards = job_cards.filter(
             Q(job_card_no__icontains=query) |
+            Q(PO_No__icontains=query) |
             Q(SKU__icontains=query) |
             Q(planning_job__job_name__icontains=query)
         )

@@ -82,7 +82,11 @@
                     <tr>
                         <td>
                             <div>{{ row.po_number }}</div>
+                            {% if row.po_doc_id %}
                             <div class="erp-note"><a href="{% url 'qc:po_review' row.po_doc_id %}">Open PO</a></div>
+                            {% else %}
+                            <div class="erp-note">Master SKU</div>
+                            {% endif %}
                         </td>
                         <td><strong>{{ row.sku }}</strong></td>
                         <td>{{ row.job_name|default:'-' }}</td>

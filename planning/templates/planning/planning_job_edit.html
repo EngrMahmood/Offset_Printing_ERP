@@ -54,7 +54,7 @@
             <div class="erp-info-item erp-form-grid__full"><div class="erp-info-item__label">SKU Notes</div><div class="erp-info-item__value">{{ recipe.notes|default:'-' }}</div></div>
         </div>
         <div class="erp-note" style="margin-top:8px;">
-            SKU is locked. To change master data: <a href="{% url 'qc:sku_recipe_edit' recipe.id %}">Reopen SKU</a> &rarr; edit &rarr; re-approve.
+            SKU is locked. To change master data: <a href="{% url 'planning:sku_recipe_edit' recipe.id %}">Reopen SKU</a> &rarr; edit &rarr; re-approve.
         </div>
         {% else %}
         <div class="erp-alert erp-alert-warning" style="background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">No approved SKU master found for <strong>{{ job.sku }}</strong>. Create and approve a SKU recipe before finalizing this job.</div>

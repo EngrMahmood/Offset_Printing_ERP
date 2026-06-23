@@ -51,6 +51,15 @@
             </select>
         </div>
         <div class="erp-form-field">
+            <label>WIP Status</label>
+            <select name="wip_status">
+                <option value="">All WIP statuses</option>
+                {% for status in wip_statuses %}
+                    <option value="{{ status.id }}" {% if filters.wip_status == status.id|stringformat:'s' %}selected{% endif %}>{{ status.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="erp-form-field">
             <label>Stage</label>
             <select name="planning_stage">
                 <option value="">All stages</option>
@@ -163,6 +172,7 @@
                     <th>AWC No.</th>
                     <th>Aging</th>
                     <th>Die cutting</th>
+                    <th>WIP Status</th>
                 </tr>
             </thead>
             <tbody>
@@ -254,6 +264,7 @@
                         <td>{{ row.awc_no }}</td>
                         <td>{{ row.aging_days }}</td>
                         <td>{{ row.die_cutting }}</td>
+                        <td>{{ row.wip_status }}</td>
                     </tr>
                 {% endfor %}
             </tbody>

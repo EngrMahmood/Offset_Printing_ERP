@@ -212,6 +212,11 @@ def _normalize_status(raw_value, default='draft'):
 def _sku_key(sku):
     return (sku or '').strip().upper()
 
+
+def _has_letters_and_digits(value):
+    text = str(value or '')
+    return any(ch.isalpha() for ch in text) and any(ch.isdigit() for ch in text)
+
 SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('job_name', 'Job Name'),
     ('material', 'Material'),
@@ -338,6 +343,8 @@ def _sanitize_po_payload_items(payload):
             ex_ddate = (existing.get('delivery_date') or '').strip()
             ex_norm = ''.join(ch for ch in ex_sku.upper() if ch.isalnum())
             similar = SequenceMatcher(a=sku_norm, b=ex_norm).ratio() >= 0.985
+            if similar and sku_norm != ex_norm and _has_letters_and_digits(sku_norm) and _has_letters_and_digits(ex_norm):
+                continue
             if similar and qty == ex_qty and ddate == ex_ddate:
                 merged = True
                 break

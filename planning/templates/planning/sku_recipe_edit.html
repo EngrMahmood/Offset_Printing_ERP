@@ -5,7 +5,7 @@
 {% block header_title %}{{ page_title }}{% endblock %}
 {% block header_subtitle %}SKU recipe defines how a SKU should be set up when creating planning jobs from a PO.{% endblock %}
 {% block header_actions %}
-    <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">&#8592; Back to SKU Recipes</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipes' %}">&#8592; Back to SKU Recipes</a>
 {% endblock %}
 
 {% block content %}
@@ -232,7 +232,7 @@
                         <button type="submit" class="erp-btn erp-btn-warning" name="action" value="archive" onclick="return confirm('Archive this SKU recipe? It will be hidden from active master data.');">Archive</button>
                     {% endif %}
                 {% endif %}
-                <a class="erp-btn erp-btn-secondary" href="{% url 'qc:sku_recipes' %}">Cancel</a>
+                <a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipes' %}">Cancel</a>
             </div>
         </form>
     </section>

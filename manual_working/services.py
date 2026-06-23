@@ -4,11 +4,15 @@ from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
 from django.utils.dateparse import parse_date
 
+from core.models import ChangeLog, JobCard
 from planning.models import PLANNING_STAGE_CHOICES, PlanningJob, PoDocument, SkuRecipe
 
 
 def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
-    queryset = PlanningJob.objects.all().select_related('job_card').prefetch_related('print_runs', 'dispatch_runs', 'po_documents')
+    queryset = PlanningJob.objects.all().select_related(
+        'job_card',
+        'job_card__production_wip_status__status',
+    ).prefetch_related('print_runs', 'dispatch_runs', 'po_documents')
 
     jc_number = filters.get('jc_number')
     if jc_number:
@@ -41,6 +45,10 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
     if status:
         queryset = queryset.filter(status=status)
 
+    wip_status = filters.get('wip_status')
+    if wip_status:
+        queryset = queryset.filter(job_card__production_wip_status__status_id=wip_status)
+
     planning_stage = filters.get('planning_stage')
     if planning_stage:
         queryset = queryset.filter(planning_stage=planning_stage)
@@ -49,8 +57,9 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
     jobs = list(queryset)
     recipe_map = _build_recipe_map(jobs)
     approval_map = _build_job_card_approval_date_map(jobs)
+    wip_status_map = _build_wip_status_map(jobs)
 
-    rows = [_build_row(item, recipe_map, approval_map) for item in jobs]
+    rows = [_build_row(item, recipe_map, approval_map, wip_status_map) for item in jobs]
 
     date_from = filters.get('date_from')
     if date_from:
@@ -68,7 +77,7 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
 
 
 def _build_job_card_approval_date_map(jobs):
-    job_card_ids = [job.job_card_id for job in jobs if getattr(job, 'job_card_id', None)]
+    job_card_ids = [job.job_card.id for job in jobs if getattr(job, 'job_card', None)]
     if not job_card_ids:
         return {}
 
@@ -91,6 +100,25 @@ def _build_recipe_map(items):
     skus = {(item.sku or '').strip().upper() for item in items if item.sku}
     recipes = SkuRecipe.objects.filter(sku__in=skus)
     return {(recipe.sku or '').strip().upper(): recipe for recipe in recipes}
+
+
+def _build_wip_status_map(jobs):
+    jc_numbers = {(job.jc_number or '').strip() for job in jobs if job.jc_number}
+    if not jc_numbers:
+        return {}
+
+    job_cards = JobCard.objects.filter(
+        job_card_no__in=jc_numbers,
+        is_active=True,
+    ).select_related('production_wip_status__status')
+
+    status_map = {}
+    for job_card in job_cards:
+        status_name = job_card.wip_status_name
+        if status_name == 'Not Set' and job_card.status == 'released':
+            status_name = 'Printing'
+        status_map[job_card.job_card_no] = status_name
+    return status_map
 
 
 def _format_text(value):
@@ -158,10 +186,10 @@ def _po_approval_date(job: PlanningJob, approval_map: dict[int, object]):
             if approval_date:
                 return approval_date
 
-    job_card_id = getattr(job, 'job_card_id', None)
-    if not job_card_id:
+    job_card = getattr(job, 'job_card', None)
+    if not job_card:
         return None
-    return approval_map.get(job_card_id)
+    return approval_map.get(job_card.id)
 
 
 def _customer_from_po_documents(job: PlanningJob) -> str:
@@ -201,15 +229,16 @@ def _build_dispatch_values(job: PlanningJob) -> list[dict[str, str]]:
     return results
 
 
-def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map: dict[int, object]) -> dict[str, str]:
+def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map: dict[int, object], wip_status_map: dict[str, str]) -> dict[str, str]:
     recipe = recipe_map.get((job.sku or '').strip().upper())
     print_runs = _build_print_run_values(job)
     dispatch_values = _build_dispatch_values(job)
     total_delivered_qty = sum((getattr(run, 'delivered_qty') or 0) for run in job.dispatch_runs.all())
+    job_card = getattr(job, 'job_card', None)
 
     po_approval_date = _po_approval_date(job, approval_map)
     try:
-        job_card_month = job.job_card.month
+        job_card_month = job_card.month if job_card else None
     except ObjectDoesNotExist:
         job_card_month = None
 
@@ -302,4 +331,5 @@ def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map:
         'awc_no': _resolve_job_or_recipe(getattr(job, 'awc_no', ''), getattr(recipe, 'awc_no', None)),
         'aging_days': _format_text(job.aging_days),
         'die_cutting': _resolve_job_or_recipe(getattr(job, 'die_cutting', ''), getattr(recipe, 'die_cutting', None)),
+        'wip_status': _format_text(wip_status_map.get((job.jc_number or '').strip(), 'Not Set')),
     }

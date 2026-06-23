@@ -121,6 +121,62 @@ def _clear_ignored_sku_from_po_docs(po_number, sku):
     return updated_count
 
 
+def _display_user_identity(user):
+    if not user:
+        return ''
+    full_name = (user.get_full_name() or '').strip()
+    if full_name:
+        return full_name
+    return (user.username or '').strip()
+
+
+def _po_split_requests(payload):
+    requests = payload.get('split_requests') if isinstance(payload, dict) else []
+    return requests if isinstance(requests, list) else []
+
+
+def _pending_po_split_requests():
+    pending = []
+    for doc in PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('-created_at', '-id')[:500]:
+        payload = doc.extracted_payload or {}
+        for request_data in _po_split_requests(payload):
+            if (request_data.get('status') or 'pending') != 'pending':
+                continue
+            pending.append({
+                'po_doc': doc,
+                'po_doc_id': doc.id,
+                'po_number': payload.get('po_number') or '-',
+                'request_id': request_data.get('id') or '',
+                'sku': request_data.get('sku') or '',
+                'job_name': request_data.get('job_name') or '',
+                'quantity': request_data.get('quantity') or '',
+                'unit': request_data.get('unit') or '',
+                'requested_qty': request_data.get('requested_qty') or '',
+                'reason': request_data.get('reason') or '',
+                'requested_by': request_data.get('requested_by') or '',
+                'requested_at': request_data.get('requested_at') or '',
+            })
+    return pending
+
+
+def _update_po_split_request(po_doc, request_id, status, actor=None):
+    payload = po_doc.extracted_payload or {}
+    changed = False
+    for request_data in _po_split_requests(payload):
+        if str(request_data.get('id')) != str(request_id):
+            continue
+        request_data['status'] = status
+        request_data['resolved_at'] = timezone.now().isoformat()
+        if actor:
+            request_data['resolved_by'] = _display_user_identity(actor)
+        changed = True
+        break
+    if changed:
+        po_doc.extracted_payload = payload
+        po_doc.save(update_fields=['extracted_payload'])
+    return changed
+
+
 def _get_po_approval_date_for_job(job):
     if getattr(job, 'po_approval_date', None):
         return job.po_approval_date
@@ -698,7 +754,7 @@ def planning_sku_queue(request):
 @login_required
 @permission_required('can_edit_jobcard')
 def planning_sku_recipes_list(request):
-    return redirect('qc:sku_recipes')
+    return redirect('planning:sku_recipes')
 
 
 @login_required
@@ -1935,6 +1991,7 @@ def approval_queue(request):
     user_can_release = user_can_approve_pm or (profile.can_plan() if profile else False)
 
     change_requests = PlanningJob.objects.filter(is_active=True, change_request_pending=True).order_by('-change_requested_at')
+    split_requests = _pending_po_split_requests()
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
@@ -1954,6 +2011,24 @@ def approval_queue(request):
 
         def _sync_status(job_card, transition_name):
             return execute_job_card_action(job_card, transition_name, actor=request.user, reason=reason)
+
+        if action in {'approve_split_request', 'archive_split_request'}:
+            if not user_can_approve_pm:
+                messages.error(request, 'You do not have permission to manage PO split requests.')
+                return redirect('planning:approval_queue')
+            po_doc_id = (request.POST.get('po_doc_id') or '').strip()
+            request_id = (request.POST.get('request_id') or '').strip()
+            try:
+                po_doc = PoDocument.objects.get(id=int(po_doc_id))
+            except (TypeError, ValueError, PoDocument.DoesNotExist):
+                messages.error(request, 'Invalid PO split request selected.')
+                return redirect('planning:approval_queue')
+            status = 'approved' if action == 'approve_split_request' else 'archived'
+            if _update_po_split_request(po_doc, request_id, status, request.user):
+                messages.success(request, f'PO split request {status}.')
+            else:
+                messages.error(request, 'PO split request was not found or already resolved.')
+            return redirect('planning:approval_queue')
 
         if action == 'resolve_change_request':
             if not _user_is_admin(request.user):
@@ -2109,6 +2184,7 @@ def approval_queue(request):
         'pm_jobs': pm_jobs,
         'release_jobs': release_jobs,
         'change_requests': change_requests,
+        'split_requests': split_requests,
         'queue_q': queue_q,
         'pending_qc_jobs_count': pending_qc_jobs_count,
         'approved_qc_jobs_count': approved_qc_jobs_count,
@@ -2638,19 +2714,19 @@ def sku_recipe_edit(request, recipe_id=None):
             else:
                 recipe.delete()
                 messages.success(request, f'SKU Recipe "{recipe.sku}" deleted.')
-            return redirect('qc:sku_recipes')
+            return redirect('planning:sku_recipes')
 
         if recipe and action == 'archive':
             if recipe.master_data_status == 'approved' and not is_admin_user:
                 messages.error(request, 'Approved records can only be archived by admin users.')
-                return redirect('qc:sku_recipes')
+                return redirect('planning:sku_recipes')
             recipe.is_active = False
             recipe.archived_by = request.user
             recipe.archived_at = timezone.now()
             recipe.archive_reason = (request.POST.get('archive_reason') or '').strip()
             recipe.save(update_fields=['is_active', 'archived_by', 'archived_at', 'archive_reason', 'updated_at'])
             messages.success(request, f'SKU Recipe "{recipe.sku}" archived.')
-            return redirect('qc:sku_recipes')
+            return redirect('planning:sku_recipes')
 
         if recipe and recipe.master_data_status == 'approved' and action != 'reopen_sku':
             messages.error(request, 'Approved SKU is locked. Use Reopen SKU before making edits.')
@@ -2747,7 +2823,7 @@ def sku_recipe_edit(request, recipe_id=None):
                 except Exception:
                     logger.exception('Approved SKU sync to planning failed for %s', obj.sku)
                     messages.error(request, 'Error while sending approved SKU to Planning; check logs.')
-            return redirect('qc:sku_recipes')
+            return redirect('planning:sku_recipes')
         else:
             # Surface a clear top-level message so users notice validation errors
             messages.error(request, 'There are errors in the form. Please correct the highlighted fields and try again.')
@@ -2771,7 +2847,7 @@ def sku_recipe_bulk_upload(request):
         upload_file = request.FILES.get('upload_file')
         if not upload_file:
             messages.error(request, 'Please choose a CSV or XLSX file to upload.')
-            return redirect('qc:sku_recipe_bulk_upload')
+            return redirect('planning:sku_recipe_bulk_upload')
 
 
         name = (upload_file.name or '').lower()
@@ -2819,7 +2895,7 @@ def sku_recipe_bulk_upload(request):
                     import openpyxl
                 except ImportError:
                     messages.error(request, 'openpyxl is required for XLSX upload.')
-                    return redirect('qc:sku_recipe_bulk_upload')
+                    return redirect('planning:sku_recipe_bulk_upload')
                 wb = openpyxl.load_workbook(upload_file, data_only=True)
                 ws = wb.active
                 # Find header row: look for row with 'SKU' and 'JOB NAME'
@@ -2832,7 +2908,7 @@ def sku_recipe_bulk_upload(request):
                         break
                 if not header_row_idx:
                     messages.error(request, 'Could not find header row in Excel file. Make sure it matches the template.')
-                    return redirect('qc:sku_recipe_bulk_upload')
+                    return redirect('planning:sku_recipe_bulk_upload')
                 for values in ws.iter_rows(min_row=header_row_idx+1, values_only=True):
                     row = {}
                     for idx, key in enumerate(header):
@@ -2841,14 +2917,14 @@ def sku_recipe_bulk_upload(request):
                     rows.append(row)
             else:
                 messages.error(request, 'Unsupported file type. Please upload CSV or XLSX.')
-                return redirect('qc:sku_recipe_bulk_upload')
+                return redirect('planning:sku_recipe_bulk_upload')
         except Exception as exc:
             messages.error(request, f'Could not read upload file: {exc}')
-            return redirect('qc:sku_recipe_bulk_upload')
+            return redirect('planning:sku_recipe_bulk_upload')
 
         if not rows:
             messages.error(request, 'No rows found in upload file.')
-            return redirect('qc:sku_recipe_bulk_upload')
+            return redirect('planning:sku_recipe_bulk_upload')
 
         created = 0
         updated = 0
@@ -2948,7 +3024,7 @@ def sku_recipe_bulk_upload(request):
         if failed and sample_errors:
             messages.error(request, 'Sample row errors: ' + ' | '.join(sample_errors))
 
-        return redirect('qc:sku_recipes')
+        return redirect('planning:sku_recipes')
 
     return render(request, 'planning/sku_recipe_bulk_upload.html')
 

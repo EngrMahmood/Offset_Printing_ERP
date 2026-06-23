@@ -99,7 +99,7 @@
                 <form method="GET" class="erp-filter-group">
                     <div class="erp-filter-group">
                         <label for="q" class="erp-field-label">Search</label>
-                        <input id="q" name="q" value="{{ q }}" placeholder="Job Card / SKU / Job Name" class="erp-input">
+                        <input id="q" name="q" value="{{ q }}" placeholder="Job Card / PO / SKU / Job Name" class="erp-input">
                     </div>
                     <div class="erp-filter-group">
                         <label for="wip_status" class="erp-field-label">WIP Status</label>
@@ -129,6 +129,7 @@
                         <thead>
                             <tr>
                                 <th>Job Card</th>
+                                <th>PO</th>
                                 <th>SKU</th>
                                 <th>Job Name</th>
                                 <th>Machine</th>
@@ -142,6 +143,7 @@
                             {% for job in job_cards %}
                             <tr>
                                 <td>{{ job.job_card_no }}</td>
+                                <td>{{ job.PO_No|default:'-' }}</td>
                                 <td>{{ job.SKU }}</td>
                                 <td>{{ job.planning_job.job_name|default:'-' }}</td>
                                 <td>{{ job.machine_name_display|default:'-' }}</td>
@@ -163,7 +165,7 @@
                                 </td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="8" class="erp-table-meta-text">No production job cards are released yet.</td></tr>
+                            <tr><td colspan="9" class="erp-table-meta-text">No production job cards are released yet.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>

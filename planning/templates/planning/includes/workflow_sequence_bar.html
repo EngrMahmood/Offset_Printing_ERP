@@ -8,7 +8,7 @@
     </div>
     <div class="erp-workflow-track">
         <a class="erp-workflow-step-link {% if current_step == 'po' or current_step == 'start' %}is-active{% endif %}" href="{% url 'planning:po_inbox' %}">1. PO Intake</a>
-        <a class="erp-workflow-step-link {% if current_step == 'master' %}is-active{% endif %}" href="{% url 'qc:sku_recipes' %}">2. Master SKU</a>
+        <a class="erp-workflow-step-link {% if current_step == 'master' %}is-active{% endif %}" href="{% url 'planning:sku_recipes' %}">2. Master SKU</a>
         <a class="erp-workflow-step-link {% if current_step == 'planning' %}is-active{% endif %}" href="{% url 'planning:jobs' %}">3. Planning Jobs</a>
         <a class="erp-workflow-step-link {% if current_step == 'approval' %}is-active{% endif %}" href="{% url 'qc:approval_queue' %}">4. Job Card Approval</a>
         <a class="erp-workflow-step-link {% if current_step == 'shop' %}is-active{% endif %}" href="{% url 'planning:scan' %}">5. Production Scan</a>
