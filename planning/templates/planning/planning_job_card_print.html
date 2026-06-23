@@ -13,7 +13,7 @@
         .card-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
         .header-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 2px; }
         .header-title { font-size: 18px; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 4px; }
-        .header-subtitle { font-size: 11px; color: #333; margin-bottom: 2px; }
+        .header-subtitle { font-size: 11px; color: #333; margin-bottom: 2px; overflow-wrap: anywhere; word-break: break-word; }
         .header-meta { text-align: right; font-size: 8px; color: #444; min-width: 90px; }
         .header-meta .meta-row { margin-bottom: 4px; }
         .qr-code { margin-top: 6px; }
@@ -25,6 +25,8 @@
         .field-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #e5e7eb; }
         .field-row:last-child { border-bottom: none; }
         .field-label { font-weight: 700; color: #222; width: 40%; }
+        .field-value { flex: 1; min-width: 0; text-align: right; }
+        .wrap-value { overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
         .notes { min-height: 44px; white-space: pre-wrap; padding: 8px; background: #fbfbfb; border: 1px solid #e5e7eb; }
         .signature-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; }
         .signature-row span { width: 48%; border-bottom: 1px solid #333; padding-bottom: 4px; }
@@ -61,8 +63,8 @@
             {% for section in layout_sections %}
             <section class="section-block full-width">
                 <div class="section-title">{{ section.title }}</div>
-                {% for field_id in section.fields %}
-                <div class="field-row"><span class="field-label">{{ field.label }}</span><span>{{ field.value }}</span></div>
+                {% for field in section.fields %}
+                <div class="field-row"><span class="field-label">{{ field.label }}</span><span class="field-value {% if field.id == 'job_name' or field.id == 'sku' %}wrap-value{% endif %}">{{ field.value }}</span></div>
                 {% endfor %}
             </section>
             {% endfor %}
@@ -80,7 +82,7 @@
             </div>
             <div class="section-block">
                 <div class="section-title">Job Details</div>
-                <div class="field-row"><span class="field-label">Job Name</span><span>{{ job.job_name|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Job Name</span><span class="field-value wrap-value">{{ job.job_name|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">Material</span><span>{{ job.material_display|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">Color</span><span>{{ job.color_spec_display|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">Color Count</span><span>{{ job.number_of_colors|default:'-' }}</span></div>

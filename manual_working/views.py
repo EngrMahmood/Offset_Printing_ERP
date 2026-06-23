@@ -1,6 +1,7 @@
 from django.contrib.auth.decorators import login_required
 from django.shortcuts import render
 
+from core.models import ProductionWipStatus
 from .services import get_manual_working_rows
 from planning.models import PLANNING_STAGE_CHOICES, PLANNING_STATUS_CHOICES
 
@@ -15,6 +16,7 @@ def manual_working_list(request):
         'job_name': request.GET.get('job_name', '').strip(),
         'machine_name': request.GET.get('machine_name', '').strip(),
         'status': request.GET.get('status', '').strip(),
+        'wip_status': request.GET.get('wip_status', '').strip(),
         'planning_stage': request.GET.get('planning_stage', '').strip(),
         'date_from': request.GET.get('date_from', '').strip(),
         'date_to': request.GET.get('date_to', '').strip(),
@@ -26,5 +28,6 @@ def manual_working_list(request):
         'rows': rows,
         'filters': filters,
         'status_choices': PLANNING_STATUS_CHOICES,
+        'wip_statuses': ProductionWipStatus.objects.filter(is_active=True).order_by('name'),
         'stage_choices': PLANNING_STAGE_CHOICES,
     })

@@ -137,6 +137,9 @@
     <button type="button" class="erp-tab" data-target="qc-panel">QC Approval{% if qc_jobs %} ({{ qc_jobs|length }}){% endif %}</button>
     <button type="button" class="erp-tab" data-target="pm-panel">PM Approval{% if pm_jobs %} ({{ pm_jobs|length }}){% endif %}</button>
     <button type="button" class="erp-tab" data-target="release-panel">Release{% if release_jobs %} ({{ release_jobs|length }}){% endif %}</button>
+    {% if split_requests %}
+    <button type="button" class="erp-tab" data-target="split-panel">Split Requests ({{ split_requests|length }})</button>
+    {% endif %}
     {% if can_admin_actions and change_requests %}
     <button type="button" class="erp-tab" data-target="requested-panel">Requested Changes ({{ change_requests|length }})</button>
     {% endif %}
@@ -450,6 +453,59 @@
         </div>
     </div>
 </section>
+
+{% if split_requests %}
+<section id="split-panel" class="erp-tab-panel">
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <h3 class="erp-panel__title">PO Split Requests</h3>
+            <p class="erp-section-desc">Planner requested quantity splits waiting for production manager approval.</p>
+        </div>
+        <div class="erp-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>PO</th><th>SKU</th><th>Job Name</th><th>Qty</th><th>Requested Qty</th><th>Reason</th><th>Requested By</th><th class="erp-col-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for split in split_requests %}
+                    <tr>
+                        <td>{{ split.po_number|default:'-' }}</td>
+                        <td><strong>{{ split.sku|default:'-' }}</strong></td>
+                        <td>{{ split.job_name|default:'-' }}</td>
+                        <td>{{ split.quantity|default:'-' }} {{ split.unit|default:'' }}</td>
+                        <td>{{ split.requested_qty|default:'-' }}</td>
+                        <td>{{ split.reason|default:'-' }}</td>
+                        <td class="erp-muted">{{ split.requested_by|default:'-' }}{% if split.requested_at %} @ {{ split.requested_at }}{% endif %}</td>
+                        <td class="erp-col-actions aq-action-cell">
+                            {% if user_can_approve_pm %}
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="approve_split_request">
+                                <input type="hidden" name="po_doc_id" value="{{ split.po_doc_id }}">
+                                <input type="hidden" name="request_id" value="{{ split.request_id }}">
+                                <button type="submit" class="erp-btn erp-btn-success">Approve Split</button>
+                            </form>
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="archive_split_request">
+                                <input type="hidden" name="po_doc_id" value="{{ split.po_doc_id }}">
+                                <input type="hidden" name="request_id" value="{{ split.request_id }}">
+                                <button type="submit" class="erp-btn erp-btn-warning" onclick="return confirm('Archive this PO split request?');">Archive</button>
+                            </form>
+                            {% else %}
+                            <span class="erp-muted">PM approval required</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endif %}
 
 {% if can_admin_actions and change_requests %}
 <section id="requested-panel" class="erp-tab-panel">
