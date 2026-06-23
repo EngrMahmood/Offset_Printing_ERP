@@ -1899,7 +1899,7 @@ def planning_job_card_print(request, job_id):
             return '-'.join(parts[:-1] + ['UPP', parts[-1]])
         return normalized
 
-    job_scan_url = request.build_absolute_uri(reverse('planning:job_detail', kwargs={'job_id': job.id}))
+    job_scan_url = request.build_absolute_uri(reverse('planning:job_card_print', kwargs={'job_id': job.id}))
     qr_base64 = _build_qr_image_base64(job_scan_url)
     job_qr_data_uri = f'data:image/png;base64,{qr_base64}' if qr_base64 else None
     pdf_filename = _pdf_filename(job.jc_number)

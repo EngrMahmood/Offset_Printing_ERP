@@ -6,27 +6,37 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Job Card {{ job.jc_number }}</title>
     <style>
-        @page { size: A4 portrait; margin: 8mm; }
-        body { font-family: Arial, sans-serif; color: #111; font-size: 9px; line-height: 1.35; margin: 0; }
-        .page { padding: 8mm; }
-        .card { width: 100%; max-width: 210mm; margin: 0 auto; background: #fff; border: 1px solid #333; padding: 12px; }
-        .card-header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; margin-bottom: 12px; }
+        @page { size: A4 portrait; margin: 4mm; }
+        * { box-sizing: border-box; }
+        html, body { width: 100%; min-height: 100%; }
+        body { font-family: Arial, sans-serif; color: #111; font-size: 9px; line-height: 1.35; margin: 0; background: #fff; }
+        .page { width: 100%; padding: 4mm; }
+        .card { width: 100%; margin: 0 auto; background: #fff; border: 1px solid #333; padding: 8px; overflow: visible; }
+        .card-header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+        .brand { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+        .brand-mark { width: 54px; height: 54px; flex: 0 0 54px; object-fit: contain; }
+        .brand-copy { min-width: 0; }
         .header-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 2px; }
-        .header-title { font-size: 18px; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 4px; }
+        .header-title { font-size: 18px; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 3px; }
+        .header-system { font-size: 11px; font-weight: 700; color: #0f5132; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 2px; }
         .header-subtitle { font-size: 11px; color: #333; margin-bottom: 2px; overflow-wrap: anywhere; word-break: break-word; }
         .header-meta { text-align: right; font-size: 8px; color: #444; min-width: 90px; }
         .header-meta .meta-row { margin-bottom: 4px; }
         .qr-code { margin-top: 6px; }
         .qr-code img { width: 72px; height: 72px; border: 1px solid #333; }
-        .section-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
-        .section-block { border: 1px solid #ccc; padding: 10px; }
+        .section-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+        .section-block { border: 1px solid #ccc; padding: 8px; min-width: 0; overflow: visible; }
         .section-block.full-width { grid-column: span 2; }
-        .section-title { font-size: 10px; font-weight: 700; background: #f3f4f6; color: #111; padding: 8px 10px; margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.08em; }
-        .field-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #e5e7eb; }
+        .section-title { font-size: 10px; font-weight: 700; background: #f3f4f6; color: #111; padding: 6px 8px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.08em; }
+        .field-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #e5e7eb; min-width: 0; }
         .field-row:last-child { border-bottom: none; }
-        .field-label { font-weight: 700; color: #222; width: 40%; }
+        .field-label { font-weight: 700; color: #222; width: 38%; flex: 0 0 38%; }
         .field-value { flex: 1; min-width: 0; text-align: right; }
-        .wrap-value { overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
+        .field-row > span:not(.field-label), .wrap-value { min-width: 0; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
+        .table-wrap { width: 100%; overflow: visible; }
+        .table-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid #e5e7eb; }
+        .table-row span { min-width: 0; padding: 3px 4px; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
+        .table-header { font-weight: 700; background: #f8fafc; }
         .notes { min-height: 44px; white-space: pre-wrap; padding: 8px; background: #fbfbfb; border: 1px solid #e5e7eb; }
         .signature-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; }
         .signature-row span { width: 48%; border-bottom: 1px solid #333; padding-bottom: 4px; }
@@ -34,17 +44,21 @@
         .footer-note { margin-top: 12px; font-size: 8px; color: #555; }
         .no-print { margin-top: 10px; }
         .button-primary { padding: 6px 10px; border: 1px solid #333; background: #fff; cursor: pointer; font-size: 9px; }
-        @media print { .no-print { display: none; } .card { border: none; } }
+        @media print { .page { padding: 0; } .no-print { display: none; } .card { border: none; padding: 0; } }
     </style>
 </head>
 <body>
 <div class="page">
     <div class="card">
         <div class="card-header">
-            <div>
-                <div class="header-label">Utopia Printing & Packaging</div>
-                <div class="header-title">Job Card</div>
-                <div class="header-subtitle">{{ job.jc_number }} | {{ job.sku|default:'-' }}</div>
+            <div class="brand">
+                <img src="{% static 'core/image/logo.jpg' %}" alt="Utopia Industries logo" class="brand-mark">
+                <div class="brand-copy">
+                    <div class="header-label">Utopia Industries</div>
+                    <div class="header-title">Job Card</div>
+                    <div class="header-system">Offset ERP</div>
+                    <div class="header-subtitle">{{ job.jc_number }} | {{ job.sku|default:'-' }}</div>
+                </div>
             </div>
             <div class="header-meta">
                 <div class="meta-row"><strong>Doc #:</strong> {{ job.job_card_version|default:'0' }}</div>
