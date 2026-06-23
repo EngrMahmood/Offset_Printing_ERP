@@ -242,9 +242,11 @@ def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map:
     except ObjectDoesNotExist:
         job_card_month = None
 
+    display_month_source = None if po_approval_date else (job_card_month or job.plan_month)
+
     return {
         'jc_number': _format_text(job.jc_number),
-        'month': _format_month(job_card_month or job.plan_month, po_approval_date),
+        'month': _format_month(display_month_source, po_approval_date),
         'date': _format_date(po_approval_date),
         'po_approval_date_obj': po_approval_date,
         'po_number': _format_text(job.po_number),
