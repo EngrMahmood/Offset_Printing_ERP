@@ -21,6 +21,12 @@
                 Dashboard
             </a>
             {% endif %}
+            {% if nav.can_access_supply_chain %}
+            <a href="{% url 'supply_chain:dashboard' %}"
+               class="erp-topnav-module {% if app == 'supply_chain' %}is-active{% endif %}">
+                Supply Chain
+            </a>
+            {% endif %}
             {% if nav.can_access_planning %}
             <a href="{% url 'planning:home' %}"
                class="erp-topnav-module {% if app == 'planning' %}is-active{% endif %}">

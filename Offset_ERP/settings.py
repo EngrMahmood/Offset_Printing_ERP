@@ -47,6 +47,7 @@ INSTALLED_APPS = [
     'reports',
     'theme',
     'production',
+    'supply_chain',
 ]
 
 MIDDLEWARE = [

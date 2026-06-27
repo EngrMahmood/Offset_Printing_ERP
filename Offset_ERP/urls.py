@@ -1,4 +1,4 @@
-﻿from django.contrib import admin
+from django.contrib import admin
 from django.urls import path, include
 from django.contrib.auth import views as auth_views
 from core.views import home
@@ -15,6 +15,7 @@ urlpatterns = [
     path('migration/', include('migration.urls', namespace='migration')),
     path('qc/', include('qc.urls', namespace='qc')),
     path('manual-working/', include('manual_working.urls', namespace='manual_working')),
+    path('supply-chain/', include('supply_chain.urls', namespace='supply_chain')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),
 

@@ -1068,6 +1068,7 @@ class UserProfile(models.Model):
         ('qc', 'QC Inspector — Quality checks & approvals'),
         ('storekeeper', 'Store Keeper — Material & inventory management'),
         ('finance', 'Finance Viewer — Read-only analytics & reports'),
+        ('supply_chain', 'Supply Chain — Manage supply chain dashboard & stock'),
     ]
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
