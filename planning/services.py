@@ -2,7 +2,7 @@ import io
 import json
 import re
 from datetime import datetime, date
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from collections import defaultdict
 from difflib import SequenceMatcher
 from django.db import transaction
@@ -860,4 +860,288 @@ def _collect_pending_sku_rows(po_docs):
     return rows
 
 
+MASTER_SYNC_FIELD_LABELS = {
+    'job_name': 'Job Name',
+    'material': 'Material',
+    'color_spec': 'Color',
+    'application': 'Application',
+    'size_w_mm': 'Size W (mm)',
+    'size_h_mm': 'Size H (mm)',
+    'ups': 'UPS',
+    'print_sheet_size': 'Print Sheet Size',
+    'purchase_sheet_size': 'Purchase Sheet Size',
+    'purchase_sheet_ups': 'Purchase Sheet UPS',
+    'daily_demand': 'Daily Demand',
+}
+
+
+def _normalize_sheet_size(value):
+    return str(value or '').strip().lower().replace('x', '*').replace(' ', '')
+
+
+def _master_sync_field_values_equal(left, right, field_name=''):
+    if field_name in {'print_sheet_size', 'purchase_sheet_size'}:
+        return _normalize_sheet_size(left) == _normalize_sheet_size(right)
+    if left is None and right is None:
+        return True
+    if isinstance(left, Decimal) or isinstance(right, Decimal):
+        try:
+            return Decimal(str(left or 0)) == Decimal(str(right or 0))
+        except Exception:
+            return str(left or '') == str(right or '')
+    return str(left or '').strip() == str(right or '').strip()
+
+
+def get_master_data_field_diffs(job):
+    recipe = job.approved_sku_recipe
+    if not recipe:
+        return {}
+
+    diffs = {}
+    for field_name, label in MASTER_SYNC_FIELD_LABELS.items():
+        job_value = getattr(job, field_name, None)
+        recipe_value = getattr(recipe, field_name, None)
+        if not _master_sync_field_values_equal(job_value, recipe_value, field_name=field_name):
+            diffs[field_name] = {
+                'label': label,
+                'job': job_value,
+                'recipe': recipe_value,
+            }
+    return diffs
+
+
+def job_has_master_data_mismatch(job):
+    return bool(get_master_data_field_diffs(job))
+
+
+def can_request_master_data_sync(job):
+    if not job.is_active or job.master_data_sync_blocked():
+        return False
+    if not job.approved_sku_recipe:
+        return False
+    return job_has_master_data_mismatch(job)
+
+
+def request_master_data_sync(job, actor, reason=''):
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValueError('A reason is required to request master data sync.')
+    if job.master_data_sync_blocked():
+        raise ValueError('Completed jobs cannot be synced with revised SKU master data.')
+    if not job.approved_sku_recipe:
+        raise ValueError('No approved SKU master exists for this job.')
+    if not job_has_master_data_mismatch(job):
+        raise ValueError('This job already matches the approved SKU master data.')
+
+    job.master_sync_requested = True
+    job.master_sync_reason = reason
+    job.master_sync_requested_by = actor
+    job.master_sync_requested_at = timezone.now()
+    job.save(update_fields=[
+        'master_sync_requested',
+        'master_sync_reason',
+        'master_sync_requested_by',
+        'master_sync_requested_at',
+        'updated_at',
+    ])
+    return job
+
+
+def dismiss_master_data_sync_request(job, actor=None):
+    job.master_sync_requested = False
+    job.master_sync_reason = ''
+    job.master_sync_requested_by = None
+    job.master_sync_requested_at = None
+    job.save(update_fields=[
+        'master_sync_requested',
+        'master_sync_reason',
+        'master_sync_requested_by',
+        'master_sync_requested_at',
+        'updated_at',
+    ])
+    return job
+
+
+def apply_master_data_sync(job, actor):
+    from core.jobcard_service import ensure_job_card_from_planning_job
+    from core.models import ChangeLog, JOB_CARD_PLANNING_EDITABLE_STATUSES, JobCard
+
+    if job.master_data_sync_blocked():
+        raise ValueError('Completed jobs cannot be synced with revised SKU master data.')
+
+    recipe = job.approved_sku_recipe
+    if not recipe:
+        raise ValueError('No approved SKU master exists for this job.')
+
+    diffs = get_master_data_field_diffs(job)
+    if not diffs:
+        dismiss_master_data_sync_request(job, actor=actor)
+        return job, {'updated_fields': [], 'job_card_refreshed': False}
+
+    field_changes = {}
+    update_fields = ['updated_at', 'job_card_version']
+    for field_name in MASTER_SYNC_FIELD_LABELS:
+        recipe_value = getattr(recipe, field_name, None)
+        job_value = getattr(job, field_name, None)
+        if not _master_sync_field_values_equal(job_value, recipe_value, field_name=field_name):
+            field_changes[field_name] = {
+                'label': MASTER_SYNC_FIELD_LABELS[field_name],
+                'from': str(job_value if job_value is not None else '-'),
+                'to': str(recipe_value if recipe_value is not None else '-'),
+            }
+            setattr(job, field_name, recipe_value)
+            update_fields.append(field_name)
+
+    job.job_card_version = (job.job_card_version or 1) + 1
+    job.master_sync_requested = False
+    job.master_sync_reason = ''
+    job.master_sync_requested_by = None
+    job.master_sync_requested_at = None
+    job.master_sync_applied_by = actor
+    job.master_sync_applied_at = timezone.now()
+    update_fields.extend([
+        'master_sync_requested',
+        'master_sync_reason',
+        'master_sync_requested_by',
+        'master_sync_requested_at',
+        'master_sync_applied_by',
+        'master_sync_applied_at',
+        'actual_sheet_required',
+        'purchase_sheet_required',
+        'pkt_value',
+        'balance_qty',
+        'total_colors',
+    ])
+
+    with transaction.atomic():
+        job.save()
+        job_card_refreshed = False
+        try:
+            job_card = job.job_card
+        except JobCard.DoesNotExist:
+            job_card = None
+
+        if job_card and job_card.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES:
+            ensure_job_card_from_planning_job(job, actor=actor)
+            job_card_refreshed = True
+
+        ChangeLog.objects.create(
+            entity_type='planning_job',
+            record_id=job.pk,
+            record_label=str(job),
+            action='master_sync',
+            changed_by=actor,
+            change_reason='Applied approved SKU master data to planning job',
+            field_changes=field_changes,
+        )
+
+    return job, {
+        'updated_fields': list(field_changes.keys()),
+        'job_card_refreshed': job_card_refreshed,
+    }
+
+
+def preview_master_sync_calculations(job):
+    """Preview sheet math using approved SKU master values (before apply)."""
+    import math
+
+    recipe = job.approved_sku_recipe
+    if not recipe:
+        return None
+
+    net_qty = job.net_print_qty
+    if net_qty is None or not recipe.ups:
+        return None
+
+    total_sheets = math.ceil(net_qty / recipe.ups) + (job.wastage_sheets or 0)
+    purchase_sheets = None
+    if recipe.purchase_sheet_ups:
+        purchase_sheets = math.ceil(total_sheets / recipe.purchase_sheet_ups)
+
+    pkt_value = None
+    if purchase_sheets is not None:
+        pkt_value = (Decimal(purchase_sheets) / Decimal('100')).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+
+    return {
+        'ups': recipe.ups,
+        'print_sheet_size': recipe.print_sheet_size,
+        'purchase_sheet_size': recipe.purchase_sheet_size,
+        'purchase_sheet_ups': recipe.purchase_sheet_ups,
+        'total_sheets': total_sheets,
+        'purchase_sheets': purchase_sheets,
+        'pkt_value': pkt_value,
+    }
+
+
+def job_requires_reopen_for_master_sync(job):
+    from core.models import JOB_CARD_PLANNING_EDITABLE_STATUSES, JobCard
+
+    if job.master_data_sync_blocked():
+        return False
+    try:
+        job_card = job.job_card
+    except JobCard.DoesNotExist:
+        job_card = None
+    if job.workflow_status not in {'draft', 'pending_qc'}:
+        return True
+    if job_card and job_card.workflow_status not in JOB_CARD_PLANNING_EDITABLE_STATUSES:
+        return True
+    return False
+
+
+def reopen_and_apply_master_data_sync(job, actor, reason=''):
+    from core.jobcard_service import ensure_job_card_from_planning_job, reopen_job_card_for_master_sync
+    from core.models import JOB_CARD_PLANNING_EDITABLE_STATUSES, JobCard
+
+    if job.master_data_sync_blocked():
+        raise ValueError('Completed jobs cannot be synced with revised SKU master data.')
+
+    recipe = job.approved_sku_recipe
+    if not recipe:
+        raise ValueError('No approved SKU master exists for this job.')
+    if not get_master_data_field_diffs(job):
+        raise ValueError('This job already matches the approved SKU master data.')
+
+    reopened_planning = False
+    reopened_job_card = False
+
+    with transaction.atomic():
+        if job.workflow_status not in {'draft', 'pending_qc'}:
+            job.status = 'draft'
+            job.issued_to_production = False
+            job.save(update_fields=['status', 'issued_to_production', 'updated_at'])
+            reopened_planning = True
+
+        try:
+            job_card = job.job_card
+        except JobCard.DoesNotExist:
+            job_card = None
+
+        if job_card and job_card.workflow_status not in JOB_CARD_PLANNING_EDITABLE_STATUSES:
+            reopen_job_card_for_master_sync(
+                job_card,
+                actor=actor,
+                reason=reason or 'Reopened for SKU master sync',
+            )
+            reopened_job_card = True
+
+        job.master_sync_requested = True
+        job.master_sync_reason = reason or job.master_sync_reason or 'Reopen and apply SKU master sync'
+        job.master_sync_requested_by = actor
+        job.master_sync_requested_at = timezone.now()
+        job.save(update_fields=[
+            'master_sync_requested',
+            'master_sync_reason',
+            'master_sync_requested_by',
+            'master_sync_requested_at',
+            'updated_at',
+        ])
+
+        job, result = apply_master_data_sync(job, actor=actor)
+        ensure_job_card_from_planning_job(job, actor=actor)
+        result['job_card_refreshed'] = True
+        result['reopened_planning'] = reopened_planning
+        result['reopened_job_card'] = reopened_job_card
+
+    return job, result
 

@@ -254,7 +254,9 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         ('pm_rejected', 'draft'),
         ('production_approved', 'released'),
         ('released', 'in_production'),
+        ('released', 'draft'),
         ('in_production', 'completed'),
+        ('in_production', 'draft'),
         ('completed', 'closed'),
         ('closed', 'draft'),
         ('pm_rejected', 'qc_approved'),
@@ -281,6 +283,33 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         )
 
     return job_card
+
+
+def reopen_job_card_for_master_sync(job_card, actor=None, reason=''):
+    """Reopen a locked job card to draft so master sync can refresh sheet fields."""
+    if job_card.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES:
+        return job_card
+
+    allowed_locked_statuses = {
+        'released',
+        'in_production',
+        'qc_approved',
+        'production_approved',
+        'pending_pm_approval',
+        'planning_approved',
+        'pending_qc',
+    }
+    if job_card.workflow_status not in allowed_locked_statuses:
+        raise ValidationError({
+            'status': f'Job Card cannot be reopened for master sync from {job_card.workflow_status}.',
+        })
+
+    return transition_job_card_status(
+        job_card,
+        'draft',
+        actor=actor,
+        reason=reason or 'Reopened for SKU master sync',
+    )
 
 
 def execute_job_card_action(job_card, action, actor=None, reason=''):

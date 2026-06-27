@@ -528,3 +528,125 @@ class PlanningWorkflowSyncTests(TestCase):
 		deleted = rollback_imported_planning_jobs(import_job)
 		self.assertEqual(deleted, 1)
 		self.assertFalse(PlanningJob.objects.filter(id=job.id).exists())
+
+
+class MasterDataSyncTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(username='planner', password='testpass123')
+		profile, _created = UserProfile.objects.get_or_create(user=self.user)
+		profile.role = 'planner'
+		profile.save(update_fields=['role'])
+
+	def _create_job(self, sku='SKU-SYNC-1', ups=2, status='pending_qc', jc_number='JC-SYNC-1'):
+		return PlanningJob.objects.create(
+			jc_number=jc_number,
+			po_number='PO-SYNC-1',
+			sku=sku,
+			job_name='Sync Job',
+			order_qty=1000,
+			ups=ups,
+			print_sheet_size='20x30',
+			purchase_sheet_size='20x30',
+			purchase_sheet_ups=2,
+			wastage_sheets=10,
+			status=status,
+		)
+
+	def _create_approved_recipe(self, sku='SKU-SYNC-1', ups=4):
+		return SkuRecipe.objects.create(
+			sku=sku,
+			job_name='Sync Job Approved',
+			material='Paper',
+			color_spec='4+0',
+			application='UV',
+			ups=ups,
+			print_sheet_size='25x36',
+			purchase_sheet_size='25x36',
+			purchase_sheet_ups=2,
+			default_unit_cost='1.40',
+			daily_demand='100',
+			awc_no='AWC-1',
+			die_cutting='NO',
+			master_data_status='approved',
+			approved_by=self.user,
+			created_by=self.user,
+		)
+
+	def test_request_and_apply_master_sync_updates_only_requested_job(self):
+		self._create_approved_recipe()
+		job = self._create_job()
+		completed_job = self._create_job(sku='SKU-SYNC-OLD', ups=2, status='completed', jc_number='JC-SYNC-OLD')
+		self._create_approved_recipe(sku='SKU-SYNC-OLD', ups=8)
+
+		from planning.services import (
+			apply_master_data_sync,
+			can_request_master_data_sync,
+			get_master_data_field_diffs,
+			request_master_data_sync,
+		)
+
+		self.assertTrue(can_request_master_data_sync(job))
+		self.assertTrue(get_master_data_field_diffs(job))
+		request_master_data_sync(job, actor=self.user, reason='UPS revised in master')
+
+		job.refresh_from_db()
+		self.assertTrue(job.master_sync_requested)
+		self.assertEqual(job.ups, 2)
+
+		job, result = apply_master_data_sync(job, actor=self.user)
+		self.assertIn('ups', result['updated_fields'])
+		self.assertEqual(job.ups, 4)
+		self.assertEqual(job.print_sheet_size, '25x36')
+		self.assertFalse(job.master_sync_requested)
+		self.assertEqual(job.calculated_sheets_required, 260)
+
+		completed_job.refresh_from_db()
+		self.assertEqual(completed_job.ups, 2)
+
+	def test_completed_job_cannot_request_master_sync(self):
+		self._create_approved_recipe()
+		job = self._create_job(status='completed')
+		from planning.services import can_request_master_data_sync, request_master_data_sync
+
+		self.assertFalse(can_request_master_data_sync(job))
+		with self.assertRaises(ValueError):
+			request_master_data_sync(job, actor=self.user, reason='Should fail')
+
+	def test_reopen_and_apply_master_sync_for_released_job(self):
+		from core.models import JobCard, Machine
+		from planning.services import get_master_data_field_diffs, reopen_and_apply_master_data_sync
+
+		machine = Machine.objects.create(name='Test Machine')
+		recipe = self._create_approved_recipe(sku='SKU-REL-1', ups=4)
+		job = self._create_job(sku='SKU-REL-1', ups=2, status='released', jc_number='JC-REL-1')
+		job.machine_name = machine.name
+		job.plate_set_no = 'PLATE-1'
+		job.save(update_fields=['machine_name', 'plate_set_no', 'updated_at'])
+		JobCard.objects.create(
+			planning_job=job,
+			job_card_no='JC-REL-1',
+			SKU='SKU-REL-1',
+			order_qty=1000,
+			ups=2,
+			print_sheet_size='20x30',
+			po_date=date.today(),
+			plate_set_no='PLATE-1',
+			machine_name=machine,
+			status='released',
+		)
+		recipe.ups = Decimal('4')
+		recipe.print_sheet_size = '25x36'
+		recipe.purchase_sheet_ups = Decimal('2')
+		recipe.save(update_fields=['ups', 'print_sheet_size', 'purchase_sheet_ups', 'updated_at'])
+
+		self.assertTrue(get_master_data_field_diffs(job))
+		job, result = reopen_and_apply_master_data_sync(job, actor=self.user, reason='UPS revised')
+
+		job.refresh_from_db()
+		self.assertEqual(job.ups, Decimal('4'))
+		self.assertEqual(job.status, 'draft')
+		self.assertIn('ups', result['updated_fields'])
+		self.assertTrue(result['reopened_job_card'])
+		job.job_card.refresh_from_db()
+		self.assertEqual(job.job_card.ups, Decimal('4'))
+		self.assertIn(job.job_card.workflow_status, {'draft', 'pending_data'})

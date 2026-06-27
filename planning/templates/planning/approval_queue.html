@@ -143,6 +143,9 @@
     {% if can_admin_actions and change_requests %}
     <button type="button" class="erp-tab" data-target="requested-panel">Requested Changes ({{ change_requests|length }})</button>
     {% endif %}
+    {% if master_sync_requests %}
+    <button type="button" class="erp-tab" data-target="master-sync-panel">Master Sync ({{ master_sync_requests|length }})</button>
+    {% endif %}
 </div>
 
 <!-- Planning Approval Tab Panel -->
@@ -539,6 +542,54 @@
                                 <input type="hidden" name="planning_job_id" value="{{ job.id }}">
                                 <button type="submit" class="erp-btn erp-btn-success" onclick="return confirm('Resolve change request for {{ job.jc_number }}?');">Resolve</button>
                             </form>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+{% endif %}
+
+{% if master_sync_requests %}
+<section id="master-sync-panel" class="erp-tab-panel">
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <h3 class="erp-panel__title">SKU Master Sync Requests</h3>
+            <p class="erp-section-desc">Planner-requested updates to align a specific JC with the approved SKU master. Completed jobs are never included.</p>
+        </div>
+        <div class="erp-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>JC</th><th>PO</th><th>SKU</th><th>Status</th><th>Requested</th><th>Reason</th><th>Changes</th><th class="erp-col-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in master_sync_requests %}
+                    <tr>
+                        <td><strong><a href="{% url 'planning:job_detail' job.id %}">{{ job.jc_number }}</a></strong></td>
+                        <td>{{ job.po_number|default:'-' }}</td>
+                        <td>{{ job.sku|default:'-' }}</td>
+                        <td><span class="erp-badge is-{{ job.workflow_status }}">{{ job.workflow_status_label }}</span></td>
+                        <td class="erp-muted">{{ job.master_sync_requested_at|date:'d M Y H:i' }}{% if job.master_sync_requested_by %} by {{ job.master_sync_requested_by.username }}{% endif %}</td>
+                        <td><span class="erp-badge erp-badge-warning" title="{{ job.master_sync_reason|default:'No reason provided' }}">{{ job.master_sync_reason|truncatechars:32|default:'Master sync requested' }}</span></td>
+                        <td>{{ job.master_data_diffs|length }} field(s)</td>
+                        <td class="erp-col-actions">
+                            <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-secondary">Review</a>
+                            {% if user_can_approve_planning or can_admin_actions %}
+                            {% if job.requires_reopen_for_sync %}
+                            <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-warning">Reopen &amp; Apply</a>
+                            {% else %}
+                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0" style="display:inline-flex;">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="apply_master_sync">
+                                <input type="hidden" name="planning_job_id" value="{{ job.id }}">
+                                <button type="submit" class="erp-btn erp-btn-success" onclick="return confirm('Apply approved SKU master to {{ job.jc_number }}?');">Apply Sync</button>
+                            </form>
+                            {% endif %}
+                            {% endif %}
                         </td>
                     </tr>
                 {% endfor %}

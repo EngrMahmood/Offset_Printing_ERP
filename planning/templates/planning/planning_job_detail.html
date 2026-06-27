@@ -23,6 +23,114 @@
     <div class="erp-alert is-warning"><strong>NEW SKU ALERT:</strong> Shade matching and setup verification required before production run.</div>
     {% endif %}
 
+    {% if master_data_mismatch %}
+    <div class="erp-alert is-warning">
+        <strong>SKU master mismatch:</strong> This job card still uses snapshot values that differ from the approved SKU master.
+        Completed jobs are never auto-updated. Use the request below to sync this JC only.
+    </div>
+    {% endif %}
+
+    {% if master_data_mismatch or job.master_sync_requested %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Master Data</div>
+                <h3 class="erp-section-title">SKU Master Sync</h3>
+                <p class="erp-section-desc">Request and apply approved SKU master values for this JC only. Historical completed jobs are excluded.</p>
+            </div>
+        </div>
+
+        {% if job.master_sync_requested %}
+        <div class="erp-note" style="margin-bottom:12px;">
+            <strong>Sync requested</strong>
+            {% if job.master_sync_requested_at %} on {{ job.master_sync_requested_at|date:'d M Y H:i' }}{% endif %}
+            {% if job.master_sync_requested_by %} by {{ job.master_sync_requested_by.get_full_name|default:job.master_sync_requested_by.username }}{% endif %}
+            {% if job.master_sync_reason %} — {{ job.master_sync_reason }}{% endif %}
+        </div>
+        {% endif %}
+
+        {% if master_data_diffs %}
+        <div class="erp-table-wrap" style="margin-bottom:12px;">
+            <table class="erp-table">
+                <thead>
+                    <tr><th>Field</th><th>On This JC</th><th>Approved Master</th></tr>
+                </thead>
+                <tbody>
+                    {% for field_name, diff in master_data_diffs.items %}
+                    <tr>
+                        <td>{{ diff.label }}</td>
+                        <td>{{ diff.job|default:'-' }}</td>
+                        <td><strong>{{ diff.recipe|default:'-' }}</strong></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% elif approved_recipe %}
+        <div class="erp-note" style="margin-bottom:12px;">This job matches the approved SKU master data.</div>
+        {% else %}
+        <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">No approved SKU master is available for {{ job.sku|default:'this SKU' }}.</div>
+        {% endif %}
+
+        {% if master_sync_preview %}
+        <div class="erp-note" style="margin-bottom:12px;">
+            <strong>After master sync (preview):</strong>
+            UPS {{ master_sync_preview.ups }},
+            Print Sheet {{ master_sync_preview.print_sheet_size|default:'-' }},
+            Total Sheets {{ master_sync_preview.total_sheets }},
+            Purchase Sheets {{ master_sync_preview.purchase_sheets|default:'-' }}
+            {% if master_sync_preview.pkt_value %}, PKT {{ master_sync_preview.pkt_value }}{% endif %}
+        </div>
+        {% endif %}
+
+        <div class="erp-actions" style="gap:8px; flex-wrap:wrap;">
+            {% if can_request_master_sync and user_can_plan %}
+            <form method="post" action="{% url 'planning:job_master_sync' job.id %}" class="erp-inline-form" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="request_master_sync">
+                <div>
+                    <label for="master-sync-reason">Reason for sync</label>
+                    <input id="master-sync-reason" type="text" name="reason" required placeholder="e.g. UPS revised in SKU master after re-approval" style="min-width:280px;">
+                </div>
+                <button type="submit" class="erp-btn erp-btn-primary">Request Master Sync</button>
+            </form>
+            {% endif %}
+
+            {% if can_reopen_and_apply_master_sync %}
+            <form method="post" action="{% url 'planning:job_master_sync' job.id %}" class="m-0" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="reopen_and_apply_master_sync">
+                <div>
+                    <label for="reopen-sync-reason">Reopen reason</label>
+                    <input id="reopen-sync-reason" type="text" name="reason" value="{{ job.master_sync_reason|default:'' }}" placeholder="SKU master UPS/sheet revised" style="min-width:280px;">
+                </div>
+                <button type="submit" class="erp-btn erp-btn-warning" onclick="return confirm('Reopen {{ job.jc_number }} to draft, apply SKU master data, and refresh the job card? You will need to re-approve through QC.');">Reopen &amp; Apply Master Sync</button>
+            </form>
+            {% endif %}
+
+            {% if can_apply_master_sync %}
+            <form method="post" action="{% url 'planning:job_master_sync' job.id %}" class="m-0">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="apply_master_sync">
+                <button type="submit" class="erp-btn erp-btn-success" onclick="return confirm('Apply approved SKU master data to {{ job.jc_number }}? This updates only this job card.');">Apply Master Sync</button>
+            </form>
+            {% endif %}
+
+            {% if can_dismiss_master_sync %}
+            <form method="post" action="{% url 'planning:job_master_sync' job.id %}" class="m-0">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="dismiss_master_sync">
+                <button type="submit" class="erp-btn erp-btn-secondary" onclick="return confirm('Dismiss master sync request for {{ job.jc_number }}?');">Dismiss Request</button>
+            </form>
+            {% endif %}
+        </div>
+
+        {% if job.master_data_sync_blocked %}
+        <div class="erp-note" style="margin-top:12px;">Completed jobs cannot be synced with revised SKU master data.</div>
+        {% endif %}
+    </section>
+    {% endif %}
+
     <div class="erp-route-grid">
         <div class="erp-panel">
             <div class="erp-panel__header"><h3 class="erp-panel__title">Specifications</h3></div>
@@ -35,10 +143,10 @@
                 <div class="erp-info-item"><div class="erp-info-item__label">Color</div><div class="erp-info-item__value">{{ job.color_spec_display|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Application</div><div class="erp-info-item__value">{{ job.application_display|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Size (mm)</div><div class="erp-info-item__value">{{ job.size_w_mm_display|default:'-' }} x {{ job.size_h_mm_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Print Sheet</div><div class="erp-info-item__value">{{ job.print_sheet_size_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Total Sheets</div><div class="erp-info-item__value">{{ job.total_sheet_quantity|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet</div><div class="erp-info-item__value">{{ job.purchase_sheet_size_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">UPS</div><div class="erp-info-item__value">{{ job.ups_display|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Print Sheet</div><div class="erp-info-item__value">{{ job.print_sheet_size_display|default:'-' }}{% if master_data_mismatch and master_sync_preview and master_sync_preview.print_sheet_size %} <span class="erp-muted">→ {{ master_sync_preview.print_sheet_size }}</span>{% endif %}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Total Sheets</div><div class="erp-info-item__value">{{ job.total_sheet_quantity|default:'-' }}{% if master_sync_preview and master_sync_preview.total_sheets %} <span class="erp-muted">→ {{ master_sync_preview.total_sheets }}</span>{% endif %}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet</div><div class="erp-info-item__value">{{ job.purchase_sheet_size_display|default:'-' }}{% if master_data_mismatch and master_sync_preview and master_sync_preview.purchase_sheet_size %} <span class="erp-muted">→ {{ master_sync_preview.purchase_sheet_size }}</span>{% endif %}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">UPS</div><div class="erp-info-item__value">{{ job.ups_display|default:'-' }}{% if master_sync_preview and master_sync_preview.ups %} <span class="erp-muted">→ {{ master_sync_preview.ups }}</span>{% endif %}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Order Qty</div><div class="erp-info-item__value">{{ job.order_qty|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Delivery Date</div><div class="erp-info-item__value">{{ job.delivery_date|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Wastage Sheets</div><div class="erp-info-item__value">{{ job.wastage_sheets|default:'-' }}</div></div>
@@ -71,10 +179,10 @@
                 <div class="erp-info-item"><div class="erp-info-item__label">Repeat Flag</div><div class="erp-info-item__value">{{ job.repeat_flag|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Plan Month</div><div class="erp-info-item__value">{{ job.plan_month|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Print Pcs</div><div class="erp-info-item__value">{{ job.print_pcs|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet UPS</div><div class="erp-info-item__value">{{ job.purchase_sheet_ups|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheets Required</div><div class="erp-info-item__value">{{ job.purchase_sheet_required_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Actual Sheets Required</div><div class="erp-info-item__value">{{ job.actual_sheet_required_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value">{{ job.pkt_value|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet UPS</div><div class="erp-info-item__value">{{ job.purchase_sheet_ups|default:'-' }}{% if master_sync_preview and master_sync_preview.purchase_sheet_ups %} <span class="erp-muted">→ {{ master_sync_preview.purchase_sheet_ups }}</span>{% endif %}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheets Required</div><div class="erp-info-item__value">{{ job.purchase_sheet_required_display|default:'-' }}{% if master_sync_preview and master_sync_preview.purchase_sheets %} <span class="erp-muted">→ {{ master_sync_preview.purchase_sheets }}</span>{% endif %}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Actual Sheets Required</div><div class="erp-info-item__value">{{ job.actual_sheet_required_display|default:'-' }}{% if master_sync_preview and master_sync_preview.total_sheets %} <span class="erp-muted">→ {{ master_sync_preview.total_sheets }}</span>{% endif %}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value">{{ job.pkt_value|default:'-' }}{% if master_sync_preview and master_sync_preview.pkt_value %} <span class="erp-muted">→ {{ master_sync_preview.pkt_value }}</span>{% endif %}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Unit Cost</div><div class="erp-info-item__value">{{ job.unit_cost|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Stock Bag</div><div class="erp-info-item__value">{{ job.stock_bag|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Stock Qty</div><div class="erp-info-item__value">{{ job.stock_qty|default:'-' }}</div></div>

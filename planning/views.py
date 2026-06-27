@@ -63,7 +63,16 @@ from .services import (
     _history_repeat_new_counts, _sync_repeat_jobs_from_po,
     _sync_new_jobs_for_approved_sku, _merge_po_items_for_existing_po,
     _collect_pending_sku_rows, _normalize_po_number,
-    trigger_plate_request_for_planning_job
+    trigger_plate_request_for_planning_job,
+    apply_master_data_sync,
+    can_request_master_data_sync,
+    dismiss_master_data_sync_request,
+    get_master_data_field_diffs,
+    job_has_master_data_mismatch,
+    job_requires_reopen_for_master_sync,
+    preview_master_sync_calculations,
+    reopen_and_apply_master_data_sync,
+    request_master_data_sync,
 )
 from .models import (
     PLANNING_QC_GATE_STATUSES,
@@ -1468,6 +1477,33 @@ def planning_job_detail(request, job_id):
     can_print_from_card = job_card.can_print_job_card() if job_card else False
 
     po_approval_date_display = _get_po_approval_date_for_job(job)
+    profile = getattr(request.user, 'profile', None)
+    user_can_approve_planning = profile.can_approve_planning() if profile else False
+    master_data_diffs = get_master_data_field_diffs(job)
+    master_data_mismatch = bool(master_data_diffs)
+    master_sync_preview = preview_master_sync_calculations(job) if master_data_mismatch else None
+    requires_reopen_for_sync = job_requires_reopen_for_master_sync(job) if master_data_mismatch else False
+    can_request_master_sync = can_request_master_data_sync(job) and not job.master_sync_requested
+    can_apply_master_sync = (
+        (user_can_approve_planning or _user_is_admin(request.user))
+        and job.master_sync_requested
+        and not job.master_data_sync_blocked()
+        and not requires_reopen_for_sync
+    )
+    can_reopen_and_apply_master_sync = (
+        (user_can_approve_planning or _user_is_admin(request.user))
+        and master_data_mismatch
+        and not job.master_data_sync_blocked()
+        and requires_reopen_for_sync
+    )
+    can_dismiss_master_sync = (
+        job.master_sync_requested
+        and (
+            _user_is_admin(request.user)
+            or user_can_approve_planning
+            or job.master_sync_requested_by_id == request.user.id
+        )
+    )
 
     return render(
         request,
@@ -1485,8 +1521,106 @@ def planning_job_detail(request, job_id):
             'can_print_job_card': can_print_from_job or can_print_from_card,
             'can_admin_delete': _user_is_admin(request.user),
             'user_can_plan': getattr(getattr(request.user, 'profile', None), 'can_plan', lambda: False)(),
+            'approved_recipe': job.approved_sku_recipe,
+            'master_data_diffs': master_data_diffs,
+            'master_data_mismatch': master_data_mismatch,
+            'master_sync_preview': master_sync_preview,
+            'requires_reopen_for_sync': requires_reopen_for_sync,
+            'can_request_master_sync': can_request_master_sync,
+            'can_apply_master_sync': can_apply_master_sync,
+            'can_reopen_and_apply_master_sync': can_reopen_and_apply_master_sync,
+            'can_dismiss_master_sync': can_dismiss_master_sync,
+            'user_can_approve_planning': user_can_approve_planning,
         },
     )
+
+
+@login_required
+@permission_required('can_plan')
+@transaction.atomic
+def planning_job_master_sync(request, job_id):
+    if request.method != 'POST':
+        return redirect('planning:job_detail', job_id=job_id)
+
+    job = get_object_or_404(PlanningJob, id=job_id)
+    action = (request.POST.get('action') or '').strip()
+    reason = (request.POST.get('reason') or '').strip()
+    next_url = (request.POST.get('next') or '').strip()
+    profile = getattr(request.user, 'profile', None)
+    user_can_approve_planning = profile.can_approve_planning() if profile else False
+
+    def _redirect():
+        if next_url:
+            return redirect(next_url)
+        return redirect('planning:job_detail', job_id=job.id)
+
+    try:
+        if action == 'request_master_sync':
+            request_master_data_sync(job, actor=request.user, reason=reason)
+            messages.success(
+                request,
+                f'Master data sync requested for {job.jc_number}. An approver can apply the update from this job or the Approval Queue.',
+            )
+        elif action == 'apply_master_sync':
+            if not (user_can_approve_planning or _user_is_admin(request.user)):
+                messages.error(request, 'You do not have permission to apply master data sync.')
+                return _redirect()
+            if not job.master_sync_requested:
+                messages.error(request, 'No pending master data sync request exists for this job.')
+                return _redirect()
+            if job_requires_reopen_for_master_sync(job):
+                messages.error(
+                    request,
+                    'This job card is locked. Use Reopen & Apply Master Sync instead.',
+                )
+                return _redirect()
+            job, result = apply_master_data_sync(job, actor=request.user)
+            updated_fields = result.get('updated_fields') or []
+            if updated_fields:
+                messages.success(
+                    request,
+                    f'{job.jc_number} synced with approved SKU master ({len(updated_fields)} field(s) updated).',
+                )
+            else:
+                messages.info(request, f'{job.jc_number} already matches approved SKU master data.')
+            if updated_fields and not result.get('job_card_refreshed'):
+                messages.warning(
+                    request,
+                    'Planning job was updated but the linked job card is locked. Reopen the job card workflow if sheet values on the card must change.',
+                )
+        elif action == 'reopen_and_apply_master_sync':
+            if not (user_can_approve_planning or _user_is_admin(request.user)):
+                messages.error(request, 'You do not have permission to reopen and apply master data sync.')
+                return _redirect()
+            job, result = reopen_and_apply_master_data_sync(
+                job,
+                actor=request.user,
+                reason=reason or 'Reopen and apply SKU master sync',
+            )
+            updated_fields = result.get('updated_fields') or []
+            if updated_fields:
+                messages.success(
+                    request,
+                    f'{job.jc_number} reopened and synced with approved SKU master ({len(updated_fields)} field(s) updated). Re-submit through QC when ready.',
+                )
+            else:
+                messages.info(request, f'{job.jc_number} already matches approved SKU master data.')
+        elif action == 'dismiss_master_sync':
+            if not (
+                _user_is_admin(request.user)
+                or user_can_approve_planning
+                or job.master_sync_requested_by_id == request.user.id
+            ):
+                messages.error(request, 'You do not have permission to dismiss this master sync request.')
+                return _redirect()
+            dismiss_master_data_sync_request(job, actor=request.user)
+            messages.info(request, f'Master data sync request for {job.jc_number} was dismissed.')
+        else:
+            messages.error(request, 'Unknown master data sync action.')
+    except ValueError as exc:
+        messages.error(request, str(exc))
+
+    return _redirect()
 
 
 @login_required
@@ -1576,6 +1710,7 @@ def planning_job_edit(request, job_id):
         )
 
     po_approval_date_display = _get_po_approval_date_for_job(job)
+    master_data_diffs = get_master_data_field_diffs(job)
 
     return render(
         request,
@@ -1587,6 +1722,8 @@ def planning_job_edit(request, job_id):
             'qc_recipe_warning': qc_recipe_warning,
             'can_admin_delete': _user_is_admin(request.user),
             'po_approval_date_display': po_approval_date_display,
+            'master_data_diffs': master_data_diffs,
+            'master_data_mismatch': bool(master_data_diffs),
         },
     )
 
@@ -1991,6 +2128,10 @@ def approval_queue(request):
     user_can_release = user_can_approve_pm or (profile.can_plan() if profile else False)
 
     change_requests = PlanningJob.objects.filter(is_active=True, change_request_pending=True).order_by('-change_requested_at')
+    master_sync_requests = PlanningJob.objects.filter(
+        is_active=True,
+        master_sync_requested=True,
+    ).select_related('master_sync_requested_by').order_by('-master_sync_requested_at')
     split_requests = _pending_po_split_requests()
 
     if request.method == 'POST':
@@ -2042,6 +2183,57 @@ def approval_queue(request):
                 planning_job.change_requested_at = None
                 planning_job.save(update_fields=['change_request_pending', 'change_request_reason', 'change_requested_by', 'change_requested_at', 'updated_at'])
                 messages.success(request, f'Change request for {planning_job.jc_number} has been resolved.')
+            except (ValueError, Http404):
+                messages.error(request, 'Invalid planning job selected.')
+            return redirect('planning:approval_queue')
+
+        if action == 'apply_master_sync':
+            if not user_can_approve_planning and not _user_is_admin(request.user):
+                messages.error(request, 'You do not have permission to apply master data sync.')
+                return redirect('planning:approval_queue')
+            try:
+                planning_job = _get_planning_job()
+                if not planning_job.master_sync_requested:
+                    messages.error(request, f'No pending master sync request for {planning_job.jc_number}.')
+                    return redirect('planning:approval_queue')
+                if job_requires_reopen_for_master_sync(planning_job):
+                    messages.error(
+                        request,
+                        f'{planning_job.jc_number} is locked. Use Reopen & Apply from the job detail page.',
+                    )
+                    return redirect('planning:approval_queue')
+                planning_job, result = apply_master_data_sync(planning_job, actor=request.user)
+                updated_fields = result.get('updated_fields') or []
+                if updated_fields:
+                    messages.success(
+                        request,
+                        f'{planning_job.jc_number} synced with approved SKU master ({len(updated_fields)} field(s) updated).',
+                    )
+                else:
+                    messages.info(request, f'{planning_job.jc_number} already matches approved SKU master data.')
+                if updated_fields and not result.get('job_card_refreshed'):
+                    messages.warning(
+                        request,
+                        f'{planning_job.jc_number}: job card is locked; reopen workflow if the printed card must change.',
+                    )
+            except ValueError as exc:
+                messages.error(request, str(exc))
+            except (ValueError, Http404):
+                messages.error(request, 'Invalid planning job selected.')
+            return redirect('planning:approval_queue')
+
+        if action == 'dismiss_master_sync':
+            try:
+                planning_job = _get_planning_job()
+                if not (
+                    _user_is_admin(request.user)
+                    or user_can_approve_planning
+                    or planning_job.master_sync_requested_by_id == request.user.id
+                ):
+                    messages.error(request, 'You do not have permission to dismiss this master sync request.')
+                    return redirect('planning:approval_queue')
+                dismiss_master_data_sync_request(planning_job, actor=request.user)
+                messages.info(request, f'Master data sync request for {planning_job.jc_number} was dismissed.')
             except (ValueError, Http404):
                 messages.error(request, 'Invalid planning job selected.')
             return redirect('planning:approval_queue')
@@ -2178,12 +2370,17 @@ def approval_queue(request):
         sku_reviewed_count = 0
         sku_approved_count = 0
 
+    for job in master_sync_requests:
+        job.master_data_diffs = get_master_data_field_diffs(job)
+        job.requires_reopen_for_sync = job_requires_reopen_for_master_sync(job)
+
     context = {
         'planning_jobs': planning_jobs,
         'qc_jobs': qc_jobs,
         'pm_jobs': pm_jobs,
         'release_jobs': release_jobs,
         'change_requests': change_requests,
+        'master_sync_requests': master_sync_requests,
         'split_requests': split_requests,
         'queue_q': queue_q,
         'pending_qc_jobs_count': pending_qc_jobs_count,

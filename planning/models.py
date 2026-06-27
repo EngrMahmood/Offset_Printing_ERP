@@ -120,6 +120,25 @@ class PlanningJob(models.Model):
     )
     change_requested_at = models.DateTimeField(null=True, blank=True)
 
+    master_sync_requested = models.BooleanField(default=False)
+    master_sync_reason = models.TextField(blank=True)
+    master_sync_requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planning_jobs_master_sync_requested',
+    )
+    master_sync_requested_at = models.DateTimeField(null=True, blank=True)
+    master_sync_applied_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planning_jobs_master_sync_applied',
+    )
+    master_sync_applied_at = models.DateTimeField(null=True, blank=True)
+
     rejected_qty = models.PositiveIntegerField(null=True, blank=True)
     balance_qty = models.PositiveIntegerField(null=True, blank=True)
     destination = models.CharField(max_length=120, blank=True)
@@ -274,6 +293,19 @@ class PlanningJob(models.Model):
         return SkuRecipe.objects.filter(sku__iexact=self.sku).order_by('-updated_at').first()
 
     @property
+    def approved_sku_recipe(self):
+        if not (self.sku or '').strip():
+            return None
+        return SkuRecipe.objects.filter(
+            sku__iexact=self.sku,
+            is_active=True,
+            master_data_status='approved',
+        ).first()
+
+    def master_data_sync_blocked(self):
+        return self.workflow_status == 'completed'
+
+    @property
     def awc_no_display(self):
         recipe = self.sku_recipe
         if recipe and (recipe.awc_no or '').strip():
@@ -370,15 +402,17 @@ class PlanningJob(models.Model):
 
     @property
     def purchase_sheet_required_display(self):
-        if self.purchase_sheet_required is not None:
-            return self.purchase_sheet_required
-        return self.calculated_purchase_sheet_required
+        calculated = self.calculated_purchase_sheet_required
+        if calculated is not None:
+            return calculated
+        return self.purchase_sheet_required
 
     @property
     def actual_sheet_required_display(self):
-        if self.actual_sheet_required is not None:
-            return self.actual_sheet_required
-        return self.calculated_sheets_required
+        calculated = self.calculated_sheets_required
+        if calculated is not None:
+            return calculated
+        return self.actual_sheet_required
 
     @property
     def number_of_colors(self):

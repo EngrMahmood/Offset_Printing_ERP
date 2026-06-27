@@ -12,6 +12,12 @@
 
 {% block content %}
 <div class="erp-page-stack">
+    {% if master_data_mismatch %}
+    <div class="erp-alert erp-alert-warning">
+        This JC still uses older UPS/sheet values than the approved SKU master.
+        <a href="{% url 'planning:job_detail' job.id %}">Open job detail</a> to request a master data sync for this JC only.
+    </div>
+    {% endif %}
     <section class="erp-section-shell">
         <div class="erp-card-header">
             <div class="erp-card-title-stack">
