@@ -173,6 +173,56 @@
 
     {% include 'theme/qc_context_nav.html' %}
 
+    {% elif app == 'supply_chain' and nav.can_access_supply_chain %}
+    <div class="erp-subnav">
+        <a href="{% url 'supply_chain:dashboard' %}"
+           class="erp-subnav-link {% if url == 'home' or url == 'dashboard' %}is-active{% endif %}">
+            Dashboard
+        </a>
+        <a href="{% url 'supply_chain:items' %}"
+           class="erp-subnav-link {% if url == 'items' or url == 'item_edit' %}is-active{% endif %}">
+            Item Master
+        </a>
+        <a href="{% url 'supply_chain:monthly_demand' %}"
+           class="erp-subnav-link {% if url == 'monthly_demand' %}is-active{% endif %}">
+            Monthly Demand
+        </a>
+        <a href="{% url 'supply_chain:opening' %}"
+           class="erp-subnav-link {% if url == 'opening' %}is-active{% endif %}">
+            Opening
+        </a>
+        <a href="{% url 'supply_chain:receiving' %}"
+           class="erp-subnav-link {% if url == 'receiving' %}is-active{% endif %}">
+            Receiving
+        </a>
+        <a href="{% url 'supply_chain:issuance' %}"
+           class="erp-subnav-link {% if url == 'issuance' %}is-active{% endif %}">
+            Issuance
+        </a>
+        <a href="{% url 'supply_chain:adjustment' %}"
+           class="erp-subnav-link {% if url == 'adjustment' %}is-active{% endif %}">
+            Adjustment
+        </a>
+        <a href="{% url 'supply_chain:consumption_reports' %}"
+           class="erp-subnav-link {% if url == 'consumption_reports' %}is-active{% endif %}">
+            Reports
+        </a>
+        <a href="{% url 'supply_chain:kpi_dashboard' %}"
+           class="erp-subnav-link {% if url == 'kpi_dashboard' %}is-active{% endif %}">
+            KPIs
+        </a>
+        <a href="{% url 'supply_chain:jc_links' %}"
+           class="erp-subnav-link {% if url == 'jc_links' %}is-active{% endif %}">
+            JC Links
+        </a>
+        <a href="{% url 'supply_chain:physical_counts' %}"
+           class="erp-subnav-link {% if url == 'physical_counts' %}is-active{% endif %}">
+            Physical Count
+        </a>
+    </div>
+
+    {% include 'theme/supply_chain_context_nav.html' %}
+
     {% elif app == 'migration' and nav.can_access_migration %}
     <div class="erp-subnav">
         <a href="{% url 'migration:dashboard' %}"

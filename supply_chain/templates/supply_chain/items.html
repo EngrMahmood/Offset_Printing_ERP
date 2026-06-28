@@ -1,0 +1,63 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Item Master — Supply Chain{% endblock %}
+{% block header_title %}Supply Chain Item Master{% endblock %}
+{% block header_subtitle %}SKU-level inventory settings linked to core material master.{% endblock %}
+{% block header_actions %}
+    <a href="?export=xlsx" class="erp-btn erp-btn-secondary"><i class="fas fa-file-export"></i> Export Excel</a>
+    <a href="{% url 'supply_chain:dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Master Data</div>
+                    <h3 class="erp-section-title">Inventory Items</h3>
+                    <p class="erp-section-desc">{{ items|length }} item{{ items|length|pluralize }} configured for stock tracking.</p>
+                </div>
+            </div>
+
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Item ID</th>
+                            <th>Item Type</th>
+                            <th>UOM</th>
+                            <th>Sheet Packing/Pcs</th>
+                            <th>Unit Cost</th>
+                            <th>Safety Stock</th>
+                            <th>Max Level</th>
+                            <th>Lead Time</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td><strong>{{ item.item_id|default:'—' }}</strong></td>
+                            <td>{{ item.material.name }}</td>
+                            <td>{{ item.uom }}</td>
+                            <td>{{ item.sheet_packing_pcs }}</td>
+                            <td>{{ item.unit_cost }}</td>
+                            <td>{{ item.safety_stock }}</td>
+                            <td>{{ item.max_stock_level }}</td>
+                            <td>{{ item.lead_time_days }}d</td>
+                            <td>
+                                <a href="{% url 'supply_chain:item_edit' item.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9">No items yet.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

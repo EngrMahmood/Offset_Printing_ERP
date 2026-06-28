@@ -1,0 +1,30 @@
+{% comment %}
+  Layer 3: Supply Chain contextual navigation for stock transaction screens.
+{% endcomment %}
+{% with url=request.resolver_match.url_name %}
+{% if url == 'opening' or url == 'receiving' or url == 'issuance' or url == 'adjustment' or url == 'monthly_demand' %}
+<div class="erp-subnav erp-subnav-context" aria-label="Supply chain stock context navigation">
+    <span class="erp-subnav-context-label">Stock Context</span>
+    <a href="{% url 'supply_chain:opening' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'opening' %}is-active{% endif %}">
+        Opening
+    </a>
+    <a href="{% url 'supply_chain:receiving' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'receiving' %}is-active{% endif %}">
+        Receiving
+    </a>
+    <a href="{% url 'supply_chain:issuance' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'issuance' %}is-active{% endif %}">
+        Issuance
+    </a>
+    <a href="{% url 'supply_chain:adjustment' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'adjustment' %}is-active{% endif %}">
+        Adjustment
+    </a>
+    <a href="{% url 'supply_chain:monthly_demand' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'monthly_demand' %}is-active{% endif %}">
+        Monthly Demand
+    </a>
+</div>
+{% endif %}
+{% endwith %}

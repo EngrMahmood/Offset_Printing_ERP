@@ -1,0 +1,136 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Inventory KPIs — Supply Chain{% endblock %}
+{% block header_title %}Inventory KPI Engine{% endblock %}
+{% block header_subtitle %}ABC, FSN, reorder point, turnover, and stock movement alerts per item.{% endblock %}
+{% block header_actions %}
+    <a href="?export=xlsx" class="erp-btn erp-btn-primary"><i class="fas fa-file-export"></i> Export Excel</a>
+    <a href="{% url 'supply_chain:dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="erp-info-grid">
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Total Inventory Value</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.total_inventory_value }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">ABC (A / B / C)</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.abc_a }} / {{ kpi_summary.abc_b }} / {{ kpi_summary.abc_c }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">FSN (Fast / Slow / Non)</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.fsn_fast }} / {{ kpi_summary.fsn_slow }} / {{ kpi_summary.fsn_non_moving }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Avg Inventory Accuracy</div>
+                    <div class="erp-info-item__value">{% if kpi_summary.avg_inventory_accuracy is not None %}{{ kpi_summary.avg_inventory_accuracy }}%{% else %}—{% endif %}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Items Physically Counted</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.items_with_physical_count }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-info-grid">
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Stockout</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.stockout }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Reorder</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.reorder }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Safety Stock</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.safety_stock }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Overstock</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.overstock }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Dead Stock</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.dead_stock }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Slow Moving</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.slow_moving }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">KPI Reference</div>
+                    <h3 class="erp-section-title">Classification &amp; Formula Logic</h3>
+                </div>
+            </div>
+            <div class="erp-info-grid">
+                <div class="erp-info-item"><div class="erp-info-item__label">ABC</div><div class="erp-info-item__value">Issuance × Unit Cost — top 70% A, next 20% B, last 10% C</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">FSN</div><div class="erp-info-item__value">Fast ≤30d, Slow 31–90d, Non-moving &gt;90d since last issuance</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">ROP</div><div class="erp-info-item__value">(Daily Demand × Lead Time) + Safety Stock</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Turnover</div><div class="erp-info-item__value">Total Issued ÷ Average Inventory</div></div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Item KPI Matrix</h3>
+                </div>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Item ID</th>
+                            <th>Item Type</th>
+                            <th>ABC</th>
+                            <th>FSN</th>
+                            <th>Closing</th>
+                            <th>ROP</th>
+                            <th>Inv. Value</th>
+                            <th>Turnover</th>
+                            <th>Annual Cons.</th>
+                            <th>Accuracy %</th>
+                            <th>Alerts</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in kpi_rows %}
+                        <tr>
+                            <td><strong>{{ row.item.item_id|default:'—' }}</strong></td>
+                            <td>{{ row.item.material.name }}</td>
+                            <td><span class="erp-badge {% if row.abc_class == 'A' %}erp-badge-approved{% elif row.abc_class == 'B' %}erp-badge-pending{% else %}erp-badge-archived{% endif %}">{{ row.abc_class }}</span></td>
+                            <td><span class="erp-badge {% if row.fsn_class == 'Fast' %}erp-badge-approved{% elif row.fsn_class == 'Slow' %}erp-badge-pending{% else %}erp-badge-rejected{% endif %}">{{ row.fsn_class }}</span></td>
+                            <td>{{ row.closing }}</td>
+                            <td>{{ row.reorder_point }}</td>
+                            <td>{{ row.inventory_value }}</td>
+                            <td>{{ row.inventory_turnover }}</td>
+                            <td>{{ row.annual_consumption_value }}</td>
+                            <td>{% if row.inventory_accuracy is not None %}{{ row.inventory_accuracy }}%{% else %}—{% endif %}</td>
+                            <td>
+                                {% if row.stockout %}<span class="erp-badge erp-badge-rejected">Stockout</span>{% endif %}
+                                {% if row.reorder %}<span class="erp-badge erp-badge-pending">Reorder</span>{% endif %}
+                                {% if row.safety_stock_alert %}<span class="erp-badge erp-badge-warning">Safety</span>{% endif %}
+                                {% if row.overstock %}<span class="erp-badge erp-badge-hold">Overstock</span>{% endif %}
+                                {% if row.dead_stock %}<span class="erp-badge erp-badge-archived">Dead</span>{% endif %}
+                                {% if row.slow_moving %}<span class="erp-badge erp-badge-draft">Slow</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="11">No items configured.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

@@ -1,0 +1,121 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}{{ config.title }} — Supply Chain{% endblock %}
+{% block header_title %}{{ config.title }}{% endblock %}
+{% block header_subtitle %}{{ config.subtitle }}{% endblock %}
+{% block header_actions %}
+    {% if show_jc_sync %}
+    <a href="{% url 'supply_chain:jc_links' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-link"></i> JC Links</a>
+    {% endif %}
+    <a href="?export=xlsx{% if month_filter %}&month={{ month_filter|urlencode }}{% endif %}" class="erp-btn erp-btn-secondary"><i class="fas fa-file-export"></i> Export Excel</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Entry</div>
+                    <h3 class="erp-section-title">Add {{ config.title }} Record</h3>
+                </div>
+            </div>
+            <form method="post" class="erp-form-grid" style="grid-template-columns:repeat(3, minmax(0, 1fr)); gap:12px; align-items:end;">
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                </div>
+                {% endfor %}
+                <div class="erp-actions" style="grid-column:1 / -1;">
+                    <button type="submit" class="erp-btn erp-btn-primary">Save Entry</button>
+                </div>
+            </form>
+        </section>
+
+        {% include 'supply_chain/includes/import_export_panel.html' with import_action='import' %}
+
+        {% if show_jc_sync %}
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Job Card Sync</div>
+                    <h3 class="erp-section-title">Auto-link from Production</h3>
+                    <p class="erp-section-desc">Pull issuance rows from all active production entries (output + waste sheets).</p>
+                </div>
+                <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="action" value="sync_jc">
+                    <button type="submit" class="erp-btn erp-btn-primary"><i class="fas fa-sync"></i> Sync All Job Cards</button>
+                </form>
+            </div>
+        </section>
+        {% endif %}
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">{{ config.title }} History</h3>
+                </div>
+                <form method="get" class="erp-table-filter">
+                    <div class="erp-input-group">
+                        <label class="erp-input-label" for="month">Month filter</label>
+                        <input id="month" name="month" type="text" value="{{ month_filter }}" placeholder="e.g. June 2026" class="erp-input">
+                    </div>
+                    <button type="submit" class="erp-btn erp-btn-secondary">Filter</button>
+                    <a href="{{ page_url }}" class="erp-btn erp-btn-secondary">Reset</a>
+                </form>
+            </div>
+
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Source</th>
+                            <th>Month</th>
+                            <th>Date</th>
+                            <th>GIN / JC</th>
+                            <th>Item ID</th>
+                            <th>Item Type</th>
+                            <th>UOM</th>
+                            <th>Sheet Packing/Pcs</th>
+                            <th>Sheet Qty/Pcs</th>
+                            <th>Pkt/Rim Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for txn in transactions %}
+                        <tr>
+                            <td>
+                                {% if txn.source == 'JOB_CARD' %}
+                                    <span class="erp-badge erp-badge-approved" title="Auto-linked from job card">JC</span>
+                                {% else %}
+                                    <span class="erp-badge erp-badge-draft">Manual</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ txn.month_str|default:'—' }}</td>
+                            <td>{{ txn.date|date:'Y-m-d' }}</td>
+                            <td>
+                                {% if txn.job_card_id %}
+                                    <strong>{{ txn.gin_jc }}</strong>
+                                {% else %}
+                                    {{ txn.gin_jc|default:'—' }}
+                                {% endif %}
+                            </td>
+                            <td>{{ txn.item.item_id|default:'—' }}</td>
+                            <td>{{ txn.item.material.name }}</td>
+                            <td>{{ txn.item.uom }}</td>
+                            <td>{{ txn.item.sheet_packing_pcs }}</td>
+                            <td>{{ txn.sheet_qty_pcs }}</td>
+                            <td>{{ txn.pkt_rim_qty }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="10">No records yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

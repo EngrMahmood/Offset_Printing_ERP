@@ -1,0 +1,81 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Monthly Demand — Supply Chain{% endblock %}
+{% block header_title %}Stock Monthly Demand{% endblock %}
+{% block header_subtitle %}Plan expected monthly consumption by item for reorder and forecast calculations.{% endblock %}
+{% block header_actions %}
+    <a href="?export=xlsx{% if month_filter %}&month={{ month_filter|urlencode }}{% endif %}" class="erp-btn erp-btn-secondary"><i class="fas fa-file-export"></i> Export Excel</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Planning</div>
+                    <h3 class="erp-section-title">Add Monthly Demand</h3>
+                </div>
+            </div>
+            <form method="post" class="erp-form-grid" style="grid-template-columns:repeat(4, minmax(0, 1fr)) auto; gap:12px; align-items:end;">
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                </div>
+                {% endfor %}
+                <button type="submit" class="erp-btn erp-btn-primary">Save</button>
+            </form>
+        </section>
+
+        {% include 'supply_chain/includes/import_export_panel.html' with import_action='import' %}
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Demand Records</h3>
+                </div>
+                <form method="get" class="erp-table-filter">
+                    <div class="erp-input-group">
+                        <label class="erp-input-label" for="month">Month filter</label>
+                        <input id="month" name="month" type="text" value="{{ month_filter }}" placeholder="e.g. June 2026" class="erp-input">
+                    </div>
+                    <button type="submit" class="erp-btn erp-btn-secondary">Filter</button>
+                    <a href="{% url 'supply_chain:monthly_demand' %}" class="erp-btn erp-btn-secondary">Reset</a>
+                </form>
+            </div>
+
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th>Item ID</th>
+                            <th>Item Type</th>
+                            <th>UOM</th>
+                            <th>Sheet Packing/Pcs</th>
+                            <th>Sheet Qty/Pcs</th>
+                            <th>Pkt/Rim Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for demand in demands %}
+                        <tr>
+                            <td>{{ demand.month_str|default:'—' }}</td>
+                            <td>{{ demand.item.item_id|default:'—' }}</td>
+                            <td>{{ demand.item.material.name }}</td>
+                            <td>{{ demand.item.uom }}</td>
+                            <td>{{ demand.item.sheet_packing_pcs }}</td>
+                            <td>{{ demand.sheet_qty_pcs }}</td>
+                            <td>{{ demand.pkt_rim_qty }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7">No monthly demand records yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

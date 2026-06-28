@@ -1,0 +1,30 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Edit Item — {{ item.item_id|default:item.material.name }}{% endblock %}
+{% block header_title %}Edit Item — {{ item.item_id|default:item.material.name }}{% endblock %}
+{% block header_subtitle %}{{ item.material.name }} · inventory thresholds and costing for KPI calculations.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:items' %}" class="erp-btn erp-btn-secondary">Back to Items</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <form method="post" class="erp-form-grid" style="grid-template-columns:1fr 1fr; gap:16px; max-width:720px;">
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="erp-alert erp-alert-danger">{{ field.errors|striptags }}</div>{% endif %}
+                </div>
+                {% endfor %}
+                <div class="erp-actions" style="grid-column:1 / -1;">
+                    <button type="submit" class="erp-btn erp-btn-primary">Save Item</button>
+                    <a href="{% url 'supply_chain:items' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </section>
+    </div>
+{% endblock %}

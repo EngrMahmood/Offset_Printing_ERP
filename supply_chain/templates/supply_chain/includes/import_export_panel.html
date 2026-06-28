@@ -1,0 +1,18 @@
+<section class="erp-section-shell">
+    <div class="erp-card-header">
+        <div class="erp-card-title-stack">
+            <div class="erp-eyebrow">Data Transfer</div>
+            <h3 class="erp-section-title">Excel Import</h3>
+            <p class="erp-section-desc">Upload CSV or XLSX using the same column layout as export.</p>
+        </div>
+    </div>
+    <form method="post" enctype="multipart/form-data" class="erp-form-grid" style="grid-template-columns:1fr auto; gap:12px; align-items:end; max-width:640px;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="{{ import_action|default:'import' }}">
+        <div class="erp-input-group">
+            <label class="erp-input-label" for="{{ upload_form.upload_file.id_for_label }}">{{ upload_form.upload_file.label }}</label>
+            {{ upload_form.upload_file }}
+        </div>
+        <button type="submit" class="erp-btn erp-btn-primary"><i class="fas fa-file-import"></i> Import</button>
+    </form>
+</section>

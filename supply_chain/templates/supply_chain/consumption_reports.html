@@ -1,0 +1,143 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Consumption Reports — Supply Chain{% endblock %}
+{% block header_title %}Consumption Reports{% endblock %}
+{% block header_subtitle %}Issuance-based consumption grouped by item/month or month/item with Excel download.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(4, minmax(0, 1fr)) auto; gap:12px; align-items:end;">
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="month">Month</label>
+                    <input id="month" name="month" type="text" value="{{ filters.month }}" placeholder="e.g. June 2026" class="erp-input">
+                </div>
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="from_date">From date</label>
+                    <input id="from_date" name="from_date" type="date" value="{{ filters.from_date }}" class="erp-input">
+                </div>
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="to_date">To date</label>
+                    <input id="to_date" name="to_date" type="date" value="{{ filters.to_date }}" class="erp-input">
+                </div>
+                <div class="erp-actions">
+                    <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                    <a href="{% url 'supply_chain:consumption_reports' %}" class="erp-btn erp-btn-secondary">Reset</a>
+                </div>
+            </form>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-info-grid">
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Total Sheet Qty/Pcs</div>
+                    <div class="erp-info-item__value">{{ totals.sheet_qty_pcs }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Total Pkt/Rim Qty</div>
+                    <div class="erp-info-item__value">{{ totals.pkt_rim_qty }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Total Consumption Value</div>
+                    <div class="erp-info-item__value">{{ totals.consumption_value }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Report A</div>
+                    <h3 class="erp-section-title">Item-wise Monthly Consumption</h3>
+                    <p class="erp-section-desc">Each item with monthly issuance totals (Sheet Qty/Pcs × Unit Cost).</p>
+                </div>
+                <a href="?export=item_wise{% if filters.month %}&month={{ filters.month|urlencode }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}"
+                   class="erp-btn erp-btn-primary">
+                    <i class="fas fa-file-export"></i> Download Excel
+                </a>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Item ID</th>
+                            <th>Item Type</th>
+                            <th>UOM</th>
+                            <th>Sheet Packing/Pcs</th>
+                            <th>Month</th>
+                            <th>Sheet Qty/Pcs</th>
+                            <th>Pkt/Rim Qty</th>
+                            <th>Consumption Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in item_wise_rows %}
+                        <tr>
+                            <td>{{ row.item_id|default:'—' }}</td>
+                            <td>{{ row.item_type }}</td>
+                            <td>{{ row.uom }}</td>
+                            <td>{{ row.sheet_packing_pcs }}</td>
+                            <td>{{ row.month }}</td>
+                            <td>{{ row.sheet_qty_pcs }}</td>
+                            <td>{{ row.pkt_rim_qty }}</td>
+                            <td>{{ row.consumption_value }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8">No issuance records for the selected filters.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Report B</div>
+                    <h3 class="erp-section-title">Month-wise Item Consumption</h3>
+                    <p class="erp-section-desc">Each month with item-level issuance breakdown.</p>
+                </div>
+                <a href="?export=month_wise{% if filters.month %}&month={{ filters.month|urlencode }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}"
+                   class="erp-btn erp-btn-primary">
+                    <i class="fas fa-file-export"></i> Download Excel
+                </a>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Month</th>
+                            <th>Item ID</th>
+                            <th>Item Type</th>
+                            <th>UOM</th>
+                            <th>Sheet Packing/Pcs</th>
+                            <th>Sheet Qty/Pcs</th>
+                            <th>Pkt/Rim Qty</th>
+                            <th>Consumption Value</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in month_wise_rows %}
+                        <tr>
+                            <td>{{ row.month }}</td>
+                            <td>{{ row.item_id|default:'—' }}</td>
+                            <td>{{ row.item_type }}</td>
+                            <td>{{ row.uom }}</td>
+                            <td>{{ row.sheet_packing_pcs }}</td>
+                            <td>{{ row.sheet_qty_pcs }}</td>
+                            <td>{{ row.pkt_rim_qty }}</td>
+                            <td>{{ row.consumption_value }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8">No issuance records for the selected filters.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

@@ -7,7 +7,7 @@ _APP_LABELS = {
     'qc': 'QC',
     'planning': 'Planning',
     'core': 'Core',
-    'production': 'Production',
+    'supply_chain': 'Supply Chain',
     'theme': 'Theme',
 }
 
@@ -31,7 +31,17 @@ _URL_LABELS = {
     'planning_archived_jobs': 'Archived Jobs',
     'scan': 'Production Scan',
     'planning_welcome': 'Overview',
-    'home': 'Home',
+    'monthly_demand': 'Monthly Demand',
+    'opening': 'Stock Opening',
+    'receiving': 'Stock Receiving',
+    'issuance': 'Stock Issuance',
+    'adjustment': 'Stock Adjustment',
+    'items': 'Item Master',
+    'item_edit': 'Edit Item',
+    'consumption_reports': 'Consumption Reports',
+    'kpi_dashboard': 'Inventory KPIs',
+    'jc_links': 'Job Card Links',
+    'physical_counts': 'Physical Stock Count',
 }
 
 

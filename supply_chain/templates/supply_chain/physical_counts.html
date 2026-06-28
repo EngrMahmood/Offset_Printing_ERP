@@ -1,0 +1,152 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Physical Stock Count — Supply Chain{% endblock %}
+{% block header_title %}Physical Stock Count{% endblock %}
+{% block header_subtitle %}Record physical counts and measure inventory accuracy against system closing stock.{% endblock %}
+{% block header_actions %}
+    <a href="?export=xlsx" class="erp-btn erp-btn-secondary"><i class="fas fa-file-export"></i> Export History</a>
+    <a href="{% url 'supply_chain:kpi_dashboard' %}" class="erp-btn erp-btn-secondary">KPIs</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="erp-info-grid">
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Avg Inventory Accuracy</div>
+                    <div class="erp-info-item__value">{% if summary.avg_accuracy is not None %}{{ summary.avg_accuracy }}%{% else %}—{% endif %}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Items with Latest Count</div>
+                    <div class="erp-info-item__value">{{ summary.items_counted }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Count Records</div>
+                    <div class="erp-info-item__value">{{ summary.history_count }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Formula</div>
+                    <h3 class="erp-section-title">Inventory Accuracy</h3>
+                    <p class="erp-section-desc">(Physical Stock ÷ System Stock) × 100 — system stock is the closing balance at count time.</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Bulk Count Session</h3>
+                    <p class="erp-section-desc">Enter physical quantities for all items in one pass.</p>
+                </div>
+            </div>
+            <form method="post">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="bulk">
+                <div class="erp-form-grid" style="grid-template-columns:240px auto; gap:12px; align-items:end; margin-bottom:16px;">
+                    <div class="erp-input-group">
+                        <label class="erp-input-label" for="{{ bulk_form.count_date.id_for_label }}">Count date</label>
+                        {{ bulk_form.count_date }}
+                    </div>
+                    <button type="submit" class="erp-btn erp-btn-primary">Save Bulk Count</button>
+                </div>
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th>Item ID</th>
+                                <th>Item Type</th>
+                                <th>System Stock</th>
+                                <th>Latest Accuracy</th>
+                                <th>Physical Count</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in count_rows %}
+                            <tr>
+                                <td><strong>{{ row.item.item_id|default:'—' }}</strong></td>
+                                <td>{{ row.item.material.name }}</td>
+                                <td>{{ row.system_sheet_qty }}</td>
+                                <td>{% if row.latest_accuracy is not None %}{{ row.latest_accuracy }}%{% else %}—{% endif %}</td>
+                                <td>
+                                    <input type="number" name="physical_{{ row.item.pk }}" class="erp-input" placeholder="Physical qty" min="0">
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="5">No supply chain items configured.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Single Item Count</h3>
+                </div>
+            </div>
+            <form method="post" class="erp-form-grid" style="grid-template-columns:repeat(5, minmax(0, 1fr)) auto; gap:12px; align-items:end;">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="single">
+                {% for field in form %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                </div>
+                {% endfor %}
+                <button type="submit" class="erp-btn erp-btn-secondary">Save</button>
+            </form>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Count History</h3>
+                </div>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Item ID</th>
+                            <th>Item Type</th>
+                            <th>Physical</th>
+                            <th>System</th>
+                            <th>Variance</th>
+                            <th>Accuracy %</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for count in history %}
+                        <tr>
+                            <td>{{ count.count_date|date:'Y-m-d' }}</td>
+                            <td>{{ count.item.item_id|default:'—' }}</td>
+                            <td>{{ count.item.material.name }}</td>
+                            <td>{{ count.physical_sheet_qty }}</td>
+                            <td>{{ count.system_sheet_qty }}</td>
+                            <td>{{ count.variance }}</td>
+                            <td>
+                                <span class="erp-badge {% if count.accuracy_percent >= 95 %}erp-badge-approved{% elif count.accuracy_percent >= 85 %}erp-badge-pending{% else %}erp-badge-rejected{% endif %}">
+                                    {{ count.accuracy_percent }}%
+                                </span>
+                            </td>
+                            <td>{{ count.notes|default:'—' }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8">No physical counts recorded yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

@@ -1,81 +1,118 @@
-{% extends "base.html" %}
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
 
-{% block title %}Supply Chain Dashboard{% endblock %}
+{% block title %}Supply Chain Dashboard — Offset Printing ERP{% endblock %}
+{% block header_title %}Supply Chain Dashboard{% endblock %}
+{% block header_subtitle %}Stock visibility with KPI-driven alerts across opening, receiving, issuance, and closing balances.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:kpi_dashboard' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-chart-pie"></i> KPI Engine</a>
+    <a href="{% url 'supply_chain:monthly_demand' %}" class="erp-btn erp-btn-primary"><i class="fas fa-chart-line"></i> Monthly Demand</a>
+{% endblock %}
 
 {% block content %}
-<div class="container-fluid py-4">
-    <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
-        <h1 class="h2">Supply Chain Dashboard</h1>
-        <div class="btn-toolbar mb-2 mb-md-0">
-            <div class="btn-group me-2">
-                <button type="button" class="btn btn-sm btn-outline-secondary">Import Data</button>
-                <button type="button" class="btn btn-sm btn-outline-secondary">Export Data</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- KPIs / Alerts Legend -->
-    <div class="row mb-4">
-        <div class="col-12">
-            <div class="card">
-                <div class="card-body">
-                    <h5 class="card-title">Alert Legend</h5>
-                    <span class="badge bg-danger me-2">Stockout</span>
-                    <span class="badge bg-warning text-dark me-2">Reorder Alert</span>
-                    <span class="badge bg-primary me-2">Overstock</span>
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="erp-info-grid">
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Items Tracked</div>
+                    <div class="erp-info-item__value">{{ dashboard_data|length }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Inventory Value</div>
+                    <div class="erp-info-item__value">{{ kpi_summary.total_inventory_value }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Stockout</div>
+                    <div class="erp-info-item__value">{{ alert_counts.stockout }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Reorder</div>
+                    <div class="erp-info-item__value">{{ alert_counts.reorder }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Safety Stock</div>
+                    <div class="erp-info-item__value">{{ alert_counts.safety_stock }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Overstock</div>
+                    <div class="erp-info-item__value">{{ alert_counts.overstock }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Dead Stock</div>
+                    <div class="erp-info-item__value">{{ alert_counts.dead_stock }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Slow Moving</div>
+                    <div class="erp-info-item__value">{{ alert_counts.slow_moving }}</div>
                 </div>
             </div>
-        </div>
-    </div>
+        </section>
 
-    <!-- Main Data Table -->
-    <div class="table-responsive">
-        <table class="table table-striped table-hover table-sm">
-            <thead>
-                <tr>
-                    <th>Item ID</th>
-                    <th>Item Type</th>
-                    <th>UOM</th>
-                    <th>Monthly Demand</th>
-                    <th>Opening</th>
-                    <th>Receiving</th>
-                    <th>Issuance</th>
-                    <th>Adjustment</th>
-                    <th>Closing Stock</th>
-                    <th>Alerts</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for row in dashboard_data %}
-                <tr>
-                    <td>{{ row.item.item_id|default_if_none:"N/A" }}</td>
-                    <td>{{ row.item.material.name }}</td>
-                    <td>{{ row.item.uom }}</td>
-                    <td>{{ row.monthly_demand }}</td>
-                    <td>{{ row.opening }}</td>
-                    <td>{{ row.receiving }}</td>
-                    <td>{{ row.issuance }}</td>
-                    <td>{{ row.adjustment }}</td>
-                    <td class="fw-bold">{{ row.closing }}</td>
-                    <td>
-                        {% if row.stockout %}
-                            <span class="badge bg-danger" title="Stockout"><i class="bi bi-exclamation-octagon"></i></span>
-                        {% endif %}
-                        {% if row.reorder %}
-                            <span class="badge bg-warning text-dark" title="Reorder"><i class="bi bi-exclamation-triangle"></i></span>
-                        {% endif %}
-                        {% if row.overstock %}
-                            <span class="badge bg-primary" title="Overstock"><i class="bi bi-arrow-up-circle"></i></span>
-                        {% endif %}
-                    </td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="10" class="text-center py-4">No supply chain items found.</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Inventory</div>
+                    <h3 class="erp-section-title">Stock Position</h3>
+                    <p class="erp-section-desc">Closing stock = Opening + Receiving − Issuance + Adjustment</p>
+                </div>
+            </div>
+
+            <div class="erp-component erp-component-badges" style="margin-bottom:12px;">
+                <span class="erp-badge erp-badge-rejected">Stockout</span>
+                <span class="erp-badge erp-badge-pending">Reorder</span>
+                <span class="erp-badge erp-badge-warning">Safety Stock</span>
+                <span class="erp-badge erp-badge-hold">Overstock</span>
+                <span class="erp-badge erp-badge-archived">Dead Stock</span>
+                <span class="erp-badge erp-badge-draft">Slow Moving</span>
+            </div>
+
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Sr</th>
+                            <th>Item ID</th>
+                            <th>Item Type</th>
+                            <th>ABC</th>
+                            <th>FSN</th>
+                            <th>Closing</th>
+                            <th>ROP</th>
+                            <th>Daily Demand</th>
+                            <th>Forecast Days</th>
+                            <th>Inv. Value</th>
+                            <th>Alerts</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in dashboard_data %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            <td><strong>{{ row.item.item_id|default:'—' }}</strong></td>
+                            <td>{{ row.item.material.name }}</td>
+                            <td>{{ row.abc_class }}</td>
+                            <td>{{ row.fsn_class }}</td>
+                            <td><strong>{{ row.closing }}</strong></td>
+                            <td>{{ row.reorder_point }}</td>
+                            <td>{{ row.variable_daily_demand }}</td>
+                            <td>{% if row.stock_forecast_days is not None %}{{ row.stock_forecast_days }}{% else %}—{% endif %}</td>
+                            <td>{{ row.inventory_value }}</td>
+                            <td>
+                                {% if row.stockout %}<span class="erp-badge erp-badge-rejected" title="Stockout">Stockout</span>{% endif %}
+                                {% if row.reorder %}<span class="erp-badge erp-badge-pending" title="Reorder">Reorder</span>{% endif %}
+                                {% if row.safety_stock_alert %}<span class="erp-badge erp-badge-warning" title="Safety Stock">Safety</span>{% endif %}
+                                {% if row.overstock %}<span class="erp-badge erp-badge-hold" title="Overstock">Overstock</span>{% endif %}
+                                {% if row.dead_stock %}<span class="erp-badge erp-badge-archived" title="Dead Stock">Dead</span>{% endif %}
+                                {% if row.slow_moving %}<span class="erp-badge erp-badge-draft" title="Slow Moving">Slow</span>{% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="11" class="text-center">No supply chain items found. Sync materials from planning to populate item master.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
     </div>
-</div>
 {% endblock %}

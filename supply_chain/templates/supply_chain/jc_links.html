@@ -1,0 +1,100 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Job Card Links — Supply Chain{% endblock %}
+{% block header_title %}Job Card Material Links{% endblock %}
+{% block header_subtitle %}Auto-sync stock issuance from production entries using GIN / JC references.{% endblock %}
+{% block header_actions %}
+    <form method="post" style="display:inline;">
+        {% csrf_token %}
+        <input type="hidden" name="action" value="sync_all">
+        <button type="submit" class="erp-btn erp-btn-primary"><i class="fas fa-sync"></i> Sync All Job Cards</button>
+    </form>
+    <a href="{% url 'supply_chain:issuance' %}" class="erp-btn erp-btn-secondary">Stock Issuance</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="erp-info-grid">
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Job Cards</div>
+                    <div class="erp-info-item__value">{{ summary.total }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Material Linked</div>
+                    <div class="erp-info-item__value">{{ summary.linked }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Missing SC Item</div>
+                    <div class="erp-info-item__value">{{ summary.unlinked }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Integration</div>
+                    <h3 class="erp-section-title">How auto-link works</h3>
+                    <p class="erp-section-desc">
+                        Each active production entry posts issuance as
+                        <strong>output sheets + waste sheets</strong>, with
+                        <strong>GIN / JC = job card number</strong>.
+                        New production saves sync automatically.
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>JC Number</th>
+                            <th>Material</th>
+                            <th>SC Item</th>
+                            <th>Active Productions</th>
+                            <th>Synced Issuances</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in link_rows %}
+                        <tr>
+                            <td><strong>{{ row.job_card.job_card_no }}</strong></td>
+                            <td>{{ row.job_card.material.name }}</td>
+                            <td>{{ row.supply_chain_item.item_id|default:'—' }}</td>
+                            <td>{{ row.active_productions }}</td>
+                            <td>{{ row.synced_issuances }}</td>
+                            <td>
+                                {% if row.is_linked %}
+                                    <span class="erp-badge erp-badge-approved">Linked</span>
+                                {% else %}
+                                    <span class="erp-badge erp-badge-rejected">No SC Item</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if row.is_linked %}
+                                <form method="post" style="display:inline;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="action" value="sync_one">
+                                    <input type="hidden" name="job_card_id" value="{{ row.job_card.id }}">
+                                    <button type="submit" class="erp-btn erp-btn-secondary sm">Sync</button>
+                                </form>
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7">No job cards with material master found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}
