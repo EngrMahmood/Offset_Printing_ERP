@@ -53,4 +53,8 @@ urlpatterns = [
     path('sku-recipes/template/', views.sku_recipe_template_download, name='sku_recipe_template_download'),
     path('sku-recipes/add/', views.sku_recipe_edit, name='sku_recipe_add'),
     path('sku-recipes/<int:recipe_id>/edit/', views.sku_recipe_edit, name='sku_recipe_edit'),
+    path('job/<int:job_id>/change-request/', views.request_wastage_machine_change, name='request_wastage_machine_change'),
+    path('change-requests/<int:request_id>/approve/', views.approve_change_request, name='approve_change_request'),
+    path('change-requests/<int:request_id>/reject/', views.reject_change_request, name='reject_change_request'),
 ]
+

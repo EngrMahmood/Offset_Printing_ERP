@@ -50,7 +50,7 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
 
 from core.jc_numbering import allocate_next_jc_number
-from core.models import ChangeLog, JobCard
+from core.models import ChangeLog, JobCard, Machine
 from core.jobcard_service import job_card_queue_queryset, execute_job_card_action
 from core.views import permission_required
 from .forms import JobCardLayoutForm, PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeForm
@@ -85,6 +85,7 @@ from .models import (
     PlanningPrintRun,
     PoDocument,
     SkuRecipe,
+    JobCardChangeRequest,
 )
 from printing_plates.models import PlateRequest
 from workflow.services import (
@@ -875,7 +876,7 @@ def planning_home(request):
             messages.success(request, f'Bulk delete complete. Deleted {deleted_count} jobs.')
             return redirect('planning:jobs')
 
-        if action in {'hold', 'release_hold', 'archive', 'delete', 'update_planning_stage', 'request_change'}:
+        if action in {'hold', 'release_hold', 'archive', 'delete', 'update_planning_stage'}:
             job_id = request.POST.get('job_id')
             try:
                 job_id = int(job_id)
@@ -907,19 +908,6 @@ def planning_home(request):
                             messages.error(request, f'Cannot delete planning job {job.jc_number} because it is referenced by other records.')
                     else:
                         messages.error(request, 'Only administrators can delete planning jobs.')
-                return redirect('planning:jobs')
-
-            if action == 'request_change':
-                change_reason = (request.POST.get('change_reason') or '').strip()
-                if not change_reason:
-                    messages.error(request, 'A reason is required to request a change.')
-                    return redirect('planning:jobs')
-                job.change_request_pending = True
-                job.change_request_reason = change_reason
-                job.change_requested_by = request.user
-                job.change_requested_at = timezone.now()
-                job.save(update_fields=['change_request_pending', 'change_request_reason', 'change_requested_by', 'change_requested_at', 'updated_at'])
-                messages.success(request, f'Change request for {job.jc_number} has been submitted to administrators.')
                 return redirect('planning:jobs')
 
             if action == 'update_planning_stage':
@@ -1505,6 +1493,9 @@ def planning_job_detail(request, job_id):
         )
     )
 
+    pending_change_request = JobCardChangeRequest.objects.filter(planning_job=job, status='pending').first()
+    active_machines = Machine.objects.filter(is_active=True).order_by('name')
+
     return render(
         request,
         'planning/planning_job_detail.html',
@@ -1531,6 +1522,8 @@ def planning_job_detail(request, job_id):
             'can_reopen_and_apply_master_sync': can_reopen_and_apply_master_sync,
             'can_dismiss_master_sync': can_dismiss_master_sync,
             'user_can_approve_planning': user_can_approve_planning,
+            'pending_change_request': pending_change_request,
+            'active_machines': active_machines,
         },
     )
 
@@ -2127,12 +2120,14 @@ def approval_queue(request):
     user_can_approve_pm = profile.can_approve_pm() if profile else False
     user_can_release = user_can_approve_pm or (profile.can_plan() if profile else False)
 
-    change_requests = PlanningJob.objects.filter(is_active=True, change_request_pending=True).order_by('-change_requested_at')
     master_sync_requests = PlanningJob.objects.filter(
         is_active=True,
         master_sync_requested=True,
     ).select_related('master_sync_requested_by').order_by('-master_sync_requested_at')
     split_requests = _pending_po_split_requests()
+    pending_wastage_machine_change_requests = JobCardChangeRequest.objects.filter(
+        status='pending'
+    ).select_related('planning_job', 'requested_by').order_by('-requested_at')
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
@@ -2171,21 +2166,7 @@ def approval_queue(request):
                 messages.error(request, 'PO split request was not found or already resolved.')
             return redirect('planning:approval_queue')
 
-        if action == 'resolve_change_request':
-            if not _user_is_admin(request.user):
-                messages.error(request, 'Only administrators can resolve change requests.')
-                return redirect('planning:approval_queue')
-            try:
-                planning_job = _get_planning_job()
-                planning_job.change_request_pending = False
-                planning_job.change_request_reason = ''
-                planning_job.change_requested_by = None
-                planning_job.change_requested_at = None
-                planning_job.save(update_fields=['change_request_pending', 'change_request_reason', 'change_requested_by', 'change_requested_at', 'updated_at'])
-                messages.success(request, f'Change request for {planning_job.jc_number} has been resolved.')
-            except (ValueError, Http404):
-                messages.error(request, 'Invalid planning job selected.')
-            return redirect('planning:approval_queue')
+
 
         if action == 'apply_master_sync':
             if not user_can_approve_planning and not _user_is_admin(request.user):
@@ -2379,9 +2360,9 @@ def approval_queue(request):
         'qc_jobs': qc_jobs,
         'pm_jobs': pm_jobs,
         'release_jobs': release_jobs,
-        'change_requests': change_requests,
         'master_sync_requests': master_sync_requests,
         'split_requests': split_requests,
+        'pending_wastage_machine_change_requests': pending_wastage_machine_change_requests,
         'queue_q': queue_q,
         'pending_qc_jobs_count': pending_qc_jobs_count,
         'approved_qc_jobs_count': approved_qc_jobs_count,
@@ -4629,3 +4610,135 @@ def po_new_skus(request, doc_id):
             'example_form': SkuRecipeForm(),
         },
     )
+
+
+@login_required
+def request_wastage_machine_change(request, job_id):
+    if request.method != 'POST':
+        return redirect('planning:job_detail', job_id=job_id)
+        
+    job = get_object_or_404(PlanningJob, id=job_id)
+    profile = getattr(request.user, 'profile', None)
+    user_can_plan = profile.can_plan() if profile else False
+    
+    if not user_can_plan:
+        messages.error(request, 'You do not have permission to request planning changes.')
+        return redirect('planning:job_detail', job_id=job_id)
+        
+    status_now = _normalize_status(job.status)
+    locked_statuses = {'qc_approved', 'released', 'in_production'}
+    if status_now not in locked_statuses:
+        messages.error(request, 'Reopen requests can only be submitted for QC approved, released, or in production job cards.')
+        return redirect('planning:job_detail', job_id=job_id)
+        
+    has_pending = JobCardChangeRequest.objects.filter(planning_job=job, status='pending').exists()
+    if has_pending:
+        messages.error(request, 'There is already a pending reopen request for this job card.')
+        return redirect('planning:job_detail', job_id=job_id)
+        
+    reason = (request.POST.get('reason') or '').strip()
+    
+    if not reason:
+        messages.error(request, 'A justification reason is required to submit a reopen request.')
+        return redirect('planning:job_detail', job_id=job_id)
+        
+    JobCardChangeRequest.objects.create(
+        planning_job=job,
+        request_type='reopen_to_draft',
+        reason=reason,
+        status='pending',
+        requested_by=request.user
+    )
+    
+    messages.success(request, f'Reopen request for {job.jc_number} has been submitted for Production Manager approval.')
+    return redirect('planning:job_detail', job_id=job_id)
+
+
+@login_required
+@transaction.atomic
+def approve_change_request(request, request_id):
+    if request.method != 'POST':
+        return redirect('planning:approval_queue')
+        
+    change_request = get_object_or_404(JobCardChangeRequest, id=request_id)
+    profile = getattr(request.user, 'profile', None)
+    user_can_approve_pm = profile.can_approve_pm() if profile else False
+    
+    if not user_can_approve_pm:
+        messages.error(request, 'You do not have permission to approve change requests.')
+        return redirect('planning:approval_queue')
+        
+    if change_request.status != 'pending':
+        messages.error(request, 'This request is already resolved.')
+        return redirect('planning:approval_queue')
+        
+    job = change_request.planning_job
+    job_card = getattr(job, 'job_card', None)
+    
+    old_status = job.status
+    job.status = 'draft'
+    job.issued_to_production = False
+    job.save()
+    
+    if job_card:
+        from core.jobcard_service import transition_job_card_status
+        transition_job_card_status(
+            job_card,
+            'draft',
+            actor=request.user,
+            reason=f"Approved edit reopen request: {change_request.reason}"
+        )
+        
+        ChangeLog.objects.create(
+            entity_type='job_card',
+            record_id=job_card.pk,
+            record_label=str(job_card),
+            action='reopen',
+            changed_by=request.user,
+            change_reason=f"Approved reopen request: {change_request.reason}",
+            field_changes={
+                'status': {
+                    'label': 'Workflow Status',
+                    'from': old_status,
+                    'to': 'draft'
+                }
+            }
+        )
+            
+    change_request.status = 'approved'
+    change_request.approved_by = request.user
+    change_request.approved_at = timezone.now()
+    change_request.save(update_fields=['status', 'approved_by', 'approved_at'])
+    
+    messages.success(request, f'Reopen request for {job.jc_number} approved. The job card is now in Draft and can be edited.')
+    return redirect('planning:approval_queue')
+
+
+@login_required
+def reject_change_request(request, request_id):
+    if request.method != 'POST':
+        return redirect('planning:approval_queue')
+        
+    change_request = get_object_or_404(JobCardChangeRequest, id=request_id)
+    profile = getattr(request.user, 'profile', None)
+    user_can_approve_pm = profile.can_approve_pm() if profile else False
+    
+    if not user_can_approve_pm:
+        messages.error(request, 'You do not have permission to reject change requests.')
+        return redirect('planning:approval_queue')
+        
+    if change_request.status != 'pending':
+        messages.error(request, 'This request is already resolved.')
+        return redirect('planning:approval_queue')
+        
+    rejection_reason = (request.POST.get('rejection_reason') or '').strip()
+    
+    change_request.status = 'rejected'
+    change_request.approved_by = request.user
+    change_request.approved_at = timezone.now()
+    change_request.rejection_reason = rejection_reason
+    change_request.save(update_fields=['status', 'approved_by', 'approved_at', 'rejection_reason'])
+    
+    messages.warning(request, f'Reopen request for {change_request.planning_job.jc_number} has been rejected.')
+    return redirect('planning:approval_queue')
+
