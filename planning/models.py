@@ -1,4 +1,4 @@
-﻿import math
+import math
 import re
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -682,5 +682,55 @@ class SkuRecipe(models.Model):
 
     def __str__(self):
         return self.sku
+
+
+class JobCardChangeRequest(models.Model):
+    STATUS_CHOICES = [
+        ('pending', 'Pending PM Approval'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    planning_job = models.ForeignKey(
+        PlanningJob,
+        on_delete=models.CASCADE,
+        related_name='change_requests'
+    )
+    
+    request_type = models.CharField(max_length=50, default='reopen_to_draft')
+    
+    current_wastage_sheets = models.PositiveIntegerField(null=True, blank=True)
+    proposed_wastage_sheets = models.PositiveIntegerField(null=True, blank=True)
+    
+    current_machine_name = models.CharField(max_length=120, blank=True, null=True)
+    proposed_machine_name = models.CharField(max_length=120, blank=True, null=True)
+    
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    
+    requested_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='requested_job_changes'
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+    
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_job_changes'
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-requested_at']
+
+    def __str__(self):
+        return f"Reopen Request for {self.planning_job.jc_number} ({self.status})"
+
 
 

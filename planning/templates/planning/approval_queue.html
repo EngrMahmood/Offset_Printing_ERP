@@ -140,12 +140,10 @@
     {% if split_requests %}
     <button type="button" class="erp-tab" data-target="split-panel">Split Requests ({{ split_requests|length }})</button>
     {% endif %}
-    {% if can_admin_actions and change_requests %}
-    <button type="button" class="erp-tab" data-target="requested-panel">Requested Changes ({{ change_requests|length }})</button>
-    {% endif %}
     {% if master_sync_requests %}
     <button type="button" class="erp-tab" data-target="master-sync-panel">Master Sync ({{ master_sync_requests|length }})</button>
     {% endif %}
+    <button type="button" class="erp-tab" data-target="wastage-machine-change-panel">Change Management{% if pending_wastage_machine_change_requests %} ({{ pending_wastage_machine_change_requests|length }}){% endif %}</button>
 </div>
 
 <!-- Planning Approval Tab Panel -->
@@ -510,47 +508,6 @@
 </section>
 {% endif %}
 
-{% if can_admin_actions and change_requests %}
-<section id="requested-panel" class="erp-tab-panel">
-    <div class="erp-panel">
-        <div class="erp-panel__header">
-            <h3 class="erp-panel__title">Requested Changes</h3>
-            <p class="erp-section-desc">Planner change requests waiting for administrator review.</p>
-        </div>
-        <div class="erp-table-wrap">
-            <table>
-                <thead>
-                    <tr>
-                        <th>JC</th><th>PO</th><th>SKU</th><th>Job Name</th><th>Requested</th><th>Reason</th><th class="erp-col-actions">Action</th>
-                    </tr>
-                </thead>
-                <tbody>
-                {% for job in change_requests %}
-                    <tr>
-                        <td><strong>{{ job.jc_number }}</strong></td>
-                        <td>{{ job.po_number|default:'-' }}</td>
-                        <td>{{ job.sku|default:'-' }}</td>
-                        <td>{{ job.job_name|default:'-' }}</td>
-                        <td class="erp-muted">{{ job.change_requested_at|date:'d M Y H:i' }}{% if job.change_requested_by %} by {{ job.change_requested_by.username }}{% endif %}</td>
-                        <td><span class="erp-badge erp-badge-warning" title="{{ job.change_request_reason|default:'No reason provided' }}">{{ job.change_request_reason|truncatechars:32|default:'Change requested' }}</span></td>
-                        <td class="erp-col-actions">
-                            <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-secondary">View</a>
-                            <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-secondary">Edit</a>
-                            <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0" style="display:inline-flex;">
-                                {% csrf_token %}
-                                <input type="hidden" name="action" value="resolve_change_request">
-                                <input type="hidden" name="planning_job_id" value="{{ job.id }}">
-                                <button type="submit" class="erp-btn erp-btn-success" onclick="return confirm('Resolve change request for {{ job.jc_number }}?');">Resolve</button>
-                            </form>
-                        </td>
-                    </tr>
-                {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </div>
-</section>
-{% endif %}
 
 {% if master_sync_requests %}
 <section id="master-sync-panel" class="erp-tab-panel">
@@ -600,10 +557,69 @@
 </section>
 {% endif %}
 
+<section id="wastage-machine-change-panel" class="erp-tab-panel">
+    <div class="erp-panel">
+        <div class="erp-panel__header">
+            <h3 class="erp-panel__title">Change Management</h3>
+            <p class="erp-section-desc">Planner requests to reopen approved/released job cards to Draft status for editing.</p>
+        </div>
+        <div class="erp-table-wrap">
+            <table>
+                <thead>
+                    <tr>
+                        <th>JC</th><th>SKU</th><th>Job Name</th><th>Current Status</th><th>Requester</th><th>Justification</th><th class="erp-col-actions">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for change in pending_wastage_machine_change_requests %}
+                    <tr>
+                        <td><strong><a href="{% url 'planning:job_detail' change.planning_job.id %}">{{ change.planning_job.jc_number }}</a></strong></td>
+                        <td>{{ change.planning_job.sku|default:'-' }}</td>
+                        <td>{{ change.planning_job.job_name|default:'-' }}</td>
+                        <td><span class="erp-badge is-warning">{{ change.planning_job.status|title }}</span></td>
+                        <td class="erp-muted">
+                            {{ change.requested_by.username }}
+                            {% if change.requested_at %}<br><small>{{ change.requested_at|date:'d M Y H:i' }}</small>{% endif %}
+                        </td>
+                        <td><span title="{{ change.reason }}">{{ change.reason|truncatechars:100 }}</span></td>
+                        <td class="erp-col-actions aq-action-cell">
+                            {% if user_can_approve_pm %}
+                            <form method="post" action="{% url 'planning:approve_change_request' change.id %}" class="m-0" style="display:inline-flex;">
+                                {% csrf_token %}
+                                <button type="submit" class="erp-btn erp-btn-success" onclick="return confirm('Approve reopening {{ change.planning_job.jc_number }} to Draft?');">Approve Reopen</button>
+                            </form>
+                            <form method="post" action="{% url 'planning:reject_change_request' change.id %}" class="m-0" style="display:inline-flex;">
+                                {% csrf_token %}
+                                <input type="hidden" name="rejection_reason" value="">
+                                <button type="submit" class="erp-btn erp-btn-danger" onclick="return promptChangeRejectionReason(this.form, '{{ change.planning_job.jc_number|escapejs }}')">Reject</button>
+                            </form>
+                            {% else %}
+                            <span class="erp-muted">PM approval required</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="7" style="padding:24px;text-align:center;color:#7a8fa6;">No pending reopen requests.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
 {% endblock %}
 
 {% block extra_js %}
 <script>
+    function promptChangeRejectionReason(form, jcNumber) {
+        var reason = prompt('Enter rejection reason for ' + jcNumber + ':');
+        if (reason === null) {
+            return false;
+        }
+        form.rejection_reason.value = reason.trim();
+        return true;
+    }
+
     function promptRejectReason(form, jobCardNo) {
         var reason = prompt('Enter rejection reason for ' + jobCardNo + ':');
         if (!reason || !reason.trim()) {
