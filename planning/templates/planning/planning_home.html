@@ -192,10 +192,10 @@
                                 {% if job.planning_stage == 'jc_ready' %}<span class="erp-badge erp-badge-success">JC Ready</span>
                                 {% elif job.planning_stage == 'new_plate_making' %}<span class="erp-badge erp-badge-info">New Plate Making</span>
                                 {% elif job.planning_stage == 'repeat_plate_making' %}<span class="erp-badge erp-badge-warning">Repeat Plate Making</span>
-                                {% elif job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'in_production' %}<span class="erp-badge erp-badge-dark">In Production</span>
+                                {% elif job.planning_stage == 'planning_done' or job.planning_stage == 'in_production' %}<span class="erp-badge erp-badge-dark">Planning Done</span>
                                 {% endif %}
-                            {% elif job.status == 'in_production' %}
-                                <span class="erp-badge erp-badge-dark">In Production</span>
+                            {% elif job.status == 'released' %}
+                                <span class="erp-badge erp-badge-dark">Planning Done</span>
                             {% else %}
                                 <span style="color:#999;">—</span>
                             {% endif %}
@@ -211,10 +211,10 @@
                                         {% if job.planning_stage == 'jc_ready' %}<span class="erp-badge erp-badge-success">JC Ready</span>
                                         {% elif job.planning_stage == 'new_plate_making' %}<span class="erp-badge erp-badge-info">New Plate Making</span>
                                         {% elif job.planning_stage == 'repeat_plate_making' %}<span class="erp-badge erp-badge-warning">Repeat Plate Making</span>
-                                        {% elif job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'in_production' %}<span class="erp-badge erp-badge-dark">In Production</span>
+                                        {% elif job.planning_stage == 'planning_done' or job.planning_stage == 'in_production' %}<span class="erp-badge erp-badge-dark">Planning Done</span>
                                         {% endif %}
-                                    {% elif job.status == 'in_production' %}
-                                        <span class="erp-badge erp-badge-dark">In Production</span>
+                                    {% elif job.status == 'released' %}
+                                        <span class="erp-badge erp-badge-dark">Planning Done</span>
                                     {% else %}
                                         <span style="color:#999;">—</span>
                                     {% endif %}
@@ -228,7 +228,7 @@
                                         <option value="jc_ready" {% if job.planning_stage == 'jc_ready' %}selected{% endif %}>JC Ready</option>
                                         <option value="new_plate_making" {% if job.planning_stage == 'new_plate_making' %}selected{% endif %}>New Plate Making</option>
                                         <option value="repeat_plate_making" {% if job.planning_stage == 'repeat_plate_making' %}selected{% endif %}>Repeat Plate Making</option>
-                                        <option value="in_production" {% if job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'in_production' %}selected{% endif %}>In Production</option>
+                                        <option value="planning_done" {% if job.planning_stage == 'planning_done' or job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'released' %}selected{% endif %}>Planning Done</option>
                                     </select>
                                 </form>
                             </div>

@@ -1018,9 +1018,9 @@ def planning_home(request):
     if status_filter:
         queryset = queryset.filter(status__in=_planning_status_filter_values(status_filter))
     if stage_filter:
-        if stage_filter == 'in_production':
+        if stage_filter == 'planning_done':
             queryset = queryset.filter(
-                Q(planning_stage='in_production') | Q(status='in_production')
+                Q(planning_stage='planning_done') | Q(planning_stage='in_production')
             )
         elif stage_filter == 'not_set':
             queryset = queryset.filter(planning_stage='')

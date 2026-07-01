@@ -5,6 +5,9 @@ import re
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
+
+from planning.models import PLANNING_STAGE_DONE
 
 from .models import (
     ChangeLog,
@@ -207,7 +210,7 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         'closed': ('completed', True),
     }
 
-    def _sync_linked_planning_job(status_value):
+    def _sync_linked_planning_job(status_value, transition_actor=None):
         if not job_card.planning_job_id or status_value not in planning_status_map:
             return False
         job = job_card.planning_job
@@ -219,6 +222,13 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         if getattr(job, 'issued_to_production', False) != issued_to_production:
             job.issued_to_production = issued_to_production
             updates.append('issued_to_production')
+        if status_value == 'released' and job.planning_stage != PLANNING_STAGE_DONE:
+            job.planning_stage = PLANNING_STAGE_DONE
+            job.planning_stage_changed_at = timezone.now()
+            if transition_actor:
+                job.planning_stage_changed_by = transition_actor
+                updates.append('planning_stage_changed_by')
+            updates.extend(['planning_stage', 'planning_stage_changed_at'])
         if not updates:
             return False
         updates.append('updated_at')
@@ -227,7 +237,7 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
 
     current_status = job_card.workflow_status
     if current_status == target_status:
-        _sync_linked_planning_job(target_status)
+        _sync_linked_planning_job(target_status, transition_actor=actor)
         return job_card
 
     allowed_transitions = {
@@ -272,7 +282,7 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         before_status = current_status
         job_card.status = target_status
         job_card.save(update_fields=['status'])
-        _sync_linked_planning_job(target_status)
+        _sync_linked_planning_job(target_status, transition_actor=actor)
         log_job_card_workflow_change(
             job_card,
             actor,

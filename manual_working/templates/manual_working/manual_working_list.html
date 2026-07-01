@@ -76,6 +76,14 @@
             <label>PO Approval Date To</label>
             <input type="date" name="date_to" value="{{ filters.date_to }}">
         </div>
+        <div class="erp-form-field">
+            <label>Released to Production Date From</label>
+            <input type="date" name="release_date_from" value="{{ filters.release_date_from }}">
+        </div>
+        <div class="erp-form-field">
+            <label>Released to Production Date To</label>
+            <input type="date" name="release_date_to" value="{{ filters.release_date_to }}">
+        </div>
         <div class="erp-form-actions" style="grid-column: 1 / -1; justify-content:flex-start; gap:12px;">
             <button type="submit" class="erp-btn erp-btn-primary">Apply filters</button>
             <a href="?" class="erp-btn erp-btn-secondary">Reset</a>
@@ -138,7 +146,7 @@
                     <th>Print Qty 5</th>
                     <th>Wastage 5</th>
                     <th>Remaining sheet</th>
-                    <th>status</th>
+                    <th>WIP Status</th>
                     <th>PR</th>
                     <th>Date Delivery 01</th>
                     <th>DC 01</th>
@@ -172,7 +180,9 @@
                     <th>AWC No.</th>
                     <th>Aging</th>
                     <th>Die cutting</th>
-                    <th>WIP Status</th>
+                    <th>status</th>
+                    <th>Released to Production Date</th>
+                    <th>Released to Production Time</th>
                 </tr>
             </thead>
             <tbody>
@@ -230,7 +240,7 @@
                         <td>{{ row.print_qty_5 }}</td>
                         <td>{{ row.wastage_5 }}</td>
                         <td>{{ row.remaining_sheet }}</td>
-                        <td>{{ row.status }}</td>
+                        <td>{{ row.wip_status }}</td>
                         <td>{{ row.pr_reference }}</td>
                         <td>{{ row.delivery_date_1 }}</td>
                         <td>{{ row.dc_1 }}</td>
@@ -264,7 +274,9 @@
                         <td>{{ row.awc_no }}</td>
                         <td>{{ row.aging_days }}</td>
                         <td>{{ row.die_cutting }}</td>
-                        <td>{{ row.wip_status }}</td>
+                        <td>{{ row.status }}</td>
+                        <td>{{ row.released_to_production_date }}</td>
+                        <td>{{ row.released_to_production_time }}</td>
                     </tr>
                 {% endfor %}
             </tbody>

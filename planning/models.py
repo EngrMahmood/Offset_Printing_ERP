@@ -43,8 +43,10 @@ PLANNING_STAGE_CHOICES = [
     ('jc_ready', 'JC Ready'),
     ('new_plate_making', 'New Plate Making'),
     ('repeat_plate_making', 'Repeat Plate Making'),
-    ('in_production', 'In Production'),
+    ('planning_done', 'Planning Done'),
 ]
+
+PLANNING_STAGE_DONE = 'planning_done'
 
 
 class PlanningJob(models.Model):
