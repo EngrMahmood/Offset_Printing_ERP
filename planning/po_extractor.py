@@ -223,9 +223,36 @@ def _extract_best_sku_token(raw_value):
     return best
 
 
+def _split_job_name_and_remarks(raw_name):
+    if not raw_name:
+        return '', ''
+    cleaned = re.sub(r'^[A-Z]\n', '', str(raw_name)).strip()
+    
+    parts = []
+    if ' / ' in cleaned:
+        parts = cleaned.split(' / ', 1)
+    elif '/' in cleaned:
+        parts = cleaned.split('/', 1)
+    elif ' \\ ' in cleaned:
+        parts = cleaned.split(' \\ ', 1)
+    elif '\\' in cleaned:
+        parts = cleaned.split('\\', 1)
+        
+    if len(parts) == 2:
+        return parts[0].strip(), parts[1].strip()
+    return cleaned, ''
+
+
 def _build_sku_jobname_map(text, table_blobs=None):
     """Best-effort map for layouts where job name is on the line before SKU."""
     mapping = {}
+    remarks_map = {}
+
+    def _add_to_maps(sku_token, raw_val):
+        name, rem = _split_job_name_and_remarks(raw_val)
+        mapping[sku_token.upper()] = name
+        if rem:
+            remarks_map[sku_token.upper()] = rem
 
     lines = [ln.strip() for ln in str(text).splitlines() if ln and ln.strip()]
     for idx, line in enumerate(lines):
@@ -241,7 +268,7 @@ def _build_sku_jobname_map(text, table_blobs=None):
             continue
         if _looks_like_sku_token(candidate_name):
             continue
-        mapping[line.upper()] = candidate_name
+        _add_to_maps(line, candidate_name)
 
     if table_blobs:
         blobs = [str(b).strip() for b in table_blobs if str(b).strip()]
@@ -257,9 +284,9 @@ def _build_sku_jobname_map(text, table_blobs=None):
                 continue
             if _looks_like_sku_token(prev_blob):
                 continue
-            mapping[first_token.upper()] = prev_blob
+            _add_to_maps(first_token, prev_blob)
 
-    return mapping
+    return mapping, remarks_map
 
 
 def extract_po_from_pdf(file_obj):
@@ -406,7 +433,7 @@ def _parse_po_text(text, table_blobs=None, table_rows=None):
     # ── Line Items ─────────────────────────────────────────────────────────────
     # Prioritize table_rows extraction (most reliable for Utopia 2-row layout),
     # then text-based fallbacks.
-    sku_jobname_map = _build_sku_jobname_map(text, table_blobs)
+    sku_jobname_map, sku_remarks_map = _build_sku_jobname_map(text, table_blobs)
 
     expected_line_count = _detect_expected_line_count(text, table_rows)
 
@@ -431,18 +458,18 @@ def _parse_po_text(text, table_blobs=None, table_rows=None):
     # Try table_rows first (most reliable for structured PDFs)
     items = []
     if table_rows:
-        items = _extract_items_from_table_rows(table_rows, sku_jobname_map)
+        items = _extract_items_from_table_rows(table_rows, sku_jobname_map, sku_remarks_map)
     
     # Fallback to text-based parsers if table extraction insufficient
     if _needs_fallback(items):
-        items = _best_of(items, _extract_items_strict(text, sku_jobname_map))
+        items = _best_of(items, _extract_items_strict(text, sku_jobname_map, sku_remarks_map))
     if _needs_fallback(items):
-        items = _best_of(items, _extract_items_flexible(text, sku_jobname_map))
+        items = _best_of(items, _extract_items_flexible(text, sku_jobname_map, sku_remarks_map))
     if _needs_fallback(items):
         if table_blobs:
-            items = _best_of(items, _extract_items_from_table_blobs(table_blobs, sku_jobname_map))
+            items = _best_of(items, _extract_items_from_table_blobs(table_blobs, sku_jobname_map, sku_remarks_map))
     if _needs_fallback(items):
-        items = _best_of(items, _extract_items_from_text_windows(text, sku_jobname_map))
+        items = _best_of(items, _extract_items_from_text_windows(text, sku_jobname_map, sku_remarks_map))
 
     if expected_line_count and len(items) > expected_line_count:
         # Keep deterministic top rows only when parser over-detects noisy lines.
@@ -518,7 +545,7 @@ def _detect_expected_line_count(text, table_rows=None):
     return len(serials)
 
 
-def _append_item(items, sku, delivery_date_raw, qty_raw, unit_raw, unit_cost_raw, subtotal_raw, gst_raw, net_total_raw, sku_jobname_map=None):
+def _append_item(items, sku, delivery_date_raw, qty_raw, unit_raw, unit_cost_raw, subtotal_raw, gst_raw, net_total_raw, sku_jobname_map=None, sku_remarks_map=None, remarks=''):
     sku_value = _extract_best_sku_token(sku)
     if not sku_value:
         return
@@ -528,6 +555,9 @@ def _append_item(items, sku, delivery_date_raw, qty_raw, unit_raw, unit_cost_raw
         return
     if sku_value.upper().startswith(('SUBTOTAL', 'GRAND', 'TOTAL', 'DESCRIPTION')):
         return
+
+    if not remarks and sku_remarks_map and sku_value:
+        remarks = sku_remarks_map.get(sku_value.upper(), '')
 
     try:
         # Handle European qty format: "20,0" -> 20.0 (comma as decimal)
@@ -549,6 +579,7 @@ def _append_item(items, sku, delivery_date_raw, qty_raw, unit_raw, unit_cost_raw
         'subtotal': _clean_amount(subtotal_raw),
         'gst': _clean_amount(gst_raw),
         'net_total': _clean_amount(net_total_raw),
+        'remarks': (remarks or '').strip(),
     }
 
     # Must have at least sku + date + qty to be considered a valid line item.
@@ -558,7 +589,7 @@ def _append_item(items, sku, delivery_date_raw, qty_raw, unit_raw, unit_cost_raw
     items.append(item)
 
 
-def _extract_items_strict(text, sku_jobname_map=None):
+def _extract_items_strict(text, sku_jobname_map=None, sku_remarks_map=None):
     amount = r'(?:Rs\s*|€\s*)?[\d,.]+'
     item_pattern = re.compile(
         r'^([A-Za-z0-9][\w\-./]+)\s+'
@@ -583,12 +614,13 @@ def _extract_items_strict(text, sku_jobname_map=None):
             m.group(6),
             m.group(7),
             m.group(8),
-            sku_jobname_map,
+            sku_jobname_map=sku_jobname_map,
+            sku_remarks_map=sku_remarks_map,
         )
     return items
 
 
-def _extract_items_flexible(text, sku_jobname_map=None):
+def _extract_items_flexible(text, sku_jobname_map=None, sku_remarks_map=None):
     # Handles wrapped or slightly shifted lines and optional currency prefixes.
     normalized = '\n'.join(' '.join(line.split()) for line in text.splitlines() if line.strip())
     amount = r'(?:Rs\s*|€\s*)?[\d,.]+'
@@ -619,12 +651,13 @@ def _extract_items_flexible(text, sku_jobname_map=None):
             m.group(6),
             m.group(7),
             m.group(8),
-            sku_jobname_map,
+            sku_jobname_map=sku_jobname_map,
+            sku_remarks_map=sku_remarks_map,
         )
     return items
 
 
-def _extract_items_from_table_blobs(table_blobs, sku_jobname_map=None):
+def _extract_items_from_table_blobs(table_blobs, sku_jobname_map=None, sku_remarks_map=None):
     items = []
     amount = r'(?:Rs\s*|€\s*)?[\d,.]+'
     pattern = re.compile(
@@ -654,13 +687,14 @@ def _extract_items_from_table_blobs(table_blobs, sku_jobname_map=None):
             m.group(6),
             m.group(7),
             m.group(8),
-            sku_jobname_map,
+            sku_jobname_map=sku_jobname_map,
+            sku_remarks_map=sku_remarks_map,
         )
 
     return items
 
 
-def _extract_items_from_table_rows(table_rows, sku_jobname_map=None):
+def _extract_items_from_table_rows(table_rows, sku_jobname_map=None, sku_remarks_map=None):
     """
     Handles both single-row and two-row-per-item layouts.
 
@@ -693,11 +727,8 @@ def _extract_items_from_table_rows(table_rows, sku_jobname_map=None):
         # ── Two-row layout: serial number row followed by data row ──────────
         if re.fullmatch(r'\d{1,3}', first) and i + 1 < len(rows):
             serial = first
-            job_name_raw = _clean_cell(row[1]) if len(row) > 1 else ''
-            # Strip watermark prefix from job name
-            job_name_raw = re.sub(r'^[A-Z]\n', '', job_name_raw).strip()
-            # Take only the part before " / " if present (description / specs)
-            job_name_raw = job_name_raw.split(' / ')[0].strip()
+            job_name_full = _clean_cell(row[1]) if len(row) > 1 else ''
+            job_name_raw, job_remarks = _split_job_name_and_remarks(job_name_full)
 
             next_row = rows[i + 1]
             next_first = _clean_cell(next_row[0]) if next_row else 'x'
@@ -767,7 +798,9 @@ def _extract_items_from_table_rows(table_rows, sku_jobname_map=None):
                                 _append_item(
                                     items, sku_raw, delivery_date_raw, qty_raw, unit_raw,
                                     unit_cost_raw, subtotal_raw, gst_raw, net_total_raw,
-                                    effective_map,
+                                    sku_jobname_map=effective_map,
+                                    sku_remarks_map=sku_remarks_map,
+                                    remarks=job_remarks,
                                 )
                                 if len(items) > before:
                                     seen.add(key)
@@ -815,14 +848,15 @@ def _extract_items_from_table_rows(table_rows, sku_jobname_map=None):
                             amount_cells[1] if len(amount_cells) > 1 else None,
                             amount_cells[2] if len(amount_cells) > 2 else None,
                             amount_cells[3] if len(amount_cells) > 3 else None,
-                            sku_jobname_map,
+                            sku_jobname_map=sku_jobname_map,
+                            sku_remarks_map=sku_remarks_map,
                         )
         i += 1
 
     return items
 
 
-def _extract_items_from_text_windows(text, sku_jobname_map=None):
+def _extract_items_from_text_windows(text, sku_jobname_map=None, sku_remarks_map=None):
     """
     Last-resort parser for PDFs where item rows are split across nearby lines.
     It scans around date-bearing lines and assembles SKU/qty/unit/amount values.
@@ -921,7 +955,8 @@ def _extract_items_from_text_windows(text, sku_jobname_map=None):
             subtotal_raw,
             gst_raw,
             net_total_raw,
-            sku_jobname_map,
+            sku_jobname_map=sku_jobname_map,
+            sku_remarks_map=sku_remarks_map,
         )
         if len(items) > before_count:
             seen.add(key)

@@ -3,30 +3,512 @@
 {% block title %}Plate Request Detail{% endblock %}
 
 {% block content %}
-<div class="erp-card">
-    <div class="erp-card-header">
-        <h2>Plate Request #{{ plate_request.pk }}</h2>
-        <p>{{ plate_request.job_name|default:'Plate request details' }}</p>
+<div class="erp-page-stack">
+    <!-- Header Sub-Navigation Actions -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+        <div class="erp-actions">
+            <a href="{% url 'printing_plates:dashboard' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="{% url 'printing_plates:request_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-file-invoice"></i> Plate Requests</a>
+            <a href="{% url 'printing_plates:sent_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-paper-plane"></i> Plate Sent</a>
+            <a href="{% url 'printing_plates:received_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-check-circle"></i> Plate Received</a>
+            <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-list"></i> Plate Queue</a>
+        </div>
+        <div>
+            <a href="{% url 'printing_plates:request_add' %}" class="erp-btn" style="background-color: #6f42c1; color: white; border: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fas fa-plus"></i> Add
+            </a>
+        </div>
     </div>
-    <div class="erp-card-body">
-        <dl class="erp-details-list">
-            <dt>Status</dt><dd>{{ plate_request.get_status_display }}</dd>
-            <dt>Job</dt><dd>{{ plate_request.job_name|default:'—' }}</dd>
-            <dt>AWC No</dt><dd>{{ plate_request.awc_no|default:'—' }}</dd>
-            <dt>Material</dt><dd>{{ plate_request.material_name|default:'—' }}</dd>
-            <dt>Plate Quantity</dt><dd>{{ plate_request.plate_quantity|default:'—' }}</dd>
-            <dt>Plate Color</dt><dd>{{ plate_request.plate_color|default:'—' }}</dd>
-            <dt>Vendor</dt><dd>{{ plate_request.vendor|default:'—' }}</dd>
-            <dt>Requested By</dt><dd>{{ plate_request.requested_by.username|default:'—' }}</dd>
-            <dt>Requested At</dt><dd>{{ plate_request.requested_at|date:'Y-m-d H:i'|default:'—' }}</dd>
-            <dt>Remarks</dt><dd>{{ plate_request.remarks|default:'—' }}</dd>
-            <dt>Source</dt><dd>{{ plate_request.source|default:'—' }}</dd>
-            <dt>Impression</dt><dd>{{ plate_request.impression|default:'—' }}</dd>
-            <dt>Progress</dt><dd>{{ plate_request.progress|default:'—' }}</dd>
-            <dt>Challan</dt><dd>{{ plate_request.challan|default:'—' }}</dd>
-            <dt>Box</dt><dd>{{ plate_request.box|default:'—' }}</dd>
-            <dt>Link</dt><dd>{% if plate_request.link %}<a href="{{ plate_request.link }}" target="_blank">Open link</a>{% else %}—{% endif %}</dd>
-        </dl>
+
+    <!-- Django Messages Display -->
+    {% if messages %}
+    <div style="margin-bottom: 15px;">
+        {% for message in messages %}
+        <div class="erp-alert erp-alert-{% if message.tags == 'error' %}danger{% elif message.tags == 'success' %}success{% else %}info{% endif %}" style="padding: 10px 15px; border-radius: 6px; margin-bottom: 10px; font-weight: 500; font-size: 0.9rem; background-color: {% if message.tags == 'error' %}#fff5f5{% elif message.tags == 'success' %}#f0fff4{% else %}#ebf8ff{% endif %}; border: 1px solid {% if message.tags == 'error' %}#feb2b2{% elif message.tags == 'success' %}#9ae6b4{% else %}#90cdf4{% endif %}; color: {% if message.tags == 'error' %}#c53030{% elif message.tags == 'success' %}#276749{% else %}#2b6cb0{% endif %};">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Split Page Grid Layout -->
+    <div style="display: flex; flex-wrap: wrap; gap: 20px; align-items: start; width: 100%;">
+        
+        <!-- Left Column: Details Card & Designer Specifications -->
+        <div style="flex: 2 1 600px; display: flex; flex-direction: column; gap: 20px; width: 100%;">
+            <div class="erp-card" style="margin: 0; min-height: 500px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02); border: 1px solid rgba(0,0,0,0.06);">
+                <div class="erp-card-header" style="border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 12px; margin-bottom: 15px;">
+                    <h2 style="font-size: 1.25rem; font-weight: 700; color: #2d3748; margin: 0;">Plate Request #{{ plate_request.pk }}</h2>
+                    <p style="font-size: 0.85rem; color: #718096; margin: 4px 0 0 0;">{{ plate_request.job_name|default:'Plate request details' }}</p>
+                </div>
+                <div class="erp-card-body">
+                    <dl class="erp-details-list">
+                        <dt>Status</dt><dd><strong>{{ plate_request.get_status_display }}</strong></dd>
+                        <dt>Job Card Ref (JC#)</dt><dd>{{ plate_request.jc_number|default:'—' }}</dd>
+                        <dt>SKU</dt><dd>{{ plate_request.sku|default:'—' }}</dd>
+                        <dt>Job Name</dt><dd>{{ plate_request.job_name|default:'—' }}</dd>
+                        <dt>AWC No</dt><dd>{{ plate_request.awc_no|default:'—' }}</dd>
+                        <dt>Material</dt><dd>{{ plate_request.material_name|default:'—' }}</dd>
+                        <dt>Machine</dt><dd>{{ plate_request.machine_display|default:'—' }}</dd>
+                        <dt>Department</dt><dd>{{ plate_request.department_display|default:'—' }}</dd>
+                        <dt>No. of Colors</dt><dd>{{ plate_request.no_of_colors|default:'—' }}</dd>
+                        <dt>Total Impressions Required</dt><dd>{{ plate_request.impressions|default:'—' }}</dd>
+                        <dt>Plate Set #</dt><dd>{{ plate_request.set_no|default:'—' }}</dd>
+                        <dt>New Set #</dt><dd>{{ plate_request.new_set_no|default:'—' }}</dd>
+                        <dt>Plate Quantity</dt><dd>{{ plate_request.plate_quantity|default:'—' }}</dd>
+                        <dt>Plate Color</dt><dd>{{ plate_request.plate_color|default:'—' }}</dd>
+                        <dt>Vendor</dt><dd>{{ plate_request.vendor|default:'—' }}</dd>
+                        <dt>Source</dt><dd>{{ plate_request.source|default:'—' }}</dd>
+                        <dt>Plate Impression/Ref</dt><dd>{{ plate_request.impression|default:'—' }}</dd>
+                        <dt>Progress</dt><dd>{{ plate_request.progress|default:'—' }}</dd>
+                        <dt>Challan</dt><dd>{{ plate_request.challan|default:'—' }}</dd>
+                        <dt>Box</dt><dd>{{ plate_request.box|default:'—' }}</dd>
+                        <dt>Link</dt><dd>{% if plate_request.link %}<a href="{{ plate_request.link }}" target="_blank">Open link</a>{% else %}—{% endif %}</dd>
+                        <dt>Requested By</dt><dd>{{ plate_request.requested_by.username|default:'—' }}</dd>
+                        <dt>Requested At</dt><dd>{{ plate_request.requested_at|date:'Y-m-d H:i'|default:'—' }}</dd>
+                        <dt>Designer</dt><dd>{{ plate_request.designer.username|default:'—' }}</dd>
+                        <dt>Sent By</dt><dd>{{ plate_request.sent_by.username|default:'—' }}</dd>
+                        <dt>Sent At</dt><dd>{{ plate_request.sent_at|date:'Y-m-d H:i'|default:'—' }}</dd>
+                        <dt>Received By</dt><dd>{{ plate_request.received_by.username|default:'—' }}</dd>
+                        <dt>Received At</dt><dd>{{ plate_request.received_at|date:'Y-m-d H:i'|default:'—' }}</dd>
+                        <dt>Remarks</dt><dd>{{ plate_request.remarks|default:'—' }}</dd>
+                        {% if plate_request.image %}
+                        <dt>Image Proof</dt>
+                        <dd>
+                            <a href="{{ plate_request.image.url }}" target="_blank">
+                                <img src="{{ plate_request.image.url }}" alt="Plate Request Image" style="max-width: 100%; max-height: 400px; height: auto; border-radius: 4px; border: 1px solid #ddd; margin-top: 8px;">
+                            </a>
+                        </dd>
+                        {% endif %}
+                    </dl>
+                </div>
+            </div>
+
+            <!-- Designer Specifications Card -->
+            <div class="erp-card" style="margin: 0; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02); border: 1px solid rgba(0,0,0,0.06);">
+                <div class="erp-card-header" style="border-bottom: 1px solid rgba(0,0,0,0.05); padding-bottom: 12px; margin-bottom: 15px;">
+                    <h3 style="font-size: 1.1rem; font-weight: 700; color: #2d3748; margin: 0; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-drafting-compass" style="color: #6f42c1;"></i> Design & Layout Specifications
+                    </h3>
+                    <p style="font-size: 0.82rem; color: #718096; margin: 4px 0 0 0;">Key parameters for designer to finalize layout and plates</p>
+                </div>
+                <div class="erp-card-body">
+                    <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 15px;">
+                        
+                        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                            <span style="display: block; font-size: 0.72rem; font-weight: 700; color: #718096; text-transform: uppercase;">Machine Name</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: #2d3748; display: block; margin-top: 4px;">{{ plate_request.machine.name|default:'—' }}</span>
+                            <span style="font-size: 0.78rem; color: #718096; display: block; margin-top: 2px;">Standard Speed: {{ plate_request.machine.standard_impressions_per_hour|default:'0' }} imp/hr</span>
+                        </div>
+                        
+                        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                            <span style="display: block; font-size: 0.72rem; font-weight: 700; color: #718096; text-transform: uppercase;">Product Size</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: #2d3748; display: block; margin-top: 4px;">
+                                {% if plate_request.planning_job and plate_request.planning_job.size_w_mm %}
+                                    {{ plate_request.planning_job.size_w_mm }} x {{ plate_request.planning_job.size_h_mm }} mm
+                                {% elif master_recipe and master_recipe.size_w_mm %}
+                                    {{ master_recipe.size_w_mm }} x {{ master_recipe.size_h_mm }} mm
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </span>
+                            <span style="font-size: 0.78rem; color: #718096; display: block; margin-top: 2px;">
+                                {% if plate_request.planning_job and plate_request.planning_job.size_w_inch %}
+                                    ({{ plate_request.planning_job.size_w_inch }} x {{ plate_request.planning_job.size_h_inch }} inch)
+                                {% elif master_recipe and master_recipe.size_w_inch %}
+                                    ({{ master_recipe.size_w_inch }} x {{ master_recipe.size_h_inch }} inch)
+                                {% endif %}
+                            </span>
+                        </div>
+
+                        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                            <span style="display: block; font-size: 0.72rem; font-weight: 700; color: #718096; text-transform: uppercase;">Ups (Layout)</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: #2d3748; display: block; margin-top: 4px;">
+                                {% if plate_request.planning_job and plate_request.planning_job.ups %}
+                                    {{ plate_request.planning_job.ups }} ups
+                                {% elif master_recipe and master_recipe.ups %}
+                                    {{ master_recipe.ups }} ups
+                                {% else %}
+                                    &mdash; ups
+                                {% endif %}
+                            </span>
+                            <span style="font-size: 0.78rem; color: #718096; display: block; margin-top: 2px;">
+                                Purchase Ups:
+                                {% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_ups %}
+                                    {{ plate_request.planning_job.purchase_sheet_ups }}
+                                {% elif master_recipe and master_recipe.purchase_sheet_ups %}
+                                    {{ master_recipe.purchase_sheet_ups }}
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </span>
+                        </div>
+
+                        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                            <span style="display: block; font-size: 0.72rem; font-weight: 700; color: #718096; text-transform: uppercase;">Print Sheet Size</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: #2d3748; display: block; margin-top: 4px;">
+                                {% if plate_request.planning_job and plate_request.planning_job.print_sheet_size %}
+                                    {{ plate_request.planning_job.print_sheet_size }}
+                                {% elif master_recipe and master_recipe.print_sheet_size %}
+                                    {{ master_recipe.print_sheet_size }}
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </span>
+                            <span style="font-size: 0.78rem; color: #718096; display: block; margin-top: 2px;">
+                                Purchase Size:
+                                {% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_size %}
+                                    {{ plate_request.planning_job.purchase_sheet_size }}
+                                {% elif master_recipe and master_recipe.purchase_sheet_size %}
+                                    {{ master_recipe.purchase_sheet_size }}
+                                {% else %}
+                                    &mdash;
+                                {% endif %}
+                            </span>
+                        </div>
+
+                        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                            <span style="display: block; font-size: 0.72rem; font-weight: 700; color: #718096; text-transform: uppercase;">Colors Specification</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: #2d3748; display: block; margin-top: 4px;">
+                                {% if plate_request.planning_job %}{{ plate_request.planning_job.total_colors|default:'—' }}{% else %}—{% endif %} colors
+                            </span>
+                            <span style="font-size: 0.78rem; color: #718096; display: block; margin-top: 2px;">
+                                {% if plate_request.planning_job %}
+                                    Front: {{ plate_request.planning_job.front_colors|default:'0' }} | Back: {{ plate_request.planning_job.back_colors|default:'0' }}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </span>
+                        </div>
+
+                        <div style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                            <span style="display: block; font-size: 0.72rem; font-weight: 700; color: #718096; text-transform: uppercase;">Material / Paper</span>
+                            <span style="font-size: 0.95rem; font-weight: 700; color: #2d3748; display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{{ plate_request.material_name|default:'—' }}</span>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right Column: Workflow Steps & Action Card -->
+        <div style="flex: 1 1 350px; display: flex; flex-direction: column; gap: 20px; width: 100%;">
+            
+            <!-- Progress Stepper Card -->
+            <div class="erp-card" style="margin: 0; padding: 20px; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.02); border: 1px solid rgba(0,0,0,0.06);">
+                <h3 style="font-size: 0.95rem; font-weight: 600; color: #4a5568; margin-top: 0; margin-bottom: 25px; text-transform: uppercase; letter-spacing: 0.05em;">Progress Steps</h3>
+                
+                <div class="stepper-wrapper" style="display: flex; justify-content: space-between; position: relative;">
+                    <!-- Line connector -->
+                    <div style="position: absolute; top: 15px; left: 10%; right: 10%; height: 2px; background: #e2e8f0; z-index: 1;"></div>
+                    <div style="position: absolute; top: 15px; left: 10%; width: {% if plate_request.status == 'sent_to_vendor' %}33%{% elif plate_request.status == 'received_from_vendor' %}66%{% elif plate_request.status == 'available_for_production' %}80%{% else %}0%{% endif %}; height: 2px; background: #6f42c1; z-index: 1; transition: width 0.3s;"></div>
+                    
+                    <!-- Step 1 -->
+                    <div style="display: flex; flex-direction: column; align-items: center; z-index: 2; width: 25%;">
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: #6f42c1; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.85rem; border: 2px solid #6f42c1;">✓</div>
+                        <div style="font-size: 0.75rem; font-weight: 600; color: #2d3748; margin-top: 6px; text-align: center;">Draft</div>
+                    </div>
+                    
+                    <!-- Step 2 -->
+                    <div style="display: flex; flex-direction: column; align-items: center; z-index: 2; width: 25%;">
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: {% if plate_request.status == 'sent_to_vendor' or plate_request.status == 'received_from_vendor' or plate_request.status == 'available_for_production' %}#6f42c1; color: white; border: 2px solid #6f42c1;{% else %}#fff; color: #a0aec0; border: 2px solid #cbd5e0;{% endif %} display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.85rem;">
+                            {% if plate_request.status == 'sent_to_vendor' or plate_request.status == 'received_from_vendor' or plate_request.status == 'available_for_production' %}✓{% else %}2{% endif %}
+                        </div>
+                        <div style="font-size: 0.75rem; font-weight: 600; color: {% if plate_request.status == 'sent_to_vendor' or plate_request.status == 'received_from_vendor' or plate_request.status == 'available_for_production' %}#2d3748{% else %}#a0aec0{% endif %}; margin-top: 6px; text-align: center;">Sent</div>
+                    </div>
+                    
+                    <!-- Step 3 -->
+                    <div style="display: flex; flex-direction: column; align-items: center; z-index: 2; width: 25%;">
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: {% if plate_request.status == 'received_from_vendor' or plate_request.status == 'available_for_production' %}#6f42c1; color: white; border: 2px solid #6f42c1;{% else %}#fff; color: #a0aec0; border: 2px solid #cbd5e0;{% endif %} display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.85rem;">
+                            {% if plate_request.status == 'received_from_vendor' or plate_request.status == 'available_for_production' %}✓{% else %}3{% endif %}
+                        </div>
+                        <div style="font-size: 0.75rem; font-weight: 600; color: {% if plate_request.status == 'received_from_vendor' or plate_request.status == 'available_for_production' %}#2d3748{% else %}#a0aec0{% endif %}; margin-top: 6px; text-align: center;">Received</div>
+                    </div>
+                    
+                    <!-- Step 4 -->
+                    <div style="display: flex; flex-direction: column; align-items: center; z-index: 2; width: 25%;">
+                        <div style="width: 32px; height: 32px; border-radius: 50%; background: {% if plate_request.status == 'available_for_production' %}#48bb78; color: white; border: 2px solid #48bb78;{% else %}#fff; color: #a0aec0; border: 2px solid #cbd5e0;{% endif %} display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.85rem;">
+                            {% if plate_request.status == 'available_for_production' %}✓{% else %}4{% endif %}
+                        </div>
+                        <div style="font-size: 0.75rem; font-weight: 600; color: {% if plate_request.status == 'available_for_production' %}#48bb78{% else %}#a0aec0{% endif %}; margin-top: 6px; text-align: center;">Issued</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Workflow Action Form Card -->
+            <div class="erp-card" style="margin: 0; box-shadow: 0 4px 6px rgba(0, 0, 0, 0.03); border: 1px solid rgba(0,0,0,0.06);">
+                <div class="erp-card-header" style="background: #f8fafc; border-bottom: 1px solid rgba(0,0,0,0.05); padding: 12px 20px;">
+                    <h3 style="font-size: 1rem; font-weight: 600; margin: 0; color: #2d3748; display: flex; align-items: center; gap: 8px;">
+                        <i class="fas fa-tasks" style="color: #6f42c1;"></i> Action Panel
+                    </h3>
+                </div>
+                <div class="erp-card-body" style="padding: 20px;">
+                    {% if request.user.profile.role == 'admin' or request.user.profile.role == 'manager' or request.user.profile.role == 'graphics_designer' or request.user.is_superuser %}
+                        {% if plate_request.status == 'draft' %}
+                            <form method="POST" action="{% url 'printing_plates:request_action' plate_request.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="send_to_vendor">
+                                
+                                <div style="display: flex; flex-direction: column; gap: 12px;">
+                                    <div>
+                                        <label for="id_vendor" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Select Vendor <span style="color:red;">*</span></label>
+                                        <div style="display: flex; gap: 6px; align-items: center;">
+                                            <select id="id_vendor" name="vendor" required style="flex-grow: 1; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; background-color: #fff;">
+                                                <option value="" disabled selected>-- Select Vendor --</option>
+                                                {% for vendor in vendors %}
+                                                    <option value="{{ vendor.name }}">{{ vendor.name }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            <button type="button" onclick="quickAddVendor();" class="erp-btn" style="padding: 8px 12px; background: #6f42c1; color: white; border: none; border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; height: 38px;" title="Add new vendor">
+                                                <i class="fas fa-plus"></i>
+                                            </button>
+                                        </div>
+                                    </div>
+                                    
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                        <div>
+                                            <label for="id_set_no" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Set No</label>
+                                            <input type="text" id="id_set_no" name="set_no" value="{{ plate_request.set_no|default:'' }}" 
+                                                   {% if plate_request.planning_job and plate_request.planning_job.repeat_flag != 'New' %}
+                                                       readonly style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box; background-color: #e2e8f0; cursor: not-allowed;" title="Set No is read-only for repeat jobs"
+                                                   {% else %}
+                                                       style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;"
+                                                   {% endif %}>
+                                        </div>
+                                        <div>
+                                            <label for="id_new_set_no" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">New Set No</label>
+                                            <input type="text" id="id_new_set_no" name="new_set_no" value="{{ plate_request.new_set_no|default:'' }}" 
+                                                   {% if plate_request.planning_job and plate_request.planning_job.repeat_flag == 'New' %}
+                                                       readonly style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box; background-color: #e2e8f0; cursor: not-allowed;" title="New Set No is locked for new jobs"
+                                                   {% else %}
+                                                       style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;"
+                                                   {% endif %}>
+                                        </div>
+                                    </div>
+                                    
+                                    <div>
+                                        <label for="id_awc_no" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">AWC #</label>
+                                        <input type="text" id="id_awc_no" name="awc_no" value="{{ plate_request.awc_no|default:'' }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                    </div>
+
+                                    <div>
+                                        <label style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Plate Color <span style="color:red;">*</span></label>
+                                        <div style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;" id="color-buttons-container">
+                                            <button type="button" class="color-btn erp-btn erp-btn-secondary" data-color="Cyan" style="padding: 6px 12px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.15s; background-color: #fff; border: 1px solid #cbd5e0; color: #4a5568;">Cyan</button>
+                                            <button type="button" class="color-btn erp-btn erp-btn-secondary" data-color="Magenta" style="padding: 6px 12px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.15s; background-color: #fff; border: 1px solid #cbd5e0; color: #4a5568;">Magenta</button>
+                                            <button type="button" class="color-btn erp-btn erp-btn-secondary" data-color="Yellow" style="padding: 6px 12px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.15s; background-color: #fff; border: 1px solid #cbd5e0; color: #4a5568;">Yellow</button>
+                                            <button type="button" class="color-btn erp-btn erp-btn-secondary" data-color="Black" style="padding: 6px 12px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.15s; background-color: #fff; border: 1px solid #cbd5e0; color: #4a5568;">Black</button>
+                                            <button type="button" class="color-btn erp-btn erp-btn-secondary" data-color="Special" style="padding: 6px 12px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.15s; background-color: #fff; border: 1px solid #cbd5e0; color: #4a5568;">Special</button>
+                                            <button type="button" class="color-btn erp-btn erp-btn-secondary" data-color="Cancel" style="padding: 6px 12px; font-weight: 600; font-size: 0.85rem; cursor: pointer; transition: all 0.15s; background-color: #fff; border: 1px solid #cbd5e0; color: #4a5568;">Cancel</button>
+                                        </div>
+                                        <input type="hidden" id="id_plate_color" name="plate_color" value="{{ plate_request.plate_color|default:'' }}" required>
+                                    </div>
+                                    
+                                    {% if plate_request.planning_job and plate_request.planning_job.repeat_flag == 'New' %}
+                                    <!-- Designer Layout Specification Fields for New Jobs -->
+                                    <div style="background: #fdf2f8; border-left: 4px solid #db2777; padding: 10px 14px; border-radius: 0 6px 6px 0; margin-bottom: 5px; margin-top: 5px;">
+                                        <span style="font-size: 0.85rem; font-weight: 600; color: #be185d;">New Job Layout Specifications (Will save to Master SKU)</span>
+                                    </div>
+                                    
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                        <div>
+                                            <label for="id_size_w_mm" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Size Width (mm) <span style="color:red;">*</span></label>
+                                            <input type="number" step="1" id="id_size_w_mm" name="size_w_mm" required value="{% if plate_request.planning_job and plate_request.planning_job.size_w_mm %}{{ plate_request.planning_job.size_w_mm }}{% elif master_recipe %}{{ master_recipe.size_w_mm|default:'' }}{% endif %}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                        </div>
+                                        <div>
+                                            <label for="id_size_h_mm" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Size Height (mm) <span style="color:red;">*</span></label>
+                                            <input type="number" step="1" id="id_size_h_mm" name="size_h_mm" required value="{% if plate_request.planning_job and plate_request.planning_job.size_h_mm %}{{ plate_request.planning_job.size_h_mm }}{% elif master_recipe %}{{ master_recipe.size_h_mm|default:'' }}{% endif %}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                        </div>
+                                    </div>
+
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                        <div>
+                                            <label for="id_print_sheet_size" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Print Sheet Size (inches) <span style="color:red;">*</span></label>
+                                            <input type="text" id="id_print_sheet_size" name="print_sheet_size" required placeholder="e.g. 28x40" value="{% if plate_request.planning_job and plate_request.planning_job.print_sheet_size %}{{ plate_request.planning_job.print_sheet_size }}{% elif master_recipe %}{{ master_recipe.print_sheet_size|default:'' }}{% endif %}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                        </div>
+                                        <div>
+                                            <label for="id_ups" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Ups <span style="color:red;">*</span></label>
+                                            <input type="number" step="1" id="id_ups" name="ups" required value="{% if plate_request.planning_job and plate_request.planning_job.ups %}{{ plate_request.planning_job.ups }}{% elif master_recipe %}{{ master_recipe.ups|default:'' }}{% endif %}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                        </div>
+                                    </div>
+
+                                    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                                        <div>
+                                            <label for="id_purchase_sheet_size" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Purchase Sheet Size (inches) <span style="color:red;">*</span></label>
+                                            <input type="text" id="id_purchase_sheet_size" name="purchase_sheet_size" required placeholder="e.g. 30x42" value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_size %}{{ plate_request.planning_job.purchase_sheet_size }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_size|default:'' }}{% endif %}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                        </div>
+                                        <div>
+                                            <label for="id_purchase_sheet_ups" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Purchase Sheet Ups <span style="color:red;">*</span></label>
+                                            <input type="number" step="1" id="id_purchase_sheet_ups" name="purchase_sheet_ups" required value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_ups %}{{ plate_request.planning_job.purchase_sheet_ups }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_ups|default:'' }}{% endif %}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                        </div>
+                                    </div>
+
+                                    <div>
+                                        <label for="id_die_cutting" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Die Cutting <span style="color:red;">*</span></label>
+                                        <input type="text" id="id_die_cutting" name="die_cutting" required value="{% if plate_request.planning_job and plate_request.planning_job.sku_recipe and plate_request.planning_job.sku_recipe.die_cutting %}{{ plate_request.planning_job.sku_recipe.die_cutting }}{% elif master_recipe %}{{ master_recipe.die_cutting|default:'' }}{% endif %}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                    </div>
+                                    {% endif %}
+                                    
+                                    <div>
+                                        <label for="id_plate_quantity" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Plate Quantity</label>
+                                        <input type="number" id="id_plate_quantity" name="plate_quantity" value="{{ plate_request.plate_quantity|default:'' }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                    </div>
+                                    
+                                    <div>
+                                        <label for="id_remarks" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Remarks / Note</label>
+                                        <textarea id="id_remarks" name="remarks" rows="3" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">{% if plate_request.planning_job %}{{ plate_request.remarks|default:plate_request.planning_job.remarks|default:'' }}{% else %}{{ plate_request.remarks|default:'' }}{% endif %}</textarea>
+                                    </div>
+                                    
+                                    <button type="submit" class="erp-btn" style="width: 100%; padding: 10px; background: #2b6cb0; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px;">
+                                        <i class="fas fa-paper-plane"></i> Send to Vendor
+                                    </button>
+                                </div>
+                            </form>
+                        {% elif plate_request.status == 'sent_to_vendor' %}
+                            <form method="POST" action="{% url 'printing_plates:request_action' plate_request.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="receive_from_vendor">
+                                
+                                <div style="display: flex; flex-direction: column; gap: 12px;">
+                                    <div style="background: #ebf8ff; border-left: 4px solid #3182ce; padding: 10px 14px; border-radius: 0 6px 6px 0; margin-bottom: 5px;">
+                                        <span style="font-size: 0.85rem; font-weight: 600; color: #2b6cb0;">Currently Sent to: <strong>{{ plate_request.vendor }}</strong></span>
+                                    </div>
+                                    
+                                    <div>
+                                        <label for="id_challan" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Challan No</label>
+                                        <input type="text" id="id_challan" name="challan" value="{{ plate_request.challan|default:'' }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                    </div>
+                                    
+                                    <div>
+                                        <label for="id_box" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Box No</label>
+                                        <input type="text" id="id_box" name="box" value="{{ plate_request.box|default:'' }}" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">
+                                    </div>
+                                    
+                                    <div>
+                                        <label for="id_remarks" style="display: block; font-size: 0.8rem; font-weight: 600; color: #4a5568; margin-bottom: 4px;">Remarks / Note</label>
+                                        <textarea id="id_remarks" name="remarks" rows="3" style="width: 100%; padding: 8px; border: 1px solid #cbd5e0; border-radius: 6px; font-size: 0.9rem; box-sizing: border-box;">{% if plate_request.planning_job %}{{ plate_request.remarks|default:plate_request.planning_job.remarks|default:'' }}{% else %}{{ plate_request.remarks|default:'' }}{% endif %}</textarea>
+                                    </div>
+                                    
+                                    <button type="submit" class="erp-btn" style="width: 100%; padding: 10px; background: #dd6b20; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 10px;">
+                                        <i class="fas fa-check-circle"></i> Receive from Vendor
+                                    </button>
+                                </div>
+                            </form>
+                        {% elif plate_request.status == 'received_from_vendor' %}
+                            <form method="POST" action="{% url 'printing_plates:request_action' plate_request.pk %}">
+                                {% csrf_token %}
+                                <input type="hidden" name="action" value="issue_to_production">
+                                
+                                <div style="display: flex; flex-direction: column; gap: 12px; text-align: center;">
+                                    <div style="background: #f0fff4; border-left: 4px solid #38a169; padding: 12px 14px; border-radius: 0 6px 6px 0; text-align: left; margin-bottom: 10px;">
+                                        <p style="font-size: 0.85rem; font-weight: 600; color: #276749; margin: 0 0 4px 0;">Plates received and ready for production.</p>
+                                        <p style="font-size: 0.78rem; color: #38a169; margin: 0;">Challan: <strong>{{ plate_request.challan|default:'N/A' }}</strong> | Box: <strong>{{ plate_request.box|default:'N/A' }}</strong></p>
+                                    </div>
+                                    
+                                    <button type="submit" class="erp-btn" style="width: 100%; padding: 12px; background: #38a169; color: white; border: none; border-radius: 6px; font-weight: 600; font-size: 0.95rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                                        <i class="fas fa-industry"></i> Issue to Production
+                                    </button>
+                                </div>
+                            </form>
+                        {% elif plate_request.status == 'available_for_production' %}
+                            <div style="text-align: center; padding: 15px 10px;">
+                                <div style="width: 48px; height: 48px; border-radius: 50%; background: #e6f4ea; color: #1e7e34; display: flex; align-items: center; justify-content: center; font-size: 1.5rem; margin: 0 auto 10px;">
+                                    <i class="fas fa-check-double"></i>
+                                </div>
+                                <h4 style="margin: 0 0 4px 0; font-size: 0.95rem; font-weight: 600; color: #2d3748;">Plates Issued</h4>
+                                <p style="margin: 0; font-size: 0.8rem; color: #718096;">Available for production. Planning job is updated to "Plate Received".</p>
+                            </div>
+                        {% else %}
+                            <p style="margin: 0; font-size: 0.85rem; color: #718096; text-align: center;">No actions available for status: {{ plate_request.get_status_display }}</p>
+                        {% endif %}
+                    {% else %}
+                        <div style="text-align: center; padding: 10px 0;">
+                            <i class="fas fa-lock" style="color: #a0aec0; font-size: 1.2rem; margin-bottom: 6px;"></i>
+                            <p style="margin: 0; font-size: 0.8rem; color: #718096;">Only Graphics Designers, Managers, or Admins can modify the plate workflow.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+
+        </div>
+
     </div>
 </div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const colorInput = document.getElementById("id_plate_color");
+    if (colorInput) {
+        const buttons = document.querySelectorAll(".color-btn");
+        let selectedColors = colorInput.value ? colorInput.value.split(",").map(c => c.trim()).filter(Boolean) : [];
+        
+        buttons.forEach(btn => {
+            const color = btn.getAttribute("data-color");
+            if (selectedColors.includes(color)) {
+                activateButton(btn);
+            }
+            
+            btn.addEventListener("click", function() {
+                const c = btn.getAttribute("data-color");
+                if (selectedColors.includes(c)) {
+                    selectedColors = selectedColors.filter(item => item !== c);
+                    deactivateButton(btn);
+                } else {
+                    selectedColors.push(c);
+                    activateButton(btn);
+                }
+                colorInput.value = selectedColors.join(", ");
+            });
+        });
+    }
+    
+    function activateButton(btn) {
+        btn.style.backgroundColor = "#6f42c1";
+        btn.style.color = "#fff";
+        btn.style.borderColor = "#6f42c1";
+    }
+    
+    function deactivateButton(btn) {
+        btn.style.backgroundColor = "#fff";
+        btn.style.color = "#4a5568";
+        btn.style.borderColor = "#cbd5e0";
+    }
+});
+
+function quickAddVendor() {
+    const name = prompt("Enter new vendor name:");
+    if (!name || !name.trim()) return;
+    
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const formData = new FormData();
+    formData.append('type', 'vendor');
+    formData.append('name', name.trim());
+    
+    fetch('/quick-add-master/', {
+        method: 'POST',
+        headers: {
+            'X-CSRFToken': csrfToken
+        },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.ok) {
+            const select = document.getElementById('id_vendor');
+            const opt = document.createElement('option');
+            opt.value = data.name;
+            opt.textContent = data.name;
+            opt.selected = true;
+            select.appendChild(opt);
+            alert("Vendor '" + data.name + "' added successfully!");
+        } else {
+            alert("Error: " + (data.error || data.message || "Failed to add vendor."));
+        }
+    })
+    .catch(err => {
+        console.error(err);
+        alert("An error occurred while adding vendor.");
+    });
+}
+</script>
 {% endblock %}

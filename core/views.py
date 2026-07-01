@@ -38,6 +38,7 @@ from .models import (
     ShiftConfig,
     Supervisor,
     UserProfile,
+    Vendor,
 )
 from .jobcard_service import normalize_job_card_status
 from workflow.services import start_production
@@ -166,7 +167,7 @@ def quick_add_master(request):
     master_type = (request.POST.get('type') or '').strip().lower()
     name = (request.POST.get('name') or '').strip()
 
-    if master_type not in {'material', 'machine', 'department', 'operator'}:
+    if master_type not in {'material', 'machine', 'department', 'operator', 'vendor'}:
         return JsonResponse({'ok': False, 'error': 'Invalid master type.'}, status=400)
 
     if not name:
@@ -263,6 +264,7 @@ def quick_add_master(request):
     model_map = {
         'material': Material,
         'department': Department,
+        'vendor': Vendor,
     }
     model = model_map[master_type]
 
@@ -951,6 +953,7 @@ def machine_master_tools(request):
         'material': Material,
         'department': Department,
         'supervisor': Supervisor,
+        'vendor': Vendor,
     }
 
     if request.method == 'POST':
@@ -1119,12 +1122,21 @@ def machine_master_tools(request):
             'production_count': Production.objects.filter(supervisor=item, is_active=True).count(),
         })
 
+    vendor_rows = []
+    for item in Vendor.objects.all().order_by('name', 'id'):
+        from printing_plates.models import PlateRequest
+        vendor_rows.append({
+            'record': item,
+            'plate_request_count': PlateRequest.objects.filter(vendor=item.name).count(),
+        })
+
     context = {
         'machine_rows': machine_rows,
         'operator_rows': operator_rows,
         'supervisor_rows': supervisor_rows,
         'material_rows': material_rows,
         'department_rows': department_rows,
+        'vendor_rows': vendor_rows,
         'is_admin_user': bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin'),
     }
     return render(request, 'machine_master_tools.html', context)

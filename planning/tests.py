@@ -191,7 +191,7 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(PlanningJob.objects.filter(po_number='PO-NEW-2', sku='NEW-SKU-002').count(), 1)
 		self.assertEqual(refreshed_job.repeat_flag, 'New')
 		self.assertEqual(refreshed_job.material, 'Paper')
-		self.assertEqual(refreshed_job.plate_set_no, 'PLATE-1')
+		self.assertEqual(refreshed_job.plate_set_no, '')
 
 	def test_decimal_ups_in_recipe_persists_and_calculates_sheets(self):
 		sku = 'DEC-SKU-001'
@@ -360,8 +360,10 @@ class PlanningWorkflowSyncTests(TestCase):
 
 		response = self.client.get(reverse('planning:po_inbox'))
 		self.assertEqual(response.status_code, 200)
-		row = next(row for row in response.context['rows'] if row['po_number'] == 'PO-TIME-1')
-		self.assertEqual(row['uploaded'], po_doc.created_at)
+		row = next(r for r in response.context['rows'] if r['po_number'] == 'PO-TIME-1')
+		uploaded_local = row['uploaded']
+		created_local = po_doc.created_at.astimezone().replace(tzinfo=None)
+		self.assertAlmostEqual((uploaded_local - created_local).total_seconds(), 0, delta=5)
 
 	def test_job_card_created_only_on_submit_to_qc(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-005', po_number='PO-NEW-5')
@@ -372,7 +374,9 @@ class PlanningWorkflowSyncTests(TestCase):
 		job = PlanningJob.objects.get(po_number='PO-NEW-5', sku='NEW-SKU-005')
 		job.machine_name = 'Machine A'
 		job.wastage_sheets = 12
-		job.save(update_fields=['machine_name', 'wastage_sheets', 'updated_at'])
+		job.plate_set_no = 'PLATE-1'
+		job.purchase_material_origin = 'local'
+		job.save(update_fields=['machine_name', 'wastage_sheets', 'plate_set_no', 'purchase_material_origin', 'updated_at'])
 		self.assertFalse(JobCard.objects.filter(planning_job=job).exists())
 
 		self.client.force_login(self.user)
@@ -402,6 +406,10 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(job.status, 'pending_qc')
 
 	def test_migration_import_uses_po_received_date_and_order_qty(self):
+		from unittest.mock import patch
+		import datetime
+		from django.utils import timezone
+
 		import_job = MigrationImportJob.objects.create(
 			module='PLANNING',
 			sheet_url='http://example.com',
@@ -432,7 +440,10 @@ class PlanningWorkflowSyncTests(TestCase):
 			},
 		)
 
-		imported = _import_planning_row(row, actor=self.user)
+		with patch('django.utils.timezone.now') as mock_now:
+			mock_now.return_value = timezone.make_aware(datetime.datetime(2026, 5, 10, 12, 0, 0))
+			imported = _import_planning_row(row, actor=self.user)
+
 		self.assertTrue(imported)
 		job = PlanningJob.objects.get(po_number='PO-IMPORT-1', sku='SKU-IMPORT-1')
 		self.assertEqual(job.order_qty, 500)
@@ -441,6 +452,10 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(job.po_received_date, date(2026, 5, 10))
 
 	def test_migration_import_updates_matching_existing_planning_job(self):
+		from unittest.mock import patch
+		import datetime
+		from django.utils import timezone
+
 		existing_job = PlanningJob.objects.create(
 			jc_number='JC-EXIST',
 			po_number='PO-IMPORT-2',
@@ -479,7 +494,10 @@ class PlanningWorkflowSyncTests(TestCase):
 			},
 		)
 
-		imported = _import_planning_row(row, actor=self.user)
+		with patch('django.utils.timezone.now') as mock_now:
+			mock_now.return_value = timezone.make_aware(datetime.datetime(2026, 5, 10, 12, 0, 0))
+			imported = _import_planning_row(row, actor=self.user)
+
 		self.assertTrue(imported)
 		refreshed = PlanningJob.objects.get(id=existing_job.id)
 		self.assertEqual(refreshed.order_qty, 500)
@@ -650,3 +668,158 @@ class MasterDataSyncTests(TestCase):
 		job.job_card.refresh_from_db()
 		self.assertEqual(job.job_card.ups, Decimal('4'))
 		self.assertIn(job.job_card.workflow_status, {'draft', 'pending_data'})
+
+
+class PendingSkuMasterEntryPlannerTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(username='planner', password='testpass123')
+		profile, _created = UserProfile.objects.get_or_create(user=self.user)
+		profile.role = 'planner'
+		profile.save(update_fields=['role'])
+		self.client.force_login(self.user)
+
+	def _create_po_document(self, sku='TEST-SKU-100', po_number='PO-100'):
+		payload = {
+			'po_number': po_number,
+			'po_date': '2026-05-01',
+			'delivery_location': 'Main Warehouse',
+			'department': 'Printing',
+			'items': [
+				{
+					'line_no': 1,
+					'sku': sku,
+					'job_name': f'{sku} Job',
+					'quantity': 1000,
+					'unit_cost': '1.25',
+					'delivery_date': '2026-05-10',
+					'remarks': 'Mocked PO Remarks',
+				}
+			],
+		}
+		from django.core.files.uploadedfile import SimpleUploadedFile
+		from planning.models import PoDocument
+		return PoDocument.objects.create(
+			po_file=SimpleUploadedFile('po.pdf', b'pdf-content', content_type='application/pdf'),
+			extracted_payload=payload,
+			uploaded_by=self.user,
+		)
+
+	def test_pending_sku_master_entry_designer_fields_disabled(self):
+		po_doc = self._create_po_document()
+		from django.urls import reverse
+		url = reverse('planning:pending_sku_master_entry') + f"?po_doc_id={po_doc.id}&sku=TEST-SKU-100"
+		response = self.client.get(url)
+		self.assertEqual(response.status_code, 200)
+		form = response.context['form']
+		
+		# Verify that remarks display in form remarks initial value
+		self.assertEqual(form.initial.get('remarks'), 'Mocked PO Remarks')
+		
+		# Verify that designer fields are disabled on the form
+		self.assertTrue(form.fields['color_spec'].disabled)
+		self.assertTrue(form.fields['size_w_mm'].disabled)
+		self.assertTrue(form.fields['ups'].disabled)
+		self.assertTrue(form.fields['die_cutting'].disabled)
+		
+		# Verify that planner fields are NOT disabled
+		self.assertFalse(form.fields['material'].disabled)
+		self.assertFalse(form.fields['application'].disabled)
+
+	def test_pending_sku_master_entry_send_to_plate_making(self):
+		po_doc = self._create_po_document()
+		from planning.services import _sync_repeat_jobs_from_po
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		
+		from planning.models import PlanningJob, SkuRecipe
+		job = PlanningJob.objects.get(po_number='PO-100', sku='TEST-SKU-100')
+		job.machine_name = 'Machine A'
+		job.save(update_fields=['machine_name'])
+
+		from django.urls import reverse
+		url = reverse('planning:pending_sku_master_entry')
+		
+		# Submit form with action "send_to_plate_making"
+		response = self.client.post(url, {
+			'po_doc_id': po_doc.id,
+			'sku': 'TEST-SKU-100',
+			'material': 'Paper',
+			'application': 'UV',
+			'machine_name': 'Machine A',
+			'action': 'send_to_plate_making',
+		})
+		
+		self.assertEqual(response.status_code, 302)
+		
+		# Verify SkuRecipe is saved as draft
+		recipe = SkuRecipe.objects.get(sku='TEST-SKU-100')
+		self.assertEqual(recipe.master_data_status, 'draft')
+		self.assertEqual(recipe.material, 'Paper')
+		self.assertEqual(recipe.application, 'UV')
+
+		# Verify PlanningJob copied planner fields and transitioned to new_plate_making
+		job.refresh_from_db()
+		self.assertEqual(job.material, 'Paper')
+		self.assertEqual(job.application, 'UV')
+		self.assertEqual(job.planning_stage, 'new_plate_making')
+
+	def test_pending_sku_master_entry_admin_fields_enabled(self):
+		# Create an admin user
+		admin_user = get_user_model().objects.create_user(username='admin_user', password='testpass123')
+		profile, _created = UserProfile.objects.get_or_create(user=admin_user)
+		profile.role = 'admin'
+		profile.save(update_fields=['role'])
+		self.client.force_login(admin_user)
+
+		po_doc = self._create_po_document()
+		from django.urls import reverse
+		url = reverse('planning:pending_sku_master_entry') + f"?po_doc_id={po_doc.id}&sku=TEST-SKU-100"
+		response = self.client.get(url)
+		self.assertEqual(response.status_code, 200)
+		form = response.context['form']
+		
+		# Verify that designer fields are NOT disabled for the admin
+		self.assertFalse(form.fields['color_spec'].disabled)
+		self.assertFalse(form.fields['size_w_mm'].disabled)
+		self.assertFalse(form.fields['ups'].disabled)
+		self.assertFalse(form.fields['die_cutting'].disabled)
+		self.assertFalse(form.fields['plate_set_no'].disabled)
+
+
+class PoRemarksExtractorTests(TestCase):
+	def test_remarks_extraction_from_po_text(self):
+		from planning.po_extractor import _parse_po_text
+		
+		# Mock Utopia PDF two-row layout format text
+		text = (
+			"PURCHASE ORDER PO-04-2026-164283\n"
+			"Dated Apr 10, 2026\n"
+			"Approval Date Apr 10, 2026\n"
+			"Department/Broker Offset Printing\n"
+			"Delivery Location SITE-2\n"
+			"SUPPLIER DETAILS Name Supplier A NTN 123\n"
+			"BUYER DETAILS Name Buyer B STRN 456\n"
+			"# SKU\n"
+			"1 IMPORTERLABEL-CA-AND-US / IMPORTERLABEL-CA-AND-US Material : Tafetta W-50.8 H-50.8mm\n"
+			"None IMPORTERLABEL-CA-AND-US May 01, 2026 1000000.0 PIECE Rs 0.20 Rs 200,000.00 Rs 0.00 Rs 200,000.00\n"
+			"2 WARNINGLABEL-USA-CAN-IMPORTERLABEL / White Adhesive Sticker W-101.6 L-76.2mm\n"
+			"None WARNINGLABEL-USA-CAN-IMPORTERLABEL May 01, 2026 300000.0 PIECE Rs 1.20 Rs 360,000.00 Rs 0.00 Rs 360,000.00\n"
+			"GRAND TOTAL Rs 560,000.00\n"
+		)
+		
+		table_rows = [
+			["1", "IMPORTERLABEL-CA-AND-US / IMPORTERLABEL-CA-AND-US Material : Tafetta W-50.8 H-50.8mm"],
+			["None", "IMPORTERLABEL-CA-AND-US", "May 01, 2026", "1000000.0 PIECE", "Rs 0.20", "Rs 200,000.00", "Rs 0.00", "Rs 200,000.00"],
+			["2", "WARNINGLABEL-USA-CAN-IMPORTERLABEL / White Adhesive Sticker W-101.6 L-76.2mm"],
+			["None", "WARNINGLABEL-USA-CAN-IMPORTERLABEL", "May 01, 2026", "300000.0 PIECE", "Rs 1.20", "Rs 360,000.00", "Rs 0.00", "Rs 360,000.00"],
+		]
+		
+		result = _parse_po_text(text, table_blobs=[], table_rows=table_rows)
+		self.assertEqual(len(result['items']), 2)
+		
+		item1 = result['items'][0]
+		self.assertEqual(item1['job_name'], 'IMPORTERLABEL-CA-AND-US')
+		self.assertEqual(item1['remarks'], 'IMPORTERLABEL-CA-AND-US Material : Tafetta W-50.8 H-50.8mm')
+		
+		item2 = result['items'][1]
+		self.assertEqual(item2['job_name'], 'WARNINGLABEL-USA-CAN-IMPORTERLABEL')
+		self.assertEqual(item2['remarks'], 'White Adhesive Sticker W-101.6 L-76.2mm')

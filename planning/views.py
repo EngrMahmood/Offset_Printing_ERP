@@ -924,6 +924,30 @@ def planning_home(request):
 
             if action == 'update_planning_stage':
                 planning_stage = (request.POST.get('planning_stage') or '').strip()
+
+                # Enforce stage lock when plate making is in progress
+                if job.planning_stage in ['new_plate_making', 'repeat_plate_making']:
+                    from printing_plates.models import PlateRequest
+                    active_request = PlateRequest.objects.filter(
+                        planning_job=job,
+                        status__in=[PlateRequest.STATUS_DRAFT, PlateRequest.STATUS_SENT, PlateRequest.STATUS_RECEIVED]
+                    ).exists()
+                    if active_request:
+                        messages.error(request, f'Cannot change stage. Plate making is currently in progress for {job.jc_number}.')
+                        return redirect('planning:jobs')
+
+                # Resolve virtual 'plate_making' stage based on repeat flag
+                if planning_stage in ['plate_making', 'new_plate_making', 'repeat_plate_making']:
+                    if not (job.material or '').strip() or not (job.application or '').strip() or not (job.machine_name or '').strip():
+                        messages.error(request, 'Material Type, Application, and Machine Name are required on the Job Card before starting Plate Making.')
+                        return redirect('planning:jobs')
+
+                    if planning_stage == 'plate_making':
+                        if job.repeat_flag == 'New':
+                            planning_stage = 'new_plate_making'
+                        else:
+                            planning_stage = 'repeat_plate_making'
+
                 valid_stages = [choice[0] for choice in PLANNING_STAGE_CHOICES]
                 if planning_stage not in valid_stages:
                     messages.error(request, 'Please select a valid planning stage.')
@@ -3497,6 +3521,21 @@ def pending_skus(request):
             for row in pending_rows
             if _normalize_po_number(row.get('po_number')) == po_filter_key
         ]
+
+    # Bulk-fetch JC numbers early so text search can also filter by JC No
+    job_key_map = {}
+    if pending_rows:
+        po_numbers = {r['po_number'] for r in pending_rows if r.get('po_number')}
+        jobs_qs = PlanningJob.objects.filter(po_number__in=po_numbers).values('po_number', 'sku', 'jc_number')
+        for j in jobs_qs:
+            key = (_normalize_po_number(j['po_number']), _sku_key(j['sku']))
+            if key not in job_key_map and j.get('jc_number'):
+                job_key_map[key] = j['jc_number']
+    for row in pending_rows:
+        row['jc_number'] = job_key_map.get(
+            (_normalize_po_number(row.get('po_number', '')), _sku_key(row.get('sku', ''))), ''
+        )
+
     if q:
         q_upper = q.upper()
         pending_rows = [
@@ -3505,6 +3544,7 @@ def pending_skus(request):
             if q_upper in (row.get('sku') or '').upper()
             or q_upper in (row.get('po_number') or '').upper()
             or q_upper in (row.get('job_name') or '').upper()
+            or q_upper in (row.get('jc_number') or '').upper()
         ]
 
     sku_values = sorted({row['sku'] for row in pending_rows if row.get('sku')})
@@ -3698,8 +3738,15 @@ def pending_sku_master_entry(request):
         suggested_item.get('color_spec') or suggested_item.get('colour') or suggested_item.get('color') or ''
     )
     po_application = _normalize_application_input(suggested_item.get('application') or payload.get('application') or '')
+    po_remarks = (suggested_item.get('remarks') or '').strip()
 
-    recipe = SkuRecipe.objects.filter(sku__iexact=sku).first()
+    # Fetch the best available recipe using priority: approved > reviewed > pending_review > draft
+    _STATUS_ORDER = {'approved': 0, 'reviewed': 1, 'pending_review': 2, 'draft': 3}
+    _all_recipes = list(SkuRecipe.objects.filter(sku__iexact=sku))
+    recipe = None
+    if _all_recipes:
+        recipe = min(_all_recipes, key=lambda r: _STATUS_ORDER.get(r.master_data_status or '', 99))
+
 
     if request.method == 'POST':
         if is_readonly:
@@ -3746,7 +3793,56 @@ def pending_sku_master_entry(request):
             if not recipe:
                 obj.created_by = request.user
 
-            if action == 'submit_review':
+            if action == 'send_to_plate_making':
+                obj.master_data_status = 'draft'
+                obj.reviewed_by = None
+                obj.reviewed_at = None
+                obj.approved_by = None
+                obj.approved_at = None
+                obj.save()
+
+                configured = set(payload.get('new_skus_configured') or [])
+                configured.add(sku)
+                payload['new_skus_configured'] = sorted(configured)
+                po_doc.extracted_payload = payload
+                po_doc.save(update_fields=['extracted_payload'])
+
+                # Find the draft PlanningJob and copy planner fields
+                po_number = payload.get('po_number') or ''
+                job = PlanningJob.objects.filter(po_number=po_number, sku__iexact=sku, status='draft').first()
+                if job:
+                    job.material = obj.material
+                    job.application = obj.application
+                    job.machine_name = obj.machine_name
+                    job.plate_set_no = obj.plate_set_no
+                    job.save(update_fields=['material', 'application', 'machine_name', 'plate_set_no', 'updated_at'])
+
+                    # Check if machine_name is also set to transition to plate making stage
+                    if (job.machine_name or '').strip():
+                        if job.repeat_flag == 'New':
+                            planning_stage = 'new_plate_making'
+                        else:
+                            planning_stage = 'repeat_plate_making'
+
+                        job.planning_stage = planning_stage
+                        job.planning_stage_changed_at = timezone.now()
+                        job.planning_stage_changed_by = request.user
+                        job.save(update_fields=['planning_stage', 'planning_stage_changed_at', 'planning_stage_changed_by', 'updated_at'])
+                        
+                        # Trigger plate request
+                        trigger_plate_request_for_planning_job(job, request.user)
+                        
+                        messages.success(request, f'SKU {sku} saved, and Job Card {job.jc_number} sent to Plate Making.')
+                    else:
+                        messages.warning(
+                            request,
+                            f'SKU {sku} saved as Draft. Job Card {job.jc_number} was updated, but could not be sent to Plate Making because Machine Name is missing. Please set the Machine Name on the Planning Jobs page.'
+                        )
+                else:
+                    messages.success(request, f'SKU {sku} saved as Draft. No draft Planning Job was found for this PO.')
+
+                return _redirect_pending()
+            elif action == 'submit_review':
                 missing_required = _missing_required_master_fields(obj)
                 if missing_required:
                     messages.error(
@@ -3792,6 +3888,10 @@ def pending_sku_master_entry(request):
             'default_unit_cost': (recipe.default_unit_cost if recipe else None) or po_unit_cost,
             'color_spec': (recipe.color_spec if recipe else '') or po_color_spec,
             'application': (recipe.application if recipe else '') or po_application,
+            'machine_name': (recipe.machine_name if recipe else ''),
+            'plate_set_no': (recipe.plate_set_no if recipe else ''),
+            'notes': (recipe.notes if recipe else ''),
+            'remarks': (recipe.remarks if recipe else '') or po_remarks,
         }
         form = SkuRecipeForm(instance=recipe, initial=initial)
 
@@ -3799,6 +3899,24 @@ def pending_sku_master_entry(request):
     if is_readonly:
         for field in form.fields.values():
             field.disabled = True
+    elif not _user_is_admin(request.user):
+        # Planner edit mode: only planner fields (material, application, unit cost, daily demand, notes, machine_name) are editable.
+        # Designer fields are disabled.
+        designer_fields = [
+            'color_spec',
+            'size_w_mm',
+            'size_h_mm',
+            'ups',
+            'print_sheet_size',
+            'purchase_sheet_size',
+            'purchase_sheet_ups',
+            'awc_no',
+            'die_cutting',
+            'plate_set_no',
+        ]
+        for field_name in designer_fields:
+            if field_name in form.fields:
+                form.fields[field_name].disabled = True
 
     current_recipe = recipe
     if request.method == 'POST' and form.is_valid() and 'obj' in locals():
@@ -3809,6 +3927,14 @@ def pending_sku_master_entry(request):
         cost_alert = _build_cost_mismatch_note(current_recipe.default_unit_cost, po_unit_cost)
         if cost_alert:
             mismatch_alerts.append(cost_alert)
+
+    po_number_val = payload.get('po_number') or ''
+    job_obj = PlanningJob.objects.filter(po_number=po_number_val, sku__iexact=sku).first()
+    is_new_job = (job_obj.repeat_flag == 'New') if job_obj else True
+    # Also treat as Repeat if there is any bulk-uploaded recipe in the database
+    if is_new_job and recipe:
+        is_new_job = False
+    repeat_flag_display = 'New' if is_new_job else 'Repeat'
 
     context = {
         'form': form,
@@ -3824,6 +3950,9 @@ def pending_sku_master_entry(request):
         'missing_required_fields': _missing_required_master_fields(current_recipe, po_job_name),
         'mismatch_alerts': mismatch_alerts,
         'is_readonly': is_readonly,
+        'is_new_job': is_new_job,
+        'repeat_flag_display': repeat_flag_display,
+        'jc_number': (job_obj.jc_number if job_obj else '') or '',
     }
     context['can_admin_actions'] = is_admin_user
     return render(request, 'planning/pending_sku_master_entry.html', context)

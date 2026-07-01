@@ -1,0 +1,163 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Printing Plates - Plate Sent{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <!-- Navigation Tabs / Actions -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+        <div class="erp-actions">
+            <a href="{% url 'printing_plates:dashboard' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="{% url 'printing_plates:request_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-file-invoice"></i> Plate Requests</a>
+            <a href="{% url 'printing_plates:sent_list' %}" class="erp-btn erp-btn-primary"><i class="fas fa-paper-plane"></i> Plate Sent</a>
+            <a href="{% url 'printing_plates:received_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-check-circle"></i> Plate Received</a>
+            <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-list"></i> Plate Queue</a>
+        </div>
+        <div>
+            <a href="{% url 'printing_plates:request_add' %}" class="erp-btn" style="background-color: #6f42c1; color: white; border: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fas fa-plus"></i> Add
+            </a>
+        </div>
+    </div>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <h2>Plate Sent</h2>
+            <p>List of all plate requests that have been sent to vendors.</p>
+        </div>
+
+        <div class="erp-records-layout">
+            <!-- Sidebar Vendor Quick-Filters -->
+            <aside class="erp-filter-sidebar" style="background:#fff; border-radius:8px; border:1px solid rgba(115,115,115,0.08); padding:16px;">
+                <h3 style="font-size:0.95rem; font-weight:600; margin-bottom:12px; color:#2b3440; border-bottom:1px solid rgba(0,0,0,0.06); padding-bottom:8px;">Vendors</h3>
+                <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px;">
+                    <li>
+                        <a href="?vendor=" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if not vendor_filter %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
+                            <span>All</span>
+                            <span class="badge" style="background:{% if not vendor_filter %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ all_count }}</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="?vendor=Dot Max" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'Dot Max' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
+                            <span>Dot Max</span>
+                            <span class="badge" style="background:{% if vendor_filter == 'Dot Max' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.Dot_Max|default:0 }}</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="?vendor=Ali Print Pack" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'Ali Print Pack' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
+                            <span>Ali Print Pack</span>
+                            <span class="badge" style="background:{% if vendor_filter == 'Ali Print Pack' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.Ali_Print_Pack|default:0 }}</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="?vendor=Daniyal Process" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'Daniyal Process' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
+                            <span>Daniyal Process</span>
+                            <span class="badge" style="background:{% if vendor_filter == 'Daniyal Process' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.Daniyal_Process|default:0 }}</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="?vendor=In House" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'In House' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
+                            <span>In House</span>
+                            <span class="badge" style="background:{% if vendor_filter == 'In House' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.In_House|default:0 }}</span>
+                        </a>
+                    </li>
+                    <li>
+                        <a href="?vendor=Cancel" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'Cancel' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
+                            <span>Cancel</span>
+                            <span class="badge" style="background:{% if vendor_filter == 'Cancel' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.Cancel|default:0 }}</span>
+                        </a>
+                    </li>
+                </ul>
+
+                <hr style="border:0; border-top:1px solid rgba(0,0,0,0.06); margin:16px 0;">
+
+                <form method="GET" class="erp-filter-group">
+                    <input type="hidden" name="vendor" value="{{ vendor_filter }}">
+                    <div class="erp-filter-group">
+                        <label for="q" class="erp-field-label">Search Keywords</label>
+                        <input id="q" name="q" value="{{ q }}" placeholder="JC, SKU, Job Name..." class="erp-input" style="width:100%;">
+                    </div>
+                    <div class="erp-filter-actions" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+                        <button type="submit" class="erp-btn erp-btn-primary" style="width:100%; justify-content:center;">Search</button>
+                        <a href="{% url 'printing_plates:sent_list' %}" class="erp-btn erp-btn-secondary" style="width:100%; justify-content:center;">Clear</a>
+                    </div>
+                </form>
+            </aside>
+
+            <!-- Table Section -->
+            <div>
+                {% if plate_requests %}
+                    <div class="erp-table-scroll">
+                        <table class="erp-table">
+                            <thead>
+                                <tr>
+                                    <th>JC#</th>
+                                    <th>Status</th>
+                                    <th>Set #</th>
+                                    <th>New Set #</th>
+                                    <th>Vendor</th>
+                                    <th>SKU</th>
+                                    <th>Plate Qty</th>
+                                    <th>Machine Name</th>
+                                    <th>Plate Color</th>
+                                    <th>Impression</th>
+                                    <th>Remarks</th>
+                                    <th>Requested By</th>
+                                    <th>Request Date</th>
+                                    <th>Progress</th>
+                                    <th>Sent By</th>
+                                    <th>Sent At</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for req in plate_requests %}
+                                <tr>
+                                    <td><strong><a href="{% url 'printing_plates:request_detail' req.pk %}">{{ req.jc_number|default:'—' }}</a></strong></td>
+                                    <td>
+                                        {% if req.plate_request_type == 'New Artwork' %}
+                                            <span class="erp-badge erp-badge-info">New Artwork</span>
+                                        {% elif req.plate_request_type == 'Repeat' %}
+                                            <span class="erp-badge erp-badge-warning">Repeat</span>
+                                        {% else %}
+                                            <span style="color:#999;">—</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ req.set_no|default:'—' }}</td>
+                                    <td>{{ req.new_set_no|default:'—' }}</td>
+                                    <td><strong>{{ req.vendor|default:'—' }}</strong></td>
+                                    <td title="{{ req.sku }}">{{ req.sku|default:'—' }}</td>
+                                    <td>{{ req.plate_quantity|default:'—' }}</td>
+                                    <td>{{ req.machine_display|default:'—' }}</td>
+                                    <td>{{ req.plate_color|default:'—' }}</td>
+                                    <td>{{ req.impression|default:'—' }}</td>
+                                    <td title="{{ req.remarks }}">{{ req.remarks|truncatechars:20|default:'—' }}</td>
+                                    <td>{{ req.requested_by.username|default:'—' }}</td>
+                                    <td>{{ req.requested_at|date:'Y-m-d H:i'|default:'—' }}</td>
+                                    <td><span class="erp-badge">{{ req.get_status_display }}</span></td>
+                                    <td>{{ req.sent_by.username|default:'—' }}</td>
+                                    <td>{{ req.sent_at|date:'Y-m-d H:i'|default:'—' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p style="padding: 20px; background: #fff; border-radius: 8px; border: 1px solid rgba(115,115,115,0.08);">No sent plate requests found matching the current criteria.</p>
+                {% endif %}
+
+                {% if is_paginated %}
+                <nav class="erp-pagination" aria-label="Page navigation" style="margin-top: 15px;">
+                    {% if page_obj.has_previous %}
+                        <a href="?vendor={{ vendor_filter }}&q={{ q }}&page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary">Previous</a>
+                    {% endif %}
+                    <span class="erp-table-meta-text">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                    {% if page_obj.has_next %}
+                        <a href="?vendor={{ vendor_filter }}&q={{ q }}&page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary">Next</a>
+                    {% endif %}
+                </nav>
+                {% endif %}
+            </div>
+        </div>
+    </section>
+</div>
+{% endblock %}

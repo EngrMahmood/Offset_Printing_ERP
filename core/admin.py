@@ -7,9 +7,15 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 
-from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, Material, Operator, Supervisor, UserProfile, ChangeLog, EditOverrideRequest
+from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, Material, Operator, Supervisor, UserProfile, ChangeLog, EditOverrideRequest, Vendor
 
 User = get_user_model()
+
+
+@admin.register(Vendor)
+class VendorAdmin(admin.ModelAdmin):
+    list_display = ('name', 'is_active', 'created_at')
+    search_fields = ('name',)
 
 
 # =========================

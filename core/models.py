@@ -59,6 +59,20 @@ class Supervisor(models.Model):
         return self.name
 
 
+class Vendor(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Vendor'
+        verbose_name_plural = 'Vendors'
+
+    def __str__(self):
+        return self.name
+
+
 class SequenceCounter(models.Model):
     """Generic counters for business document serials (e.g., JC numbers)."""
 
@@ -177,7 +191,7 @@ class JobCard(models.Model):
         help_text="Allowed extra production over planned sheets in percent"
     )
 
-    ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    ups = models.IntegerField(null=True, blank=True)
     print_sheet_size = models.CharField(max_length=50, null=True, blank=True)
     plate_set_no = models.CharField(max_length=120, null=True, blank=True)
 
@@ -186,7 +200,7 @@ class JobCard(models.Model):
     total_colors = models.PositiveIntegerField(null=True, blank=True)
 
     purchase_sheet_size = models.CharField(max_length=50, null=True, blank=True)
-    purchase_sheet_ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    purchase_sheet_ups = models.IntegerField(null=True, blank=True)
 
     remarks = models.TextField(null=True, blank=True)
 

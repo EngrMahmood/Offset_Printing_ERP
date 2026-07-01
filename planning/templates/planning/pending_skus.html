@@ -136,7 +136,7 @@
                         <option value="{{ po.po_number }}" {% if po_filter == po.po_number %}selected{% endif %}>{{ po.po_number }} ({{ po.count }})</option>
                     {% endfor %}
                 </select>
-                <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / Job Name" aria-label="Search SKU or PO or Job Name">
+                <input type="text" name="q" value="{{ q }}" placeholder="Search SKU / PO / JC No / Job Name" aria-label="Search SKU or PO or JC No or Job Name">
                 <div class="erp-filter-controls">
                     <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
                     <a href="{% url 'planning:pending_skus' %}" class="erp-btn erp-btn-secondary">Reset</a>
@@ -159,6 +159,7 @@
             <table class="erp-table erp-table-dense">
                 <thead>
                     <tr>
+                        <th>JC No</th>
                         <th>PO</th>
                         <th>SKU</th>
                         <th>Job Name</th>
@@ -173,6 +174,13 @@
                 <tbody>
                 {% for row in pending_rows %}
                     <tr>
+                        <td>
+                            {% if row.jc_number %}
+                                <div><strong>{{ row.jc_number }}</strong></div>
+                            {% else %}
+                                <div class="erp-note">-</div>
+                            {% endif %}
+                        </td>
                         <td>
                             <div>{{ row.po_number }}</div>
                             <div class="erp-note"><a href="{% url 'qc:po_review' row.po_doc_id %}">Open PO</a></div>
@@ -212,7 +220,7 @@
                         </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="9" class="erp-empty">No pending SKUs for the selected filter.</td></tr>
+                    <tr><td colspan="10" class="erp-empty">No pending SKUs for the selected filter.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

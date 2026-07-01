@@ -16,10 +16,17 @@ class DispatchValidationTests(TestCase):
     def test_print_job_dispatch_within_produced_pieces_succeeds(self):
         job_card = JobCard.objects.create(
             job_card_no='JC-01-26-1071',
+            SKU='SKU-001',
             order_qty=100,
             ups=10,
             is_print_job=True,
             total_impressions_required=100,
+            status='in_production',
+            po_date=date(2026, 1, 1),
+            total_sheet_quantity=10,
+            total_colors=4,
+            plate_set_no='PLATE-1',
+            machine_name=self.machine,
         )
         Production.objects.create(
             job_card=job_card,
@@ -46,10 +53,17 @@ class DispatchValidationTests(TestCase):
     def test_print_job_dispatch_exceeding_production_raises(self):
         job_card = JobCard.objects.create(
             job_card_no='JC-02-26-0001',
+            SKU='SKU-001',
             order_qty=100,
             ups=10,
             is_print_job=True,
             total_impressions_required=50,
+            status='in_production',
+            po_date=date(2026, 1, 1),
+            total_sheet_quantity=10,
+            total_colors=4,
+            plate_set_no='PLATE-1',
+            machine_name=self.machine,
         )
         Production.objects.create(
             job_card=job_card,

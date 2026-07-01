@@ -62,6 +62,7 @@ def create_or_get_plate_request_from_planning_job(planning_job, user):
         status=PlateRequest.STATUS_DRAFT,
         requested_at=timezone.now(),
         requested_by=user,
+        remarks=getattr(planning_job, 'remarks', '') or '',
     )
 
     _log_plate_request_change(

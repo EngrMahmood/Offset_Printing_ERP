@@ -83,10 +83,8 @@ APPLICATION_CHOICES = [
 
 
 class PlanningJobFinalizationForm(forms.ModelForm):
-    """Phase 4 finalization form — editable fields only (pre-QC execution prep).
-
-    Access rule: status must be 'draft' or 'pending_qc'.
-    SKU master fields are read-only; changes require reopen_sku → re-approval.
+    """Form to collect layout specs, purchase material, and release constraints
+    during job finalization stage.
     """
 
     class Meta:
@@ -94,8 +92,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
         fields = [
             'delivery_date',
             'wastage_sheets',
-            'plate_set_no',
-            'machine_name',
             'planned_total_impressions',
             'purchase_material_origin',
             'destination',
@@ -118,8 +114,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
         required_fields = [
             'delivery_date',
             'wastage_sheets',
-            'plate_set_no',
-            'machine_name',
             'planned_total_impressions',
             'purchase_material_origin',
             'destination',
@@ -131,17 +125,13 @@ class PlanningJobFinalizationForm(forms.ModelForm):
                 self.fields[field_name].widget.attrs.setdefault('required', 'required')
 
         if 'purchase_material_origin' in self.fields:
-            self.fields['purchase_material_origin'].widget = forms.Select(choices=PURCHASE_MATERIAL_ORIGIN_CHOICES)
-        if 'plate_set_no' in self.fields:
-            self.fields['plate_set_no'].widget.attrs.setdefault('placeholder', 'Plate set reference')
+            self.fields['purchase_material_origin'].widget = forms.Select(choices=APPLICATION_CHOICES if False else PURCHASE_MATERIAL_ORIGIN_CHOICES)
 
     def clean(self):
         cleaned = super().clean()
         required_messages = {
             'delivery_date': 'Delivery Date is required.',
             'wastage_sheets': 'Wastage Sheets is required.',
-            'plate_set_no': 'Plate Set is required.',
-            'machine_name': 'Machine Name is required.',
             'planned_total_impressions': 'Total Impressions is required.',
             'purchase_material_origin': 'Purchase Material Origin is required.',
             'destination': 'Destination is required.',
@@ -159,10 +149,12 @@ class PlanningJobFinalizationForm(forms.ModelForm):
 
         status = (cleaned.get('status') or self.instance.status or '').strip().lower()
         if status in PLANNING_QC_GATE_STATUSES:
+            # Check plate_set_no on the instance (since it is filled by the designer during plate request)
+            if not getattr(self.instance, 'plate_set_no', '').strip():
+                self.add_error(None, 'Plate Set is required before QC approval.')
+
             qc_required_messages = {
-                'plate_set_no': 'Plate Set is required before QC approval.',
                 'wastage_sheets': 'Wastage is required before QC approval.',
-                'machine_name': 'Machine Name is required before QC approval.',
                 'purchase_material_origin': 'Purchase Material Origin is required before QC approval.',
             }
             for field_name, message in qc_required_messages.items():
@@ -190,6 +182,8 @@ class SkuRecipeForm(forms.ModelForm):
             'material',
             'color_spec',
             'application',
+            'machine_name',
+            'plate_set_no',
             'size_w_mm',
             'size_h_mm',
             'ups',
@@ -201,23 +195,35 @@ class SkuRecipeForm(forms.ModelForm):
             'awc_no',
             'die_cutting',
             'notes',
+            'remarks',
         ]
         widgets = {
             'notes': forms.Textarea(attrs={'rows': 3}),
+            'remarks': forms.Textarea(attrs={'rows': 3}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
         app_field = self.fields['application']
-        app_field.widget = forms.Select(choices=APPLICATION_CHOICES)
+        app_field.widget = forms.Select(choices=APPLICATION_CHOICES, attrs={'class': 'erp-select'})
         app_field.required = True
         app_field.widget.attrs.setdefault('required', 'required')
+
+        from core.models import Machine
+        machines = Machine.objects.filter(is_active=True).order_by('name')
+        machine_choices = [('', 'Select Machine')] + [(m.name, m.name) for m in machines]
+        current_value = self.instance.machine_name if self.instance else None
+        if current_value and current_value not in [m.name for m in machines]:
+            machine_choices.append((current_value, current_value))
+        self.fields['machine_name'].widget = forms.Select(choices=machine_choices, attrs={'class': 'erp-select', 'style': 'flex: 1;'})
 
         self.fields['job_name'].widget.attrs.setdefault('required', 'required')
         self.fields['material'].widget.attrs.setdefault('required', 'required')
         self.fields['color_spec'].widget.attrs.setdefault('required', 'required')
         self.fields['application'].widget.attrs.setdefault('required', 'required')
+        self.fields['machine_name'].widget.attrs.setdefault('required', 'required')
+        self.fields['machine_name'].required = True
         self.fields['print_sheet_size'].widget.attrs.setdefault('required', 'required')
         self.fields['purchase_sheet_size'].widget.attrs.setdefault('required', 'required')
         self.fields['ups'].widget.attrs.setdefault('required', 'required')

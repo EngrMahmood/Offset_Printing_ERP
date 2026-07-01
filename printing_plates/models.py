@@ -21,6 +21,8 @@ class PlateRequest(models.Model):
         'planning.PlanningJob',
         on_delete=models.PROTECT,
         related_name='plate_requests',
+        null=True,
+        blank=True,
     )
     job_card = models.ForeignKey(
         'core.JobCard',
@@ -57,6 +59,7 @@ class PlateRequest(models.Model):
 
     set_no = models.CharField(max_length=120, blank=True)
     new_set_no = models.CharField(max_length=120, blank=True)
+    awc_no = models.CharField(max_length=120, blank=True)
     plate_quantity = models.PositiveIntegerField(null=True, blank=True)
     plate_color = models.CharField(max_length=120, blank=True)
     vendor = models.CharField(max_length=120, blank=True)
@@ -119,6 +122,28 @@ class PlateRequest(models.Model):
         identifier = self.set_no or self.new_set_no or str(self.pk)
         return f'Plate Request {identifier} ({self.get_status_display()})'
 
+    def save(self, *args, **kwargs):
+        if not self.awc_no:
+            try:
+                if self.sku_recipe and self.sku_recipe.awc_no:
+                    self.awc_no = self.sku_recipe.awc_no
+                elif self.planning_job and self.planning_job.awc_no_display:
+                    self.awc_no = self.planning_job.awc_no_display
+            except Exception:
+                pass
+
+        # Auto-transition the PlanningJob stage to 'plate_received' when plates are ready/available
+        if self.status == self.STATUS_AVAILABLE:
+            try:
+                planning_job = self.planning_job
+                if planning_job and planning_job.planning_stage in ['new_plate_making', 'repeat_plate_making']:
+                    planning_job.planning_stage = 'plate_received'
+                    planning_job.save(update_fields=['planning_stage', 'updated_at'])
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
+
+
     @property
     def job_name(self):
         if self.sku_recipe and self.sku_recipe.job_name:
@@ -127,14 +152,6 @@ class PlateRequest(models.Model):
             return self.job_card.planning_job.job_name
         if self.planning_job and self.planning_job.job_name:
             return self.planning_job.job_name
-        return ''
-
-    @property
-    def awc_no(self):
-        if self.sku_recipe and self.sku_recipe.awc_no:
-            return self.sku_recipe.awc_no
-        if self.planning_job and getattr(self.planning_job, 'awc_no_display', ''):
-            return self.planning_job.awc_no_display
         return ''
 
     @property
@@ -164,3 +181,57 @@ class PlateRequest(models.Model):
         if self.planning_job and self.planning_job.planned_total_impressions is not None:
             return self.planning_job.planned_total_impressions
         return None
+
+    @property
+    def jc_number(self):
+        if self.job_card and self.job_card.job_card_no:
+            return self.job_card.job_card_no
+        if self.planning_job and self.planning_job.jc_number:
+            return self.planning_job.jc_number
+        return ''
+
+    @property
+    def sku(self):
+        if self.sku_recipe and self.sku_recipe.sku:
+            return self.sku_recipe.sku
+        if self.job_card and self.job_card.SKU:
+            return self.job_card.SKU
+        if self.planning_job and self.planning_job.sku:
+            return self.planning_job.sku
+        return ''
+
+    @property
+    def machine_display(self):
+        if self.machine:
+            return str(self.machine)
+        if self.job_card and self.job_card.machine_name:
+            return str(self.job_card.machine_name)
+        if self.planning_job and self.planning_job.machine_name:
+            return self.planning_job.machine_name
+        return ''
+
+    @property
+    def department_display(self):
+        if self.department:
+            return str(self.department)
+        if self.job_card and self.job_card.department:
+            return str(self.job_card.department)
+        if self.planning_job and self.planning_job.department:
+            return self.planning_job.department
+        return ''
+
+    @property
+    def plate_request_type(self):
+        flag = ''
+        if self.planning_job:
+            flag = self.planning_job.repeat_flag
+        elif self.job_card and self.job_card.planning_job:
+            flag = self.job_card.planning_job.repeat_flag
+
+        if flag == 'New':
+            return 'New Artwork'
+        elif flag == 'Repeat':
+            return 'Repeat'
+        return ''
+
+

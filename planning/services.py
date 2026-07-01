@@ -249,16 +249,37 @@ def _sync_new_sku_requirement(existing_requirement, is_new):
 
 
 def _build_recipe_map(items):
+    """Return a map of SKU-upper -> SkuRecipe for any existing recipe (any status).
+
+    Priority: approved > reviewed > pending_review > draft.
+    This ensures that repeat POs are recognised even when the bulk-uploaded
+    recipe has not yet been formally approved in the ERP.
+    """
     sku_values = sorted({_sku_key(item.get('sku')) for item in items if item.get('sku')})
     if not sku_values:
         return {}
 
+    STATUS_PRIORITY = {'approved': 0, 'reviewed': 1, 'pending_review': 2, 'draft': 3}
+
     recipes = (
         SkuRecipe.objects
         .annotate(sku_upper=Upper('sku'))
-        .filter(sku_upper__in=sku_values, master_data_status='approved')
+        .filter(sku_upper__in=sku_values)
+        .order_by('sku_upper')
     )
-    return {recipe.sku.upper(): recipe for recipe in recipes}
+
+    result = {}
+    for recipe in recipes:
+        key = recipe.sku.upper()
+        if key not in result:
+            result[key] = recipe
+        else:
+            # Keep the higher-priority (more approved) record
+            existing_priority = STATUS_PRIORITY.get(result[key].master_data_status, 99)
+            incoming_priority = STATUS_PRIORITY.get(recipe.master_data_status, 99)
+            if incoming_priority < existing_priority:
+                result[key] = recipe
+    return result
 
 
 
@@ -518,7 +539,10 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
                 prior_jobs_exist = PlanningJob.objects.filter(sku__iexact=sku).exclude(id=existing_job.id).exists()
                 forward_as_new = not prior_jobs_exist
         else:
-            forward_as_new = is_first_production
+            # Even if there is no prior planning job, a bulk-uploaded recipe
+            # (any status) signals that this SKU has been produced before.
+            any_recipe_exists = sku_key and SkuRecipe.objects.filter(sku__iexact=sku_key).exists()
+            forward_as_new = is_first_production and not any_recipe_exists
 
         current_requirement = existing_job.requirement if existing_job else ''
 
@@ -549,10 +573,10 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
         pkt_value = _to_decimal(item.get('pkt') or item.get('pkt_value') or '') or (existing_job.pkt_value if existing_job else None)
         stock_qty_value = _to_decimal(item.get('stock_qty') or item.get('stock') or '') or (existing_job.stock_qty if existing_job else None)
         balance_qty_value = _to_int(item.get('balance_qty') or item.get('balance') or '') or (existing_job.balance_qty if existing_job else None)
-        plate_set_no_value = (item.get('plate_set_no') or item.get('p_set_no') or '').strip() or (existing_job.plate_set_no if existing_job else '')
+        plate_set_no_value = (item.get('plate_set_no') or item.get('p_set_no') or '').strip() or (recipe.plate_set_no if recipe else (existing_job.plate_set_no if existing_job else ''))
         die_cutting_value = (item.get('die_cutting') or '').strip() or (recipe.die_cutting if recipe else (existing_job.die_cutting if hasattr(existing_job, 'die_cutting') else ''))
         purchase_material_origin_value = _normalize_purchase_material_origin(item.get('purchase_material_origin') or item.get('purchase_material') or '') or (existing_job.purchase_material_origin if existing_job else '')
-        machine_name_value = (item.get('machine_name') or item.get('machine') or '').strip() or (existing_job.machine_name if existing_job else '')
+        machine_name_value = (item.get('machine_name') or item.get('machine') or '').strip() or (recipe.machine_name if recipe else (existing_job.machine_name if existing_job else ''))
         status_value = _normalize_status(item.get('status') or '') or 'draft'
         requirement_value = (item.get('requirement') or '').strip() or current_requirement
 

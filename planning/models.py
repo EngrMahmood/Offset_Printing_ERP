@@ -1,4 +1,4 @@
-﻿import math
+import math
 import re
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -43,8 +43,10 @@ PLANNING_STAGE_CHOICES = [
     ('jc_ready', 'JC Ready'),
     ('new_plate_making', 'New Plate Making'),
     ('repeat_plate_making', 'Repeat Plate Making'),
+    ('plate_received', 'Plate Received'),
     ('in_production', 'In Production'),
 ]
+
 
 
 class PlanningJob(models.Model):
@@ -63,14 +65,14 @@ class PlanningJob(models.Model):
     color_spec = models.CharField(max_length=60, blank=True)
     application = models.CharField(max_length=120, blank=True)
 
-    size_w_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    size_h_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    size_w_mm = models.IntegerField(null=True, blank=True)
+    size_h_mm = models.IntegerField(null=True, blank=True)
     size_w_inch = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     size_h_inch = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
 
     order_qty = models.PositiveIntegerField(null=True, blank=True)
     print_pcs = models.PositiveIntegerField(null=True, blank=True)
-    ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    ups = models.IntegerField(null=True, blank=True)
 
     print_sheet_size = models.CharField(max_length=80, blank=True)
     print_sheets = models.PositiveIntegerField(null=True, blank=True)
@@ -78,7 +80,7 @@ class PlanningJob(models.Model):
     actual_sheet_required = models.PositiveIntegerField(null=True, blank=True)
 
     purchase_sheet_size = models.CharField(max_length=80, blank=True)
-    purchase_sheet_ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    purchase_sheet_ups = models.IntegerField(null=True, blank=True)
     purchase_sheet_required = models.PositiveIntegerField(null=True, blank=True)
 
     pkt_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
@@ -144,12 +146,12 @@ class PlanningJob(models.Model):
     destination = models.CharField(max_length=120, blank=True)
 
     unit_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    stock_bag = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    stock_bag = models.DecimalField(max_digits=12, decimal_places=1, null=True, blank=True)
 
     machine_name = models.CharField(max_length=120, blank=True)
     purchase_material_origin = models.CharField(max_length=20, choices=PURCHASE_MATERIAL_ORIGIN_CHOICES, blank=True)
-    stock_qty = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    daily_demand = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    stock_qty = models.DecimalField(max_digits=12, decimal_places=1, null=True, blank=True)
+    daily_demand = models.DecimalField(max_digits=12, decimal_places=1, null=True, blank=True)
 
     department = models.CharField(max_length=120, blank=True)
     plate_set_no = models.CharField(max_length=120, blank=True)
@@ -451,6 +453,11 @@ class PlanningJob(models.Model):
             return recipe_notes
         return ''
 
+    @property
+    def has_completed_plate_request(self):
+        return self.plate_requests.filter(status='available_for_production').exists()
+
+
     def qc_validation_errors(self):
         if self.workflow_status not in PLANNING_QC_GATE_STATUSES:
             return {}
@@ -609,20 +616,23 @@ class SkuRecipe(models.Model):
     material = models.CharField(max_length=120, blank=True)
     color_spec = models.CharField(max_length=60, blank=True)
     application = models.CharField(max_length=120, blank=True)
+    machine_name = models.CharField(max_length=120, blank=True)
+    plate_set_no = models.CharField(max_length=120, blank=True)
 
-    size_w_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    size_h_mm = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
-    ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    size_w_mm = models.IntegerField(null=True, blank=True)
+    size_h_mm = models.IntegerField(null=True, blank=True)
+    ups = models.IntegerField(null=True, blank=True)
 
     print_sheet_size = models.CharField(max_length=80, blank=True)
     purchase_sheet_size = models.CharField(max_length=80, blank=True)
-    purchase_sheet_ups = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    purchase_sheet_ups = models.IntegerField(null=True, blank=True)
 
     default_unit_cost = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
-    daily_demand = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    daily_demand = models.DecimalField(max_digits=12, decimal_places=1, null=True, blank=True)
     awc_no = models.CharField(max_length=120, blank=True)
     die_cutting = models.CharField(max_length=120, blank=True)
     notes = models.TextField(blank=True)
+    remarks = models.TextField(blank=True)
     is_active = models.BooleanField(default=True)
     archive_reason = models.TextField(blank=True)
     archived_by = models.ForeignKey(

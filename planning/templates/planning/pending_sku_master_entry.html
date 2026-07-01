@@ -30,9 +30,15 @@
         <strong>Read-only View</strong> — This form is open in inspection mode for QC review. Use the <em>Back To QC Review Queue</em> button below to return and take approval action.
     </div>
     {% else %}
+    {% if recipe_status != 'missing' and recipe_status != 'approved' %}
+    <div class="erp-alert erp-alert-warning">
+        ⚠️ <strong>Recipe Status: {{ recipe_status }}</strong> — This recipe was imported from the bulk upload but has not been formally approved yet. Please verify all fields carefully before sending for QC approval.
+    </div>
+    {% else %}
     <div class="erp-alert erp-alert-warning">
         Complete required master fields, then send for QC approval. Only approved SKU data moves to Planning.
     </div>
+    {% endif %}
     {% endif %}
 
     {# ── SKU meta info ── #}
@@ -45,6 +51,11 @@
             </div>
             <div style="display:flex; align-items:center; gap:8px; flex-wrap:wrap;">
                 <span class="erp-badge {{ recipe_status|recipe_status_badge }}">{{ recipe_status }}</span>
+                {% if repeat_flag_display == 'Repeat' %}
+                    <span class="erp-badge erp-badge-released" title="This SKU has been produced before — either a prior job card exists or a master recipe was found in the database.">🔁 Repeat</span>
+                {% else %}
+                    <span class="erp-badge erp-badge-pending" title="No prior job card or master recipe found — this is the first production run for this SKU.">🆕 New</span>
+                {% endif %}
                 <a href="{% url 'qc:po_review' po_doc_id %}" class="erp-btn erp-btn-secondary sm">Open PO</a>
             </div>
         </div>
@@ -54,6 +65,12 @@
                 <div class="erp-info-item__label">PO Number</div>
                 <div class="erp-info-item__value">{{ po_number }}</div>
             </div>
+            {% if jc_number %}
+            <div class="erp-info-item">
+                <div class="erp-info-item__label">JC No</div>
+                <div class="erp-info-item__value">{{ jc_number }}</div>
+            </div>
+            {% endif %}
             <div class="erp-info-item">
                 <div class="erp-info-item__label">SKU</div>
                 <div class="erp-info-item__value">{{ sku }}</div>
@@ -97,6 +114,13 @@
 
         <form method="post">
             {% csrf_token %}
+            {% if form.non_field_errors %}
+                <div class="erp-alert erp-alert-danger" style="margin-bottom: 15px; background: #fff5f5; border-left: 4px solid #e53e3e; padding: 12px; border-radius: 4px; color: #c53030; grid-column: 1 / -1;">
+                    {% for error in form.non_field_errors %}
+                        <p style="margin: 0; font-size: 0.9rem;">{{ error }}</p>
+                    {% endfor %}
+                </div>
+            {% endif %}
             <input type="hidden" name="po_doc_id" value="{{ po_doc_id }}">
             <input type="hidden" name="sku" value="{{ sku }}">
             <input type="hidden" name="return_po" value="{{ return_po }}">
@@ -127,6 +151,16 @@
                     <label for="{{ form.application.id_for_label }}">Application <span style="color:#8a3f00; font-weight:700;">*</span></label>
                     {{ form.application }}
                     {% if form.application.errors %}<div class="field-error-text">{{ form.application.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="erp-form-field">
+                    <label for="{{ form.machine_name.id_for_label }}">Machine Name <span style="color:#8a3f00; font-weight:700;">*</span></label>
+                    {{ form.machine_name }}
+                    {% if form.machine_name.errors %}<div class="field-error-text">{{ form.machine_name.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="erp-form-field">
+                    <label for="{{ form.plate_set_no.id_for_label }}">Plate Set No.</label>
+                    {{ form.plate_set_no }}
+                    {% if form.plate_set_no.errors %}<div class="field-error-text">{{ form.plate_set_no.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="erp-form-field">
                     <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm) <span style="color:#8a3f00; font-weight:700;">*</span></label>
@@ -179,6 +213,11 @@
                     {% if form.die_cutting.errors %}<div class="field-error-text">{{ form.die_cutting.errors.0 }}</div>{% endif %}
                 </div>
                 <div class="erp-form-field" style="grid-column: 1 / -1;">
+                    <label for="{{ form.remarks.id_for_label }}">Remarks</label>
+                    {{ form.remarks }}
+                    {% if form.remarks.errors %}<div class="field-error-text">{{ form.remarks.errors.0 }}</div>{% endif %}
+                </div>
+                <div class="erp-form-field" style="grid-column: 1 / -1;">
                     <label for="{{ form.notes.id_for_label }}">Notes</label>
                     {{ form.notes }}
                     {% if form.notes.errors %}<div class="field-error-text">{{ form.notes.errors.0 }}</div>{% endif %}
@@ -188,7 +227,10 @@
             {% if not is_readonly %}
             <div class="erp-form-actions">
                 <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="save_draft">Save Draft</button>
-                <button type="submit" class="erp-btn erp-btn-primary" name="action" value="submit_review">Send to QC Review</button>
+                <button type="submit" class="erp-btn erp-btn-primary" name="action" value="send_to_plate_making"
+                    title="Use this when new plates need to be made (new SKU or damaged/missing plates for a repeat job).">Send to Plate Making</button>
+                <button type="submit" class="erp-btn erp-btn-success" name="action" value="submit_review"
+                    title="Use this when plates already exist and all layout specs are confirmed.">Send to QC Review</button>
                 <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="ignore" onclick="return confirm('Ignore this pending SKU and remove it from further processing?');">Ignore</button>
                 {% if recipe %}
                     {% if recipe.master_data_status != 'approved' or can_admin_actions %}

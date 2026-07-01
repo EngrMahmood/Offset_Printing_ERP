@@ -192,6 +192,7 @@
                                 {% if job.planning_stage == 'jc_ready' %}<span class="erp-badge erp-badge-success">JC Ready</span>
                                 {% elif job.planning_stage == 'new_plate_making' %}<span class="erp-badge erp-badge-info">New Plate Making</span>
                                 {% elif job.planning_stage == 'repeat_plate_making' %}<span class="erp-badge erp-badge-warning">Repeat Plate Making</span>
+                                {% elif job.planning_stage == 'plate_received' %}<span class="erp-badge" style="background-color: #6f42c1; color: white;">Plate Received</span>
                                 {% elif job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'in_production' %}<span class="erp-badge erp-badge-dark">In Production</span>
                                 {% endif %}
                             {% elif job.status == 'in_production' %}
@@ -211,6 +212,7 @@
                                         {% if job.planning_stage == 'jc_ready' %}<span class="erp-badge erp-badge-success">JC Ready</span>
                                         {% elif job.planning_stage == 'new_plate_making' %}<span class="erp-badge erp-badge-info">New Plate Making</span>
                                         {% elif job.planning_stage == 'repeat_plate_making' %}<span class="erp-badge erp-badge-warning">Repeat Plate Making</span>
+                                        {% elif job.planning_stage == 'plate_received' %}<span class="erp-badge" style="background-color: #6f42c1; color: white;">Plate Received</span>
                                         {% elif job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'in_production' %}<span class="erp-badge erp-badge-dark">In Production</span>
                                         {% endif %}
                                     {% elif job.status == 'in_production' %}
@@ -223,11 +225,11 @@
                                     {% csrf_token %}
                                     <input type="hidden" name="action" value="update_planning_stage">
                                     <input type="hidden" name="job_id" value="{{ job.id }}">
-                                    <select name="planning_stage" onchange="this.form.submit();" style="width:100%; padding:4px 6px; border:1px solid #ccc; border-radius:3px; font-size:12px;">
+                                    <select name="planning_stage" data-original-val="{{ job.planning_stage }}" onchange="confirmStageChange(this, {% if job.has_completed_plate_request %}true{% else %}false{% endif %});" {% if job.planning_stage == 'new_plate_making' or job.planning_stage == 'repeat_plate_making' %}disabled style="width:100%; padding:4px 6px; border:1px solid #ccc; border-radius:3px; font-size:12px; background-color:#e9ecef; cursor:not-allowed;"{% else %}style="width:100%; padding:4px 6px; border:1px solid #ccc; border-radius:3px; font-size:12px;"{% endif %}>
                                         <option value="">Stage: Not Set</option>
                                         <option value="jc_ready" {% if job.planning_stage == 'jc_ready' %}selected{% endif %}>JC Ready</option>
-                                        <option value="new_plate_making" {% if job.planning_stage == 'new_plate_making' %}selected{% endif %}>New Plate Making</option>
-                                        <option value="repeat_plate_making" {% if job.planning_stage == 'repeat_plate_making' %}selected{% endif %}>Repeat Plate Making</option>
+                                        <option value="plate_making" {% if not job.material or not job.application or not job.machine_name %}disabled style="color:#aaa; background:#f3f4f6;"{% endif %} {% if job.planning_stage == 'new_plate_making' or job.planning_stage == 'repeat_plate_making' %}selected{% endif %}>Plate Making{% if not job.material or not job.application or not job.machine_name %} (Locked 🔒){% endif %}</option>
+                                        <option value="plate_received" {% if job.planning_stage == 'plate_received' %}selected{% endif %}>Plate Received</option>
                                         <option value="in_production" {% if job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'in_production' %}selected{% endif %}>In Production</option>
                                     </select>
                                 </form>
@@ -290,6 +292,16 @@
 {% endblock %}
 {% block extra_js %}
 <script>
+    function confirmStageChange(selectElement, hasPlates) {
+        if (selectElement.value === 'plate_making' && hasPlates) {
+            if (!confirm('Plates have already been received/completed for this job. Are you sure you want to request plate making again? This will trigger a new request.')) {
+                selectElement.value = selectElement.getAttribute('data-original-val') || '';
+                return false;
+            }
+        }
+        selectElement.form.submit();
+    }
+
     function promptReleasePlateSetNo(form, jobCardNo) {
         var plateSetNo = prompt('Enter Plate Set No for ' + jobCardNo + ':', form.plate_set_no.value || '');
         if (plateSetNo === null) {

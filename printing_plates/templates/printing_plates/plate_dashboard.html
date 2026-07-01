@@ -1,0 +1,177 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Printing Plates Dashboard{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <!-- Navigation Tabs / Actions -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+        <div class="erp-actions">
+            <a href="{% url 'printing_plates:dashboard' %}" class="erp-btn erp-btn-primary"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="{% url 'printing_plates:request_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-file-invoice"></i> Plate Requests</a>
+            <a href="{% url 'printing_plates:sent_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-paper-plane"></i> Plate Sent</a>
+            <a href="{% url 'printing_plates:received_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-check-circle"></i> Plate Received</a>
+            <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-list"></i> Plate Queue</a>
+        </div>
+        <div>
+            <a href="{% url 'printing_plates:request_add' %}" class="erp-btn" style="background-color: #6f42c1; color: white; border: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fas fa-plus"></i> Add
+            </a>
+        </div>
+    </div>
+
+    <!-- Dashboard Content Grid -->
+    <section class="erp-section-shell">
+        <div class="erp-card-header" style="margin-bottom: 15px;">
+            <h2>Production Plates Dashboard</h2>
+            <p>High-level counts and direct register access by status and vendor.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px;">
+            
+            <!-- Panel 1: Plate Request -->
+            <div style="background: #fff; border-radius: 8px; border: 1px solid rgba(115,115,115,0.08); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.01), 0 2px 4px -1px rgba(0,0,0,0.006); overflow: hidden; display: flex; flex-direction: column;">
+                <div style="background: #fdfdfd; padding: 16px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 1.05rem; font-weight: 600; color: #2b3440;">Plate Request</span>
+                    <a href="{% url 'printing_plates:request_add' %}" class="erp-btn" style="background-color: #6f42c1; color: white; border: none; font-weight: 500; font-size: 0.78rem; padding: 3px 8px; display: inline-flex; align-items: center; gap: 4px;">
+                        <i class="fas fa-plus"></i> Add
+                    </a>
+                </div>
+                <div style="display: flex; flex-direction: column;">
+                    <a href="{% url 'printing_plates:request_list' %}" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>All</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ req_all_count }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:request_list' %}?type=repeat" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>Repeat</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ req_repeat_count }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:request_list' %}?type=new_artwork" style="display: flex; justify-content: space-between; align-items: center; padding: 14px 20px; text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>New Artwork</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ req_new_artwork_count }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Panel 2: Plate Sent -->
+            <div style="background: #fff; border-radius: 8px; border: 1px solid rgba(115,115,115,0.08); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.01), 0 2px 4px -1px rgba(0,0,0,0.006); overflow: hidden; display: flex; flex-direction: column;">
+                <div style="background: #fdfdfd; padding: 16px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 1.05rem; font-weight: 600; color: #2b3440;">Plate Sent</span>
+                </div>
+                <div style="display: flex; flex-direction: column;">
+                    <a href="{% url 'printing_plates:sent_list' %}" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>All</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ sent_all_count }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:sent_list' %}?vendor=Dot Max" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>Dot Max</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ sent_counts.Dot_Max }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:sent_list' %}?vendor=Ali Print Pack" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>Ali Print Pack</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ sent_counts.Ali_Print_Pack }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:sent_list' %}?vendor=Daniyal Process" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>Daniyal Process</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ sent_counts.Daniyal_Process }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:sent_list' %}?vendor=In House" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>In House</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ sent_counts.In_House }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:sent_list' %}?vendor=Cancel" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>Cancel</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ sent_counts.Cancel }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+            <!-- Panel 3: Plate Received -->
+            <div style="background: #fff; border-radius: 8px; border: 1px solid rgba(115,115,115,0.08); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.01), 0 2px 4px -1px rgba(0,0,0,0.006); overflow: hidden; display: flex; flex-direction: column;">
+                <div style="background: #fdfdfd; padding: 16px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); display: flex; justify-content: space-between; align-items: center;">
+                    <span style="font-size: 1.05rem; font-weight: 600; color: #2b3440;">Plate Received</span>
+                </div>
+                <div style="display: flex; flex-direction: column;">
+                    <a href="{% url 'printing_plates:received_list' %}" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>All</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ rec_all_count }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:received_list' %}?vendor=Dot Max" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>Dot Max</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ rec_counts.Dot_Max }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:received_list' %}?vendor=Ali Print Pack" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>Ali Print Pack</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ rec_counts.Ali_Print_Pack }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:received_list' %}?vendor=Daniyal Process" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>Daniyal Process</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ rec_counts.Daniyal_Process }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:received_list' %}?vendor=In House" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>In House</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ rec_counts.In_House }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:received_list' %}?vendor=Cancel" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>Cancel</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ rec_counts.Cancel }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                    <a href="{% url 'printing_plates:received_list' %}?vendor=empty" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; text-decoration: none; color: #4a5568; font-size: 0.9rem; transition: background 0.15s, color 0.15s;" onmouseover="this.style.background='#f8fafc'; this.style.color='#6f42c1';" onmouseout="this.style.background='none'; this.style.color='#4a5568';">
+                        <span>(empty)</span>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ rec_empty_count }}</span>
+                            <i class="fas fa-chevron-right" style="font-size: 0.75rem; color: #cbd5e0;"></i>
+                        </div>
+                    </a>
+                </div>
+            </div>
+
+        </div>
+    </section>
+</div>
+{% endblock %}

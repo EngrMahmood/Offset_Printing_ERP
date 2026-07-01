@@ -3,56 +3,133 @@
 {% block title %}Printing Plates Queue{% endblock %}
 
 {% block content %}
-<div class="erp-card">
-    <div class="erp-card-header">
-        <h2>Printing Plates Queue</h2>
-        <p>Jobs currently waiting for plate making and designer review.</p>
+<div class="erp-page-stack">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+        <div class="erp-actions">
+            <a href="{% url 'printing_plates:dashboard' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="{% url 'printing_plates:request_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-file-invoice"></i> Plate Requests</a>
+            <a href="{% url 'printing_plates:sent_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-paper-plane"></i> Plate Sent</a>
+            <a href="{% url 'printing_plates:received_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-check-circle"></i> Plate Received</a>
+            <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-primary"><i class="fas fa-list"></i> Plate Queue</a>
+        </div>
+        <div>
+            <a href="{% url 'printing_plates:request_add' %}" class="erp-btn" style="background-color: #6f42c1; color: white; border: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fas fa-plus"></i> Add
+            </a>
+        </div>
     </div>
-    <div class="erp-card-body">
-        {% if planning_jobs %}
-            <table class="erp-table">
-                <thead>
-                    <tr>
-                        <th>Job</th>
-                        <th>AWC No</th>
-                        <th>Stage</th>
-                        <th>Plate Set</th>
-                        <th>Colors</th>
-                        <th>Impression</th>
-                        <th>Progress</th>
-                        <th>Requested</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for job in planning_jobs %}
-                    <tr>
-                        <td>{{ job.job_name|default:'—' }}</td>
-                        <td>{{ job.awc_no_display|default:'—' }}</td>
-                        <td>{{ job.planning_stage|default:'—' }}</td>
-                        <td>{{ job.plate_set_no|default:'—' }}</td>
-                        <td>{{ job.total_colors|default:'—' }}</td>
-                        <td>{{ job.planned_total_impressions|default:'—' }}</td>
-                        <td>{% if job.plate_requests.exists %}{{ job.plate_requests.first.progress|default:'—' }}{% else %}—{% endif %}</td>
-                        <td>{{ job.updated_at|date:'Y-m-d H:i' }}</td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        {% else %}
-            <p>No plate-related jobs are active in the queue.</p>
-        {% endif %}
 
-        {% if is_paginated %}
-        <nav class="erp-pagination" aria-label="Page navigation">
-            {% if page_obj.has_previous %}
-                <a href="?page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary">Previous</a>
-            {% endif %}
-            <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-            {% if page_obj.has_next %}
-                <a href="?page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary">Next</a>
-            {% endif %}
-        </nav>
-        {% endif %}
-    </div>
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <h2>Printing Plates Queue</h2>
+            <p>Jobs currently waiting for plate making and designer review.</p>
+        </div>
+
+        <div class="erp-records-layout">
+            <!-- Filter Sidebar -->
+            <aside class="erp-filter-sidebar" style="background:#fff; border-radius:8px; border:1px solid rgba(115,115,115,0.08); padding:16px;">
+                <h3 style="font-size:0.95rem; font-weight:600; margin-bottom:12px; color:#2b3440; border-bottom:1px solid rgba(0,0,0,0.06); padding-bottom:8px;">Filter Queue</h3>
+                <form method="GET" class="erp-filter-group">
+                    <div class="erp-filter-group">
+                        <label for="q" class="erp-field-label">Search</label>
+                        <input id="q" name="q" value="{{ q }}" placeholder="JC, SKU or Job Name" class="erp-input" style="width:100%;">
+                    </div>
+
+                    <div class="erp-filter-group">
+                        <label for="stage" class="erp-field-label">Plate Making Stage</label>
+                        <select id="stage" name="stage" class="erp-select" style="width:100%;">
+                            <option value="">All Stages</option>
+                            <option value="new_plate_making" {% if stage == "new_plate_making" %}selected{% endif %}>New Plate Making</option>
+                            <option value="repeat_plate_making" {% if stage == "repeat_plate_making" %}selected{% endif %}>Repeat Plate Making</option>
+                        </select>
+                    </div>
+
+                    <div class="erp-filter-actions" style="margin-top: 10px; display: flex; flex-direction: column; gap: 6px;">
+                        <button type="submit" class="erp-btn erp-btn-primary" style="width:100%; justify-content:center;">Apply Filters</button>
+                        <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary" style="width:100%; justify-content:center;">Clear</a>
+                    </div>
+                </form>
+            </aside>
+
+            <!-- Table Section -->
+            <div>
+                {% if planning_jobs %}
+                    <div class="erp-table-scroll">
+                        <table class="erp-table">
+                            <thead>
+                                <tr>
+                                    <th>JC Number</th>
+                                    <th>Job</th>
+                                    <th>AWC No</th>
+                                    <th>Stage</th>
+                                    <th>Plate Set</th>
+                                    <th>Colors</th>
+                                    <th>Impression</th>
+                                    <th>Progress</th>
+                                    <th>Requested</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for job in planning_jobs %}
+                                <tr>
+                                    <td>
+                                        <div style="display: flex; align-items: center; gap: 8px;">
+                                            <strong>{{ job.jc_number|default:'—' }}</strong>
+                                            {% if job.repeat_flag == 'New' %}
+                                                <span style="font-size:0.7rem; font-weight:700; color:#3182ce; background:#ebf8ff; padding:2px 6px; border-radius:4px; border:1px solid #90cdf4;">New</span>
+                                            {% elif job.repeat_flag == 'Repeat' %}
+                                                <span style="font-size:0.7rem; font-weight:700; color:#d69e2e; background:#fffff0; padding:2px 6px; border-radius:4px; border:1px solid #f6e05e;">Repeat</span>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                    <td>{{ job.job_name|default:'—' }}</td>
+                                    <td>{{ job.awc_no_display|default:'—' }}</td>
+                                    <td>
+                                        {% if job.planning_stage == 'new_plate_making' %}
+                                            <span class="erp-badge erp-badge-info">New Plate</span>
+                                        {% elif job.planning_stage == 'repeat_plate_making' %}
+                                            <span class="erp-badge erp-badge-warning">Repeat Plate</span>
+                                        {% else %}
+                                            <span class="erp-badge">{{ job.get_planning_stage_display|default:job.planning_stage }}</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ job.plate_set_no|default:'—' }}</td>
+                                    <td>{{ job.total_colors|default:'—' }}</td>
+                                    <td>{{ job.planned_total_impressions|default:'—' }}</td>
+                                    <td>
+                                        {% if job.plate_requests.exists %}
+                                            {% with req=job.plate_requests.first %}
+                                                <a href="{% url 'printing_plates:request_detail' req.pk %}">
+                                                    {{ req.progress|default:'—' }} ({{ req.get_status_display }})
+                                                </a>
+                                            {% endwith %}
+                                        {% else %}
+                                            —
+                                        {% endif %}
+                                    </td>
+                                    <td>{{ job.updated_at|date:'Y-m-d H:i' }}</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                {% else %}
+                    <p style="padding: 20px; background: #fff; border-radius: 8px; border: 1px solid rgba(115,115,115,0.08);">No plate-related jobs found in the queue matching the criteria.</p>
+                {% endif %}
+
+                {% if is_paginated %}
+                <nav class="erp-pagination" aria-label="Page navigation" style="margin-top: 15px;">
+                    {% if page_obj.has_previous %}
+                        <a href="?q={{ q }}&stage={{ stage }}&page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary">Previous</a>
+                    {% endif %}
+                    <span class="erp-table-meta-text">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                    {% if page_obj.has_next %}
+                        <a href="?q={{ q }}&stage={{ stage }}&page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary">Next</a>
+                    {% endif %}
+                </nav>
+                {% endif %}
+            </div>
+        </div>
+    </section>
 </div>
 {% endblock %}
