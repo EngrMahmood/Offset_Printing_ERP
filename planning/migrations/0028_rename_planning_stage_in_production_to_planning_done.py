@@ -17,7 +17,7 @@ def migrate_planning_stage_values(apps, schema_editor):
 class Migration(migrations.Migration):
 
     dependencies = [
-        ('planning', '0025_planningjob_master_sync_request'),
+        ('planning', '0027_jobcardchangerequest_request_type_and_more'),
     ]
 
     operations = [
