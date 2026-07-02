@@ -20,6 +20,8 @@ def manual_working_list(request):
         'planning_stage': request.GET.get('planning_stage', '').strip(),
         'date_from': request.GET.get('date_from', '').strip(),
         'date_to': request.GET.get('date_to', '').strip(),
+        'release_date_from': request.GET.get('release_date_from', '').strip(),
+        'release_date_to': request.GET.get('release_date_to', '').strip(),
     }
 
     rows = get_manual_working_rows(filters)

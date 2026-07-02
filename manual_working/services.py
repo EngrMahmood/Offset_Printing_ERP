@@ -2,10 +2,11 @@ from datetime import datetime
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
+from django.utils import timezone
 from django.utils.dateparse import parse_date
 
 from core.models import ChangeLog, JobCard
-from planning.models import PLANNING_STAGE_CHOICES, PlanningJob, PoDocument, SkuRecipe
+from planning.models import PLANNING_STAGE_CHOICES, PLANNING_STAGE_DONE, PlanningJob, PoDocument, SkuRecipe
 
 
 def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
@@ -57,9 +58,10 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
     jobs = list(queryset)
     recipe_map = _build_recipe_map(jobs)
     approval_map = _build_job_card_approval_date_map(jobs)
+    release_map = _build_job_card_release_datetime_map(jobs)
     wip_status_map = _build_wip_status_map(jobs)
 
-    rows = [_build_row(item, recipe_map, approval_map, wip_status_map) for item in jobs]
+    rows = [_build_row(item, recipe_map, approval_map, release_map, wip_status_map) for item in jobs]
 
     date_from = filters.get('date_from')
     if date_from:
@@ -72,6 +74,26 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
         parsed_to = parse_date(date_to)
         if parsed_to:
             rows = [row for row in rows if row.get('po_approval_date_obj') and row['po_approval_date_obj'] <= parsed_to]
+
+    release_date_from = filters.get('release_date_from')
+    if release_date_from:
+        parsed_release_from = parse_date(release_date_from)
+        if parsed_release_from:
+            rows = [
+                row for row in rows
+                if row.get('released_to_production_date_obj')
+                and row['released_to_production_date_obj'] >= parsed_release_from
+            ]
+
+    release_date_to = filters.get('release_date_to')
+    if release_date_to:
+        parsed_release_to = parse_date(release_date_to)
+        if parsed_release_to:
+            rows = [
+                row for row in rows
+                if row.get('released_to_production_date_obj')
+                and row['released_to_production_date_obj'] <= parsed_release_to
+            ]
 
     return rows
 
@@ -94,6 +116,31 @@ def _build_job_card_approval_date_map(jobs):
         if to_status in {'production_approved', 'qc_approved'} and log.created_at:
             approval_map[log.record_id] = log.created_at.date()
     return approval_map
+
+
+def _build_job_card_release_datetime_map(jobs):
+    job_card_ids = [job.job_card.id for job in jobs if getattr(job, 'job_card', None)]
+    if not job_card_ids:
+        return {}
+
+    release_map = {}
+    logs = ChangeLog.objects.filter(
+        entity_type='job_card',
+        record_id__in=job_card_ids,
+    ).order_by('record_id', 'created_at')
+    for log in logs:
+        if log.record_id in release_map:
+            continue
+        field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
+        status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
+        if isinstance(status_change, dict):
+            to_status = str(status_change.get('to') or '').strip().lower()
+            if to_status == 'released' and log.created_at:
+                release_map[log.record_id] = log.created_at
+                continue
+        if log.action == 'release' and log.created_at:
+            release_map[log.record_id] = log.created_at
+    return release_map
 
 
 def _build_recipe_map(items):
@@ -131,6 +178,40 @@ def _format_date(value):
     if not value:
         return ''
     return value.strftime('%d-%m-%Y')
+
+
+def _format_pkt_date(value):
+    if not value:
+        return ''
+    local_dt = timezone.localtime(value)
+    return local_dt.strftime('%d-%m-%Y')
+
+
+def _format_pkt_time(value):
+    if not value:
+        return ''
+    local_dt = timezone.localtime(value)
+    return local_dt.strftime('%H:%M:%S')
+
+
+def _pkt_date(value):
+    if not value:
+        return None
+    return timezone.localtime(value).date()
+
+
+def _released_to_production_datetime(job: PlanningJob, release_map: dict[int, object]):
+    job_card = getattr(job, 'job_card', None)
+    if job_card and job_card.id in release_map:
+        return release_map[job_card.id]
+    if (
+        job_card
+        and job_card.status in {'released', 'in_production', 'completed', 'closed'}
+        and job.planning_stage == PLANNING_STAGE_DONE
+        and job.planning_stage_changed_at
+    ):
+        return job.planning_stage_changed_at
+    return None
 
 
 def _format_month(value, fallback_date=None):
@@ -229,7 +310,7 @@ def _build_dispatch_values(job: PlanningJob) -> list[dict[str, str]]:
     return results
 
 
-def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map: dict[int, object], wip_status_map: dict[str, str]) -> dict[str, str]:
+def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map: dict[int, object], release_map: dict[int, object], wip_status_map: dict[str, str]) -> dict[str, str]:
     recipe = recipe_map.get((job.sku or '').strip().upper())
     print_runs = _build_print_run_values(job)
     dispatch_values = _build_dispatch_values(job)
@@ -243,6 +324,7 @@ def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map:
         job_card_month = None
 
     display_month_source = None if po_approval_date else (job_card_month or job.plan_month)
+    released_at = _released_to_production_datetime(job, release_map)
 
     return {
         'jc_number': _format_text(job.jc_number),
@@ -334,4 +416,7 @@ def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map:
         'aging_days': _format_text(job.aging_days),
         'die_cutting': _resolve_job_or_recipe(getattr(job, 'die_cutting', ''), getattr(recipe, 'die_cutting', None)),
         'wip_status': _format_text(wip_status_map.get((job.jc_number or '').strip(), 'Not Set')),
+        'released_to_production_date': _format_pkt_date(released_at),
+        'released_to_production_time': _format_pkt_time(released_at),
+        'released_to_production_date_obj': _pkt_date(released_at),
     }

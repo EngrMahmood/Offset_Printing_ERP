@@ -131,6 +131,44 @@
     </section>
     {% endif %}
 
+    {% if status_now == 'qc_approved' or status_now == 'released' or status_now == 'in_production' %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Change Management</div>
+                <h3 class="erp-section-title">Change Management</h3>
+                <p class="erp-section-desc">Request to reopen this job card to Draft status to edit finalization fields (Wastage, Machine, Delivery Date, Plate Set, etc.). Requires Production Manager approval.</p>
+            </div>
+        </div>
+
+        {% if pending_change_request %}
+        <div class="erp-alert is-warning" style="margin-bottom:12px;">
+            <strong>Pending Reopen Approval:</strong> A request to reopen this job card to Draft was submitted
+            {% if pending_change_request.requested_at %} on {{ pending_change_request.requested_at|date:'d M Y H:i' }}{% endif %}
+            {% if pending_change_request.requested_by %} by {{ pending_change_request.requested_by.username }}{% endif %}.
+        </div>
+        <div class="erp-note" style="margin-bottom:12px;">
+            <strong>Justification:</strong> {{ pending_change_request.reason }}
+        </div>
+        {% else %}
+            {% if user_can_plan %}
+            <form method="post" action="{% url 'planning:request_wastage_machine_change' job.id %}" class="erp-form">
+                {% csrf_token %}
+                <div style="margin-bottom:12px;">
+                    <label for="change-reason">Justification for Reopening</label>
+                    <textarea id="change-reason" name="reason" class="erp-input" rows="3" placeholder="Explain what fields you need to edit and why..." required></textarea>
+                </div>
+                <div>
+                    <button type="submit" class="erp-btn erp-btn-warning">Request Edit Reopen</button>
+                </div>
+            </form>
+            {% else %}
+            <div class="erp-note">You must be a planner to request reopening this job card.</div>
+            {% endif %}
+        {% endif %}
+    </section>
+    {% endif %}
+
     <div class="erp-route-grid">
         <div class="erp-panel">
             <div class="erp-panel__header"><h3 class="erp-panel__title">Specifications</h3></div>

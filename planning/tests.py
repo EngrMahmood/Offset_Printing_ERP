@@ -15,7 +15,7 @@ from migration.services.importer import (
 )
 from workflow.services import _po_payload_items, _sync_new_jobs_for_approved_sku
 
-from .models import PlanningJob, PoDocument, SkuRecipe
+from .models import PlanningJob, PoDocument, SkuRecipe, JobCardChangeRequest
 from .services import _sync_repeat_jobs_from_po
 from .po_extractor import (
 	_detect_expected_line_count,
@@ -823,3 +823,124 @@ class PoRemarksExtractorTests(TestCase):
 		item2 = result['items'][1]
 		self.assertEqual(item2['job_name'], 'WARNINGLABEL-USA-CAN-IMPORTERLABEL')
 		self.assertEqual(item2['remarks'], 'White Adhesive Sticker W-101.6 L-76.2mm')
+
+
+class JobCardChangeRequestTests(TestCase):
+	def setUp(self):
+		self.planner = get_user_model().objects.create_user(username='planner', password='testpass123')
+		self.pm = get_user_model().objects.create_user(username='pm', password='testpass123')
+		self.operator = get_user_model().objects.create_user(username='operator', password='testpass123')
+		
+		planner_profile, _ = UserProfile.objects.get_or_create(user=self.planner)
+		planner_profile.role = 'planner'
+		planner_profile.save()
+		
+		pm_profile, _ = UserProfile.objects.get_or_create(user=self.pm)
+		pm_profile.role = 'production_manager'
+		pm_profile.save()
+		
+		operator_profile, _ = UserProfile.objects.get_or_create(user=self.operator)
+		operator_profile.role = 'operator'
+		operator_profile.save()
+		
+		from core.models import Machine
+		self.machine1 = Machine.objects.create(name='Machine-1', standard_impressions_per_hour=4000)
+		self.machine2 = Machine.objects.create(name='Machine-2', standard_impressions_per_hour=5000)
+		
+		self.job = PlanningJob.objects.create(
+			jc_number='JC-TEST-CRM',
+			po_number='PO-TEST-CRM',
+			sku='SKU-CRM-1',
+			order_qty=1000,
+			ups=2,
+			wastage_sheets=20,
+			machine_name=self.machine1.name,
+			status='released',
+		)
+		
+		self.job_card = JobCard.objects.create(
+			planning_job=self.job,
+			job_card_no='JC-TEST-CRM',
+			SKU='SKU-CRM-1',
+			order_qty=1000,
+			ups=2,
+			wastage=20,
+			machine_name=self.machine1,
+			status='released',
+			po_date=date.today(),
+			total_colors=4,
+			plate_set_no='PLATE-SET-1',
+		)
+
+	def test_request_wastage_machine_change_requires_planner(self):
+		self.client.force_login(self.operator)
+		response = self.client.post(
+			reverse('planning:request_wastage_machine_change', args=[self.job.id]),
+			{
+				'reason': 'Planner requested reopening',
+			}
+		)
+		self.assertEqual(response.status_code, 302)
+		self.assertFalse(JobCardChangeRequest.objects.filter(planning_job=self.job).exists())
+
+	def test_request_wastage_machine_change_success(self):
+		self.client.force_login(self.planner)
+		response = self.client.post(
+			reverse('planning:request_wastage_machine_change', args=[self.job.id]),
+			{
+				'reason': 'Test reopen request',
+			}
+		)
+		self.assertEqual(response.status_code, 302)
+		change_req = JobCardChangeRequest.objects.get(planning_job=self.job)
+		self.assertEqual(change_req.status, 'pending')
+		self.assertEqual(change_req.request_type, 'reopen_to_draft')
+		self.assertEqual(change_req.reason, 'Test reopen request')
+
+	def test_pm_can_approve_change_request(self):
+		change_req = JobCardChangeRequest.objects.create(
+			planning_job=self.job,
+			request_type='reopen_to_draft',
+			reason='Need to edit wastage & machine',
+			requested_by=self.planner
+		)
+		
+		self.client.force_login(self.pm)
+		response = self.client.post(reverse('planning:approve_change_request', args=[change_req.id]))
+		self.assertEqual(response.status_code, 302)
+		
+		change_req.refresh_from_db()
+		self.assertEqual(change_req.status, 'approved')
+		
+		self.job.refresh_from_db()
+		self.assertEqual(self.job.status, 'draft')
+		
+		self.job_card.refresh_from_db()
+		self.assertEqual(self.job_card.workflow_status, 'draft')
+		
+		from core.models import ChangeLog
+		self.assertTrue(ChangeLog.objects.filter(entity_type='job_card', record_id=self.job_card.id).exists())
+
+	def test_pm_can_reject_change_request(self):
+		change_req = JobCardChangeRequest.objects.create(
+			planning_job=self.job,
+			request_type='reopen_to_draft',
+			reason='Need to edit wastage & machine',
+			requested_by=self.planner
+		)
+		
+		self.client.force_login(self.pm)
+		response = self.client.post(
+			reverse('planning:reject_change_request', args=[change_req.id]),
+			{'rejection_reason': 'Invalid reasons'}
+		)
+		self.assertEqual(response.status_code, 302)
+		
+		change_req.refresh_from_db()
+		self.assertEqual(change_req.status, 'rejected')
+		self.assertEqual(change_req.rejection_reason, 'Invalid reasons')
+		
+		self.job.refresh_from_db()
+		self.assertEqual(self.job.status, 'released')
+		self.job_card.refresh_from_db()
+		self.assertEqual(self.job_card.workflow_status, 'released')
