@@ -5,8 +5,108 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.conf import settings
 from django.contrib import messages
-from .models import JobCard, Production, Dispatch, ChangeLog, EditOverrideRequest
+from .models import Department, DeliveryLocation, ProductType, JobCard, Production, Dispatch, ChangeLog, EditOverrideRequest
 from .constants import AUDIT_CONFIG
+
+
+def collect_planning_department_names():
+    """Return distinct non-empty department names used in planning jobs and PO documents."""
+    from planning.models import PlanningJob, PoDocument
+
+    names = set()
+    for department in PlanningJob.objects.exclude(department='').values_list('department', flat=True).distinct():
+        cleaned = (department or '').strip()
+        if cleaned:
+            names.add(cleaned)
+
+    for payload in PoDocument.objects.exclude(extracted_payload__isnull=True).values_list('extracted_payload', flat=True):
+        if not isinstance(payload, dict):
+            continue
+        cleaned = (payload.get('department') or '').strip()
+        if cleaned:
+            names.add(cleaned)
+
+    return names
+
+
+def sync_departments_from_planning():
+    """Create Department master records for planning department names that are not in master data yet."""
+    created = 0
+    for name in sorted(collect_planning_department_names()):
+        if Department.objects.filter(name__iexact=name).exists():
+            continue
+        Department.objects.create(name=name)
+        created += 1
+    return created
+
+
+def collect_planning_delivery_location_names():
+    """Return distinct non-empty delivery location names used in planning jobs and PO documents."""
+    from planning.models import PlanningJob, PoDocument
+
+    names = set()
+    for destination in PlanningJob.objects.exclude(destination='').values_list('destination', flat=True).distinct():
+        cleaned = (destination or '').strip()
+        if cleaned:
+            names.add(cleaned)
+
+    for payload in PoDocument.objects.exclude(extracted_payload__isnull=True).values_list('extracted_payload', flat=True):
+        if not isinstance(payload, dict):
+            continue
+        cleaned = (payload.get('delivery_location') or '').strip()
+        if cleaned:
+            names.add(cleaned)
+
+    return names
+
+
+def sync_delivery_locations_from_planning():
+    """Create DeliveryLocation master records for planning delivery names not yet in master data."""
+    created = 0
+    for name in sorted(collect_planning_delivery_location_names()):
+        if DeliveryLocation.objects.filter(name__iexact=name).exists():
+            continue
+        DeliveryLocation.objects.create(name=name)
+        created += 1
+    return created
+
+
+def collect_sku_recipe_product_type_names():
+    """Return distinct non-empty product type names used in SKU master recipes."""
+    from planning.models import SkuRecipe
+
+    names = set()
+    for product_type in SkuRecipe.objects.exclude(product_type='').values_list('product_type', flat=True).distinct():
+        cleaned = (product_type or '').strip()
+        if cleaned:
+            names.add(cleaned)
+    return names
+
+
+def sync_product_types_from_sku_recipes():
+    """Create ProductType master records for SKU recipe product types not yet in master data."""
+    created = 0
+    for name in sorted(collect_sku_recipe_product_type_names()):
+        if ProductType.objects.filter(name__iexact=name).exists():
+            continue
+        ProductType.objects.create(name=name)
+        created += 1
+    return created
+
+
+def count_active_planning_jobs_for_product_type(product_type_name):
+    """Count active planning jobs whose SKU master recipe uses the given product type."""
+    from django.db.models import Exists, OuterRef
+    from planning.models import PlanningJob, SkuRecipe
+
+    return PlanningJob.objects.filter(is_active=True).filter(
+        Exists(
+            SkuRecipe.objects.filter(
+                product_type__iexact=product_type_name,
+                sku__iexact=OuterRef('sku'),
+            )
+        )
+    ).count()
 
 def add_unique_message(request, level, text):
     """Avoid stacking the same flash message multiple times in a single session flow."""

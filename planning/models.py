@@ -96,6 +96,11 @@ class PlanningJob(models.Model):
 
     front_pass = models.PositiveIntegerField(null=True, blank=True)
     back_pass = models.PositiveIntegerField(null=True, blank=True)
+    print_passes = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text='Number of press passes (1, 2, or 3). Total impressions = print sheets × passes.',
+    )
     planned_total_impressions = models.PositiveIntegerField(null=True, blank=True)
 
     mi_quantity = models.PositiveIntegerField(null=True, blank=True)
@@ -456,24 +461,62 @@ class PlanningJob(models.Model):
         return ''
 
     @property
+    def calculated_planned_total_impressions(self):
+        """Auto impressions = total print sheets × no. of passes."""
+        sheets = self.calculated_sheets_required
+        passes = self.print_passes
+        if sheets is None or not passes:
+            return None
+        return int(sheets) * int(passes)
+
+    def sync_planned_total_impressions(self):
+        calculated = self.calculated_planned_total_impressions
+        if calculated is not None:
+            self.planned_total_impressions = calculated
+        return self.planned_total_impressions
+
+    @property
     def has_completed_plate_request(self):
         return self.plate_requests.filter(status='available_for_production').exists()
 
+    @property
+    def effective_machine_name(self):
+        if str(self.machine_name or '').strip():
+            return str(self.machine_name).strip()
+        recipe = self.approved_sku_recipe or self.sku_recipe
+        if recipe and str(recipe.machine_name or '').strip():
+            return str(recipe.machine_name).strip()
+        return ''
+
+    @property
+    def effective_plate_set_no(self):
+        if str(self.plate_set_no or '').strip():
+            return str(self.plate_set_no).strip()
+        recipe = self.approved_sku_recipe or self.sku_recipe
+        if recipe and str(recipe.plate_set_no or '').strip():
+            return str(recipe.plate_set_no).strip()
+        return ''
+
+    def pre_submit_qc_validation_errors(self):
+        errors = {}
+        if not self.effective_plate_set_no:
+            errors['plate_set_no'] = 'Plate Set is required before QC approval.'
+        if self.wastage_sheets is None:
+            errors['wastage_sheets'] = 'Wastage is required before QC approval.'
+        if not self.effective_machine_name:
+            errors['machine_name'] = 'Machine Name is required before QC approval.'
+        if not str(self.purchase_material_origin or '').strip():
+            errors['purchase_material_origin'] = 'Purchase Material Origin is required before QC approval.'
+        if not self.print_passes:
+            errors['print_passes'] = 'No. of Passes is required before QC approval.'
+        if self.print_passes and self.calculated_sheets_required is None:
+            errors['print_passes'] = 'Cannot calculate impressions until print sheets are available (order qty, UPS, wastage).'
+        return errors
 
     def qc_validation_errors(self):
         if self.workflow_status not in PLANNING_QC_GATE_STATUSES:
             return {}
-
-        errors = {}
-        if not str(self.plate_set_no or '').strip():
-            errors['plate_set_no'] = 'Plate Set is required before QC approval.'
-        if self.wastage_sheets is None:
-            errors['wastage_sheets'] = 'Wastage is required before QC approval.'
-        if not str(self.machine_name or '').strip():
-            errors['machine_name'] = 'Machine Name is required before QC approval.'
-        if not str(self.purchase_material_origin or '').strip():
-            errors['purchase_material_origin'] = 'Purchase Material Origin is required before QC approval.'
-        return errors
+        return self.pre_submit_qc_validation_errors()
 
     def qc_missing_fields(self):
         errors = self.qc_validation_errors()
@@ -520,6 +563,11 @@ class PlanningJob(models.Model):
             self.total_colors = calculated_number_of_colors
             if update_fields is not None:
                 update_fields.add('total_colors')
+
+        if self.print_passes and self.calculated_sheets_required is not None:
+            self.planned_total_impressions = int(self.calculated_sheets_required) * int(self.print_passes)
+            if update_fields is not None:
+                update_fields.add('planned_total_impressions')
 
         self.full_clean()
         if update_fields is not None:
@@ -618,6 +666,7 @@ class SkuRecipe(models.Model):
     material = models.CharField(max_length=120, blank=True)
     color_spec = models.CharField(max_length=60, blank=True)
     application = models.CharField(max_length=120, blank=True)
+    product_type = models.CharField(max_length=100, blank=True)
     machine_name = models.CharField(max_length=120, blank=True)
     plate_set_no = models.CharField(max_length=120, blank=True)
 

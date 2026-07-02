@@ -50,7 +50,7 @@ def _normalize_color_spec_value(raw_value):
     if len(numbers) == 2:
         return f"{int(numbers[0])}+{int(numbers[1])}"
 
-    return value
+    return raw_text
 
 
 def _normalize_application_value(raw_value):
@@ -81,6 +81,13 @@ APPLICATION_CHOICES = [
     ('NO', 'NO'),
 ]
 
+PRINT_PASS_CHOICES = [
+    ('', 'Select Passes'),
+    (1, '1 Pass'),
+    (2, '2 Passes'),
+    (3, '3 Passes'),
+]
+
 
 class PlanningJobFinalizationForm(forms.ModelForm):
     """Form to collect layout specs, purchase material, and release constraints
@@ -92,7 +99,7 @@ class PlanningJobFinalizationForm(forms.ModelForm):
         fields = [
             'delivery_date',
             'wastage_sheets',
-            'planned_total_impressions',
+            'print_passes',
             'purchase_material_origin',
             'destination',
             'remarks',
@@ -104,7 +111,7 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             'requirement': forms.Textarea(attrs={'rows': 3}),
         }
         labels = {
-            'planned_total_impressions': 'Total Impressions',
+            'print_passes': 'No. of Passes',
             'requirement': 'Special Instructions',
             'purchase_material_origin': 'Purchase Material Origin',
         }
@@ -114,7 +121,7 @@ class PlanningJobFinalizationForm(forms.ModelForm):
         required_fields = [
             'delivery_date',
             'wastage_sheets',
-            'planned_total_impressions',
+            'print_passes',
             'purchase_material_origin',
             'destination',
             'requirement',
@@ -124,15 +131,33 @@ class PlanningJobFinalizationForm(forms.ModelForm):
                 self.fields[field_name].required = True
                 self.fields[field_name].widget.attrs.setdefault('required', 'required')
 
+        if 'print_passes' in self.fields:
+            self.fields['print_passes'].widget = forms.Select(
+                choices=PRINT_PASS_CHOICES,
+                attrs={'class': 'erp-select'},
+            )
+
         if 'purchase_material_origin' in self.fields:
-            self.fields['purchase_material_origin'].widget = forms.Select(choices=APPLICATION_CHOICES if False else PURCHASE_MATERIAL_ORIGIN_CHOICES)
+            self.fields['purchase_material_origin'].widget = forms.Select(
+                choices=PURCHASE_MATERIAL_ORIGIN_CHOICES,
+                attrs={'class': 'erp-select'},
+            )
+
+    def clean_print_passes(self):
+        value = self.cleaned_data.get('print_passes')
+        if value in (None, ''):
+            return None
+        passes = int(value)
+        if passes not in {1, 2, 3}:
+            raise forms.ValidationError('Select 1, 2, or 3 passes.')
+        return passes
 
     def clean(self):
         cleaned = super().clean()
         required_messages = {
             'delivery_date': 'Delivery Date is required.',
             'wastage_sheets': 'Wastage Sheets is required.',
-            'planned_total_impressions': 'Total Impressions is required.',
+            'print_passes': 'No. of Passes is required.',
             'purchase_material_origin': 'Purchase Material Origin is required.',
             'destination': 'Destination is required.',
             'requirement': 'Special Instructions is required.',
@@ -143,23 +168,44 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             if field_name == 'wastage_sheets':
                 if value is None:
                     self.add_error(field_name, message)
+            elif field_name == 'print_passes':
+                if value is None:
+                    self.add_error(field_name, message)
             else:
                 if not str(value or '').strip():
                     self.add_error(field_name, message)
 
+        print_passes = cleaned.get('print_passes')
+        if print_passes and not self.errors.get('print_passes') and not self.errors.get('wastage_sheets'):
+            preview_job = self.instance
+            preview_wastage = cleaned.get('wastage_sheets')
+            if preview_wastage is not None:
+                preview_job.wastage_sheets = preview_wastage
+            preview_job.print_passes = print_passes
+            if preview_job.calculated_sheets_required is None:
+                self.add_error(
+                    'print_passes',
+                    'Cannot calculate impressions until print sheets are available (order qty, UPS, and wastage).',
+                )
+            else:
+                cleaned['planned_total_impressions'] = preview_job.calculated_planned_total_impressions
+
         status = (cleaned.get('status') or self.instance.status or '').strip().lower()
         if status in PLANNING_QC_GATE_STATUSES:
-            # Check plate_set_no on the instance (since it is filled by the designer during plate request)
             if not getattr(self.instance, 'plate_set_no', '').strip():
                 self.add_error(None, 'Plate Set is required before QC approval.')
 
             qc_required_messages = {
                 'wastage_sheets': 'Wastage is required before QC approval.',
                 'purchase_material_origin': 'Purchase Material Origin is required before QC approval.',
+                'print_passes': 'No. of Passes is required before QC approval.',
             }
             for field_name, message in qc_required_messages.items():
                 value = cleaned.get(field_name)
                 if field_name == 'wastage_sheets':
+                    if value is None:
+                        self.add_error(field_name, message)
+                elif field_name == 'print_passes':
                     if value is None:
                         self.add_error(field_name, message)
                 else:
@@ -167,6 +213,13 @@ class PlanningJobFinalizationForm(forms.ModelForm):
                         self.add_error(field_name, message)
 
         return cleaned
+
+    def save(self, commit=True):
+        job = super().save(commit=False)
+        job.sync_planned_total_impressions()
+        if commit:
+            job.save()
+        return job
 
 
 # Backward-compatible alias so existing view imports keep working
@@ -182,6 +235,7 @@ class SkuRecipeForm(forms.ModelForm):
             'material',
             'color_spec',
             'application',
+            'product_type',
             'machine_name',
             'plate_set_no',
             'size_w_mm',
@@ -210,7 +264,20 @@ class SkuRecipeForm(forms.ModelForm):
         app_field.required = True
         app_field.widget.attrs.setdefault('required', 'required')
 
-        from core.models import Machine
+        from core.models import Machine, ProductType
+
+        product_types = ProductType.objects.all().order_by('name')
+        product_type_choices = [('', 'Select Product Type')] + [(item.name, item.name) for item in product_types]
+        current_product_type = self.instance.product_type if self.instance else None
+        if current_product_type and current_product_type not in [item.name for item in product_types]:
+            product_type_choices.append((current_product_type, current_product_type))
+        self.fields['product_type'].widget = forms.Select(
+            choices=product_type_choices,
+            attrs={'class': 'erp-select', 'style': 'flex: 1;'},
+        )
+        self.fields['product_type'].required = True
+        self.fields['product_type'].widget.attrs.setdefault('required', 'required')
+
         machines = Machine.objects.filter(is_active=True).order_by('name')
         machine_choices = [('', 'Select Machine')] + [(m.name, m.name) for m in machines]
         current_value = self.instance.machine_name if self.instance else None

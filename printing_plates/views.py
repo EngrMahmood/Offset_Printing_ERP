@@ -1,5 +1,5 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from django.urls import reverse_lazy
 from django.utils import timezone
 from django.contrib import messages
@@ -119,6 +119,7 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
         context['all_count'] = base_qs.count()
         context['request_type'] = self.request_type
         context['q'] = self.request.GET.get('q', '')
+        context['list_count'] = self.get_queryset().count()
         return context
 
 
@@ -134,11 +135,15 @@ class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
             PlateRequest.STATUS_SENT,
             PlateRequest.STATUS_RECEIVED,
         ]
+        active_plate_requests = Prefetch(
+            'plate_requests',
+            queryset=PlateRequest.objects.order_by('-requested_at', '-created_at'),
+        )
         queryset = PlanningJob.objects.filter(
             planning_stage__in=['new_plate_making', 'repeat_plate_making']
         ).filter(
             Q(plate_requests__status__in=active_statuses) | Q(plate_requests__isnull=True)
-        ).select_related('job_card').prefetch_related('plate_requests').distinct()
+        ).select_related('job_card').prefetch_related(active_plate_requests).distinct().order_by('-updated_at', '-id')
 
         # Search filter
         q = self.request.GET.get('q', '').strip()
@@ -160,6 +165,11 @@ class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
         context = super().get_context_data(**kwargs)
         context['q'] = self.request.GET.get('q', '')
         context['stage'] = self.request.GET.get('stage', '')
+        page_obj = context.get('page_obj')
+        if page_obj is not None:
+            context['queue_count'] = page_obj.paginator.count
+        else:
+            context['queue_count'] = len(context.get('planning_jobs') or [])
         return context
 
 

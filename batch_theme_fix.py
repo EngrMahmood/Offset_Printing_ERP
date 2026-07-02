@@ -5,7 +5,7 @@ import re
 BASE = 'd:/Offset_Printing_ERP'
 
 files = [
-    'core/templates/machine_master_tools.html',
+    'core/templates/master_data.html',
     'core/templates/shift_config.html',
     'core/templates/archived_records.html',
     'core/templates/change_history.html',

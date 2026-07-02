@@ -6,8 +6,8 @@ from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-from django.views.decorators.http import require_POST
-from django.db.models import Q, Sum, Min, Max
+from django.views.decorators.http import require_GET, require_POST
+from django.db.models import Prefetch, Q, Sum, Min, Max, F
 from django.db import transaction
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
@@ -23,6 +23,7 @@ from .bulk_upload import process_jobcard_upload, get_template_headers, get_templ
 from .jc_numbering import allocate_next_jc_number
 from .models import (
     ChangeLog,
+    DeliveryLocation,
     Department,
     Dispatch,
     EditOverrideRequest,
@@ -33,6 +34,7 @@ from .models import (
     MachineWorkSchedule,
     Material,
     Operator,
+    ProductType,
     Production,
     ProductionDowntime,
     ShiftConfig,
@@ -48,6 +50,10 @@ from .services import (
     add_unique_message,
     format_audit_value, normalize_colour_notation, extract_total_colors,
     compute_planned_minutes, get_remaining_planned_minutes, build_audit_snapshot,
+    sync_departments_from_planning,
+    sync_delivery_locations_from_planning,
+    sync_product_types_from_sku_recipes,
+    count_active_planning_jobs_for_product_type,
     build_change_summary, log_change, user_has_entity_permission,
     user_can_archive_records, user_can_bypass_edit_lock, get_record_edit_lock_days,
     get_record_edit_lock_cutoff, record_is_time_locked, get_valid_override,
@@ -167,7 +173,7 @@ def quick_add_master(request):
     master_type = (request.POST.get('type') or '').strip().lower()
     name = (request.POST.get('name') or '').strip()
 
-    if master_type not in {'material', 'machine', 'department', 'operator', 'vendor'}:
+    if master_type not in {'material', 'machine', 'department', 'delivery_location', 'operator', 'vendor', 'product_type'}:
         return JsonResponse({'ok': False, 'error': 'Invalid master type.'}, status=400)
 
     if not name:
@@ -264,7 +270,9 @@ def quick_add_master(request):
     model_map = {
         'material': Material,
         'department': Department,
+        'delivery_location': DeliveryLocation,
         'vendor': Vendor,
+        'product_type': ProductType,
     }
     model = model_map[master_type]
 
@@ -304,6 +312,93 @@ def job_card_records(request):
     return redirect('planning:job_cards')
 
 
+def _dispatchable_job_cards_queryset(edit_record=None):
+    qs = JobCard.objects.filter(is_active=True, status__in=JOB_CARD_DISPATCHABLE_STATUSES)
+    if edit_record:
+        qs = JobCard.objects.filter(is_active=True).filter(
+            Q(status__in=JOB_CARD_DISPATCHABLE_STATUSES) | Q(pk=edit_record.job_card_id)
+        ).distinct()
+    return qs.select_related('planning_job').prefetch_related(
+        Prefetch(
+            'dispatch_set',
+            queryset=Dispatch.objects.filter(is_active=True).select_related('created_by').order_by('-dispatch_date', '-id'),
+        )
+    )
+
+
+def _build_dispatch_job_card_info(job_card, edit_record_id=None):
+    dispatch_rows = list(job_card.dispatch_set.all())
+    history_data = []
+    for dispatch_row in dispatch_rows:
+        history_data.append({
+            'id': dispatch_row.id,
+            'date': dispatch_row.dispatch_date.strftime('%Y-%m-%d') if dispatch_row.dispatch_date else '',
+            'dc_no': dispatch_row.dc_no or '-',
+            'qty': dispatch_row.dispatch_qty,
+            'qty_display': f'{dispatch_row.dispatch_qty:,}',
+            'added_by': dispatch_row.created_by.username if dispatch_row.created_by else '-',
+            'is_current': dispatch_row.id == edit_record_id,
+        })
+
+    dispatched_total = sum(row.dispatch_qty for row in dispatch_rows)
+    if edit_record_id and any(row.id == edit_record_id for row in dispatch_rows):
+        edit_qty = next(row.dispatch_qty for row in dispatch_rows if row.id == edit_record_id)
+        dispatched_before = dispatched_total - (edit_qty or 0)
+    else:
+        dispatched_before = dispatched_total
+
+    remaining_qty = max(0, job_card.order_qty - dispatched_total)
+    if edit_record_id and any(row.id == edit_record_id for row in dispatch_rows):
+        remaining_qty = max(0, job_card.order_qty - dispatched_before)
+
+    dispatch_pct = round((dispatched_total / job_card.order_qty) * 100, 2) if job_card.order_qty > 0 else 0
+
+    return {
+        'job_card_no': job_card.job_card_no,
+        'sku': job_card.SKU or '-',
+        'customer': job_card.destination or '-',
+        'po_no': job_card.PO_No or '-',
+        'order_qty': job_card.order_qty,
+        'order_qty_display': f'{job_card.order_qty:,}',
+        'produced_qty': int(job_card.total_production_pcs or 0),
+        'produced_qty_display': f'{int(job_card.total_production_pcs or 0):,}' if job_card.is_print_job else 'N/A',
+        'dispatched_before': dispatched_before,
+        'dispatched_before_display': f'{dispatched_before:,}',
+        'dispatched_total': dispatched_total,
+        'dispatched_total_display': f'{dispatched_total:,}',
+        'remaining': remaining_qty,
+        'remaining_display': f'{remaining_qty:,}',
+        'dispatch_pct': dispatch_pct,
+        'is_print_job': job_card.is_print_job,
+        'history': history_data,
+        'history_count': len(history_data),
+    }
+
+
+def _dispatch_remaining_badge(order_qty, total_dispatch):
+    remaining = order_qty - total_dispatch
+    if remaining <= 0:
+        return {
+            'label': 'Complete',
+            'badge_class': 'erp-badge-completed',
+            'remaining': 0,
+            'remaining_display': '0',
+        }
+    if total_dispatch <= 0:
+        return {
+            'label': 'Not dispatched',
+            'badge_class': 'erp-badge-draft',
+            'remaining': remaining,
+            'remaining_display': f'{remaining:,}',
+        }
+    return {
+        'label': f'{remaining:,} left',
+        'badge_class': 'erp-badge-pending',
+        'remaining': remaining,
+        'remaining_display': f'{remaining:,}',
+    }
+
+
 @login_required
 @permission_required('can_approve_dispatch')
 def dispatch_entry(request):
@@ -319,7 +414,7 @@ def dispatch_entry(request):
         try:
             change_reason = (request.POST.get('change_reason') or '').strip()
             job_card_id = request.POST.get('job_card')
-            dc_no = (request.POST.get('dc_no') or '').strip() or None
+            dc_no = (request.POST.get('dc_no') or '').strip()
             dispatch_date_raw = request.POST.get('dispatch_date')
             dispatch_qty = int(request.POST.get('dispatch_qty') or 0)
 
@@ -327,6 +422,8 @@ def dispatch_entry(request):
                 raise ValueError('Change reason is required when editing dispatch')
             if not job_card_id:
                 raise ValueError('Job card is required')
+            if not dc_no:
+                raise ValueError('DC / DR number is required')
             if dispatch_qty <= 0:
                 raise ValueError('Dispatch quantity must be greater than 0')
 
@@ -364,21 +461,118 @@ def dispatch_entry(request):
         except Exception as e:
             messages.error(request, f'Error saving dispatch: {str(e)}')
 
-    dispatch_jobs = JobCard.objects.filter(is_active=True, status__in=JOB_CARD_DISPATCHABLE_STATUSES)
+    dispatch_jobs = _dispatchable_job_cards_queryset(edit_record).order_by('-created_at')[:200]
+
+    job_card_info_map = {}
+    edit_record_id = edit_record.id if edit_record else None
+    for job_card in dispatch_jobs:
+        job_card_info_map[str(job_card.id)] = _build_dispatch_job_card_info(job_card, edit_record_id)
+
+    prefill_job_card_id = (request.GET.get('job_card') or '').strip()
     if edit_record:
-        dispatch_jobs = JobCard.objects.filter(is_active=True).filter(
-            Q(status__in=JOB_CARD_DISPATCHABLE_STATUSES) | Q(pk=edit_record.job_card_id)
-        ).distinct()
+        prefill_job_card_id = str(edit_record.job_card_id)
+    prefill_dc_no = (request.GET.get('dc_no') or '').strip()
+    if edit_record and not prefill_dc_no:
+        prefill_dc_no = edit_record.dc_no or ''
 
     context = {
-        'job_cards': dispatch_jobs.order_by('-created_at')[:200],
+        'job_cards': dispatch_jobs,
+        'job_card_info_json': json.dumps(job_card_info_map),
         'today': edit_record.dispatch_date if edit_record else timezone.now().date(),
         'edit_record': edit_record,
         'edit_lock_days': get_record_edit_lock_days(),
         'edit_lock_applies': bool(edit_record and record_is_time_locked('dispatch', edit_record)),
         'is_view_mode': is_view_mode,
+        'prefill_dc_no': prefill_dc_no,
+        'prefill_job_card_id': prefill_job_card_id,
     }
     return render(request, 'dispatch_entry.html', context)
+
+
+@login_required
+@permission_required('can_approve_dispatch')
+@require_GET
+def dispatch_job_card_search(request):
+    """Server-side job card search for dispatch entry (beyond initial 200 preload)."""
+    query = (request.GET.get('q') or '').strip()
+    edit_id = (request.GET.get('edit_id') or '').strip()
+    edit_record = get_active_record_or_404(Dispatch, edit_id) if edit_id else None
+
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+
+    qs = _dispatchable_job_cards_queryset(edit_record).filter(
+        Q(job_card_no__icontains=query) |
+        Q(SKU__icontains=query) |
+        Q(PO_No__icontains=query) |
+        Q(destination__icontains=query)
+    ).order_by('-created_at')[:30]
+
+    edit_record_id = edit_record.id if edit_record else None
+    results = []
+    for job_card in qs:
+        info = _build_dispatch_job_card_info(job_card, edit_record_id)
+        results.append({
+            'id': job_card.id,
+            'label': f'{job_card.job_card_no} - {job_card.SKU}',
+            'job_card_no': job_card.job_card_no,
+            'sku': info['sku'],
+            'customer': info['customer'],
+            'remaining': info['remaining'],
+            'remaining_display': info['remaining_display'],
+            'info': info,
+        })
+
+    return JsonResponse({'results': results})
+
+
+@login_required
+@permission_required('can_approve_dispatch')
+@require_GET
+def dispatch_dc_duplicate_check(request):
+    """Check DC usage: block same DC on same JC; list other SKUs/lines on shared DC."""
+    dc_no = (request.GET.get('dc_no') or '').strip()
+    job_card_id = (request.GET.get('job_card_id') or '').strip()
+    exclude_id = (request.GET.get('exclude_id') or '').strip()
+
+    if not dc_no:
+        return JsonResponse({
+            'same_jc_duplicate': False,
+            'same_dc_entries': [],
+            'same_dc_sku_count': 0,
+            'same_dc_line_count': 0,
+            'blocking': False,
+        })
+
+    matches_qs = Dispatch.objects.filter(is_active=True, dc_no__iexact=dc_no).select_related('job_card')
+    if exclude_id:
+        matches_qs = matches_qs.exclude(pk=exclude_id)
+
+    same_jc_duplicate = False
+    same_dc_entries = []
+
+    for match in matches_qs.order_by('job_card__job_card_no', '-dispatch_date', '-id'):
+        if job_card_id and str(match.job_card_id) == job_card_id:
+            same_jc_duplicate = True
+            continue
+        same_dc_entries.append({
+            'id': match.id,
+            'job_card_no': match.job_card.job_card_no,
+            'sku': match.job_card.SKU or '-',
+            'customer': match.job_card.destination or '-',
+            'dispatch_date': match.dispatch_date.strftime('%d %b %Y') if match.dispatch_date else '-',
+            'dispatch_qty': match.dispatch_qty,
+        })
+
+    sku_values = {entry['sku'] for entry in same_dc_entries if entry['sku'] and entry['sku'] != '-'}
+
+    return JsonResponse({
+        'same_jc_duplicate': same_jc_duplicate,
+        'same_dc_entries': same_dc_entries,
+        'same_dc_sku_count': len(sku_values),
+        'same_dc_line_count': len(same_dc_entries),
+        'blocking': same_jc_duplicate,
+    })
 
 
 @login_required
@@ -404,6 +598,8 @@ def dispatch_records(request):
             return redirect('dispatch_records')
 
     query = (request.GET.get('q') or '').strip()
+    dc_filter = (request.GET.get('dc_no') or '').strip()
+    balance_status = (request.GET.get('balance_status') or '').strip().lower()
     date_from_raw = (request.GET.get('date_from') or '').strip()
     date_to_raw = (request.GET.get('date_to') or '').strip()
     sort = (request.GET.get('sort') or 'dispatch_date').strip()
@@ -420,8 +616,28 @@ def dispatch_records(request):
     if query:
         records = records.filter(
             Q(job_card__job_card_no__icontains=query) |
+            Q(job_card__SKU__icontains=query) |
+            Q(job_card__destination__icontains=query) |
             Q(dc_no__icontains=query)
         )
+
+    if dc_filter:
+        records = records.filter(dc_no__iexact=dc_filter)
+
+    if balance_status in {'complete', 'partial', 'not_dispatched'}:
+        jc_qs = JobCard.objects.filter(is_active=True).annotate(
+            dispatched_total=Coalesce(
+                Sum('dispatch__dispatch_qty', filter=Q(dispatch__is_active=True)),
+                0,
+            )
+        )
+        if balance_status == 'complete':
+            jc_qs = jc_qs.filter(dispatched_total__gte=F('order_qty'))
+        elif balance_status == 'not_dispatched':
+            jc_qs = jc_qs.filter(dispatched_total=0)
+        else:
+            jc_qs = jc_qs.filter(dispatched_total__gt=0, dispatched_total__lt=F('order_qty'))
+        records = records.filter(job_card_id__in=jc_qs.values('id'))
 
     date_from = None
     date_to = None
@@ -458,10 +674,42 @@ def dispatch_records(request):
     records = records.order_by(ordering)
 
     total_count = records.count()
+    filtered_qty_total = records.aggregate(total=Sum('dispatch_qty'))['total'] or 0
     paginator = Paginator(records, per_page)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
     records = list(page_obj.object_list)
+    page_qty_total = sum(row.dispatch_qty or 0 for row in records)
+
+    job_card_ids = {row.job_card_id for row in records}
+    dispatch_totals = {
+        row['job_card_id']: row['total'] or 0
+        for row in Dispatch.objects.filter(is_active=True, job_card_id__in=job_card_ids)
+        .values('job_card_id')
+        .annotate(total=Sum('dispatch_qty'))
+    }
+    for row in records:
+        total_dispatch = dispatch_totals.get(row.job_card_id, 0)
+        row.remaining_badge = _dispatch_remaining_badge(row.job_card.order_qty, total_dispatch)
+
+    dc_values = list({row.dc_no for row in records if row.dc_no})
+    dc_bundle_map = {}
+    for dc_value in dc_values:
+        dc_qs = Dispatch.objects.filter(is_active=True, dc_no__iexact=dc_value)
+        dc_bundle_map[dc_value.strip().lower()] = {
+            'line_count': dc_qs.count(),
+            'sku_count': dc_qs.values('job_card__SKU').distinct().count(),
+            'dc_no': dc_value,
+        }
+
+    for row in records:
+        row.dc_bundle = dc_bundle_map.get(
+            (row.dc_no or '').strip().lower(),
+            {'line_count': 1, 'sku_count': 1, 'dc_no': row.dc_no},
+        )
+
+    page_complete_count = sum(1 for row in records if row.remaining_badge['badge_class'] == 'erp-badge-completed')
+    page_open_count = len(records) - page_complete_count
 
     cutoff = get_record_edit_lock_cutoff()
     pending_ids: set = set()
@@ -481,7 +729,17 @@ def dispatch_records(request):
         'records': records,
         'page_obj': page_obj,
         'total_count': total_count,
+        'filtered_qty_total': filtered_qty_total,
+        'page_qty_total': page_qty_total,
+        'page_complete_count': page_complete_count,
+        'page_open_count': page_open_count,
+        'has_active_filters': bool(query or dc_filter or balance_status or date_from_raw or date_to_raw),
         'q': query,
+        'dc_no': dc_filter,
+        'balance_status': balance_status,
+        'today': timezone.now().date().isoformat(),
+        'week_start': (timezone.now().date() - timedelta(days=timezone.now().weekday())).isoformat(),
+        'month_start': timezone.now().date().replace(day=1).isoformat(),
         'date_from': date_from_raw,
         'date_to': date_to_raw,
         'sort': sort,
@@ -943,8 +1201,10 @@ def download_erp_readme(request):
 
 @login_required
 @permission_required('can_manage_masters')
-def machine_master_tools(request):
-    """Manager/admin screen to correct dropdown master values across ERP."""
+def master_data(request):
+    """Manager/admin screen to manage dropdown master values across ERP."""
+
+    from planning.models import PlanningJob, SkuRecipe
 
     User = get_user_model()
     model_map = {
@@ -952,6 +1212,8 @@ def machine_master_tools(request):
         'operator': Operator,
         'material': Material,
         'department': Department,
+        'delivery_location': DeliveryLocation,
+        'product_type': ProductType,
         'supervisor': Supervisor,
         'vendor': Vendor,
     }
@@ -966,7 +1228,7 @@ def machine_master_tools(request):
 
         if action in {'rename_machine', 'edit_master', 'delete_master'} and not is_admin_user:
             messages.error(request, 'Only admin can edit or delete master values.')
-            return redirect('machine_master_tools')
+            return redirect('master_data')
 
         if action in {'rename_machine', 'edit_master'} and record:
             new_name = (request.POST.get('new_name') or '').strip()
@@ -976,7 +1238,7 @@ def machine_master_tools(request):
                 duplicate = model.objects.exclude(pk=record.pk).filter(name__iexact=new_name).first()
                 if duplicate:
                     messages.error(request, f'Name already exists as #{duplicate.id} ({duplicate.name}).')
-                    return redirect('machine_master_tools')
+                    return redirect('master_data')
                 old_name = record.name
 
                 changed_fields = []
@@ -1000,11 +1262,11 @@ def machine_master_tools(request):
                         new_setup = float(setup_raw) if setup_raw else float(record.standard_setup_minutes_per_color or 0)
                     except ValueError:
                         messages.error(request, 'Machine speed and setup minutes per color must be numeric values.')
-                        return redirect('machine_master_tools')
+                        return redirect('master_data')
 
                     if new_speed <= 0 or new_setup <= 0:
                         messages.error(request, 'Machine speed and setup minutes per color must be greater than 0.')
-                        return redirect('machine_master_tools')
+                        return redirect('master_data')
 
                     if float(record.standard_impressions_per_hour) != float(new_speed):
                         record.standard_impressions_per_hour = new_speed
@@ -1013,14 +1275,19 @@ def machine_master_tools(request):
                         record.standard_setup_minutes_per_color = new_setup
                         changed_fields.append('standard_setup_minutes_per_color')
 
-                    if changed_fields:
-                        record.save(update_fields=changed_fields)
-                        if old_name != record.name:
-                            messages.success(request, f'{entity_type.title()} updated: {old_name} -> {record.name}')
-                        else:
-                            messages.success(request, f'{entity_type.title()} details updated successfully.')
+                if changed_fields:
+                    record.save(update_fields=changed_fields)
+                    if entity_type == 'product_type' and old_name != record.name:
+                        SkuRecipe.objects.filter(product_type__iexact=old_name).update(product_type=record.name)
+                    if entity_type == 'delivery_location' and old_name != record.name:
+                        PlanningJob.objects.filter(destination__iexact=old_name).update(destination=record.name)
+                        JobCard.objects.filter(destination__iexact=old_name).update(destination=record.name)
+                    if old_name != record.name:
+                        messages.success(request, f'{entity_type.replace("_", " ").title()} updated: {old_name} -> {record.name}')
                     else:
-                        messages.success(request, f'No changes detected for {entity_type.title()} {record.name}.')
+                        messages.success(request, f'{entity_type.replace("_", " ").title()} details updated successfully.')
+                elif entity_type == 'machine':
+                    messages.success(request, f'No changes detected for {entity_type.title()} {record.name}.')
 
         elif action == 'toggle_machine' and record and hasattr(record, 'is_active'):
             record.is_active = not record.is_active
@@ -1040,7 +1307,7 @@ def machine_master_tools(request):
                         request,
                         f'Cannot delete Machine {record_name}. Linked records found (Job Cards: {linked_jobcards}, Production: {linked_productions}).'
                     )
-                    return redirect('machine_master_tools')
+                    return redirect('master_data')
 
             elif entity_type == 'operator':
                 linked_productions = Production.objects.filter(operator=record).count()
@@ -1049,7 +1316,7 @@ def machine_master_tools(request):
                         request,
                         f'Cannot delete Operator {record_name}. Linked production records: {linked_productions}.'
                     )
-                    return redirect('machine_master_tools')
+                    return redirect('master_data')
 
             elif entity_type == 'supervisor':
                 linked_productions = Production.objects.filter(supervisor=record).count()
@@ -1058,7 +1325,7 @@ def machine_master_tools(request):
                         request,
                         f'Cannot delete Supervisor {record_name}. Linked production records: {linked_productions}.'
                     )
-                    return redirect('machine_master_tools')
+                    return redirect('master_data')
 
             elif entity_type == 'material':
                 linked_jobcards = JobCard.objects.filter(material=record).count()
@@ -1067,16 +1334,37 @@ def machine_master_tools(request):
                         request,
                         f'Cannot delete Material {record_name}. Linked job cards: {linked_jobcards}.'
                     )
-                    return redirect('machine_master_tools')
+                    return redirect('master_data')
 
             elif entity_type == 'department':
                 linked_jobcards = JobCard.objects.filter(department=record).count()
-                if linked_jobcards:
+                linked_planning_jobs = PlanningJob.objects.filter(department__iexact=record.name).count()
+                if linked_jobcards or linked_planning_jobs:
                     messages.error(
                         request,
-                        f'Cannot delete Department {record_name}. Linked job cards: {linked_jobcards}.'
+                        f'Cannot delete Department {record_name}. Linked records found (Job Cards: {linked_jobcards}, Planning Jobs: {linked_planning_jobs}).'
                     )
-                    return redirect('machine_master_tools')
+                    return redirect('master_data')
+
+            elif entity_type == 'delivery_location':
+                linked_jobcards = JobCard.objects.filter(destination__iexact=record.name).count()
+                linked_planning_jobs = PlanningJob.objects.filter(destination__iexact=record.name).count()
+                if linked_jobcards or linked_planning_jobs:
+                    messages.error(
+                        request,
+                        f'Cannot delete Delivery Location {record_name}. Linked records found (Job Cards: {linked_jobcards}, Planning Jobs: {linked_planning_jobs}).'
+                    )
+                    return redirect('master_data')
+
+            elif entity_type == 'product_type':
+                linked_recipes = SkuRecipe.objects.filter(product_type__iexact=record.name).count()
+                linked_planning_jobs = count_active_planning_jobs_for_product_type(record.name)
+                if linked_recipes or linked_planning_jobs:
+                    messages.error(
+                        request,
+                        f'Cannot delete Product Type {record_name}. Linked records found (SKU Recipes: {linked_recipes}, Planning Jobs: {linked_planning_jobs}).'
+                    )
+                    return redirect('master_data')
 
             try:
                 record.delete()
@@ -1084,7 +1372,28 @@ def machine_master_tools(request):
             except ProtectedError:
                 messages.error(request, f'Cannot delete {entity_type.title()} {record_name} because it is referenced by other records.')
 
-        return redirect('machine_master_tools')
+        return redirect('master_data')
+
+    departments_created = sync_departments_from_planning()
+    if departments_created:
+        messages.success(
+            request,
+            f'Added {departments_created} department{"s" if departments_created != 1 else ""} from planning data.',
+        )
+
+    delivery_locations_created = sync_delivery_locations_from_planning()
+    if delivery_locations_created:
+        messages.success(
+            request,
+            f'Added {delivery_locations_created} delivery location{"s" if delivery_locations_created != 1 else ""} from planning data.',
+        )
+
+    product_types_created = sync_product_types_from_sku_recipes()
+    if product_types_created:
+        messages.success(
+            request,
+            f'Added {product_types_created} product type{"s" if product_types_created != 1 else ""} from SKU master recipes.',
+        )
 
     machine_rows = []
     for item in Machine.objects.all().order_by('name', 'id'):
@@ -1113,6 +1422,23 @@ def machine_master_tools(request):
         department_rows.append({
             'record': item,
             'job_card_count': JobCard.objects.filter(department=item, is_active=True).count(),
+            'planning_job_count': PlanningJob.objects.filter(department__iexact=item.name, is_active=True).count(),
+        })
+
+    delivery_location_rows = []
+    for item in DeliveryLocation.objects.all().order_by('name', 'id'):
+        delivery_location_rows.append({
+            'record': item,
+            'job_card_count': JobCard.objects.filter(destination__iexact=item.name, is_active=True).count(),
+            'planning_job_count': PlanningJob.objects.filter(destination__iexact=item.name, is_active=True).count(),
+        })
+
+    product_type_rows = []
+    for item in ProductType.objects.all().order_by('name', 'id'):
+        product_type_rows.append({
+            'record': item,
+            'planning_job_count': count_active_planning_jobs_for_product_type(item.name),
+            'sku_recipe_count': SkuRecipe.objects.filter(is_active=True, product_type__iexact=item.name).count(),
         })
 
     supervisor_rows = []
@@ -1136,10 +1462,19 @@ def machine_master_tools(request):
         'supervisor_rows': supervisor_rows,
         'material_rows': material_rows,
         'department_rows': department_rows,
+        'delivery_location_rows': delivery_location_rows,
+        'product_type_rows': product_type_rows,
         'vendor_rows': vendor_rows,
         'is_admin_user': bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin'),
     }
-    return render(request, 'machine_master_tools.html', context)
+    return render(request, 'master_data.html', context)
+
+
+@login_required
+@permission_required('can_manage_masters')
+def machine_master_tools(request):
+    """Backward-compatible redirect for the renamed master data route."""
+    return redirect('master_data')
 
 
 @login_required

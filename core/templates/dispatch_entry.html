@@ -1,226 +1,1366 @@
 {% extends 'theme/base.html' %}
+
 {% load static %}
 
 {% block title %}{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %} - Offset ERP{% endblock %}
-{% block extra_head %}
-    <style>
-        body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0;  background: var(--erp-bg-soft, #f3f5f8); overflow-x: hidden; }
-        .container { max-width: 100%; width: 100%; margin: 0 auto; background: #fff; border-radius: 10px; padding: 24px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); }
-        .top-actions { display: flex; gap: 10px; margin-bottom: 14px; flex-wrap: wrap; }
-        .btn { background: #417690; color: #fff; text-decoration: none; padding: 10px 14px; border-radius: 6px; border: none; cursor: pointer; }
-        .btn:hover { background: #2f5b73; }
-        .btn-green { background: #198754; }
-        .btn-green:hover { background: #136a42; }
-        h1 { margin-top: 0; }
-        .alert { border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
-        .alert-success { background: #e6f4ea; color: #1e6d33; border: 1px solid #bee3c7; }
-        .alert-error { background: #fce8e6; color: #8a1c1c; border: 1px solid #f5c2c7; }
-        .form-group { margin-bottom: 14px; }
-        label { display: block; margin-bottom: 6px; font-weight: 600; }
-        input, select { width: 100%; box-sizing: border-box; padding: 10px; border: 1px solid #cfd6de; border-radius: 6px; }
-        .search-meta { color: #5f6b7a; font-size: 12px; margin-top: 6px; }
-        .search-results {
-            border: 1px solid #dde3ea;
-            border-radius: 6px;
-            background: #fff;
-            max-height: 220px;
-            overflow: auto;
-            margin-top: 8px;
-            display: none;
-        }
-        .search-result-item {
-            width: 100%;
-            text-align: left;
-            background: #fff;
-            border: none;
-            border-bottom: 1px solid #eef2f6;
-            padding: 9px 10px;
-            cursor: pointer;
-            font-size: 13px;
-        }
-        .search-result-item:hover { background: #f5f8fb; }
-        .search-tools { display:flex; justify-content:space-between; align-items:center; gap:8px; margin-top:6px; }
-        .clear-btn {
-            border: none;
-            background: #eef3f8;
-            color: #355;
-            padding: 6px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        .clear-btn:hover { background: #dde8f2; }
-    </style>
-{% endblock %}
-{% block header_title %}{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %}{% endblock %}
-{% block header_subtitle %}Record dispatch quantities, dates, DC references, and history against job cards.{% endblock %}
-{% block header_actions %}
-    {% if user.profile.can_approve_dispatch %}
-    <a href="{% url 'dispatch_records' %}" class="erp-btn erp-btn-secondary">Dispatch Records</a>
-    {% endif %}
-    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
-{% endblock %}
-{% block content %}
-    <div class="container">
-        <div class="top-actions">
-            <a href="/" class="btn">Home</a>
-            {% if user.profile.can_approve_dispatch %}
-            <a href="{% url 'dispatch_records' %}" class="btn">Dispatch Records</a>
-            {% endif %}
-            {% if edit_record %}
-            <a href="{% url 'change_history' 'dispatch' edit_record.id %}" class="btn">History</a>
-            {% endif %}
-            <a href="javascript:history.back()" class="btn">Back</a>
-            <a href="{% url 'erp_readme' %}" class="btn">Guide</a>
-            <div style="margin-left:auto;display:flex;align-items:center;">
-                {% include 'includes/user_identity_chip.html' %}
-            </div>
-        </div>
 
-        <h1>{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %}</h1>
+{% block extra_head %}
+
+    <style>
+
+        .dispatch-entry-layout {
+
+            display: grid;
+
+            grid-template-columns: minmax(0, 1.1fr) minmax(300px, 0.9fr);
+
+            gap: 14px;
+
+            align-items: start;
+
+        }
+
+        @media (max-width: 960px) {
+
+            .dispatch-entry-layout { grid-template-columns: 1fr; }
+
+        }
+
+        .dispatch-search-wrap {
+
+            position: relative;
+
+        }
+
+        .dispatch-search-results {
+
+            position: absolute;
+
+            left: 0;
+
+            right: 0;
+
+            z-index: 20;
+
+            border: 1px solid #c9d9ea;
+
+            border-radius: 8px;
+
+            background: #fff;
+
+            box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+
+            max-height: 240px;
+
+            overflow: auto;
+
+            margin-top: 6px;
+
+            display: none;
+
+        }
+
+        .dispatch-search-result-item {
+
+            width: 100%;
+
+            text-align: left;
+
+            background: #fff;
+
+            border: none;
+
+            border-bottom: 1px solid #eef2f6;
+
+            padding: 10px 12px;
+
+            cursor: pointer;
+
+            font-size: 13px;
+
+        }
+
+        .dispatch-search-result-item:last-child { border-bottom: none; }
+
+        .dispatch-search-result-item:hover { background: #f5f9ff; }
+
+        .dispatch-search-result-item .result-main {
+
+            font-weight: 600;
+
+            color: #1f3249;
+
+        }
+
+        .dispatch-search-result-item .result-meta {
+
+            margin-top: 3px;
+
+            font-size: 12px;
+
+            color: #64748b;
+
+        }
+
+        .dispatch-selected-chip {
+
+            display: inline-flex;
+
+            align-items: center;
+
+            gap: 8px;
+
+            margin-top: 8px;
+
+            padding: 6px 10px;
+
+            border-radius: 999px;
+
+            background: #eef6ff;
+
+            border: 1px solid #bfdcff;
+
+            color: #1e3a5f;
+
+            font-size: 12px;
+
+            font-weight: 600;
+
+        }
+
+        .dispatch-selected-chip.is-hidden { display: none !important; }
+
+        .dispatch-context-stack {
+
+            display: flex;
+
+            flex-direction: column;
+
+            gap: 12px;
+
+        }
+
+        .dispatch-kpi-row {
+
+            display: grid;
+
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+
+            gap: 8px;
+
+        }
+
+        .dispatch-kpi-row .erp-kpi-pill { min-width: 0; padding: 10px 8px; }
+
+        .dispatch-kpi-row .erp-kpi-pill__value { font-size: 18px; }
+
+        .dispatch-kpi-row .erp-kpi-pill.is-complete .erp-kpi-pill__value { color: #047857; }
+
+        .dispatch-kpi-row .erp-kpi-pill.is-warn .erp-kpi-pill__value { color: #b45309; }
+
+        .dispatch-kpi-row .erp-kpi-pill.is-danger .erp-kpi-pill__value { color: #b91c1c; }
+
+        .dispatch-history-current td { background: rgba(59, 130, 246, 0.08); }
+
+        .dispatch-empty-context {
+
+            text-align: center;
+
+            padding: 28px 18px;
+
+        }
+
+        .dispatch-empty-context__icon {
+
+            font-size: 28px;
+
+            color: #94a3b8;
+
+            margin-bottom: 10px;
+
+        }
+
+        .dispatch-empty-context__title {
+
+            font-size: 15px;
+
+            font-weight: 700;
+
+            color: #1f3249;
+
+            margin-bottom: 6px;
+
+        }
+
+        .dispatch-empty-context__text {
+
+            font-size: 13px;
+
+            color: #64748b;
+
+            line-height: 1.5;
+
+            max-width: 320px;
+
+            margin: 0 auto;
+
+        }
+
+    </style>
+
+{% endblock %}
+
+{% block header_title %}{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}Dispatch Entry{% endif %}{% endblock %}
+
+{% block header_subtitle %}Record dispatch quantities, dates, DC references, and history against job cards.{% endblock %}
+
+{% block header_actions %}
+
+    {% if user.profile.can_approve_dispatch %}
+
+    <a href="{% url 'dispatch_records' %}" class="erp-btn erp-btn-secondary">Dispatch Records</a>
+
+    {% endif %}
+
+    <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
+
+{% endblock %}
+
+{% block content %}
+
+    <div class="erp-page-stack dispatch-entry">
 
         {% if messages %}
+
             {% for message in messages %}
-                <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ message }}</div>
+
+                <div class="erp-alert {% if message.tags == 'success' %}erp-alert-success{% else %}erp-alert-danger{% endif %}">{{ message }}</div>
+
             {% endfor %}
+
         {% endif %}
 
         {% if edit_record and edit_lock_applies %}
-        <div class="alert alert-success">
+
+        <div class="erp-alert erp-alert-success">
+
             This dispatch record is past the {{ edit_lock_days }}-day edit window. You are editing with manager/admin override.
+
         </div>
+
         {% endif %}
 
-        <form method="POST">
-            {% csrf_token %}
-            {% if edit_record %}
-            <input type="hidden" name="edit_id" value="{{ edit_record.id }}">
-            {% endif %}
-            <div class="form-group">
-                <label for="job_card">Job Card</label>
-                <input type="text" id="job_card_search" placeholder="Type Job Card No, SKU, or PO and click result" autocomplete="off">
-                <div class="search-tools">
-                    <div id="job_card_search_meta" class="search-meta">Start typing to see matching job cards.</div>
-                    <button type="button" id="job_card_clear" class="clear-btn">Clear</button>
+        <div id="dc_duplicate_warning" class="erp-alert erp-alert-warning is-hidden" role="alert"></div>
+        <div id="dc_shared_info" class="erp-alert erp-alert-success is-hidden" role="status"></div>
+
+        <div class="dispatch-entry-layout">
+
+            <div class="dispatch-entry-main">
+
+                <form method="POST" id="dispatch_form">
+
+                    {% csrf_token %}
+
+                    {% if edit_record %}
+
+                    <input type="hidden" name="edit_id" value="{{ edit_record.id }}">
+
+                    {% endif %}
+
+                    <section class="erp-section-shell">
+
+                        <div class="erp-card-header">
+
+                            <div class="erp-card-title-stack">
+
+                                <div class="erp-eyebrow">Dispatch</div>
+
+                                <h2 class="erp-section-title">{% if is_view_mode %}View Dispatch{% elif edit_record %}Edit Dispatch{% else %}New Dispatch Entry{% endif %}</h2>
+
+                                <p class="erp-card-subtitle">Search a Job Card, enter dispatch details, then save.</p>
+
+                            </div>
+
+                            {% if edit_record %}
+
+                            <a href="{% url 'change_history' 'dispatch' edit_record.id %}" class="erp-btn erp-btn-secondary">Change History</a>
+
+                            {% endif %}
+
+                        </div>
+
+                        <div class="erp-form-grid">
+
+                            <div class="erp-form-field erp-form-grid__full dispatch-search-wrap">
+
+                                <label for="job_card_search">Job Card</label>
+
+                                <input type="text" id="job_card_search" class="erp-input" placeholder="Search by Job Card No, SKU, PO, or customer..." autocomplete="off" {% if is_view_mode %}disabled{% endif %}>
+
+                                <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;">
+
+                                    <p id="job_card_search_meta" class="erp-help-text" style="margin:0;">Start typing to search job cards.</p>
+
+                                    <button type="button" id="job_card_clear" class="erp-btn erp-btn-secondary" style="padding:4px 10px;font-size:12px;" {% if is_view_mode %}disabled{% endif %}>Clear</button>
+
+                                </div>
+
+                                <div id="job_card_selected_chip" class="dispatch-selected-chip is-hidden">
+
+                                    <i class="fas fa-id-card"></i>
+
+                                    <span id="job_card_selected_label">-</span>
+
+                                </div>
+
+                                <div id="job_card_results" class="dispatch-search-results"></div>
+
+                                <select id="job_card" name="job_card" class="erp-select" required style="display:none;" {% if is_view_mode %}disabled{% endif %}>
+
+                                    <option value="">Select job card</option>
+
+                                    {% for item in job_cards %}
+
+                                    <option value="{{ item.id }}" {% if edit_record and edit_record.job_card_id == item.id %}selected{% elif prefill_job_card_id == item.id|stringformat:"s" %}selected{% endif %}>{{ item.job_card_no }} - {{ item.SKU }}</option>
+
+                                    {% endfor %}
+
+                                </select>
+
+                            </div>
+
+                            <div class="erp-form-field">
+
+                                <label for="dc_no">DC No <span class="required">*</span></label>
+
+                                <input id="dc_no" name="dc_no" class="erp-input" value="{% if edit_record %}{{ edit_record.dc_no }}{% else %}{{ prefill_dc_no }}{% endif %}" placeholder="DC-2026-001" required {% if is_view_mode %}disabled{% endif %}>
+
+                                <p class="erp-help-text">One DC can cover multiple job cards and SKUs. Duplicate DC on the same job card is blocked.</p>
+
+                            </div>
+
+                            <div class="erp-form-field">
+
+                                <label for="dispatch_date">Dispatch Date</label>
+
+                                <input id="dispatch_date" name="dispatch_date" type="date" class="erp-input" value="{{ today|date:'Y-m-d' }}" required {% if is_view_mode %}disabled{% endif %}>
+
+                            </div>
+
+                            <div class="erp-form-field">
+
+                                <label for="dispatch_qty">Dispatch Qty (pcs)</label>
+
+                                <input id="dispatch_qty" name="dispatch_qty" type="number" min="1" class="erp-input" value="{{ edit_record.dispatch_qty|default:'' }}" placeholder="Enter quantity" required {% if is_view_mode %}disabled{% endif %}>
+
+                            </div>
+
+                            {% if edit_record %}
+
+                            <div class="erp-form-field erp-form-grid__full">
+
+                                <label for="change_reason">Reason For Change <span class="required">*</span></label>
+
+                                <input id="change_reason" name="change_reason" class="erp-input" placeholder="Explain what was corrected and why." required {% if is_view_mode %}disabled{% endif %}>
+
+                            </div>
+
+                            {% endif %}
+
+                        </div>
+
+                        {% if not is_view_mode %}
+
+                        <div class="erp-form-actions" style="margin-top:1rem;">
+
+                            <button type="submit" class="erp-btn erp-btn-primary">{% if edit_record %}Update Dispatch{% else %}Save Dispatch{% endif %}</button>
+
+                            <a href="{% url 'dispatch_records' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+
+                        </div>
+
+                        {% endif %}
+
+                    </section>
+
+                </form>
+
+            </div>
+
+            <div class="dispatch-entry-context">
+
+                <div class="dispatch-context-stack">
+
+                    <section class="erp-section-shell" id="context_empty">
+
+                        <div class="dispatch-empty-context">
+
+                            <div class="dispatch-empty-context__icon"><i class="fas fa-search"></i></div>
+
+                            <div class="dispatch-empty-context__title">Select a Job Card</div>
+
+                            <p class="dispatch-empty-context__text">Search on the left to load job summary, dispatch balance, and prior history before saving.</p>
+
+                        </div>
+
+                    </section>
+
+                    <section class="erp-section-shell is-hidden" id="job_info_card">
+
+                        <div class="erp-card-header">
+
+                            <div class="erp-card-title-stack">
+
+                                <div class="erp-eyebrow">Context</div>
+
+                                <h2 class="erp-section-title">Job Card Summary</h2>
+
+                            </div>
+
+                        </div>
+
+                        <div class="erp-info-grid">
+
+                            <div class="erp-info-item"><div class="erp-info-item__label">Job Card</div><div class="erp-info-item__value" id="ji_job_card">-</div></div>
+
+                            <div class="erp-info-item"><div class="erp-info-item__label">SKU</div><div class="erp-info-item__value" id="ji_sku">-</div></div>
+
+                            <div class="erp-info-item"><div class="erp-info-item__label">Customer</div><div class="erp-info-item__value" id="ji_customer">-</div></div>
+
+                            <div class="erp-info-item"><div class="erp-info-item__label">PO No</div><div class="erp-info-item__value" id="ji_po_no">-</div></div>
+
+                            <div class="erp-info-item"><div class="erp-info-item__label">Order Qty</div><div class="erp-info-item__value" id="ji_order_qty">-</div></div>
+
+                            <div class="erp-info-item"><div class="erp-info-item__label">Produced</div><div class="erp-info-item__value" id="ji_produced">-</div></div>
+
+                            <div class="erp-info-item"><div class="erp-info-item__label">Dispatched</div><div class="erp-info-item__value" id="ji_dispatched">-</div></div>
+
+                            <div class="erp-info-item"><div class="erp-info-item__label">Remaining</div><div class="erp-info-item__value" id="ji_remaining">-</div></div>
+
+                        </div>
+
+                    </section>
+
+                    <section class="erp-section-shell is-hidden" id="dispatch_summary_card">
+
+                        <div class="erp-card-header">
+
+                            <div class="erp-card-title-stack">
+
+                                <div class="erp-eyebrow">Balance</div>
+
+                                <h2 class="erp-section-title">Dispatch Balance</h2>
+
+                                <p class="erp-card-subtitle">Live totals for this entry</p>
+
+                            </div>
+
+                        </div>
+
+                        <div class="dispatch-kpi-row">
+
+                            <div class="erp-kpi-pill">
+
+                                <div class="erp-kpi-pill__value" id="sum_order_qty">-</div>
+
+                                <div class="erp-kpi-pill__label">Order Qty</div>
+
+                            </div>
+
+                            <div class="erp-kpi-pill">
+
+                                <div class="erp-kpi-pill__value" id="sum_dispatched_before">-</div>
+
+                                <div class="erp-kpi-pill__label">Before</div>
+
+                            </div>
+
+                            <div class="erp-kpi-pill is-warn">
+
+                                <div class="erp-kpi-pill__value" id="sum_current_entry">0</div>
+
+                                <div class="erp-kpi-pill__label">This Entry</div>
+
+                            </div>
+
+                            <div class="erp-kpi-pill" id="sum_remaining_pill">
+
+                                <div class="erp-kpi-pill__value" id="sum_remaining">-</div>
+
+                                <div class="erp-kpi-pill__label">Remaining</div>
+
+                            </div>
+
+                        </div>
+
+                        <div style="margin-top:10px;font-size:13px;color:#475569;">
+
+                            After save: <strong id="sum_after_save">-</strong> pcs
+
+                            · Completion: <strong id="sum_completion">-</strong>
+
+                        </div>
+
+                        <div id="summary_warnings" class="erp-alert erp-alert-warning is-hidden" style="margin-top:10px;margin-bottom:0;"></div>
+
+                    </section>
+
                 </div>
-                <div id="job_card_results" class="search-results"></div>
-                <select id="job_card" name="job_card" required style="display:none;">
-                    <option value="">Select job card</option>
-                    {% for item in job_cards %}
-                    <option value="{{ item.id }}" {% if edit_record.job_card_id == item.id %}selected{% endif %}>{{ item.job_card_no }} - {{ item.SKU }}</option>
-                    {% endfor %}
-                </select>
+
             </div>
 
-            <div class="form-group">
-                <label for="dc_no">DC No (optional)</label>
-                <input id="dc_no" name="dc_no" value="{{ edit_record.dc_no|default:'' }}" placeholder="DC-2026-001">
+        </div>
+
+        <section class="erp-section-shell is-hidden" id="history_card">
+
+            <div class="erp-card-header">
+
+                <div class="erp-card-title-stack">
+
+                    <div class="erp-eyebrow">History</div>
+
+                    <h2 class="erp-section-title">JC Dispatch History</h2>
+
+                    <p class="erp-card-subtitle">Prior dispatch entries for the selected Job Card</p>
+
+                </div>
+
             </div>
 
-            <div class="form-group">
-                <label for="dispatch_date">Dispatch Date</label>
-                <input id="dispatch_date" name="dispatch_date" type="date" value="{{ today|date:'Y-m-d' }}" required>
+            <div id="history_duplicate_note" class="erp-alert erp-alert-warning is-hidden" style="margin-bottom:10px;"></div>
+
+            <div class="erp-table-wrap">
+
+                <table class="erp-table erp-table-dense">
+
+                    <thead>
+
+                        <tr>
+
+                            <th>Date</th>
+
+                            <th>DC No</th>
+
+                            <th>Dispatch Qty</th>
+
+                            <th>Added By</th>
+
+                            <th class="erp-col-actions">Actions</th>
+
+                        </tr>
+
+                    </thead>
+
+                    <tbody id="history_body"></tbody>
+
+                </table>
+
             </div>
 
-            <div class="form-group">
-                <label for="dispatch_qty">Dispatch Qty (pcs)</label>
-                <input id="dispatch_qty" name="dispatch_qty" type="number" min="1" value="{{ edit_record.dispatch_qty|default:'' }}" required>
-            </div>
+            <div id="history_empty_note" class="erp-table-meta-text" style="padding:0.75rem 0;display:none;">No prior dispatch entries for this Job Card.</div>
 
-            {% if edit_record %}
-            <div class="form-group">
-                <label for="change_reason">Reason For Change <span class="required">*</span></label>
-                <input id="change_reason" name="change_reason" placeholder="Explain what was corrected and why." required>
-            </div>
-            {% endif %}
+        </section>
 
-            {% if not is_view_mode %}
-            <button type="submit" class="btn btn-green">{% if edit_record %}Update Dispatch{% else %}Save Dispatch{% endif %}</button>
-            {% endif %}
-        </form>
     </div>
 
     <script>
-        const jobCardSearchInput = document.getElementById('job_card_search');
-        const jobCardSelect = document.getElementById('job_card');
-        const jobCardResults = document.getElementById('job_card_results');
-        const jobCardSearchMeta = document.getElementById('job_card_search_meta');
-        const jobCardClearBtn = document.getElementById('job_card_clear');
 
-        function renderJobCardResults() {
-            const q = (jobCardSearchInput.value || '').trim().toLowerCase();
-            const options = Array.from(jobCardSelect.options).filter((opt, idx) => idx > 0);
-            const filtered = options.filter(opt => {
-                if (!q) return true;
-                return (opt.text || '').toLowerCase().includes(q);
-            }).slice(0, 30);
+        window.JOB_INFO_MAP = {{ job_card_info_json|safe }};
 
-            jobCardResults.innerHTML = '';
+        window.CURRENT_RECORD_ID = {{ edit_record.id|default:'null' }};
 
-            if (!filtered.length) {
-                jobCardResults.style.display = q ? 'block' : 'none';
-                jobCardSearchMeta.textContent = q ? 'No matching job cards found.' : 'Start typing to see matching job cards.';
-                if (q) {
-                    const noRow = document.createElement('div');
-                    noRow.className = 'search-result-item';
-                    noRow.textContent = 'No results';
-                    noRow.style.cursor = 'default';
-                    jobCardResults.appendChild(noRow);
-                }
-                return;
-            }
+        window.IS_VIEW_MODE = {{ is_view_mode|yesno:"true,false" }};
 
-            filtered.forEach(opt => {
-                const row = document.createElement('button');
-                row.type = 'button';
-                row.className = 'search-result-item';
-                row.textContent = opt.text;
-                row.addEventListener('click', () => {
-                    jobCardSelect.value = opt.value;
-                    jobCardSearchInput.value = opt.text;
-                    jobCardResults.style.display = 'none';
-                    jobCardSearchMeta.textContent = 'Selected: ' + opt.text;
-                });
-                jobCardResults.appendChild(row);
-            });
+        window.DISPATCH_JOB_SEARCH_URL = "{% url 'dispatch_job_card_search' %}";
 
-            jobCardResults.style.display = 'block';
-            jobCardSearchMeta.textContent = `Showing ${filtered.length} result(s). Click one to select.`;
-        }
+        window.DISPATCH_DC_CHECK_URL = "{% url 'dispatch_dc_duplicate_check' %}";
 
-        jobCardSearchInput.addEventListener('input', renderJobCardResults);
-        jobCardSearchInput.addEventListener('focus', renderJobCardResults);
-
-        jobCardClearBtn.addEventListener('click', function () {
-            jobCardSearchInput.value = '';
-            jobCardSelect.value = '';
-            jobCardResults.style.display = 'none';
-            jobCardSearchMeta.textContent = 'Start typing to see matching job cards.';
-        });
-
-        document.addEventListener('click', function (event) {
-            if (!jobCardResults.contains(event.target) && event.target !== jobCardSearchInput) {
-                jobCardResults.style.display = 'none';
-            }
-        });
-
-        if (jobCardSelect.value) {
-            const selectedOpt = jobCardSelect.options[jobCardSelect.selectedIndex];
-            if (selectedOpt) {
-                jobCardSearchInput.value = selectedOpt.text;
-                jobCardSearchMeta.textContent = 'Selected: ' + selectedOpt.text;
-            }
-        }
-
-        {% if is_view_mode %}
-        document.querySelectorAll('form input, form select, form textarea, form button').forEach((el) => {
-            if (el.type === 'hidden') {
-                return;
-            }
-            el.disabled = true;
-        });
-        {% endif %}
     </script>
+
 {% endblock %}
 
+{% block extra_js %}
+
+<script>
+
+document.addEventListener('DOMContentLoaded', function () {
+
+    const jobCardSearchInput = document.getElementById('job_card_search');
+
+    const jobCardSelect = document.getElementById('job_card');
+
+    const jobCardResults = document.getElementById('job_card_results');
+
+    const jobCardSearchMeta = document.getElementById('job_card_search_meta');
+
+    const jobCardClearBtn = document.getElementById('job_card_clear');
+
+    const jobCardSelectedChip = document.getElementById('job_card_selected_chip');
+
+    const jobCardSelectedLabel = document.getElementById('job_card_selected_label');
+
+    const dispatchQtyInput = document.getElementById('dispatch_qty');
+
+    const dcNoInput = document.getElementById('dc_no');
+
+    const dispatchForm = document.getElementById('dispatch_form');
+
+    const dcDuplicateWarning = document.getElementById('dc_duplicate_warning');
+    const dcSharedInfo = document.getElementById('dc_shared_info');
+
+    const contextEmpty = document.getElementById('context_empty');
+
+    const jobInfoCard = document.getElementById('job_info_card');
+
+    const summaryCard = document.getElementById('dispatch_summary_card');
+
+    const historyCard = document.getElementById('history_card');
+
+    const historyBody = document.getElementById('history_body');
+
+    const historyEmptyNote = document.getElementById('history_empty_note');
+
+    const historyDuplicateNote = document.getElementById('history_duplicate_note');
+
+    const summaryWarnings = document.getElementById('summary_warnings');
+
+    const sumRemainingPill = document.getElementById('sum_remaining_pill');
+
+    let searchTimer = null;
+
+    let dcCheckTimer = null;
+
+    let activeSearchRequest = null;
+
+    let activeDcCheckRequest = null;
+
+    let dcCheckState = { blocking: false };
+
+    function debounce(fn, delay) {
+
+        return function (...args) {
+
+            clearTimeout(searchTimer);
+
+            searchTimer = setTimeout(() => fn.apply(this, args), delay);
+
+        };
+
+    }
+
+    function debounceDc(fn, delay) {
+
+        return function (...args) {
+
+            clearTimeout(dcCheckTimer);
+
+            dcCheckTimer = setTimeout(() => fn.apply(this, args), delay);
+
+        };
+
+    }
+
+    function parseNumber(value) {
+
+        if (!value) return 0;
+
+        const parsed = parseInt(String(value).replace(/,/g, ''), 10);
+
+        return Number.isNaN(parsed) ? 0 : parsed;
+
+    }
+
+    function ensureJobOption(jobId, label) {
+
+        let option = Array.from(jobCardSelect.options).find(opt => opt.value === String(jobId));
+
+        if (!option) {
+
+            option = document.createElement('option');
+
+            option.value = jobId;
+
+            option.textContent = label;
+
+            jobCardSelect.appendChild(option);
+
+        }
+
+        return option;
+
+    }
+
+    function setSelectedChip(label) {
+
+        if (!label) {
+
+            jobCardSelectedChip.classList.add('is-hidden');
+
+            jobCardSelectedLabel.textContent = '-';
+
+            return;
+
+        }
+
+        jobCardSelectedChip.classList.remove('is-hidden');
+
+        jobCardSelectedLabel.textContent = label;
+
+    }
+
+    function selectJobCard(jobId, label, info) {
+
+        if (info) {
+
+            window.JOB_INFO_MAP = window.JOB_INFO_MAP || {};
+
+            window.JOB_INFO_MAP[String(jobId)] = info;
+
+        }
+
+        const option = ensureJobOption(jobId, label);
+
+        jobCardSelect.value = String(jobId);
+
+        jobCardSearchInput.value = label || option.text;
+
+        jobCardResults.style.display = 'none';
+
+        jobCardSearchMeta.textContent = 'Selected job card loaded.';
+
+        setSelectedChip(label || option.text);
+
+        populateJobContext();
+
+        checkDcDuplicate();
+
+    }
+
+    function renderSearchResults(results) {
+
+        jobCardResults.innerHTML = '';
+
+        if (!results.length) {
+
+            jobCardResults.style.display = 'block';
+
+            jobCardSearchMeta.textContent = 'No matching job cards found.';
+
+            const noRow = document.createElement('div');
+
+            noRow.className = 'dispatch-search-result-item';
+
+            noRow.textContent = 'No results';
+
+            noRow.style.cursor = 'default';
+
+            jobCardResults.appendChild(noRow);
+
+            return;
+
+        }
+
+        results.forEach(item => {
+
+            const row = document.createElement('button');
+
+            row.type = 'button';
+
+            row.className = 'dispatch-search-result-item';
+
+            row.innerHTML = `
+
+                <div class="result-main">${item.job_card_no} · ${item.sku}</div>
+
+                <div class="result-meta">${item.customer} · Remaining: ${item.remaining_display} pcs</div>
+
+            `;
+
+            row.addEventListener('click', () => {
+
+                selectJobCard(item.id, item.label, item.info);
+
+            });
+
+            jobCardResults.appendChild(row);
+
+        });
+
+        jobCardResults.style.display = 'block';
+
+        jobCardSearchMeta.textContent = `Showing ${results.length} result(s). Click one to select.`;
+
+    }
+
+    function filterPreloadedJobCards(query) {
+
+        const options = Array.from(jobCardSelect.options).filter((opt, idx) => idx > 0);
+
+        return options
+
+            .filter(opt => !query || (opt.text || '').toLowerCase().includes(query))
+
+            .slice(0, 30)
+
+            .map(opt => {
+
+                const info = window.JOB_INFO_MAP ? window.JOB_INFO_MAP[opt.value] : null;
+
+                return {
+
+                    id: opt.value,
+
+                    label: opt.text,
+
+                    job_card_no: info ? info.job_card_no : opt.text,
+
+                    sku: info ? info.sku : '-',
+
+                    customer: info ? info.customer : '-',
+
+                    remaining_display: info ? info.remaining_display : '-',
+
+                    info: info,
+
+                };
+
+            });
+
+    }
+
+    function runJobCardSearch() {
+
+        const query = (jobCardSearchInput.value || '').trim();
+
+        if (!query) {
+
+            jobCardResults.style.display = 'none';
+
+            jobCardSearchMeta.textContent = 'Start typing to search job cards.';
+
+            return;
+
+        }
+
+        if (query.length < 2) {
+
+            renderSearchResults(filterPreloadedJobCards(query.toLowerCase()));
+
+            return;
+
+        }
+
+        if (activeSearchRequest) {
+
+            activeSearchRequest.abort();
+
+        }
+
+        activeSearchRequest = new AbortController();
+
+        const params = new URLSearchParams({ q: query });
+
+        if (window.CURRENT_RECORD_ID) {
+
+            params.set('edit_id', window.CURRENT_RECORD_ID);
+
+        }
+
+        jobCardSearchMeta.textContent = 'Searching...';
+
+        fetch(`${window.DISPATCH_JOB_SEARCH_URL}?${params.toString()}`, {
+
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+
+            signal: activeSearchRequest.signal,
+
+        })
+
+            .then(response => response.ok ? response.json() : Promise.reject())
+
+            .then(data => renderSearchResults(data.results || []))
+
+            .catch(err => {
+
+                if (err.name === 'AbortError') return;
+
+                renderSearchResults(filterPreloadedJobCards(query.toLowerCase()));
+
+            })
+
+            .finally(() => {
+
+                activeSearchRequest = null;
+
+            });
+
+    }
+
+    function hideDcDuplicateWarning() {
+
+        dcDuplicateWarning.classList.add('is-hidden');
+
+        dcDuplicateWarning.textContent = '';
+
+        dcCheckState.blocking = false;
+
+    }
+
+    function showDcDuplicateWarning(message, blocking) {
+
+        dcDuplicateWarning.textContent = message;
+
+        dcDuplicateWarning.classList.remove('is-hidden');
+
+        dcCheckState.blocking = Boolean(blocking);
+
+    }
+
+    function hideDcSharedInfo() {
+
+        dcSharedInfo.classList.add('is-hidden');
+
+        dcSharedInfo.innerHTML = '';
+
+    }
+
+    function showDcSharedInfo(dcNo, entries, skuCount, lineCount) {
+
+        if (!entries || !entries.length) {
+
+            hideDcSharedInfo();
+
+            return;
+
+        }
+
+        const rows = entries.map(entry => `
+
+            <tr>
+
+                <td>${entry.job_card_no}</td>
+
+                <td>${entry.sku}</td>
+
+                <td>${Number(entry.dispatch_qty || 0).toLocaleString()}</td>
+
+                <td>${entry.dispatch_date}</td>
+
+            </tr>
+
+        `).join('');
+
+        dcSharedInfo.innerHTML = `
+
+            <strong>DC "${dcNo}"</strong> is already used on ${lineCount} other line(s) across ${skuCount} SKU(s):
+
+            <div class="erp-table-wrap" style="margin-top:8px;">
+
+                <table class="erp-table erp-table-dense">
+
+                    <thead>
+
+                        <tr><th>Job Card</th><th>SKU</th><th>Qty</th><th>Date</th></tr>
+
+                    </thead>
+
+                    <tbody>${rows}</tbody>
+
+                </table>
+
+            </div>
+
+            <p class="erp-help-text" style="margin:8px 0 0;">You can add another SKU on this DC for the selected job card.</p>
+
+        `;
+
+        dcSharedInfo.classList.remove('is-hidden');
+
+    }
+
+    function checkDcDuplicate() {
+
+        const dcNo = (dcNoInput.value || '').trim();
+
+        if (!dcNo) {
+
+            hideDcDuplicateWarning();
+
+            hideDcSharedInfo();
+
+            return;
+
+        }
+
+        if (activeDcCheckRequest) {
+
+            activeDcCheckRequest.abort();
+
+        }
+
+        activeDcCheckRequest = new AbortController();
+
+        const params = new URLSearchParams({
+
+            dc_no: dcNo,
+
+            job_card_id: jobCardSelect.value || '',
+
+        });
+
+        if (window.CURRENT_RECORD_ID) {
+
+            params.set('exclude_id', window.CURRENT_RECORD_ID);
+
+        }
+
+        fetch(`${window.DISPATCH_DC_CHECK_URL}?${params.toString()}`, {
+
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+
+            signal: activeDcCheckRequest.signal,
+
+        })
+
+            .then(response => response.ok ? response.json() : Promise.reject())
+
+            .then(data => {
+
+                if (data.same_jc_duplicate) {
+
+                    hideDcSharedInfo();
+
+                    showDcDuplicateWarning(
+
+                        `DC No "${dcNo}" is already used for this Job Card. Change the DC number or edit the existing entry.`,
+
+                        true
+
+                    );
+
+                    return;
+
+                }
+
+                hideDcDuplicateWarning();
+
+                if (data.same_dc_entries && data.same_dc_entries.length) {
+
+                    showDcSharedInfo(dcNo, data.same_dc_entries, data.same_dc_sku_count, data.same_dc_line_count);
+
+                } else {
+
+                    hideDcSharedInfo();
+
+                }
+
+            })
+
+            .catch(err => {
+
+                if (err.name === 'AbortError') return;
+
+                hideDcDuplicateWarning();
+
+                hideDcSharedInfo();
+
+            })
+
+            .finally(() => {
+
+                activeDcCheckRequest = null;
+
+            });
+
+    }
+
+    function populateJobContext() {
+
+        const jobId = jobCardSelect.value;
+
+        const info = window.JOB_INFO_MAP ? window.JOB_INFO_MAP[jobId] : null;
+
+        if (!info) {
+
+            contextEmpty.classList.remove('is-hidden');
+
+            jobInfoCard.classList.add('is-hidden');
+
+            summaryCard.classList.add('is-hidden');
+
+            historyCard.classList.add('is-hidden');
+
+            setSelectedChip('');
+
+            return;
+
+        }
+
+        contextEmpty.classList.add('is-hidden');
+
+        jobInfoCard.classList.remove('is-hidden');
+
+        summaryCard.classList.remove('is-hidden');
+
+        historyCard.classList.remove('is-hidden');
+
+        document.getElementById('ji_job_card').textContent = info.job_card_no;
+
+        document.getElementById('ji_sku').textContent = info.sku;
+
+        document.getElementById('ji_customer').textContent = info.customer;
+
+        document.getElementById('ji_po_no').textContent = info.po_no;
+
+        document.getElementById('ji_order_qty').textContent = info.order_qty_display;
+
+        document.getElementById('ji_produced').textContent = info.produced_qty_display;
+
+        document.getElementById('ji_dispatched').textContent = info.dispatched_total_display;
+
+        document.getElementById('ji_remaining').textContent = info.remaining_display;
+
+        historyBody.innerHTML = '';
+
+        historyEmptyNote.style.display = 'none';
+
+        historyDuplicateNote.classList.add('is-hidden');
+
+        if (info.history && info.history.length) {
+
+            info.history.forEach(row => {
+
+                const tr = document.createElement('tr');
+
+                if (row.is_current) {
+
+                    tr.classList.add('dispatch-history-current');
+
+                }
+
+                tr.innerHTML = `
+
+                    <td>${row.date}</td>
+
+                    <td>${row.dc_no}</td>
+
+                    <td>${row.qty_display}</td>
+
+                    <td>${row.added_by}</td>
+
+                    <td class="erp-col-actions">
+
+                        <a href="{% url 'dispatch_entry' %}?view=${row.id}" class="erp-btn erp-btn-secondary" style="padding:2px 8px;font-size:12px;">View</a>
+
+                    </td>
+
+                `;
+
+                historyBody.appendChild(tr);
+
+            });
+
+            if (info.history_count > 0 && !window.CURRENT_RECORD_ID) {
+
+                historyDuplicateNote.textContent = `${info.history_count} prior dispatch entr${info.history_count === 1 ? 'y' : 'ies'} found for this Job Card. Review before saving to avoid duplicates.`;
+
+                historyDuplicateNote.classList.remove('is-hidden');
+
+            }
+
+        } else {
+
+            historyEmptyNote.style.display = 'block';
+
+        }
+
+        updateSummary();
+
+    }
+
+    function updateSummary() {
+
+        const jobId = jobCardSelect.value;
+
+        const info = window.JOB_INFO_MAP ? window.JOB_INFO_MAP[jobId] : null;
+
+        if (!info) return;
+
+        const currentEntry = parseNumber(dispatchQtyInput.value);
+
+        const dispatchedBefore = info.dispatched_before;
+
+        const afterSave = dispatchedBefore + currentEntry;
+
+        const remaining = Math.max(0, info.order_qty - afterSave);
+
+        const completion = info.order_qty > 0 ? Math.round((afterSave / info.order_qty) * 100) : 0;
+
+        document.getElementById('sum_order_qty').textContent = info.order_qty_display;
+
+        document.getElementById('sum_dispatched_before').textContent = info.dispatched_before_display;
+
+        document.getElementById('sum_current_entry').textContent = currentEntry.toLocaleString();
+
+        document.getElementById('sum_after_save').textContent = afterSave.toLocaleString();
+
+        document.getElementById('sum_remaining').textContent = remaining.toLocaleString();
+
+        document.getElementById('sum_completion').textContent = completion + '%';
+
+        sumRemainingPill.classList.remove('is-complete', 'is-warn', 'is-danger');
+
+        if (remaining <= 0) {
+
+            sumRemainingPill.classList.add('is-complete');
+
+        } else if (afterSave > info.order_qty) {
+
+            sumRemainingPill.classList.add('is-danger');
+
+        } else if (completion >= 75) {
+
+            sumRemainingPill.classList.add('is-warn');
+
+        }
+
+        summaryWarnings.classList.add('is-hidden');
+
+        summaryWarnings.textContent = '';
+
+        const warnings = [];
+
+        if (afterSave > info.order_qty) {
+
+            warnings.push(`Dispatch total (${afterSave.toLocaleString()}) would exceed order qty (${info.order_qty_display}).`);
+
+        }
+
+        if (info.is_print_job && afterSave > info.produced_qty) {
+
+            warnings.push(`Dispatch total (${afterSave.toLocaleString()}) would exceed produced qty (${info.produced_qty_display}).`);
+
+        }
+
+        if (warnings.length) {
+
+            summaryWarnings.textContent = warnings.join(' ');
+
+            summaryWarnings.classList.remove('is-hidden');
+
+        }
+
+    }
+
+    jobCardSearchInput.addEventListener('input', debounce(runJobCardSearch, 300));
+
+    jobCardSearchInput.addEventListener('focus', runJobCardSearch);
+
+    jobCardClearBtn.addEventListener('click', function () {
+
+        jobCardSearchInput.value = '';
+
+        jobCardSelect.value = '';
+
+        jobCardResults.style.display = 'none';
+
+        jobCardSearchMeta.textContent = 'Start typing to search job cards.';
+
+        hideDcDuplicateWarning();
+
+        hideDcSharedInfo();
+
+        populateJobContext();
+
+    });
+
+    dispatchQtyInput.addEventListener('input', updateSummary);
+
+    jobCardSelect.addEventListener('change', function () {
+
+        populateJobContext();
+
+        checkDcDuplicate();
+
+    });
+
+    dcNoInput.addEventListener('input', debounceDc(checkDcDuplicate, 350));
+
+    dcNoInput.addEventListener('blur', checkDcDuplicate);
+
+    if (dispatchForm) {
+
+        dispatchForm.addEventListener('submit', function (event) {
+
+            if (dcCheckState.blocking) {
+
+                event.preventDefault();
+
+                showDcDuplicateWarning(
+
+                    dcDuplicateWarning.textContent || 'This DC number cannot be reused for the selected Job Card.',
+
+                    true
+
+                );
+
+                dcDuplicateWarning.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+            }
+
+        });
+
+    }
+
+    document.addEventListener('click', function (event) {
+
+        if (!jobCardResults.contains(event.target) && event.target !== jobCardSearchInput) {
+
+            jobCardResults.style.display = 'none';
+
+        }
+
+    });
+
+    if (jobCardSelect.value) {
+
+        const selectedOpt = jobCardSelect.options[jobCardSelect.selectedIndex];
+
+        if (selectedOpt) {
+
+            jobCardSearchInput.value = selectedOpt.text;
+
+            jobCardSearchMeta.textContent = 'Selected job card loaded.';
+
+            setSelectedChip(selectedOpt.text);
+
+        }
+
+        populateJobContext();
+
+    }
+
+    if (dcNoInput && dcNoInput.value) {
+
+        checkDcDuplicate();
+
+    }
+
+    if (window.IS_VIEW_MODE) {
+
+        document.querySelectorAll('#dispatch_form input, #dispatch_form select, #dispatch_form textarea, #dispatch_form button').forEach((el) => {
+
+            if (el.type === 'hidden') return;
+
+            el.disabled = true;
+
+        });
+
+    }
+
+});
+
+</script>
+
+{% endblock %}
 

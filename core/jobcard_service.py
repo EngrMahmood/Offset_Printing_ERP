@@ -97,6 +97,16 @@ def _resolve_by_name(model_class, raw_value):
     return model_class.objects.filter(name__iexact=raw_value).first()
 
 
+def resolve_total_impressions_required(planning_job):
+    """Return job-card impression target; includes pass count when configured."""
+    impressions = planning_job.planned_total_impressions
+    if impressions is None:
+        impressions = planning_job.calculated_planned_total_impressions
+    if impressions is not None:
+        return int(impressions)
+    return int(planning_job.calculated_sheets_required or 0)
+
+
 def ensure_job_card_from_planning_job(planning_job, actor=None):
     """Create or refresh the linked JobCard from a PlanningJob source record."""
     with transaction.atomic():
@@ -122,7 +132,7 @@ def ensure_job_card_from_planning_job(planning_job, actor=None):
             'colour': planning_job.color_spec,
             'application': planning_job.application,
             'order_qty': int(planning_job.order_qty or 0),
-            'total_impressions_required': int(planning_job.calculated_sheets_required or 0),
+            'total_impressions_required': resolve_total_impressions_required(planning_job),
             'ups': planning_job.ups or None,
             'print_sheet_size': planning_job.print_sheet_size or '',
             'plate_set_no': planning_job.plate_set_no or '',

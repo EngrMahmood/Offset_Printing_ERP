@@ -7,7 +7,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 
-from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, Material, Operator, Supervisor, UserProfile, ChangeLog, EditOverrideRequest, Vendor
+from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, DeliveryLocation, ProductType, Material, Operator, Supervisor, UserProfile, ChangeLog, EditOverrideRequest, Vendor
 
 User = get_user_model()
 
@@ -302,6 +302,16 @@ class MachineAdmin(admin.ModelAdmin):
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
+    search_fields = ['name']
+
+
+@admin.register(DeliveryLocation)
+class DeliveryLocationAdmin(admin.ModelAdmin):
+    search_fields = ['name']
+
+
+@admin.register(ProductType)
+class ProductTypeAdmin(admin.ModelAdmin):
     search_fields = ['name']
 
 

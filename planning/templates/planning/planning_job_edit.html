@@ -26,6 +26,7 @@
             </div>
         </div>
         <div class="erp-info-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">JC No</div><div class="erp-info-item__value"><strong>{{ job.jc_number|default:'-' }}</strong></div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Order Quantity</div><div class="erp-info-item__value">{{ job.order_qty|default:'-' }}</div></div>
@@ -48,6 +49,9 @@
             <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ job.material_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Color</div><div class="erp-info-item__value">{{ job.color_spec_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Application</div><div class="erp-info-item__value">{{ job.application_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Product Type</div><div class="erp-info-item__value">{{ recipe.product_type|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Machine Name</div><div class="erp-info-item__value">{{ job.effective_machine_name|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Plate Set No.</div><div class="erp-info-item__value">{{ job.effective_plate_set_no|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Size W mm</div><div class="erp-info-item__value">{{ job.size_w_mm_display|floatformat:"-2"|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Size H mm</div><div class="erp-info-item__value">{{ job.size_h_mm_display|floatformat:"-2"|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Print Sheet Size</div><div class="erp-info-item__value">{{ job.print_sheet_size_display|default:'-' }}</div></div>
@@ -55,8 +59,10 @@
             <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet UPS</div><div class="erp-info-item__value">{{ job.purchase_sheet_ups_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">UPS</div><div class="erp-info-item__value">{{ job.ups_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Daily Demand</div><div class="erp-info-item__value">{{ job.daily_demand|floatformat:"-2"|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Unit Cost</div><div class="erp-info-item__value">{{ job.unit_cost|default:recipe.default_unit_cost|floatformat:"-2"|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">AWC No.</div><div class="erp-info-item__value">{{ job.awc_no_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Die Cutting</div><div class="erp-info-item__value">{{ job.die_cutting_display|default:'-' }}</div></div>
+            <div class="erp-info-item erp-form-grid__full"><div class="erp-info-item__label">SKU Remarks</div><div class="erp-info-item__value">{{ recipe.remarks|default:'-' }}</div></div>
             <div class="erp-info-item erp-form-grid__full"><div class="erp-info-item__label">SKU Notes</div><div class="erp-info-item__value">{{ recipe.notes|default:'-' }}</div></div>
         </div>
         <div class="erp-note" style="margin-top:8px;">
@@ -74,11 +80,13 @@
                 <h3 class="erp-section-title">Computed Planning Values</h3>
             </div>
         </div>
-        <div class="erp-info-grid">
-            <div class="erp-info-item"><div class="erp-info-item__label">Net Print Qty (pcs)</div><div class="erp-info-item__value">{{ job.net_print_qty|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">Total Print Sheets Required</div><div class="erp-info-item__value">{{ job.calculated_sheets_required|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Required</div><div class="erp-info-item__value">{{ job.purchase_sheet_required_display|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value">{{ job.calculated_pkt_value|floatformat:"-2"|default:'-' }}</div></div>
+        <div class="erp-info-grid" id="planning-calculations-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">Net Print Qty (pcs)</div><div class="erp-info-item__value" id="calc-net-print-qty">{{ job.net_print_qty|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Total Print Sheets Required</div><div class="erp-info-item__value" id="calc-print-sheets">{{ job.calculated_sheets_required|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">No. of Passes</div><div class="erp-info-item__value" id="calc-print-passes">{% if job.print_passes %}{{ job.print_passes }}{% else %}-{% endif %}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Total Impressions</div><div class="erp-info-item__value" id="calc-total-impressions">{{ job.calculated_planned_total_impressions|default:job.planned_total_impressions|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Required</div><div class="erp-info-item__value" id="calc-purchase-sheets">{{ job.purchase_sheet_required_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value" id="calc-pkt-value">{{ job.calculated_pkt_value|floatformat:"-2"|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Balance Qty (pcs)</div><div class="erp-info-item__value">{{ job.balance_qty|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Stock Qty</div><div class="erp-info-item__value">{{ job.stock_qty|floatformat:"-2"|default:'-' }}</div></div>
         </div>
@@ -116,6 +124,16 @@
                 {% endif %}
                 <a class="erp-btn erp-btn-secondary" href="{% url 'planning:job_detail' job.id %}">Cancel</a>
             </div>
+            {% if qc_submission_blockers %}
+            <div class="erp-alert erp-alert-warning" style="margin-top:12px;">
+                <strong>Before Send to QC:</strong>
+                <ul style="margin:8px 0 0 18px; padding:0;">
+                    {% for item in qc_submission_blockers %}
+                    <li>{{ item }}</li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
             {% if qc_recipe_warning %}
             <div class="erp-alert erp-alert-warning" style="margin-top:12px; background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">{{ qc_recipe_warning }}</div>
             {% endif %}
@@ -132,6 +150,96 @@
         </div>
     </section>
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    const config = {
+        netPrintQty: {{ job.net_print_qty|default:'null' }},
+        ups: {{ job.ups_display|default:'null' }},
+        purchaseSheetUps: {{ job.purchase_sheet_ups_display|default:'null' }},
+    };
+
+    const wastageInput = document.getElementById('id_wastage_sheets');
+    const passesSelect = document.getElementById('id_print_passes');
+    const sheetsEl = document.getElementById('calc-print-sheets');
+    const passesEl = document.getElementById('calc-print-passes');
+    const impressionsEl = document.getElementById('calc-total-impressions');
+    const purchaseSheetsEl = document.getElementById('calc-purchase-sheets');
+    const pktValueEl = document.getElementById('calc-pkt-value');
+
+    if (!wastageInput || !passesSelect || !sheetsEl) {
+        return;
+    }
+
+    function displayValue(value) {
+        return value === null || value === undefined || Number.isNaN(value) ? '-' : String(value);
+    }
+
+    function parseNonNegativeInt(rawValue) {
+        if (rawValue === null || rawValue === undefined || String(rawValue).trim() === '') {
+            return 0;
+        }
+        const parsed = Number.parseInt(String(rawValue).trim(), 10);
+        return Number.isFinite(parsed) && parsed >= 0 ? parsed : null;
+    }
+
+    function parsePositiveInt(rawValue) {
+        if (rawValue === null || rawValue === undefined || String(rawValue).trim() === '') {
+            return null;
+        }
+        const parsed = Number.parseInt(String(rawValue).trim(), 10);
+        return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    function recalculatePlanningValues() {
+        const ups = Number(config.ups);
+        const purchaseSheetUps = Number(config.purchaseSheetUps);
+        const netPrintQty = config.netPrintQty === null ? null : Number(config.netPrintQty);
+        const wastage = parseNonNegativeInt(wastageInput.value);
+        const passes = parsePositiveInt(passesSelect.value);
+
+        if (wastage === null) {
+            sheetsEl.textContent = '-';
+            passesEl.textContent = displayValue(passes);
+            impressionsEl.textContent = '-';
+            purchaseSheetsEl.textContent = '-';
+            pktValueEl.textContent = '-';
+            return;
+        }
+
+        let sheets = null;
+        if (netPrintQty !== null && Number.isFinite(ups) && ups > 0) {
+            sheets = Math.ceil(netPrintQty / ups) + wastage;
+        }
+
+        sheetsEl.textContent = displayValue(sheets);
+        passesEl.textContent = displayValue(passes);
+
+        if (sheets === null || passes === null) {
+            impressionsEl.textContent = '-';
+        } else {
+            impressionsEl.textContent = String(sheets * passes);
+        }
+
+        if (sheets === null || !Number.isFinite(purchaseSheetUps) || purchaseSheetUps <= 0) {
+            purchaseSheetsEl.textContent = '-';
+            pktValueEl.textContent = '-';
+            return;
+        }
+
+        const purchaseSheets = Math.ceil(sheets / purchaseSheetUps);
+        purchaseSheetsEl.textContent = String(purchaseSheets);
+        pktValueEl.textContent = (purchaseSheets / 100).toFixed(2);
+    }
+
+    wastageInput.addEventListener('input', recalculatePlanningValues);
+    wastageInput.addEventListener('change', recalculatePlanningValues);
+    passesSelect.addEventListener('change', recalculatePlanningValues);
+    recalculatePlanningValues();
+})();
+</script>
 {% endblock %}
 
 

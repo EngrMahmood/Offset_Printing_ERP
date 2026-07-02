@@ -27,7 +27,7 @@
                         <a href="{% url 'production_dashboard' %}" class="{% if request.resolver_match.url_name == 'production_dashboard' %}is-active{% endif %}">Production Dashboard</a>
                         <a href="{% url 'production_records' %}" class="{% if request.resolver_match.url_name == 'production_records' %}is-active{% endif %}">Production Records</a>
                         <a href="{% url 'production_entry' %}" class="{% if request.resolver_match.url_name == 'production_entry' %}is-active{% endif %}">Production Entry</a>
-                        <a href="{% url 'machine_master_tools' %}" class="{% if request.resolver_match.url_name == 'machine_master_tools' %}is-active{% endif %}">Machine Master</a>
+                        <a href="{% url 'master_data' %}" class="{% if request.resolver_match.url_name == 'master_data' or request.resolver_match.url_name == 'machine_master_tools' %}is-active{% endif %}">Master Data</a>
                         <a href="{% url 'shift_config' %}" class="{% if request.resolver_match.url_name == 'shift_config' %}is-active{% endif %}">Shift Config</a>
                     </div>
                 </div>

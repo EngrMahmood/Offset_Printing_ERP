@@ -115,6 +115,17 @@
                     {% if form.application.errors %}<div class="erp-form-error">{{ form.application.errors.0 }}</div>{% endif %}
                 </div>
 
+                <div class="erp-form-field">
+                    <label for="{{ form.product_type.id_for_label }}">Product Type <span>*</span></label>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        {{ form.product_type }}
+                        {% if can_admin_actions %}
+                        <button type="button" class="erp-btn erp-btn-secondary sm" onclick="quickAddProductType()" title="Add product type">+</button>
+                        {% endif %}
+                    </div>
+                    {% if form.product_type.errors %}<div class="erp-form-error">{{ form.product_type.errors.0 }}</div>{% endif %}
+                </div>
+
                 <hr class="erp-form-sep erp-form-grid__full">
 
                 <!-- Dimensions -->
@@ -264,6 +275,40 @@
                 });
             });
         })();
+
+        function quickAddProductType() {
+            const name = prompt('Enter new product type name:');
+            if (!name || !name.trim()) return;
+
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            const formData = new FormData();
+            formData.append('type', 'product_type');
+            formData.append('name', name.trim());
+
+            fetch('{% url "quick_add_master" %}', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.ok) {
+                    alert('Error: ' + (data.error || data.message || 'Failed to add product type.'));
+                    return;
+                }
+                const select = document.getElementById('{{ form.product_type.id_for_label }}');
+                if (!select) return;
+                let option = Array.from(select.options).find(opt => opt.value === data.name);
+                if (!option) {
+                    option = document.createElement('option');
+                    option.value = data.name;
+                    option.textContent = data.name;
+                    select.appendChild(option);
+                }
+                select.value = data.name;
+            })
+            .catch(() => alert('An error occurred while adding product type.'));
+        }
     </script>
 {% endblock %}
 

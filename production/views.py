@@ -3,7 +3,7 @@ from django.http import JsonResponse, Http404
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-from django.db.models import Q, Sum, Count
+from django.db.models import Q, Sum, Count, F
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
@@ -223,6 +223,9 @@ def production_entry(request):
         return max(planned_total - allocated, 0)
 
     def get_job_card_pass_count(job_card):
+        if job_card.planning_job and job_card.planning_job.print_passes:
+            return int(job_card.planning_job.print_passes)
+
         if job_card.planning_job:
             front_pass = int(job_card.planning_job.front_pass or 0)
             back_pass = int(job_card.planning_job.back_pass or 0)
@@ -630,6 +633,8 @@ def production_records(request):
 
     query = (request.GET.get('q') or '').strip()
     shift = (request.GET.get('shift') or '').strip()
+    machine_filter = (request.GET.get('machine') or '').strip()
+    performance_status = (request.GET.get('performance_status') or '').strip().lower()
     date_from_raw = (request.GET.get('date_from') or '').strip()
     date_to_raw = (request.GET.get('date_to') or '').strip()
     sort = (request.GET.get('sort') or 'date').strip()
@@ -642,17 +647,38 @@ def production_records(request):
     if per_page not in (50, 100):
         per_page = 50
 
-    records = Production.objects.filter(is_active=True, job_card__is_active=True).select_related('job_card', 'machine', 'operator', 'created_by').order_by('-date', '-id')
+    records = Production.objects.filter(is_active=True, job_card__is_active=True).select_related(
+        'job_card', 'machine', 'operator', 'supervisor', 'created_by'
+    ).order_by('-date', '-id')
 
     if query:
         records = records.filter(
             Q(job_card__job_card_no__icontains=query) |
+            Q(job_card__SKU__icontains=query) |
+            Q(job_card__destination__icontains=query) |
             Q(machine__name__icontains=query) |
-            Q(operator__name__icontains=query)
+            Q(operator__name__icontains=query) |
+            Q(supervisor__name__icontains=query)
         )
 
     if shift:
         records = records.filter(shift=shift)
+
+    if machine_filter:
+        try:
+            records = records.filter(machine_id=int(machine_filter))
+        except (TypeError, ValueError):
+            machine_filter = ''
+
+    records = records.annotate(
+        actual_total_minutes=F('run_time') + F('downtime_minutes') + F('make_ready_time'),
+    )
+    if performance_status == 'overrun':
+        records = records.filter(actual_total_minutes__gt=F('planned_time'))
+    elif performance_status == 'under_plan':
+        records = records.filter(actual_total_minutes__lt=F('planned_time'))
+    elif performance_status == 'on_plan':
+        records = records.filter(actual_total_minutes=F('planned_time'))
 
     date_from = None
     date_to = None
@@ -694,11 +720,21 @@ def production_records(request):
     records = records.order_by(ordering)
 
     total_count = records.count()
+    filtered_totals = records.aggregate(
+        impressions_total=Sum('impressions'),
+        output_total=Sum('output_sheets'),
+        waste_total=Sum('waste_sheets'),
+    )
     paginator = Paginator(records, per_page)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
     records = list(page_obj.object_list)
+    page_impressions_total = sum(row.impressions or 0 for row in records)
+    page_output_total = sum(row.output_sheets or 0 for row in records)
+    page_waste_total = sum(row.waste_sheets or 0 for row in records)
+    page_overrun_count = sum(1 for row in records if row.overrun_minutes > 0)
+    page_tolerance_alert_count = 0
     job_card_ids = list({row.job_card_id for row in records})
     consumption_map = {
         item['job_card_id']: int((item['total_output'] or 0) + (item['total_waste'] or 0))
@@ -711,13 +747,15 @@ def production_records(request):
         consumed = consumption_map.get(row.job_card_id, 0)
         row.job_card_extra_sheets_used = max(consumed - row.job_card.total_sheets_planned, 0)
         row.job_card_tolerance_sheets = row.job_card.tolerance_sheets
+        if row.job_card_extra_sheets_used > row.job_card_tolerance_sheets:
+            page_tolerance_alert_count += 1
 
     cutoff = get_record_edit_lock_cutoff()
     pending_ids: set = set()
     approved_ids: set = set()
     if cutoff and not user_can_bypass_edit_lock(request.user):
         user_overrides = EditOverrideRequest.objects.filter(
-            entity_type='job_card',
+            entity_type='production',
             requested_by=request.user,
         ).values('record_id', 'status', 'expires_at')
         for ov in user_overrides:
@@ -735,8 +773,25 @@ def production_records(request):
         'records': records,
         'page_obj': page_obj,
         'total_count': total_count,
+        'filtered_impressions_total': filtered_totals['impressions_total'] or 0,
+        'filtered_output_total': filtered_totals['output_total'] or 0,
+        'filtered_waste_total': filtered_totals['waste_total'] or 0,
+        'page_impressions_total': page_impressions_total,
+        'page_output_total': page_output_total,
+        'page_waste_total': page_waste_total,
+        'page_overrun_count': page_overrun_count,
+        'page_tolerance_alert_count': page_tolerance_alert_count,
+        'has_active_filters': bool(
+            query or shift or machine_filter or performance_status or date_from_raw or date_to_raw
+        ),
+        'machines': Machine.objects.filter(is_active=True).order_by('name'),
         'q': query,
         'shift': shift,
+        'machine': machine_filter,
+        'performance_status': performance_status,
+        'today': timezone.now().date().isoformat(),
+        'week_start': (timezone.now().date() - timedelta(days=timezone.now().weekday())).isoformat(),
+        'month_start': timezone.now().date().replace(day=1).isoformat(),
         'date_from': date_from_raw,
         'date_to': date_to_raw,
         'sort': sort,

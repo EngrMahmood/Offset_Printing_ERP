@@ -32,7 +32,7 @@
             <a href="{% url 'dispatch_records' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'dispatch_records' %}active{% endif %}"><i class="fas fa-truck"></i><span>Dispatch</span></a>
 
             <div class="erp-sidebar-group-title">Master & Reports</div>
-            <a href="{% url 'machine_master_tools' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'machine_master_tools' %}active{% endif %}"><i class="fas fa-cogs"></i><span>Master Data</span></a>
+            <a href="{% url 'master_data' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'master_data' or request.resolver_match.url_name == 'machine_master_tools' %}active{% endif %}"><i class="fas fa-cogs"></i><span>Master Data</span></a>
             <a href="{% url 'production_records' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'production_records' %}active{% endif %}"><i class="fas fa-history"></i><span>Production Records</span></a>
             <a href="{% url 'erp_readme' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'erp_readme' %}active{% endif %}"><i class="fas fa-book"></i><span>Guides</span></a>
 
@@ -73,7 +73,7 @@
                                 <a href="{% url 'production_dashboard' %}">Production Dashboard</a>
                                 <a href="{% url 'production_records' %}">Production Records</a>
                                 <a href="{% url 'production_entry' %}">Production Entry</a>
-                                <a href="{% url 'machine_master_tools' %}">Machine Master</a>
+                                <a href="{% url 'master_data' %}">Master Data</a>
                                 <a href="{% url 'shift_config' %}">Shift Config</a>
                             </div>
                         </div>

@@ -34,6 +34,30 @@ class Department(models.Model):
         return self.name
 
 
+class DeliveryLocation(models.Model):
+    name = models.CharField(max_length=120, unique=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Delivery Location'
+        verbose_name_plural = 'Delivery Locations'
+
+    def __str__(self):
+        return self.name
+
+
+class ProductType(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Product Type'
+        verbose_name_plural = 'Product Types'
+
+    def __str__(self):
+        return self.name
+
+
 class Material(models.Model):
     name = models.CharField(max_length=100, unique=True)
 
@@ -447,6 +471,9 @@ class JobCard(models.Model):
     @property
     def impression_pass_multiplier(self):
         """Compute the number of passes that should be applied when calculating impressions."""
+        if self.planning_job and self.planning_job.print_passes:
+            return 1
+
         if self.planning_job:
             front_pass = int(self.planning_job.front_pass or 0)
             back_pass = int(self.planning_job.back_pass or 0)
@@ -943,10 +970,7 @@ class Dispatch(models.Model):
 
     dc_no = models.CharField(
         max_length=50,
-        null=True,
-        blank=True,
-        help_text="Dispatch Challan Number (can be shared across multiple Job Cards)"
-
+        help_text="Dispatch Challan / DR number (required; can be shared across multiple Job Cards and SKUs)",
     )
 
     dispatch_date = models.DateField()
@@ -970,6 +994,24 @@ class Dispatch(models.Model):
     # =========================
     def clean(self):
         errors = {}
+
+        if not str(self.dc_no or '').strip():
+            errors['dc_no'] = 'DC / DR number is required.'
+
+        dc_no = str(self.dc_no or '').strip()
+        if dc_no and self.job_card_id:
+            duplicate_qs = Dispatch.objects.filter(
+                is_active=True,
+                dc_no__iexact=dc_no,
+                job_card_id=self.job_card_id,
+            )
+            if self.pk:
+                duplicate_qs = duplicate_qs.exclude(pk=self.pk)
+            if duplicate_qs.exists():
+                errors['dc_no'] = (
+                    f'DC No "{dc_no}" is already used for Job Card {self.job_card.job_card_no}. '
+                    'Use a different DC number or edit the existing entry.'
+                )
 
         if self.job_card and self.job_card.workflow_status not in JOB_CARD_DISPATCHABLE_STATUSES:
             errors['job_card'] = (

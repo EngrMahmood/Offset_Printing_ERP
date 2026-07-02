@@ -14,6 +14,7 @@
 {% endblock %}
 
 {% block content %}
+    <div class="erp-records-shell">
     {% with current_step='planning' %}
     {% endwith %}
 
@@ -26,7 +27,7 @@
         <span class="erp-badge is-count">{{ jobs.paginator.count }}</span>
     </div>
     <div class="erp-split-layout">
-        <aside class="erp-filter-sidebar">
+        <aside class="erp-filter-sidebar erp-records-filter-sidebar">
             <div class="erp-filter-sidebar__title">Filters</div>
             <form method="get">
                 <div class="erp-form-field">
@@ -84,7 +85,7 @@
             <div class="erp-table-toolbar">
                 <span class="erp-table-meta">{{ jobs.paginator.count }} archived job{{ jobs.paginator.count|pluralize }}</span>
             </div>
-            <div class="erp-table-wrap erp-table-dense">
+            <div class="erp-table-wrap erp-table-dense erp-records-table-wrap">
                 <table>
                     <thead>
                         <tr>
@@ -175,6 +176,7 @@
                 </div>
             {% endif %}
         </section>
+    </div>
     </div>
 
 {% endblock %}

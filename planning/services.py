@@ -11,14 +11,90 @@ from django.db.models.functions import Upper
 from django.utils import timezone
 from core.models import Machine, Department, Material
 from .models import PLANNING_STATUS_ALIASES, PlanningJob, PoDocument, SkuRecipe
-from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note, _normalize_status, _to_int, _to_decimal
+from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note, _normalize_status, _to_int, _to_decimal, SKU_MASTER_APPROVAL_REQUIRED_FIELDS
 from core.jc_numbering import allocate_next_jc_number
 
 NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
 
 def _user_is_admin(user):
     profile = getattr(user, 'profile', None)
-    return getattr(user, 'is_superuser', False) or (profile is not None and getattr(profile, 'role', None) == 'admin')
+    return getattr(user, 'is_superuser', False) or (profile is not None and profile.normalized_role == 'admin')
+
+
+def _user_is_graphics_designer(user):
+    profile = getattr(user, 'profile', None)
+    return profile is not None and profile.normalized_role == 'graphics_designer'
+
+
+SKU_RECIPE_DESIGNER_FIELDS = [
+    'color_spec',
+    'size_w_mm',
+    'size_h_mm',
+    'ups',
+    'print_sheet_size',
+    'purchase_sheet_size',
+    'purchase_sheet_ups',
+    'awc_no',
+    'die_cutting',
+    'plate_set_no',
+]
+
+SKU_RECIPE_PLANNER_FIELDS = [
+    'material',
+    'application',
+    'machine_name',
+    'product_type',
+    'default_unit_cost',
+    'daily_demand',
+    'notes',
+    'remarks',
+]
+
+
+def apply_sku_recipe_form_role_permissions(form, user, *, is_readonly=False):
+    """Restrict SKU master fields by role: planners edit planner fields, designers edit layout fields."""
+    if is_readonly:
+        for field in form.fields.values():
+            field.disabled = True
+        return
+
+    if _user_is_admin(user):
+        return
+
+    if _user_is_graphics_designer(user):
+        for field_name in SKU_RECIPE_PLANNER_FIELDS:
+            if field_name in form.fields:
+                form.fields[field_name].disabled = True
+        return
+
+    for field_name in SKU_RECIPE_DESIGNER_FIELDS:
+        if field_name in form.fields:
+            form.fields[field_name].disabled = True
+
+
+def merge_preserved_sku_recipe_fields(posted, recipe, user):
+    """Keep existing designer-field values when a planner cannot edit them."""
+    if not recipe or _user_is_admin(user) or _user_is_graphics_designer(user):
+        return posted
+
+    for field_name in SKU_RECIPE_DESIGNER_FIELDS:
+        if field_name not in posted or not str(posted.get(field_name) or '').strip():
+            value = getattr(recipe, field_name, None)
+            if value is not None and str(value).strip():
+                posted[field_name] = str(value)
+    return posted
+
+
+def prepare_sku_recipe_form_for_master_entry(form, *, action=''):
+    """Early plate-making saves only require planner fields; layout specs can follow later."""
+    if action not in {'send_to_plate_making', 'save_draft'}:
+        return
+
+    for field_name in SKU_RECIPE_DESIGNER_FIELDS:
+        if field_name in form.fields:
+            form.fields[field_name].required = False
+    if action == 'send_to_plate_making' and 'product_type' in form.fields:
+        form.fields['product_type'].required = False
 
 
 def trigger_plate_request_for_planning_job(planning_job, user):
@@ -235,6 +311,69 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
             missing.append(label)
     return missing
 
+
+
+def sync_recipe_operational_fields_to_job(job, recipe=None):
+    """Copy machine/plate set from approved SKU master onto the job when job fields are blank."""
+    recipe = recipe or job.approved_sku_recipe
+    if not recipe:
+        return False
+
+    update_fields = []
+    if not str(job.machine_name or '').strip() and str(recipe.machine_name or '').strip():
+        job.machine_name = str(recipe.machine_name).strip()
+        update_fields.append('machine_name')
+    if not str(job.plate_set_no or '').strip() and str(recipe.plate_set_no or '').strip():
+        job.plate_set_no = str(recipe.plate_set_no).strip()
+        update_fields.append('plate_set_no')
+
+    if update_fields:
+        update_fields.append('updated_at')
+        job.save(update_fields=update_fields)
+        return True
+    return False
+
+
+def get_job_qc_submission_blockers(job, *, apply_recipe_sync=True):
+    """Return human-readable blockers before a draft job can move to pending_qc."""
+    blockers = []
+
+    approved_recipe = job.approved_sku_recipe
+    active_recipe = job.sku_recipe
+    if not active_recipe:
+        blockers.append(f'SKU recipe for {job.sku or "this job"} is missing.')
+        return blockers
+    if not approved_recipe:
+        blockers.append(
+            f'SKU recipe for {job.sku or "this job"} exists but is not approved; QC submission is blocked until approval.'
+        )
+        return blockers
+
+    missing_master = _missing_required_master_fields(approved_recipe, job.job_name)
+    if missing_master:
+        blockers.append(
+            'Approved SKU master is incomplete: '
+            f'{", ".join(missing_master)}. Reopen SKU, update the missing fields, and re-approve.'
+        )
+
+    if apply_recipe_sync:
+        sync_recipe_operational_fields_to_job(job, approved_recipe)
+
+    for field_name, error_message in job.pre_submit_qc_validation_errors().items():
+        if error_message in blockers:
+            continue
+        if field_name in {'machine_name', 'plate_set_no'}:
+            blockers.append(
+                f'{error_message} Update these on the locked SKU master (Reopen SKU), then re-approve.'
+            )
+        else:
+            blockers.append(error_message)
+
+    return blockers
+
+
+def preview_job_qc_submission_blockers(job):
+    return get_job_qc_submission_blockers(job, apply_recipe_sync=False)
 
 
 def _sync_new_sku_requirement(existing_requirement, is_new):

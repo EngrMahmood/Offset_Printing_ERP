@@ -74,8 +74,8 @@
             </a>
             {% endif %}
             {% if nav.can_access_master_data %}
-            <a href="{% url 'machine_master_tools' %}"
-                    class="erp-topnav-module {% if url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'override_requests' or url == 'review_override_request' or url == 'request_edit_override' or url == 'quick_add_master' %}is-active{% endif %}">
+            <a href="{% url 'master_data' %}"
+                    class="erp-topnav-module {% if url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'override_requests' or url == 'review_override_request' or url == 'request_edit_override' or url == 'quick_add_master' %}is-active{% endif %}">
                 Master Data
             </a>
             {% endif %}
@@ -300,7 +300,7 @@
         </a>
     </div>
 
-    {% elif url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'override_requests' or url == 'review_override_request' or url == 'request_edit_override' or url == 'quick_add_master' %}
+    {% elif url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'override_requests' or url == 'review_override_request' or url == 'request_edit_override' or url == 'quick_add_master' %}
     <div class="erp-subnav">
         <a href="{% url 'erp_readme' %}"
            class="erp-subnav-link {% if url == 'erp_readme' %}is-active{% endif %}">

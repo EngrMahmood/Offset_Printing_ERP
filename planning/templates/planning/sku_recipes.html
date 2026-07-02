@@ -13,6 +13,7 @@
 {% endblock %}
 
 {% block content %}
+    <div class="erp-records-shell">
     {% with current_step='master' %}
     {% endwith %}
 
@@ -31,7 +32,7 @@
         <span class="erp-badge is-count">{{ recipes.paginator.count }} recipe{{ recipes.paginator.count|pluralize }}</span>
     </div>
     <div class="erp-split-layout">
-        <aside class="erp-filter-sidebar">
+        <aside class="erp-filter-sidebar erp-records-filter-sidebar">
             <div class="erp-filter-sidebar__title">Status</div>
             <div class="erp-filter-sidebar__nav">
                 <a class="{% if not status_filter %}is-active{% endif %}" href="{% url 'planning:sku_recipes' %}{% if q %}?q={{ q }}{% endif %}">All</a>
@@ -65,7 +66,7 @@
             <div class="erp-table-toolbar">
                 <span class="erp-table-meta">{{ recipes.paginator.count }} recipe{{ recipes.paginator.count|pluralize }}{% if status_filter %} &mdash; {{ status_filter }}{% endif %}{% if q %} &mdash; "{{ q }}"{% endif %}</span>
             </div>
-            <div class="erp-table-wrap erp-table-dense">
+            <div class="erp-table-wrap erp-table-dense erp-records-table-wrap">
                 <table>
                 <thead>
                     <tr>
@@ -209,6 +210,7 @@
                 </div>
             </form>
         </div>
+    </div>
     </div>
 </div>
 

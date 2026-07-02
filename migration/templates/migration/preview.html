@@ -77,7 +77,7 @@
                 {% endif %}
             </div>
         </header>
-        <div class="erp-table-wrap erp-table-scroll" style="overflow-x:auto;">
+        <div class="erp-table-wrap erp-table-scroll erp-records-table-wrap">
             <div style="display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:16px; flex-wrap:wrap;">
                 <form method="get" action="{% url 'migration:preview' import_job.id %}" style="margin:0; display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
                     <label for="status-filter" style="margin:0; font-weight:600;">Filter:</label>

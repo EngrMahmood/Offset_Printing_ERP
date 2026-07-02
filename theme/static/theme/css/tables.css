@@ -7,8 +7,12 @@
 .erp-table, table {
     width: 100%;
     border-collapse: collapse;
-    min-width: 1100px;
+    min-width: 0;
     font-size: var(--erp-font-sm);
+}
+.erp-table-scroll:not(.erp-records-table-wrap) .erp-table,
+.erp-table-wrap:not(.erp-records-table-wrap) .erp-table {
+    min-width: 1100px;
 }
 .erp-table th,
 .erp-table td,
@@ -20,14 +24,19 @@ td {
     vertical-align: top;
 }
 .erp-table th, th {
-    position: sticky;
-    top: 0;
     background: #f6f9fc;
     z-index: 1;
     font-size: var(--erp-font-xs);
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: #597089;
+}
+.erp-table-scroll .erp-table th,
+.erp-table-wrap .erp-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    box-shadow: 0 1px 0 #d9e2ec;
 }
 .erp-table tbody tr:hover td,
 tbody tr:hover td { background: #f8fbff; }

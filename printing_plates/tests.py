@@ -292,3 +292,50 @@ class PlateWorkflowTestCase(TestCase):
         req = create_or_get_plate_request_from_planning_job(job, self.admin_user)
         self.assertEqual(req.remarks, 'Original PO Remarks')
 
+    def test_plate_queue_view_renders_columns(self):
+        self.planning_job.sku = 'SKU-QUEUE-001'
+        self.planning_job.job_name = 'Queue Test Job'
+        self.planning_job.color_spec = '4 color'
+        self.planning_job.repeat_flag = 'New'
+        self.planning_job.save(update_fields=['sku', 'job_name', 'color_spec', 'repeat_flag', 'updated_at'])
+        self.plate_request.progress = 'Layout in progress'
+        self.plate_request.requested_at = timezone.now()
+        self.plate_request.save(update_fields=['progress', 'requested_at', 'updated_at'])
+
+        self.client.login(username='designer', password='password')
+        response = self.client.get(reverse('printing_plates:queue'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'plate-queue-table')
+        self.assertContains(response, 'erp-plate-type-flag')
+        self.assertContains(response, 'JC-0001')
+        self.assertContains(response, 'SKU-QUEUE-001')
+        self.assertContains(response, 'Queue Test Job')
+        self.assertContains(response, 'Layout in progress')
+        self.assertEqual(response.context['queue_count'], 1)
+
+    def test_plate_request_list_renders_columns(self):
+        self.plate_request.progress = 'Layout in progress'
+        self.plate_request.requested_at = timezone.now()
+        self.plate_request.save(update_fields=['progress', 'requested_at', 'updated_at'])
+
+        self.client.login(username='designer', password='password')
+        response = self.client.get(reverse('printing_plates:request_list'))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'plate-requests-table')
+        self.assertContains(response, 'erp-plate-type-flag')
+        self.assertContains(response, 'JC-0001')
+        self.assertContains(response, 'Layout in progress')
+        self.assertEqual(response.context['list_count'], 1)
+
+    def test_plate_request_detail_renders_sections(self):
+        self.client.login(username='designer', password='password')
+        response = self.client.get(reverse('printing_plates:request_detail', kwargs={'pk': self.plate_request.pk}))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'plate-detail-layout')
+        self.assertContains(response, 'Design & Layout Specifications')
+        self.assertContains(response, 'Action Panel')
+        self.assertContains(response, 'JC-0001')
+

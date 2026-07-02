@@ -1,7 +1,7 @@
 {% extends 'theme/base.html' %}
 {% load static %}
 
-{% block title %}Master Corrections - Offset ERP{% endblock %}
+{% block title %}Master Data - Offset ERP{% endblock %}
 {% block extra_head %}
     <style>
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0; padding: 0; background: var(--erp-bg-soft, #f3f5f8); overflow-x: hidden; color: #233042; }
@@ -45,20 +45,20 @@
         }
     </style>
 {% endblock %}
-{% block header_title %}Master Corrections{% endblock %}
-{% block header_subtitle %}Manage machines, operators, materials, and departments in a single administrative workspace.{% endblock %}
+{% block header_title %}Master Data{% endblock %}
+{% block header_subtitle %}Manage machines, operators, materials, departments, product types, and other shared dropdown values.{% endblock %}
 {% block header_actions %}
     <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
 {% endblock %}
 {% block content %}
 <div class="container">
     <div style="margin-bottom:16px;">
-        <h1 style="margin:0 0 2px;font-size:18px;font-weight:700;color:#1f2d3d;">Master Corrections</h1>
-        <p style="margin:0;font-size:12px;color:#5f6f84;">Machine, operator, material and department master data management</p>
+        <h1 style="margin:0 0 2px;font-size:18px;font-weight:700;color:#1f2d3d;">Master Data</h1>
+        <p style="margin:0;font-size:12px;color:#5f6f84;">Central management for ERP dropdown and reference values</p>
     </div>
 
     <div class="card">
-        <p class="muted">Use this screen when wrong dropdown values were added for machine, operator, material, or department.</p>
+        <p class="muted">Use this screen to correct or maintain master values used across planning, production, and job cards. Department and delivery location names are auto-synced from planning jobs and PO intake; product types are auto-synced from SKU master recipes when you open this page.</p>
 
         {% if messages %}
             {% for message in messages %}
@@ -137,7 +137,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="6">No machines found.</td></tr>
+                <tr><td colspan="8">No machines found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -337,6 +337,7 @@
                 <tr>
                     <th>ID</th>
                     <th>Department Name</th>
+                    <th>Active Planning Jobs</th>
                     <th>Active Job Cards</th>
                     <th>Actions</th>
                 </tr>
@@ -359,6 +360,7 @@
                         {{ row.record.name }}
                         {% endif %}
                     </td>
+                    <td>{{ row.planning_job_count }}</td>
                     <td>{{ row.job_card_count }}</td>
                     <td>
                         {% if is_admin_user %}
@@ -375,7 +377,113 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="4">No departments found.</td></tr>
+                <tr><td colspan="5">No departments found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+
+        <h2 class="section-header">Delivery Locations</h2>
+        <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Delivery Location Name</th>
+                    <th>Active Planning Jobs</th>
+                    <th>Active Job Cards</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in delivery_location_rows %}
+                <tr>
+                    <td>{{ row.record.id }}</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:flex;gap:8px;align-items:center;">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="delivery_location">
+                            <input type="hidden" name="action" value="edit_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <input type="text" name="new_name" value="{{ row.record.name }}" required>
+                            <button type="submit" class="btn btn-green">Edit</button>
+                        </form>
+                        {% else %}
+                        {{ row.record.name }}
+                        {% endif %}
+                    </td>
+                    <td>{{ row.planning_job_count }}</td>
+                    <td>{{ row.job_card_count }}</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete delivery location {{ row.record.name|escapejs }} permanently?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="delivery_location">
+                            <input type="hidden" name="action" value="delete_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5">No delivery locations found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+
+        <h2 class="section-header">Product Types</h2>
+        <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Product Type Name</th>
+                    <th>Active Planning Jobs</th>
+                    <th>Active SKU Recipes</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in product_type_rows %}
+                <tr>
+                    <td>{{ row.record.id }}</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:flex;gap:8px;align-items:center;">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="product_type">
+                            <input type="hidden" name="action" value="edit_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <input type="text" name="new_name" value="{{ row.record.name }}" required>
+                            <button type="submit" class="btn btn-green">Edit</button>
+                        </form>
+                        {% else %}
+                        {{ row.record.name }}
+                        {% endif %}
+                    </td>
+                    <td>{{ row.planning_job_count }}</td>
+                    <td>{{ row.sku_recipe_count }}</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete product type {{ row.record.name|escapejs }} permanently?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="product_type">
+                            <input type="hidden" name="action" value="delete_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5">No product types found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -434,6 +542,3 @@
     </div>
 </div>
 {% endblock %}
-
-
-

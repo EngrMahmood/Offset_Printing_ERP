@@ -856,7 +856,7 @@
    ----------------------------------------------------------- */
 .erp-split-layout {
     display: grid;
-    grid-template-columns: 220px 1fr;
+    grid-template-columns: minmax(220px, 260px) minmax(0, 1fr);
     gap: 12px;
     align-items: start;
     margin-bottom: 14px;
@@ -867,7 +867,9 @@
     border-radius: 6px;
     padding: 12px;
     position: sticky;
-    top: 8px;
+    top: var(--erp-records-sticky-top, 96px);
+    min-width: 0;
+    overflow-x: hidden;
 }
 .erp-filter-sidebar__title {
     font-size: 11px;

@@ -1,0 +1,12 @@
+<div class="plates-module-nav">
+    <div class="erp-actions">
+        <a href="{% url 'printing_plates:dashboard' %}" class="erp-btn erp-btn-secondary{% if active_tab == 'dashboard' %} is-active{% endif %}"><i class="fas fa-chart-line"></i> Dashboard</a>
+        <a href="{% url 'printing_plates:request_list' %}" class="erp-btn erp-btn-secondary{% if active_tab == 'requests' %} is-active{% endif %}"><i class="fas fa-file-invoice"></i> Plate Requests</a>
+        <a href="{% url 'printing_plates:sent_list' %}" class="erp-btn erp-btn-secondary{% if active_tab == 'sent' %} is-active{% endif %}"><i class="fas fa-paper-plane"></i> Plate Sent</a>
+        <a href="{% url 'printing_plates:received_list' %}" class="erp-btn erp-btn-secondary{% if active_tab == 'received' %} is-active{% endif %}"><i class="fas fa-check-circle"></i> Plate Received</a>
+        <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary{% if active_tab == 'queue' %} is-active{% endif %}"><i class="fas fa-list"></i> Plate Queue</a>
+    </div>
+    <div>
+        <a href="{% url 'printing_plates:request_add' %}" class="erp-btn plates-add-btn"><i class="fas fa-plus"></i> Add</a>
+    </div>
+</div>

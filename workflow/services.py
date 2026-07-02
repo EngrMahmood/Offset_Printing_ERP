@@ -222,6 +222,7 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('material', 'Material'),
     ('color_spec', 'Color'),
     ('application', 'Application'),
+    ('product_type', 'Product Type'),
     ('print_sheet_size', 'Print Sheet'),
     ('purchase_sheet_size', 'Purchase Sheet'),
     ('ups', 'UPS'),

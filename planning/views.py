@@ -65,9 +65,14 @@ from .services import (
     _collect_pending_sku_rows, _normalize_po_number,
     trigger_plate_request_for_planning_job,
     apply_master_data_sync,
+    apply_sku_recipe_form_role_permissions,
+    merge_preserved_sku_recipe_fields,
+    prepare_sku_recipe_form_for_master_entry,
     can_request_master_data_sync,
     dismiss_master_data_sync_request,
     get_master_data_field_diffs,
+    get_job_qc_submission_blockers,
+    preview_job_qc_submission_blockers,
     job_has_master_data_mismatch,
     job_requires_reopen_for_master_sync,
     preview_master_sync_calculations,
@@ -266,6 +271,7 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('material', 'Material'),
     ('color_spec', 'Color'),
     ('application', 'Application'),
+    ('product_type', 'Product Type'),
     ('print_sheet_size', 'Print Sheet'),
     ('purchase_sheet_size', 'Purchase Sheet'),
     ('ups', 'UPS'),
@@ -1520,11 +1526,30 @@ def planning_job_detail(request, job_id):
     pending_change_request = JobCardChangeRequest.objects.filter(planning_job=job, status='pending').first()
     active_machines = Machine.objects.filter(is_active=True).order_by('name')
 
+    active_recipe = job.sku_recipe
+    approved_recipe = job.approved_sku_recipe
+    qc_recipe_warning = ''
+    if active_recipe and not approved_recipe:
+        qc_recipe_warning = (
+            'Active SKU recipe exists but is not approved. '
+            'QC submission is blocked until the recipe is approved.'
+        )
+    elif not active_recipe:
+        qc_recipe_warning = (
+            'No active SKU recipe exists for this job. '
+            'QC submission is blocked until a recipe is created and approved.'
+        )
+
+    qc_submission_blockers = []
+    if status_now == 'draft' and not qc_recipe_warning:
+        qc_submission_blockers = preview_job_qc_submission_blockers(job)
+
     return render(
         request,
         'planning/planning_job_detail.html',
         {
             'job': job,
+            'recipe': active_recipe,
             'status_now': status_now,
             'po_approval_date_display': po_approval_date_display,
             'can_edit_job': status_now in {'draft', 'pending_qc'},
@@ -1533,6 +1558,8 @@ def planning_job_detail(request, job_id):
             'last_edited_by': job.last_edited_by,
             'last_edited_at': job.last_edited_at,
             'qc_missing_fields': job.qc_missing_fields(),
+            'qc_submission_blockers': qc_submission_blockers,
+            'qc_recipe_warning': qc_recipe_warning,
             'can_print_job_card': can_print_from_job or can_print_from_card,
             'can_admin_delete': _user_is_admin(request.user),
             'user_can_plan': getattr(getattr(request.user, 'profile', None), 'can_plan', lambda: False)(),
@@ -1665,7 +1692,7 @@ def planning_job_edit(request, job_id):
             if (job.repeat_flag or '').lower() == 'repeat':
                 changed_fields = []
                 edit_fields = [
-                    'delivery_date', 'wastage_sheets', 'plate_set_no', 'machine_name',
+                    'delivery_date', 'wastage_sheets', 'print_passes', 'plate_set_no', 'machine_name',
                     'planned_total_impressions', 'purchase_material_origin', 'destination',
                     'remarks', 'requirement', 'status',
                 ]
@@ -1728,6 +1755,9 @@ def planning_job_edit(request, job_id):
 
     po_approval_date_display = _get_po_approval_date_for_job(job)
     master_data_diffs = get_master_data_field_diffs(job)
+    qc_submission_blockers = []
+    if job.status == 'draft' and not qc_recipe_warning:
+        qc_submission_blockers = preview_job_qc_submission_blockers(job)
 
     return render(
         request,
@@ -1737,6 +1767,7 @@ def planning_job_edit(request, job_id):
             'form': form,
             'recipe': active_recipe,
             'qc_recipe_warning': qc_recipe_warning,
+            'qc_submission_blockers': qc_submission_blockers,
             'can_admin_delete': _user_is_admin(request.user),
             'po_approval_date_display': po_approval_date_display,
             'master_data_diffs': master_data_diffs,
@@ -1751,49 +1782,10 @@ def _submit_job_to_qc(job, request, next_url=None):
         messages.error(request, 'Job must be in draft before QC submission.')
         return redirect(next_url or 'planning:job_detail', job_id=job.id)
 
-    approved_recipe = SkuRecipe.objects.filter(
-        sku__iexact=job.sku,
-        is_active=True,
-        master_data_status='approved',
-    ).first()
-    recipe = approved_recipe or SkuRecipe.objects.filter(
-        sku__iexact=job.sku,
-        is_active=True,
-    ).first()
-    if not recipe:
-        messages.error(request, f'SKU recipe for {job.sku or "this job"} is missing.')
-        return redirect(next_url or 'planning:job_edit', job_id=job.id)
-    if not approved_recipe:
-        messages.error(
-            request,
-            f'SKU recipe for {job.sku or "this job"} exists but is not approved; QC submission is blocked until approval.',
-        )
-        return redirect(next_url or 'planning:job_edit', job_id=job.id)
-
-    planning_required_fields = [
-        ('machine_name', 'Machine Name'),
-        ('wastage_sheets', 'Wastage Sheets'),
-        ('plate_set_no', 'Plate Set No'),
-        ('purchase_material_origin', 'Purchase Material Origin'),
-    ]
-    missing_planning_fields = []
-    for field_name, field_label in planning_required_fields:
-        value = getattr(job, field_name, None)
-        if value is None or (isinstance(value, str) and not value.strip()):
-            missing_planning_fields.append(field_label)
-
-    if missing_planning_fields:
-        messages.error(
-            request,
-            f'Complete planning fields before Submit to QC: {", ".join(missing_planning_fields)}.',
-        )
-        return redirect(next_url or 'planning:job_edit', job_id=job.id)
-
-    qc_validation_errors = job.qc_validation_errors()
-    if qc_validation_errors:
-        for field_errors in qc_validation_errors.values():
-            for error_message in field_errors if isinstance(field_errors, list) else [field_errors]:
-                messages.error(request, error_message)
+    blockers = get_job_qc_submission_blockers(job)
+    if blockers:
+        for error_message in blockers:
+            messages.error(request, error_message)
         return redirect(next_url or 'planning:job_edit', job_id=job.id)
 
     job.status = 'pending_qc'
@@ -1858,53 +1850,11 @@ def planning_job_status_update(request, job_id):
         return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
 
     if target_status == 'pending_qc':
-        approved_recipe = SkuRecipe.objects.filter(
-            sku__iexact=job.sku,
-            is_active=True,
-            master_data_status='approved',
-        ).first()
-        recipe = approved_recipe or SkuRecipe.objects.filter(
-            sku__iexact=job.sku,
-            is_active=True,
-        ).first()
-        if not recipe:
-            messages.error(request, f'SKU recipe for {job.sku or "this job"} is missing.')
-            return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
-        if not approved_recipe:
-            messages.error(
-                request,
-                f'SKU recipe for {job.sku or "this job"} exists but is not approved; QC submission is blocked until approval.',
-            )
-            return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
-
-        planning_required_fields = [
-            ('machine_name', 'Machine Name'),
-            ('wastage_sheets', 'Wastage Sheets'),
-            ('plate_set_no', 'Plate Set No'),
-            ('purchase_material_origin', 'Purchase Material Origin'),
-        ]
-        missing_planning_fields = []
-        for field_name, field_label in planning_required_fields:
-            value = getattr(job, field_name, None)
-            if value is None:
-                missing_planning_fields.append(field_label)
-                continue
-            if isinstance(value, str) and not value.strip():
-                missing_planning_fields.append(field_label)
-
-        if missing_planning_fields:
-            messages.error(
-                request,
-                f'Complete planning fields before Submit to QC: {", ".join(missing_planning_fields)}.',
-            )
-            return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
-
-        qc_validation_errors = job.qc_validation_errors()
-        if qc_validation_errors:
-            for field_errors in qc_validation_errors.values():
-                for error_message in field_errors if isinstance(field_errors, list) else [field_errors]:
-                    messages.error(request, error_message)
-            return redirect(next_url) if next_url else redirect('planning:job_detail', job_id=job.id)
+        return _submit_job_to_qc(
+            job,
+            request,
+            next_url=next_url or reverse('planning:job_detail', kwargs={'job_id': job.id}),
+        )
 
     job.status = target_status
     if target_status == 'pending_qc':
@@ -2932,7 +2882,9 @@ def sku_recipe_edit(request, recipe_id=None):
 
         if recipe and recipe.master_data_status == 'approved' and action != 'reopen_sku':
             messages.error(request, 'Approved SKU is locked. Use Reopen SKU before making edits.')
-            return render(request, 'planning/sku_recipe_edit.html', {'form': SkuRecipeForm(instance=recipe), 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
+            locked_form = SkuRecipeForm(instance=recipe)
+            apply_sku_recipe_form_role_permissions(locked_form, request.user)
+            return render(request, 'planning/sku_recipe_edit.html', {'form': locked_form, 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
 
         form = SkuRecipeForm(request.POST, instance=recipe)
         if form.is_valid():
@@ -2966,6 +2918,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     missing = _missing_required_master_fields(obj)
                     if missing:
                         messages.error(request, f'Cannot approve. Missing required fields: {", ".join(missing)}.')
+                        apply_sku_recipe_form_role_permissions(form, request.user)
                         return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
                     obj.master_data_status = 'approved'
                     obj.approved_by = request.user
@@ -2977,7 +2930,8 @@ def sku_recipe_edit(request, recipe_id=None):
                     comment = (request.POST.get('rejection_comment') or '').strip()
                     if not comment:
                         messages.error(request, 'Please provide a reason when sending a record back to Draft.')
-                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
+                        apply_sku_recipe_form_role_permissions(form, request.user)
+                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
                     obj.master_data_status = 'draft'
                     obj.reviewed_by = None
                     obj.reviewed_at = None
@@ -2991,7 +2945,8 @@ def sku_recipe_edit(request, recipe_id=None):
                     comment = (request.POST.get('rejection_comment') or '').strip()
                     if not comment:
                         messages.error(request, 'Please provide a reopen reason before moving approved SKU back to Draft.')
-                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved})
+                        apply_sku_recipe_form_role_permissions(form, request.user)
+                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
                     obj.master_data_status = 'draft'
                     obj.reviewed_by = None
                     obj.reviewed_at = None
@@ -3032,6 +2987,8 @@ def sku_recipe_edit(request, recipe_id=None):
     else:
         form = SkuRecipeForm(instance=recipe)
 
+    apply_sku_recipe_form_role_permissions(form, request.user)
+
     return render(request, 'planning/sku_recipe_edit.html', {
         'form': form,
         'recipe': recipe,
@@ -3061,6 +3018,7 @@ def sku_recipe_bulk_upload(request):
             'Material': 'material',
             'Color': 'color_spec',
             'Application': 'application',
+            'Product Type': 'product_type',
             'Size W mm': 'size_w_mm',
             'Size H mm': 'size_h_mm',
             'Size W Inch': 'size_w_inch',
@@ -3134,7 +3092,7 @@ def sku_recipe_bulk_upload(request):
         sample_errors = []
         bulk_highlights = {}
         highlight_fields = {
-            'sku', 'job_name', 'material', 'color_spec', 'application',
+            'sku', 'job_name', 'material', 'color_spec', 'application', 'product_type',
             'size_w_mm', 'size_h_mm', 'ups', 'print_sheet_size',
             'purchase_sheet_size', 'purchase_sheet_ups',
             'default_unit_cost', 'daily_demand',
@@ -3236,13 +3194,13 @@ def sku_recipe_bulk_upload(request):
 def sku_recipe_template_download(request):
     """Return a CSV template for bulk SKU recipe upload."""
     headers = [
-        'Sno.', 'SKU', 'JOB NAME', 'Order Status', 'Material', 'Color', 'Application',
+        'Sno.', 'SKU', 'JOB NAME', 'Order Status', 'Material', 'Color', 'Application', 'Product Type',
         'Size W mm', 'Size H mm', 'Size W Inch', 'Size H Inch', 'Ups', 'Print Sheet Size',
         'Purchase Sheet Size', 'Purchase Sheet ups',
         'Default Unit Cost', 'Daily Demand', 'AWC No', 'Die', 'Notes'
     ]
     sample_row = [
-        '1', 'SKU-001', 'Sample Job Name', 'Repeat', 'Art Card 300gsm', '4 color', 'UV',
+        '1', 'SKU-001', 'Sample Job Name', 'Repeat', 'Art Card 300gsm', '4 color', 'UV', 'Labels',
         '100', '150', '3.94', '5.91', '4', '720x1020', '720x1020', '2',
         '5.00', '500', 'AWC-001', 'YES', 'Sample notes'
     ]
@@ -3765,7 +3723,10 @@ def pending_sku_master_entry(request):
             posted['color_spec'] = po_color_spec
         if not (posted.get('application') or '').strip() and po_application:
             posted['application'] = po_application
+        posted = merge_preserved_sku_recipe_fields(posted, recipe, request.user)
         form = SkuRecipeForm(posted, instance=recipe)
+        apply_sku_recipe_form_role_permissions(form, request.user, is_readonly=is_readonly)
+        prepare_sku_recipe_form_for_master_entry(form, action=action)
         if form.is_valid():
             action = (request.POST.get('action') or 'save_draft').strip()
             obj = form.save(commit=False)
@@ -3875,29 +3836,9 @@ def pending_sku_master_entry(request):
             'remarks': (recipe.remarks if recipe else '') or po_remarks,
         }
         form = SkuRecipeForm(instance=recipe, initial=initial)
+        apply_sku_recipe_form_role_permissions(form, request.user, is_readonly=is_readonly)
 
     form.fields['sku'].widget.attrs['readonly'] = True
-    if is_readonly:
-        for field in form.fields.values():
-            field.disabled = True
-    elif not _user_is_admin(request.user):
-        # Planner edit mode: only planner fields (material, application, unit cost, daily demand, notes, machine_name) are editable.
-        # Designer fields are disabled.
-        designer_fields = [
-            'color_spec',
-            'size_w_mm',
-            'size_h_mm',
-            'ups',
-            'print_sheet_size',
-            'purchase_sheet_size',
-            'purchase_sheet_ups',
-            'awc_no',
-            'die_cutting',
-            'plate_set_no',
-        ]
-        for field_name in designer_fields:
-            if field_name in form.fields:
-                form.fields[field_name].disabled = True
 
     current_recipe = recipe
     if request.method == 'POST' and form.is_valid() and 'obj' in locals():

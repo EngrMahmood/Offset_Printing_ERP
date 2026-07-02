@@ -15,7 +15,7 @@
 
 {% block content %}
 {% include 'theme/production_context_nav.html' %}
-<div class="erp-page-stack production-wip">
+<div class="erp-page-stack erp-records-shell production-wip">
     {# top action links are provided by the global header_actions; remove duplicate actions here #}
 
     <section class="erp-section-shell">
@@ -69,7 +69,7 @@
                 </div>
                 {% endif %}
             </div>
-            <div class="erp-table-scroll">
+            <div class="erp-table-scroll erp-records-table-wrap">
                 <table class="erp-table erp-table-dense">
                     <thead>
                         <tr>
@@ -94,8 +94,12 @@
         </div>
 
         <div class="erp-records-layout">
-            <aside class="erp-filter-sidebar">
+            <aside class="erp-filter-sidebar erp-records-filter-sidebar is-collapsible" data-collapse-key="productionWipFilterCollapsed">
+            <div class="erp-records-filter-head">
                 <h3 class="erp-filter-sidebar-title">Filter WIP Jobs</h3>
+                <button type="button" class="erp-records-filter-toggle" aria-expanded="true">Collapse</button>
+            </div>
+            <div class="erp-records-filter-body">
                 <form method="GET" class="erp-filter-group">
                     <div class="erp-filter-group">
                         <label for="q" class="erp-field-label">Search</label>
@@ -117,14 +121,16 @@
                         {% endif %}
                     </div>
                 </form>
+            </div>
             </aside>
 
-            <div>
+            <div class="erp-records-data-pane">
+                <div class="erp-records-pane-head">
                 <div class="erp-table-meta">
                     <p class="erp-table-meta-text">Showing {{ job_cards|length }} jobs released to production.</p>
                 </div>
-
-                <div class="erp-table-scroll">
+                </div>
+                <div class="erp-table-scroll erp-records-table-wrap">
                     <table class="erp-table erp-table-dense production-records-table">
                         <thead>
                             <tr>

@@ -3,7 +3,7 @@
 {% block title %}Printing Plates - Plate Received{% endblock %}
 
 {% block content %}
-<div class="erp-page-stack">
+<div class="erp-page-stack erp-records-shell">
     <!-- Navigation Tabs / Actions -->
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
         <div class="erp-actions">
@@ -28,7 +28,7 @@
 
         <div class="erp-records-layout">
             <!-- Sidebar Vendor Quick-Filters -->
-            <aside class="erp-filter-sidebar" style="background:#fff; border-radius:8px; border:1px solid rgba(115,115,115,0.08); padding:16px;">
+            <aside class="erp-filter-sidebar erp-records-filter-sidebar" style="background:#fff; border-radius:8px; border:1px solid rgba(115,115,115,0.08); padding:16px;">
                 <h3 style="font-size:0.95rem; font-weight:600; margin-bottom:12px; color:#2b3440; border-bottom:1px solid rgba(0,0,0,0.06); padding-bottom:8px;">Vendors</h3>
                 <ul style="list-style:none; padding:0; margin:0; display:flex; flex-direction:column; gap:6px;">
                     <li>
@@ -93,11 +93,16 @@
             <!-- Table Section -->
             <div>
                 {% if plate_requests %}
-                    <div class="erp-table-scroll">
-                        <table class="erp-table">
+                    <div class="erp-table-scroll erp-records-table-wrap">
+                        <table class="erp-table erp-table-dense plates-records-table">
+                            <colgroup>
+                                <col class="col-jc">
+                                <col class="col-type">
+                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>JC#</th>
+                                    <th>Type</th>
                                     <th>Set #</th>
                                     <th>New Set #</th>
                                     <th>Vendor</th>
@@ -117,6 +122,9 @@
                                 {% for req in plate_requests %}
                                 <tr>
                                     <td><strong><a href="{% url 'printing_plates:request_detail' req.pk %}">{{ req.jc_number|default:'—' }}</a></strong></td>
+                                    <td class="erp-plate-type-cell">
+                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type repeat_flag=req.planning_job.repeat_flag|default:'' %}
+                                    </td>
                                     <td>{{ req.set_no|default:'—' }}</td>
                                     <td>{{ req.new_set_no|default:'—' }}</td>
                                     <td><strong>{{ req.vendor|default:'—' }}</strong></td>

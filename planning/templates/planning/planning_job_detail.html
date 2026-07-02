@@ -3,7 +3,19 @@
 
 {% block title %}Job {{ job.jc_number }} — Offset Printing ERP{% endblock %}
 {% block header_title %}Job Detail — {{ job.jc_number }}{% endblock %}
-{% block header_subtitle %}<span class="erp-badge is-{{ job.workflow_status }}">{{ job.workflow_status_label }}</span> PO: {{ job.po_number|default:'-' }} &middot; SKU: {{ job.sku|default:'-' }}{% endblock %}
+{% block header_subtitle %}
+<span class="erp-badge is-{{ job.workflow_status }}">{{ job.workflow_status_label }}</span>
+{% if job.planning_stage %}
+&nbsp;·&nbsp;
+{% if job.planning_stage == 'new_plate_making' %}<span class="erp-badge erp-badge-info">New Plate Making</span>
+{% elif job.planning_stage == 'repeat_plate_making' %}<span class="erp-badge erp-badge-warning">Repeat Plate Making</span>
+{% elif job.planning_stage == 'plate_received' %}<span class="erp-badge">Plate Received</span>
+{% elif job.planning_stage == 'planning_done' %}<span class="erp-badge erp-badge-success">Planning Done</span>
+{% else %}<span class="erp-badge">{{ job.get_planning_stage_display }}</span>{% endif %}
+{% endif %}
+&nbsp;·&nbsp; PO: {{ job.po_number|default:'-' }} &nbsp;·&nbsp; SKU: {{ job.sku|default:'-' }}
+{% endblock %}
+
 {% block header_actions %}
     <a href="{% url 'planning:home' %}" class="erp-btn erp-btn-secondary">Back</a>
     <a href="{% url 'planning:report' %}" class="erp-btn erp-btn-secondary">Report</a>
@@ -16,19 +28,147 @@
 {% endblock %}
 
 {% block content %}
-    {% with current_step='planning' %}
-    {% endwith %}
+<div class="erp-page-stack">
 
     {% if job.repeat_flag|lower == 'new' %}
-    <div class="erp-alert is-warning"><strong>NEW SKU ALERT:</strong> Shade matching and setup verification required before production run.</div>
+    <div class="erp-alert erp-alert-warning"><strong>NEW SKU ALERT:</strong> Shade matching and setup verification required before production run.</div>
     {% endif %}
 
     {% if master_data_mismatch %}
-    <div class="erp-alert is-warning">
+    <div class="erp-alert erp-alert-warning">
         <strong>SKU master mismatch:</strong> This job card still uses snapshot values that differ from the approved SKU master.
-        Completed jobs are never auto-updated. Use the request below to sync this JC only.
+        Completed jobs are never auto-updated. Use the master sync section below to sync this JC only.
     </div>
     {% endif %}
+
+    {% if qc_recipe_warning %}
+    <div class="erp-alert erp-alert-warning" style="background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">{{ qc_recipe_warning }}</div>
+    {% endif %}
+
+    {% if qc_submission_blockers %}
+    <div class="erp-alert erp-alert-warning">
+        <strong>Before Send to QC:</strong>
+        <ul style="margin:8px 0 0 18px; padding:0;">
+            {% for item in qc_submission_blockers %}
+            <li>{{ item }}</li>
+            {% endfor %}
+        </ul>
+        {% if can_edit_job and user_can_plan %}
+        <p style="margin:10px 0 0;"><a href="{% url 'planning:job_edit' job.id %}">Open Finalization</a> to complete missing fields.</p>
+        {% endif %}
+    </div>
+    {% elif qc_missing_fields and status_now == 'pending_qc' %}
+    <div class="erp-alert erp-alert-warning"><strong>QC fields still missing:</strong> {{ qc_missing_fields|join:', ' }}</div>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Reference</div>
+                <h3 class="erp-section-title">PO Intake / Planning Job</h3>
+            </div>
+        </div>
+        <div class="erp-info-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">JC No</div><div class="erp-info-item__value"><strong>{{ job.jc_number|default:'-' }}</strong></div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">SKU</div><div class="erp-info-item__value">{{ job.sku|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Job Name</div><div class="erp-info-item__value">{{ job.job_name|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Order Quantity</div><div class="erp-info-item__value">{{ job.order_qty|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Status</div><div class="erp-info-item__value"><span class="erp-badge is-{{ job.workflow_status }}">{{ job.workflow_status_label }}</span></div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Repeat Flag</div><div class="erp-info-item__value">{{ job.repeat_flag|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Planning Stage</div><div class="erp-info-item__value">{{ job.get_planning_stage_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PO Approval Date</div><div class="erp-info-item__value">{{ po_approval_date_display|date:'d-m-Y'|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Delivery Date</div><div class="erp-info-item__value">{{ job.delivery_date|date:'d-m-Y'|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Delivery Location</div><div class="erp-info-item__value">{{ job.destination|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Department</div><div class="erp-info-item__value">{{ job.department|default:'-' }}</div></div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Phase 3</div>
+                <h3 class="erp-section-title">SKU Master Data</h3>
+            </div>
+        </div>
+        {% if recipe %}
+        <div class="erp-info-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ job.material_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Color</div><div class="erp-info-item__value">{{ job.color_spec_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Application</div><div class="erp-info-item__value">{{ job.application_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Product Type</div><div class="erp-info-item__value">{{ recipe.product_type|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Machine Name</div><div class="erp-info-item__value">{{ job.effective_machine_name|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Plate Set No.</div><div class="erp-info-item__value">{{ job.effective_plate_set_no|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Size W mm</div><div class="erp-info-item__value">{{ job.size_w_mm_display|floatformat:"-2"|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Size H mm</div><div class="erp-info-item__value">{{ job.size_h_mm_display|floatformat:"-2"|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Print Sheet Size</div><div class="erp-info-item__value">{{ job.print_sheet_size_display|default:'-' }}{% if master_data_mismatch and master_sync_preview and master_sync_preview.print_sheet_size %} <span class="erp-muted">→ {{ master_sync_preview.print_sheet_size }}</span>{% endif %}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Size</div><div class="erp-info-item__value">{{ job.purchase_sheet_size_display|default:'-' }}{% if master_data_mismatch and master_sync_preview and master_sync_preview.purchase_sheet_size %} <span class="erp-muted">→ {{ master_sync_preview.purchase_sheet_size }}</span>{% endif %}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet UPS</div><div class="erp-info-item__value">{{ job.purchase_sheet_ups_display|default:'-' }}{% if master_sync_preview and master_sync_preview.purchase_sheet_ups %} <span class="erp-muted">→ {{ master_sync_preview.purchase_sheet_ups }}</span>{% endif %}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">UPS</div><div class="erp-info-item__value">{{ job.ups_display|default:'-' }}{% if master_sync_preview and master_sync_preview.ups %} <span class="erp-muted">→ {{ master_sync_preview.ups }}</span>{% endif %}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Daily Demand</div><div class="erp-info-item__value">{{ job.daily_demand|floatformat:"-2"|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Unit Cost</div><div class="erp-info-item__value">{{ job.unit_cost|default:recipe.default_unit_cost|floatformat:"-2"|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">AWC No.</div><div class="erp-info-item__value">{{ job.awc_no_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Die Cutting</div><div class="erp-info-item__value">{{ job.die_cutting_display|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Recipe Status</div><div class="erp-info-item__value">{{ recipe.get_master_data_status_display|default:recipe.master_data_status|default:'-' }}</div></div>
+            <div class="erp-info-item erp-form-grid__full"><div class="erp-info-item__label">SKU Remarks</div><div class="erp-info-item__value">{{ recipe.remarks|default:'-' }}</div></div>
+            <div class="erp-info-item erp-form-grid__full"><div class="erp-info-item__label">SKU Notes</div><div class="erp-info-item__value">{{ recipe.notes|default:'-' }}</div></div>
+        </div>
+        {% if approved_recipe %}
+        <div class="erp-note" style="margin-top:8px;">Approved SKU master is linked. To change master data: <a href="{% url 'planning:sku_recipe_edit' approved_recipe.id %}">Reopen SKU</a> → edit → re-approve.</div>
+        {% elif recipe %}
+        <div class="erp-note" style="margin-top:8px;">SKU recipe exists but is not approved yet. Complete and approve master data before QC submission.</div>
+        {% endif %}
+        {% else %}
+        <div class="erp-alert erp-alert-warning" style="background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">No SKU master found for <strong>{{ job.sku }}</strong>. Create and approve a SKU recipe before finalizing this job.</div>
+        {% endif %}
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Calculations</div>
+                <h3 class="erp-section-title">Computed Planning Values</h3>
+            </div>
+        </div>
+        <div class="erp-info-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">Net Print Qty (pcs)</div><div class="erp-info-item__value">{{ job.net_print_qty|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Total Print Sheets Required</div><div class="erp-info-item__value">{{ job.calculated_sheets_required|default:job.total_sheet_quantity|default:'-' }}{% if master_sync_preview and master_sync_preview.total_sheets %} <span class="erp-muted">→ {{ master_sync_preview.total_sheets }}</span>{% endif %}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">No. of Passes</div><div class="erp-info-item__value">{{ job.print_passes|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Total Impressions</div><div class="erp-info-item__value">{{ job.calculated_planned_total_impressions|default:job.planned_total_impressions|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Required</div><div class="erp-info-item__value">{{ job.purchase_sheet_required_display|default:'-' }}{% if master_sync_preview and master_sync_preview.purchase_sheets %} <span class="erp-muted">→ {{ master_sync_preview.purchase_sheets }}</span>{% endif %}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value">{{ job.calculated_pkt_value|floatformat:"-2"|default:job.pkt_value|default:'-' }}{% if master_sync_preview and master_sync_preview.pkt_value %} <span class="erp-muted">→ {{ master_sync_preview.pkt_value }}</span>{% endif %}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Balance Qty (pcs)</div><div class="erp-info-item__value">{{ job.balance_qty|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Stock Qty</div><div class="erp-info-item__value">{{ job.stock_qty|floatformat:"-2"|default:'-' }}</div></div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Phase 4</div>
+                <h3 class="erp-section-title">Job Finalization</h3>
+            </div>
+        </div>
+        <div class="erp-info-grid">
+            <div class="erp-info-item"><div class="erp-info-item__label">Wastage Sheets</div><div class="erp-info-item__value">{{ job.wastage_sheets|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Purchase Material Origin</div><div class="erp-info-item__value">{{ job.purchase_material_origin|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Delivery Date</div><div class="erp-info-item__value">{{ job.delivery_date|date:'d-m-Y'|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Print Pcs</div><div class="erp-info-item__value">{{ job.print_pcs|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Front Colors</div><div class="erp-info-item__value">{{ job.front_colors|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Back Colors</div><div class="erp-info-item__value">{{ job.back_colors|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Total Colors</div><div class="erp-info-item__value">{{ job.total_colors|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Front Pass</div><div class="erp-info-item__value">{{ job.front_pass|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Back Pass</div><div class="erp-info-item__value">{{ job.back_pass|default:'-' }}</div></div>
+            <div class="erp-info-item erp-form-grid__full"><div class="erp-info-item__label">Requirement</div><div class="erp-info-item__value">{{ job.requirement|default:'-' }}</div></div>
+            <div class="erp-info-item erp-form-grid__full"><div class="erp-info-item__label">Remarks</div><div class="erp-info-item__value">{{ job.remarks_display|default:'-' }}</div></div>
+        </div>
+        {% if can_edit_job and user_can_plan %}
+        <div class="erp-form-actions" style="margin-top:14px;">
+            <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-primary">Edit Finalization Fields</a>
+        </div>
+        {% endif %}
+    </section>
 
     {% if master_data_mismatch or job.master_sync_requested %}
     <section class="erp-section-shell">
@@ -90,7 +230,7 @@
                 <input type="hidden" name="action" value="request_master_sync">
                 <div>
                     <label for="master-sync-reason">Reason for sync</label>
-                    <input id="master-sync-reason" type="text" name="reason" required placeholder="e.g. UPS revised in SKU master after re-approval" style="min-width:280px;">
+                    <input id="master-sync-reason" type="text" name="reason" required placeholder="e.g. UPS revised in SKU master after re-approval" class="erp-input" style="min-width:280px;">
                 </div>
                 <button type="submit" class="erp-btn erp-btn-primary">Request Master Sync</button>
             </form>
@@ -102,7 +242,7 @@
                 <input type="hidden" name="action" value="reopen_and_apply_master_sync">
                 <div>
                     <label for="reopen-sync-reason">Reopen reason</label>
-                    <input id="reopen-sync-reason" type="text" name="reason" value="{{ job.master_sync_reason|default:'' }}" placeholder="SKU master UPS/sheet revised" style="min-width:280px;">
+                    <input id="reopen-sync-reason" type="text" name="reason" value="{{ job.master_sync_reason|default:'' }}" placeholder="SKU master UPS/sheet revised" class="erp-input" style="min-width:280px;">
                 </div>
                 <button type="submit" class="erp-btn erp-btn-warning" onclick="return confirm('Reopen {{ job.jc_number }} to draft, apply SKU master data, and refresh the job card? You will need to re-approve through QC.');">Reopen &amp; Apply Master Sync</button>
             </form>
@@ -137,12 +277,12 @@
             <div class="erp-card-title-stack">
                 <div class="erp-eyebrow">Change Management</div>
                 <h3 class="erp-section-title">Change Management</h3>
-                <p class="erp-section-desc">Request to reopen this job card to Draft status to edit finalization fields (Wastage, Machine, Delivery Date, Plate Set, etc.). Requires Production Manager approval.</p>
+                <p class="erp-section-desc">Request to reopen this job card to Draft status to edit finalization fields. Requires Production Manager approval.</p>
             </div>
         </div>
 
         {% if pending_change_request %}
-        <div class="erp-alert is-warning" style="margin-bottom:12px;">
+        <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">
             <strong>Pending Reopen Approval:</strong> A request to reopen this job card to Draft was submitted
             {% if pending_change_request.requested_at %} on {{ pending_change_request.requested_at|date:'d M Y H:i' }}{% endif %}
             {% if pending_change_request.requested_by %} by {{ pending_change_request.requested_by.username }}{% endif %}.
@@ -150,108 +290,69 @@
         <div class="erp-note" style="margin-bottom:12px;">
             <strong>Justification:</strong> {{ pending_change_request.reason }}
         </div>
+        {% elif user_can_plan %}
+        <form method="post" action="{% url 'planning:request_wastage_machine_change' job.id %}" class="erp-form">
+            {% csrf_token %}
+            <div style="margin-bottom:12px;">
+                <label for="change-reason">Justification for Reopening</label>
+                <textarea id="change-reason" name="reason" class="erp-input" rows="3" placeholder="Explain what fields you need to edit and why..." required></textarea>
+            </div>
+            <button type="submit" class="erp-btn erp-btn-warning">Request Edit Reopen</button>
+        </form>
         {% else %}
-            {% if user_can_plan %}
-            <form method="post" action="{% url 'planning:request_wastage_machine_change' job.id %}" class="erp-form">
-                {% csrf_token %}
-                <div style="margin-bottom:12px;">
-                    <label for="change-reason">Justification for Reopening</label>
-                    <textarea id="change-reason" name="reason" class="erp-input" rows="3" placeholder="Explain what fields you need to edit and why..." required></textarea>
-                </div>
-                <div>
-                    <button type="submit" class="erp-btn erp-btn-warning">Request Edit Reopen</button>
-                </div>
-            </form>
-            {% else %}
-            <div class="erp-note">You must be a planner to request reopening this job card.</div>
-            {% endif %}
+        <div class="erp-note">You must be a planner to request reopening this job card.</div>
         {% endif %}
     </section>
     {% endif %}
 
     <div class="erp-route-grid">
-        <div class="erp-panel">
-            <div class="erp-panel__header"><h3 class="erp-panel__title">Specifications</h3></div>
-            {% with recipe=job.sku_recipe %}
-            <div class="erp-info-grid">
-                <div class="erp-info-item"><div class="erp-info-item__label">Job Name</div><div class="erp-info-item__value">{{ job.job_name|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">PO Approval Date</div><div class="erp-info-item__value">{{ po_approval_date_display|date:'d M Y'|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ job.material_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Color</div><div class="erp-info-item__value">{{ job.color_spec_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Application</div><div class="erp-info-item__value">{{ job.application_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Size (mm)</div><div class="erp-info-item__value">{{ job.size_w_mm_display|default:'-' }} x {{ job.size_h_mm_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Print Sheet</div><div class="erp-info-item__value">{{ job.print_sheet_size_display|default:'-' }}{% if master_data_mismatch and master_sync_preview and master_sync_preview.print_sheet_size %} <span class="erp-muted">→ {{ master_sync_preview.print_sheet_size }}</span>{% endif %}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Total Sheets</div><div class="erp-info-item__value">{{ job.total_sheet_quantity|default:'-' }}{% if master_sync_preview and master_sync_preview.total_sheets %} <span class="erp-muted">→ {{ master_sync_preview.total_sheets }}</span>{% endif %}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet</div><div class="erp-info-item__value">{{ job.purchase_sheet_size_display|default:'-' }}{% if master_data_mismatch and master_sync_preview and master_sync_preview.purchase_sheet_size %} <span class="erp-muted">→ {{ master_sync_preview.purchase_sheet_size }}</span>{% endif %}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">UPS</div><div class="erp-info-item__value">{{ job.ups_display|default:'-' }}{% if master_sync_preview and master_sync_preview.ups %} <span class="erp-muted">→ {{ master_sync_preview.ups }}</span>{% endif %}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Order Qty</div><div class="erp-info-item__value">{{ job.order_qty|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Delivery Date</div><div class="erp-info-item__value">{{ job.delivery_date|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Wastage Sheets</div><div class="erp-info-item__value">{{ job.wastage_sheets|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Machine</div><div class="erp-info-item__value">{{ job.machine_name|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Origin</div><div class="erp-info-item__value">{{ job.purchase_material_origin|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Department</div><div class="erp-info-item__value">{{ job.department|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">AWC No.</div><div class="erp-info-item__value">{{ job.awc_no_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Die Cutting</div><div class="erp-info-item__value">{{ job.die_cutting_display|default:'-' }}</div></div>
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Progress</div>
+                    <h3 class="erp-section-title">Production Snapshot</h3>
+                </div>
             </div>
-            {% endwith %}
-        </div>
-
-        <div class="erp-panel">
-            <div class="erp-panel__header"><h3 class="erp-panel__title">Progress Snapshot</h3></div>
             <div class="erp-info-grid">
                 <div class="erp-info-item"><div class="erp-info-item__label">Print Logs</div><div class="erp-info-item__value">{{ job.print_runs.count }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Dispatch Logs</div><div class="erp-info-item__value">{{ job.dispatch_runs.count }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Remaining Sheet</div><div class="erp-info-item__value">{{ job.remaining_sheet|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Rejected Qty</div><div class="erp-info-item__value">{{ job.rejected_qty|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Balance Qty</div><div class="erp-info-item__value">{{ job.balance_qty|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Daily Demand</div><div class="erp-info-item__value">{{ job.daily_demand|default:'-' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Issued To Production</div><div class="erp-info-item__value">{{ job.issued_to_production|yesno:'Yes,No' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Aging Days</div><div class="erp-info-item__value">{{ job.aging_days|default:'-' }}</div></div>
             </div>
-        </div>
-    </div>
+        </section>
 
-    <div class="erp-route-grid">
-        <div class="erp-panel">
-            <div class="erp-panel__header"><h3 class="erp-panel__title">Approval Details</h3></div>
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Audit</div>
+                    <h3 class="erp-section-title">Record Metadata</h3>
+                </div>
+            </div>
             <div class="erp-info-grid">
-                <div class="erp-info-item"><div class="erp-info-item__label">Repeat Flag</div><div class="erp-info-item__value">{{ job.repeat_flag|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Plan Month</div><div class="erp-info-item__value">{{ job.plan_month|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Print Pcs</div><div class="erp-info-item__value">{{ job.print_pcs|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet UPS</div><div class="erp-info-item__value">{{ job.purchase_sheet_ups|default:'-' }}{% if master_sync_preview and master_sync_preview.purchase_sheet_ups %} <span class="erp-muted">→ {{ master_sync_preview.purchase_sheet_ups }}</span>{% endif %}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheets Required</div><div class="erp-info-item__value">{{ job.purchase_sheet_required_display|default:'-' }}{% if master_sync_preview and master_sync_preview.purchase_sheets %} <span class="erp-muted">→ {{ master_sync_preview.purchase_sheets }}</span>{% endif %}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Actual Sheets Required</div><div class="erp-info-item__value">{{ job.actual_sheet_required_display|default:'-' }}{% if master_sync_preview and master_sync_preview.total_sheets %} <span class="erp-muted">→ {{ master_sync_preview.total_sheets }}</span>{% endif %}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value">{{ job.pkt_value|default:'-' }}{% if master_sync_preview and master_sync_preview.pkt_value %} <span class="erp-muted">→ {{ master_sync_preview.pkt_value }}</span>{% endif %}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Unit Cost</div><div class="erp-info-item__value">{{ job.unit_cost|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Stock Bag</div><div class="erp-info-item__value">{{ job.stock_bag|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Stock Qty</div><div class="erp-info-item__value">{{ job.stock_qty|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Requirement</div><div class="erp-info-item__value">{{ job.requirement|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Remarks</div><div class="erp-info-item__value">{{ job.remarks_display|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Front Colors</div><div class="erp-info-item__value">{{ job.front_colors|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Back Colors</div><div class="erp-info-item__value">{{ job.back_colors|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Total Colors</div><div class="erp-info-item__value">{{ job.total_colors|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Total MR Time</div><div class="erp-info-item__value">{{ job.total_mr_time_minutes|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Front Pass</div><div class="erp-info-item__value">{{ job.front_pass|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Back Pass</div><div class="erp-info-item__value">{{ job.back_pass|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Planned Impressions</div><div class="erp-info-item__value">{{ job.planned_total_impressions|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">MI Quantity</div><div class="erp-info-item__value">{{ job.mi_quantity|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">MI Balance</div><div class="erp-info-item__value">{{ job.mi_balance|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Destination</div><div class="erp-info-item__value">{{ job.destination|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Plate Set No</div><div class="erp-info-item__value">{{ job.plate_set_no|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Aging Days</div><div class="erp-info-item__value">{{ job.aging_days|default:'-' }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Issued To Production</div><div class="erp-info-item__value">{{ job.issued_to_production|yesno:'Yes,No' }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Total MR Time</div><div class="erp-info-item__value">{{ job.total_mr_time_minutes|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Hold Reason</div><div class="erp-info-item__value">{{ job.hold_reason|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Hold At</div><div class="erp-info-item__value">{{ job.hold_at|date:'d M Y H:i'|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Last Edited By</div><div class="erp-info-item__value">{% if last_edited_by %}{{ last_edited_by.username }}{% else %}-{% endif %}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Last Edited At</div><div class="erp-info-item__value">{{ last_edited_at|date:'d M Y H:i'|default:'-' }}</div></div>
             </div>
-        </div>
+        </section>
     </div>
 
     <div class="erp-route-grid">
-        <div class="erp-panel">
-            <div class="erp-panel__header"><h3 class="erp-panel__title">Printing Events</h3></div>
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Printing Events</h3>
+                </div>
+            </div>
             <div class="erp-table-wrap">
-                <table>
+                <table class="erp-table">
                     <thead><tr><th>#</th><th>Date</th><th>Print Qty</th><th>Wastage</th></tr></thead>
                     <tbody>
                         {% for row in job.print_runs.all %}
@@ -262,12 +363,16 @@
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
 
-        <div class="erp-panel">
-            <div class="erp-panel__header"><h3 class="erp-panel__title">Dispatch Events</h3></div>
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Dispatch Events</h3>
+                </div>
+            </div>
             <div class="erp-table-wrap">
-                <table>
+                <table class="erp-table">
                     <thead><tr><th>#</th><th>Date</th><th>DC No</th><th>Delivered Qty</th></tr></thead>
                     <tbody>
                         {% for row in job.dispatch_runs.all %}
@@ -278,6 +383,8 @@
                     </tbody>
                 </table>
             </div>
-        </div>
+        </section>
     </div>
+
+</div>
 {% endblock %}
