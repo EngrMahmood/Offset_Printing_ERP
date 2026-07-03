@@ -38,9 +38,14 @@ Write-Host "Offset ERP deploy"
 Write-Host "Log file: $LogFile"
 Write-Host ""
 
+$previousErrorAction = $ErrorActionPreference
+$ErrorActionPreference = 'Continue'
+
 try {
-    & $Python @deployArgs 2>&1 | Tee-Object -FilePath $LogFile
-    if ($LASTEXITCODE) {
+    # Python/pip often write progress to stderr; do not treat that as a PowerShell error.
+    $output = & $Python @deployArgs 2>&1
+    $output | Tee-Object -FilePath $LogFile
+    if ($null -ne $LASTEXITCODE -and $LASTEXITCODE -ne 0) {
         $exitCode = $LASTEXITCODE
     }
 }
@@ -48,6 +53,9 @@ catch {
     $_ | Out-String | Tee-Object -FilePath $LogFile -Append
     Write-Host "Deploy failed: $_" -ForegroundColor Red
     $exitCode = 1
+}
+finally {
+    $ErrorActionPreference = $previousErrorAction
 }
 
 Write-Host ""

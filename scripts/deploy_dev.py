@@ -57,7 +57,11 @@ def ensure_project_root() -> None:
         raise DeployError(f'manage.py not found. Expected project root at {ROOT}')
 
 
-def run_preflight_checks() -> None:
+def _model_has_field(model, field_name: str) -> bool:
+    return field_name in {field.name for field in model._meta.get_fields()}
+
+
+def run_preflight_checks(*, after_migrate: bool = False) -> None:
     os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'Offset_ERP.settings')
     import django
 
@@ -65,15 +69,12 @@ def run_preflight_checks() -> None:
 
     from django.db.models import Q
 
-    from core.models import Dispatch, JobCard
+    from core.models import Dispatch
     from planning.models import PlanningJob
 
-    _print_header('Pre-flight checks')
+    title = 'Post-migration checks' if after_migrate else 'Pre-migration checks'
+    _print_header(title)
 
-    qc_blocked = PlanningJob.objects.filter(
-        status__in=['pending_qc', 'draft'],
-        print_passes__isnull=True,
-    ).count()
     legacy_dispatch = Dispatch.objects.filter(Q(dc_no__isnull=True) | Q(dc_no='')).count()
     stage_reset = (
         PlanningJob.objects.filter(
@@ -84,13 +85,24 @@ def run_preflight_checks() -> None:
     )
     old_stage = PlanningJob.objects.filter(planning_stage='in_production').count()
 
-    print(f'Jobs in draft/pending_qc missing print_passes: {qc_blocked}')
     print(f'Dispatch rows that will get LEGACY-* DC numbers: {legacy_dispatch}')
     print(f'Released jobs whose planning sub-stage will move to planning_done: {stage_reset}')
     print(f'Jobs with old planning_stage=in_production (will rename): {old_stage}')
 
-    if any([qc_blocked, legacy_dispatch, stage_reset, old_stage]):
-        print('\nThese are expected after the latest migrations. Review counts before continuing.')
+    qc_blocked = None
+    if after_migrate and _model_has_field(PlanningJob, 'print_passes'):
+        qc_blocked = PlanningJob.objects.filter(
+            status__in=['pending_qc', 'draft'],
+            print_passes__isnull=True,
+        ).count()
+        print(f'Jobs in draft/pending_qc missing print_passes: {qc_blocked}')
+
+    warning_counts = [legacy_dispatch, stage_reset, old_stage]
+    if qc_blocked is not None:
+        warning_counts.append(qc_blocked)
+
+    if any(warning_counts):
+        print('\nReview these counts before using the updated app.')
     else:
         print('\nNo migration side-effects detected on current data.')
 
@@ -161,16 +173,16 @@ def deploy(args: argparse.Namespace) -> None:
 
     if not args.skip_pip:
         _print_header('Python dependencies')
-        run_command([python_exe, '-m', 'pip', 'install', '-r', 'requirements.txt'], dry_run=args.dry_run)
+        run_command(
+            [python_exe, '-m', 'pip', 'install', '-r', 'requirements.txt', '-q'],
+            dry_run=args.dry_run,
+        )
 
     _print_header('Django system check')
     run_command([python_exe, 'manage.py', 'check'], dry_run=args.dry_run)
 
-    if not args.skip_preflight:
-        if args.dry_run:
-            print('>>> preflight checks skipped in dry-run mode')
-        else:
-            run_preflight_checks()
+    if not args.skip_preflight and not args.dry_run:
+        run_preflight_checks(after_migrate=False)
 
     show_pending_migrations(python_exe, dry_run=args.dry_run)
 
@@ -178,6 +190,9 @@ def deploy(args: argparse.Namespace) -> None:
 
     _print_header('Apply migrations')
     run_command([python_exe, 'manage.py', 'migrate', '--noinput'], dry_run=args.dry_run)
+
+    if not args.skip_preflight and not args.dry_run:
+        run_preflight_checks(after_migrate=True)
 
     maybe_collectstatic(python_exe, dry_run=args.dry_run)
 
