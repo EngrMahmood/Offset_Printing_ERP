@@ -40,11 +40,27 @@
 
         <p class="erp-card-subtitle">Generated on: {{ generated_on|date:'Y-m-d H:i' }} • Version: {{ erp_software_version }}{% if erp_software_release_date %} • Released {{ erp_software_release_date }}{% endif %}</p>
 
-        <h3 class="erp-section-title" style="font-size:1rem; margin-top:20px;">0. Quick Access for Dropdown Corrections</h3>
+        <h3 class="erp-section-title" style="font-size:1rem; margin-top:20px;">What's New (July 2026)</h3>
         <ul style="margin:0 0 18px 20px;">
-            <li>If a wrong dropdown value is added (machine/operator/material/department/product type), open <a href="{% url 'master_data' %}">Master Data</a>.</li>
+            <li><strong>Print Color</strong> is a master list (1, 2, 4, 1+1, …) for production — not free-text ink names.</li>
+            <li><strong>Plate Inks</strong> (Cyan, Magenta, Yellow, Black, Special 1/2) are selected only on plate requests for the vendor.</li>
+            <li><strong>Multi-set plates</strong>: sets are suggested from impressions ÷ machine plate life (default 25,000); quantity is total plates, shown as e.g. <code>16 (4 sets)</code>; override allowed; all sets issued to production together for now.</li>
+            <li><strong>AWC #</strong> is unique per SKU/design — cannot be reused on another SKU (same SKU may reuse for repeat/remake).</li>
+            <li><strong>Released Jobs</strong>: production can request plate replacement (damage) with reason and damaged inks; job may show Waiting for plate.</li>
+            <li><strong>Plate cancel</strong>: designer can cancel open plate requests when plates are not required (visible as cancelled/archived).</li>
+            <li><strong>Print passes</strong>: production entry supports multi-pass jobs; pass count is inferred from planning/print color/machine rules when not set.</li>
+            <li><strong>Packing entry</strong>: dedicated packing production entry flow.</li>
+            <li><strong>SKU master</strong>: designer layout syncs to SKU; incomplete recipes stay Draft; QC can approve/reject in readonly master entry; reopen requires a reason.</li>
+            <li><strong>Machine master</strong>: Plate Life (impressions per set) is editable on Master Data.</li>
+        </ul>
+
+        <h3 class="erp-section-title" style="font-size:1rem;">0. Quick Access for Dropdown Corrections</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>If a wrong dropdown value is added (machine/operator/material/department/product type/print color), open <a href="{% url 'master_data' %}">Master Data</a>.</li>
             <li>Use Rename to correct spelling/name.</li>
             <li>Use Deactivate for machine/operator when you want to stop future use.</li>
+            <li>Admin can add Print Colors (production patterns such as 1, 2, 4, 1+1).</li>
+            <li>On each machine, set <strong>Plate Life (imp/set)</strong> (default 25,000) for multi-set plate suggestions.</li>
             <li>Old records remain safe for audit.</li>
         </ul>
 
@@ -54,7 +70,7 @@
             <li>SKU: product code.</li>
             <li>PO Number/Date: customer order reference.</li>
             <li>Material: paper or board used.</li>
-            <li>Colours: print colors (for example 4 or 1+1).</li>
+            <li>Print Color: production colour pattern from master (for example 4 or 1+1). Not ink names.</li>
             <li>Order Qty: customer required finished pieces.</li>
             <li>UPS: pieces per sheet.</li>
             <li>Wastage: planned setup/loss sheets.</li>
@@ -82,11 +98,15 @@
             <li>Job Card: choose which job is running.</li>
             <li>Machine: auto-picked from job card, but override can be used when needed.</li>
             <li>Operator, Shift, Date: who worked and when.</li>
-            <li>Impressions: total machine impressions done.</li>
+            <li>Print Color: shown from the job card (production pattern, not plate inks).</li>
+            <li>Print Pass: for multi-pass jobs, select the pass being run. Non-final passes record impressions and waste; good sheets are on the final pass.</li>
+            <li>Impressions: total machine impressions done (limits apply per pass and overall).</li>
             <li>Output Sheets: good sheets produced.</li>
             <li>Waste Sheets + Waste Reason: reject sheets and reason.</li>
             <li>Run, Setup, Downtime minutes: actual consumed time.</li>
             <li>Downtime Breakdown: add multiple downtime categories with minutes for one production entry.</li>
+            <li>Use Packing Entry for packing-stage production records.</li>
+            <li>Use Released Jobs to request plate replacement when plates are damaged on the floor.</li>
         </ul>
 
         <h3 class="erp-section-title" style="font-size:1rem;">5. Repeated Production Entries (Same Job Card)</h3>
@@ -191,9 +211,38 @@
         <h3 class="erp-section-title" style="font-size:1rem;">17. Job Card Approval Flow</h3>
         <ul style="margin:0 0 18px 20px;">
             <li>Planner submission places the job card into the approval trail.</li>
-            <li>QC approval validates specification, colour, and production readiness.</li>
+            <li>QC approval validates specification, print color, and production readiness.</li>
             <li>Production manager approval authorizes release to the shop floor.</li>
             <li>Only released job cards should be scanned and used in production execution.</li>
+        </ul>
+
+        <h3 class="erp-section-title" style="font-size:1rem;">18. Print Color vs Plate Inks</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li><strong>Print Color</strong> (SKU master / planning / job card): production pattern from Master Data (1, 2, 4, 1+1, …).</li>
+            <li><strong>Plate Inks</strong> (plate request only): ink separations for the vendor — Cyan, Magenta, Yellow, Black, Special 1, Special 2.</li>
+            <li>Ink chips never overwrite Print Color on the SKU or planning job.</li>
+            <li>Legacy free-text colour values still work and show as (legacy) until changed to a master value.</li>
+        </ul>
+
+        <h3 class="erp-section-title" style="font-size:1rem;">19. Printing Plates Workflow</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Plate Queue and Plate Requests list open plate work (draft, sent, received).</li>
+            <li>Send to Vendor: vendor, set nos, AWC #, Print Color (if missing), Plate Inks, Sets Required, Plate Quantity.</li>
+            <li>Sets Required is suggested as ceil(planned impressions ÷ machine plate life). Default plate life is 25,000 impressions per set (editable on Machine master).</li>
+            <li>Plate Quantity is total plates (sets × selected inks), displayed as e.g. 16 (4 sets). Designer may override.</li>
+            <li>Receive from Vendor, then Issue to Production — all sets on the request are issued together (staged issue will come with supply chain later).</li>
+            <li>AWC # is unique per SKU/design. Same SKU may reuse it on repeat or remake; another SKU cannot use the same code.</li>
+            <li>Cancel Request: use when plates are not required; request is archived and shown under Cancelled / Archived and on planning job lists.</li>
+            <li>Replacement plates: from Released Jobs (production) with reason and damaged inks; job may show Waiting for plate while graphics works the request.</li>
+        </ul>
+
+        <h3 class="erp-section-title" style="font-size:1rem;">20. SKU Master &amp; QC Master Entry</h3>
+        <ul style="margin:0 0 18px 20px;">
+            <li>Designer layout fields from plate making sync into the SKU master when blank.</li>
+            <li>Incomplete recipes stay Draft until required fields are filled; planner submits for review.</li>
+            <li>QC can open master entry in readonly mode to Approve or Reject/Send Back (reason required).</li>
+            <li>Reopen SKU requires a reopen reason for audit; SKU and job name stay locked except for admin.</li>
+            <li>Changing machine or print sheet (and similar plate-impact fields) after plates exist shows a plate remake warning.</li>
         </ul>
 
         <div class="note" style="background:#fff8e1;border:1px solid #f3de9a;color:#7a5d1a;padding:12px 14px;border-radius:8px;">Keep this guide updated whenever formulas, validations, fields, or dashboard KPI logic changes.</div>

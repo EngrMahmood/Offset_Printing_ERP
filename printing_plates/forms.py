@@ -38,7 +38,7 @@ class PlateRequestForm(forms.ModelForm):
             'vendor': 'Vendor',
             'plate_quantity': 'Plate Quantity',
             'status': 'Status',
-            'plate_color': 'Plate Color',
+            'plate_color': 'Plate Inks',
             'impression': 'Impression',
             'remarks': 'Remarks',
             'requested_at': 'Request Date',

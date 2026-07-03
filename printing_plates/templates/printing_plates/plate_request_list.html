@@ -39,6 +39,18 @@
                             </a>
                         </li>
                         <li>
+                            <a href="?type=replacement" class="plates-filter-link{% if request_type == 'replacement' %} is-active{% endif %}">
+                                <span>Replacement</span>
+                                <span class="plates-filter-count">{{ replacement_count }}</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="?type=cancelled" class="plates-filter-link{% if request_type == 'cancelled' %} is-active{% endif %}">
+                                <span>Cancelled / Archived</span>
+                                <span class="plates-filter-count">{{ cancelled_count }}</span>
+                            </a>
+                        </li>
+                        <li>
                             <a href="?type=empty" class="plates-filter-link{% if request_type == 'empty' %} is-active{% endif %}">
                                 <span>(empty)</span>
                                 <span class="plates-filter-count">{{ empty_count }}</span>
@@ -98,10 +110,11 @@
                                     <th>SKU</th>
                                     <th>Job Name</th>
                                     <th>Set #</th>
+                                    <th>AWC No</th>
                                     <th>Qty</th>
                                     <th>Workflow</th>
                                     <th>Machine</th>
-                                    <th>Colors</th>
+                                    <th>Plate Inks</th>
                                     <th>Impression</th>
                                     <th>Progress</th>
                                     <th>Requested</th>
@@ -119,11 +132,18 @@
                                     </td>
                                     <td title="{{ req.sku|default:'' }}">{{ req.sku|default:'—' }}</td>
                                     <td title="{{ req.job_name|default:'' }}">{{ req.job_name|default:'—' }}</td>
-                                    <td>{{ req.set_no|default:req.new_set_no|default:'—' }}</td>
-                                    <td>{{ req.plate_quantity|default:'—' }}</td>
-                                    <td class="plates-workflow-cell"><span class="erp-badge">{{ req.get_status_display }}</span></td>
+                                    <td>{{ req.display_set_no|default:'—' }}</td>
+                                    <td>{{ req.display_awc_no|default:'—' }}</td>
+                                    <td>{{ req.plate_quantity_display|default:req.plate_quantity|default:'—' }}</td>
+                                    <td class="plates-workflow-cell">
+                                        {% if req.is_cancelled %}
+                                        <span class="erp-badge erp-badge-danger">Cancelled</span>
+                                        {% else %}
+                                        <span class="erp-badge">{{ req.get_status_display }}</span>
+                                        {% endif %}
+                                    </td>
                                     <td title="{{ req.machine_display|default:'' }}">{{ req.machine_display|default:'—' }}</td>
-                                    <td title="{{ req.plate_color|default:'' }}">{{ req.plate_color|default:req.no_of_colors|default:'—' }}</td>
+                                    <td title="{{ req.plate_color|default:req.print_color_display|default:'' }}">{{ req.plate_color|default:req.print_color_display|default:'—' }}</td>
                                     <td>{{ req.impression|default:req.impressions|default:'—' }}</td>
                                     <td class="plates-progress-cell" title="{{ req.progress|default:'' }}">{{ req.progress|default:'—' }}</td>
                                     <td>{{ req.requested_at|date:'Y-m-d H:i'|default:'—' }}</td>

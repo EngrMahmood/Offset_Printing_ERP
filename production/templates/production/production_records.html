@@ -73,14 +73,9 @@
 
 {% block header_title %}Production Records{% endblock %}
 {% block header_subtitle %}High-density production ledger with efficiency, variance, and history tracking.{% endblock %}
-{% block header_actions %}
-    {% if user.profile.can_edit_production %}
-    <a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> Add Production</a>
-    {% endif %}
-{% endblock %}
+{% block header_actions %}{% endblock %}
 
 {% block content %}
-    {% include 'theme/production_context_nav.html' %}
     <div class="erp-page-stack erp-records-shell">
         <section class="erp-section-shell">
             <div class="erp-card-header">
@@ -248,6 +243,7 @@
                                 <tr>
                                     {% if user.profile.role == 'admin' %}<th><input type="checkbox" id="select_all_production"></th>{% endif %}
                                     <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Date</a></th>
+                                    <th>Type</th>
                                     <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Job Card</a></th>
                                     <th>SKU</th>
                                     <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=machine&dir={% if sort == 'machine' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Machine</a></th>
@@ -275,18 +271,37 @@
                                     <td><input type="checkbox" class="bulk-check-production" name="selected_ids" value="{{ row.id }}" form="bulk_archive_form_production"></td>
                                     {% endif %}
                                     <td>{{ row.date }}</td>
+                                    <td>
+                                        {% if row.entry_type == 'packing' %}
+                                            <span class="erp-badge">Packing</span>
+                                        {% else %}
+                                            <span class="erp-badge">Printing</span>
+                                        {% endif %}
+                                    </td>
                                     <td title="{{ row.job_card.job_card_no }}">{{ row.job_card.job_card_no }}</td>
                                     <td title="{{ row.job_card.SKU|default:'—' }}">{{ row.job_card.SKU|default:'—' }}</td>
-                                    <td title="{{ row.machine.name }}">{{ row.machine.name }}</td>
+                                    <td title="{% if row.entry_type == 'packing' %}{{ row.sorter|default:'—' }}{% else %}{{ row.machine.name|default:'—' }}{% endif %}">
+                                        {% if row.entry_type == 'packing' %}{{ row.sorter|default:'—' }}{% else %}{{ row.machine.name|default:'—' }}{% endif %}
+                                    </td>
                                     <td>{{ row.operator.name|default:'—' }}</td>
                                     <td>
                                         <span class="production-shift-pill {% if row.shift == 'A' %}is-a{% else %}is-b{% endif %}">
                                             Shift {{ row.shift }}
                                         </span>
                                     </td>
-                                    <td>{{ row.impressions|intcomma }}</td>
-                                    <td>{{ row.output_sheets|intcomma }}</td>
-                                    <td>{{ row.waste_sheets|intcomma }}</td>
+                                    <td>
+                                        {% if row.entry_type == 'packing' %}
+                                            {{ row.packing_qty|intcomma }} / waste {{ row.sorting_waste_qty|intcomma }}
+                                        {% else %}
+                                            {{ row.impressions|intcomma }}
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        {% if row.entry_type == 'packing' %}—{% else %}{{ row.output_sheets|intcomma }}{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if row.entry_type == 'packing' %}—{% else %}{{ row.waste_sheets|intcomma }}{% endif %}
+                                    </td>
                                     <td>{{ row.planned_time|floatformat:1 }}m</td>
                                     <td>{{ row.actual_total_time_minutes|floatformat:1 }}m</td>
                                     <td class="production-downtime-cell" title="{{ row.downtime_breakdown_text }}">{{ row.downtime_breakdown_text|default:'—' }}</td>
@@ -332,17 +347,21 @@
                                     {% endif %}
                                     <td class="records-actions-cell">
                                         <div class="erp-actions">
-                                            <a href="{% url 'production_entry' %}?view={{ row.id }}" class="erp-btn erp-btn-secondary">View</a>
+                                            {% if row.entry_type == 'packing' %}
+                                            <a href="{% url 'packing_production_entry' %}?view={{ row.id }}" class="erp-btn erp-btn-secondary">View</a>
+                                            {% else %}
+                                            <a href="{% url 'printing_production_entry' %}?view={{ row.id }}" class="erp-btn erp-btn-secondary">View</a>
+                                            {% endif %}
                                             {% if edit_lock_cutoff and row.date < edit_lock_cutoff and not can_bypass_edit_lock %}
                                                 {% if row.id in approved_override_ids %}
-                                                <a href="{% url 'production_entry' %}?edit={{ row.id }}" class="erp-btn erp-btn-warning">Edit</a>
+                                                <a href="{% if row.entry_type == 'packing' %}{% url 'packing_production_entry' %}?edit={{ row.id }}{% else %}{% url 'printing_production_entry' %}?edit={{ row.id }}{% endif %}" class="erp-btn erp-btn-warning">Edit</a>
                                                 {% elif row.id in pending_override_ids %}
                                                 <span class="erp-table-meta-text">Pending</span>
                                                 {% else %}
                                                 <a href="{% url 'request_edit_override' 'production' row.id %}" class="erp-btn erp-btn-warning">Override</a>
                                                 {% endif %}
                                             {% else %}
-                                            <a href="{% url 'production_entry' %}?edit={{ row.id }}" class="erp-btn erp-btn-secondary">Edit</a>
+                                            <a href="{% if row.entry_type == 'packing' %}{% url 'packing_production_entry' %}?edit={{ row.id }}{% else %}{% url 'printing_production_entry' %}?edit={{ row.id }}{% endif %}" class="erp-btn erp-btn-secondary">Edit</a>
                                             {% endif %}
                                             <a href="{% url 'change_history' 'production' row.id %}" class="erp-btn erp-btn-success">Log</a>
                                             {% if user.profile.can_archive_records %}

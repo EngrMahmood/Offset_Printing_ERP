@@ -91,9 +91,15 @@ def _format_decimal_string(raw_value):
 
 
 def _normalize_color_spec_input(raw_value):
+    from core.print_colors import resolve_print_color_name
+
     raw_text = str(raw_value or '').strip()
     if not raw_text:
         return ''
+
+    resolved = resolve_print_color_name(raw_text)
+    if resolved:
+        return resolved
 
     lowered = raw_text.lower()
     if lowered in {'no', 'none', 'n/a', 'na', 'nil'}:
@@ -120,19 +126,23 @@ def _normalize_color_spec_input(raw_value):
 
     plus_match = re.compile(r'^(\d+)\+(\d+)$').fullmatch(normalized)
     if plus_match:
-        return f"{int(plus_match.group(1))}+{int(plus_match.group(2))}"
+        candidate = f"{int(plus_match.group(1))}+{int(plus_match.group(2))}"
+        return resolve_print_color_name(candidate) or candidate
 
     single_match = re.compile(r'^(\d+)\s*(?:colou?r(?:s)?)?$', re.IGNORECASE).fullmatch(normalized)
     if single_match:
-        return f"{int(single_match.group(1))} color"
+        candidate = str(int(single_match.group(1)))
+        return resolve_print_color_name(candidate) or candidate
 
     numbers = re.findall(r'[0-9]+', normalized)
     if len(numbers) == 1:
-        return f"{int(numbers[0])} color"
+        candidate = str(int(numbers[0]))
+        return resolve_print_color_name(candidate) or candidate
     if len(numbers) == 2:
-        return f"{int(numbers[0])}+{int(numbers[1])}"
+        candidate = f"{int(numbers[0])}+{int(numbers[1])}"
+        return resolve_print_color_name(candidate) or candidate
 
-    return value
+    return raw_text
 
 
 def _normalize_application_input(raw_value):

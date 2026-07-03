@@ -909,6 +909,82 @@ class SkuRecipeFormRolePermissionTests(TestCase):
 		ui = get_sku_recipe_form_ui_context(designer_user)
 		self.assertEqual(ui['sku_recipe_viewer_role'], 'designer')
 
+	def test_planner_cannot_edit_designer_fields_on_first_draft(self):
+		from planning.forms import SkuRecipeForm
+		from planning.models import SkuRecipe
+		from planning.services import apply_sku_recipe_form_role_permissions
+
+		planner_user = get_user_model().objects.create_user(username='planner_role_user', password='testpass123')
+		planner_profile, _ = UserProfile.objects.get_or_create(user=planner_user)
+		planner_profile.role = 'planner'
+		planner_profile.save(update_fields=['role'])
+		planner_user.refresh_from_db()
+
+		recipe = SkuRecipe(sku='SKU-FIRST', job_name='First Job', master_data_status='draft')
+		form = SkuRecipeForm(instance=recipe)
+		apply_sku_recipe_form_role_permissions(form, planner_user, recipe=recipe)
+		self.assertTrue(form.fields['print_sheet_size'].disabled)
+		self.assertFalse(form.fields['machine_name'].disabled)
+		self.assertTrue(form.fields['sku'].disabled)
+		self.assertTrue(form.fields['job_name'].disabled)
+
+	def test_sku_and_job_name_locked_for_non_admin(self):
+		from planning.forms import SkuRecipeForm
+		from planning.models import SkuRecipe
+		from planning.services import apply_sku_recipe_form_role_permissions
+
+		for role, username in (
+			('planner', 'planner_lock_user'),
+			('graphics_designer', 'designer_lock_user'),
+		):
+			user = get_user_model().objects.create_user(username=username, password='testpass123')
+			profile, _ = UserProfile.objects.get_or_create(user=user)
+			profile.role = role
+			profile.save(update_fields=['role'])
+			user.refresh_from_db()
+			recipe = SkuRecipe(sku='SKU-LOCK', job_name='Locked Job', master_data_status='draft')
+			form = SkuRecipeForm(instance=recipe)
+			apply_sku_recipe_form_role_permissions(form, user, recipe=recipe)
+			self.assertTrue(form.fields['sku'].disabled, role)
+			self.assertTrue(form.fields['job_name'].disabled, role)
+
+	def test_planner_can_edit_designer_fields_after_reopen(self):
+		from django.utils import timezone
+		from planning.forms import SkuRecipeForm
+		from planning.models import SkuRecipe
+		from planning.services import (
+			apply_sku_recipe_form_role_permissions,
+			build_plate_remake_warning,
+			get_plate_remake_impact_changes,
+		)
+
+		planner_user = get_user_model().objects.create_user(username='planner_reopen_user', password='testpass123')
+		planner_profile, _ = UserProfile.objects.get_or_create(user=planner_user)
+		planner_profile.role = 'planner'
+		planner_profile.save(update_fields=['role'])
+		planner_user.refresh_from_db()
+
+		recipe = SkuRecipe(
+			sku='SKU-REOPEN',
+			master_data_status='draft',
+			rejection_comment='Reopened for machine change',
+			last_rejected_at=timezone.now(),
+		)
+		form = SkuRecipeForm(instance=recipe)
+		apply_sku_recipe_form_role_permissions(form, planner_user, recipe=recipe)
+		self.assertFalse(form.fields['print_sheet_size'].disabled)
+		self.assertFalse(form.fields['machine_name'].disabled)
+		self.assertTrue(form.fields['print_sheet_size'].sku_is_mine)
+
+		changed = get_plate_remake_impact_changes(
+			{'machine_name': 'SM74', 'print_sheet_size': '9x15'},
+			{'machine_name': 'GTO', 'print_sheet_size': '9x15'},
+		)
+		self.assertEqual(changed, ['Machine'])
+		warning = build_plate_remake_warning(changed, context='sync')
+		self.assertIn('Machine', warning)
+		self.assertIn('Request plates', warning)
+
 
 class PoRemarksExtractorTests(TestCase):
 	def test_remarks_extraction_from_po_text(self):
@@ -1126,3 +1202,35 @@ class PlanningJobImpressionCalculationTests(TestCase):
 		job_card, _ = ensure_job_card_from_planning_job(job, actor=self.user)
 		self.assertEqual(job_card.total_impressions_required, 1024)
 		self.assertEqual(job_card.impression_pass_multiplier, 1)
+
+
+class SkuRecipePlanningSyncTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(username='sku_sync_user', password='pass')
+		self.planning_job = PlanningJob.objects.create(
+			jc_number='JC-SYNC-001',
+			sku='SKU-SYNC-001',
+			job_name='Sync Test SKU',
+			color_spec='4',
+			size_w_mm=100,
+			size_h_mm=150,
+			ups=12,
+			print_sheet_size='20x30',
+			purchase_sheet_size='20x30',
+			plate_set_no='SET-99',
+			repeat_flag='New',
+			status='draft',
+			created_by=self.user,
+		)
+
+	def test_ensure_sku_recipe_copies_planning_designer_fields(self):
+		from planning.services import ensure_sku_recipe_for_planning_job, sync_planning_job_fields_to_sku_recipe
+
+		recipe = ensure_sku_recipe_for_planning_job(self.planning_job, actor=self.user)
+		sync_planning_job_fields_to_sku_recipe(self.planning_job, recipe)
+
+		self.assertEqual(recipe.sku, 'SKU-SYNC-001')
+		self.assertEqual(recipe.color_spec, '4')
+		self.assertEqual(recipe.size_w_mm, 100)
+		self.assertEqual(recipe.ups, 12)
+		self.assertEqual(recipe.plate_set_no, 'SET-99')

@@ -26,7 +26,13 @@
         <div class="erp-info-grid">
             <div class="erp-info-item">
                 <div class="erp-info-item__label">Status</div>
-                <div class="erp-info-item__value"><span class="erp-badge">{{ plate_request.get_status_display }}</span></div>
+                <div class="erp-info-item__value">
+                    {% if plate_request.is_cancelled %}
+                    <span class="erp-badge erp-badge-danger">Cancelled</span>
+                    {% else %}
+                    <span class="erp-badge">{{ plate_request.get_status_display }}</span>
+                    {% endif %}
+                </div>
             </div>
             <div class="erp-info-item">
                 <div class="erp-info-item__label">Type</div>
@@ -64,6 +70,12 @@
                     <div class="erp-info-item"><div class="erp-info-item__label">Department</div><div class="erp-info-item__value">{{ plate_request.department_display|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Source</div><div class="erp-info-item__value">{{ plate_request.source|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Designer</div><div class="erp-info-item__value">{{ plate_request.designer.username|default:'—' }}</div></div>
+                    {% if plate_request.is_replacement %}
+                    <div class="erp-info-item"><div class="erp-info-item__label">Replacement Reason</div><div class="erp-info-item__value">{{ plate_request.replacement_reason_display|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Damaged Colours</div><div class="erp-info-item__value">{{ plate_request.damaged_colors|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Requested By</div><div class="erp-info-item__value">{{ plate_request.requested_by.username|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Replaces Request</div><div class="erp-info-item__value">{% if plate_request.replaces_request %}<a href="{% url 'printing_plates:request_detail' plate_request.replaces_request_id %}">#{{ plate_request.replaces_request_id }}</a>{% else %}—{% endif %}</div></div>
+                    {% endif %}
                 </div>
             </section>
 
@@ -77,9 +89,10 @@
                 <div class="erp-info-grid">
                     <div class="erp-info-item"><div class="erp-info-item__label">Plate Set #</div><div class="erp-info-item__value">{{ plate_request.set_no|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">New Set #</div><div class="erp-info-item__value">{{ plate_request.new_set_no|default:'—' }}</div></div>
-                    <div class="erp-info-item"><div class="erp-info-item__label">Plate Quantity</div><div class="erp-info-item__value">{{ plate_request.plate_quantity|default:'—' }}</div></div>
-                    <div class="erp-info-item"><div class="erp-info-item__label">Plate Color</div><div class="erp-info-item__value">{{ plate_request.plate_color|default:'—' }}</div></div>
-                    <div class="erp-info-item"><div class="erp-info-item__label">No. of Colors</div><div class="erp-info-item__value">{{ plate_request.no_of_colors|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Plate Quantity</div><div class="erp-info-item__value">{{ plate_request.plate_quantity_display|default:plate_request.plate_quantity|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Print Color</div><div class="erp-info-item__value">{{ plate_request.print_color_display|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Plate Inks</div><div class="erp-info-item__value">{{ plate_request.plate_color|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Color Units</div><div class="erp-info-item__value">{{ plate_request.no_of_colors|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Vendor</div><div class="erp-info-item__value">{{ plate_request.vendor|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Impressions</div><div class="erp-info-item__value">{{ plate_request.impressions|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Plate Impression/Ref</div><div class="erp-info-item__value">{{ plate_request.impression|default:'—' }}</div></div>
@@ -158,14 +171,13 @@
                         </div>
                     </div>
                     <div class="erp-route-card">
-                        <div class="erp-route-card__key">Colors Specification</div>
+                        <div class="erp-route-card__key">Print Color</div>
                         <div class="erp-route-card__value">
-                            {% if plate_request.planning_job %}{{ plate_request.planning_job.total_colors|default:'—' }}{% else %}—{% endif %} colors
+                            {{ plate_request.print_color_display|default:'—' }}
                         </div>
                         <div class="erp-note">
-                            {% if plate_request.planning_job %}
-                                Front: {{ plate_request.planning_job.front_colors|default:'0' }} | Back: {{ plate_request.planning_job.back_colors|default:'0' }}
-                            {% else %}—{% endif %}
+                            Color units: {{ plate_request.no_of_colors|default:'—' }}
+                            {% if plate_request.plate_color %} · Inks: {{ plate_request.plate_color }}{% endif %}
                         </div>
                     </div>
                     <div class="erp-route-card">
@@ -272,19 +284,34 @@
                             <div class="erp-form-field">
                                 <label for="id_awc_no" class="erp-form-label">AWC #</label>
                                 <input type="text" id="id_awc_no" name="awc_no" value="{{ plate_request.awc_no|default:'' }}" class="erp-input">
+                                <div class="erp-form-help">Artwork code unique to this SKU/design. Cannot be reused on another SKU.</div>
                             </div>
 
                             <div class="erp-form-field">
-                                <label class="erp-form-label">Plate Color <span class="req">*</span></label>
+                                <label for="id_print_color" class="erp-form-label">Print Color {% if print_color_missing %}<span class="req">*</span>{% endif %}</label>
+                                {% if print_color_missing %}
+                                <select id="id_print_color" name="print_color" required class="erp-select">
+                                    {% for value, label in print_color_choices %}
+                                    <option value="{{ value }}" {% if value == current_print_color %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
+                                <div class="erp-form-help">Production colour pattern (1, 2, 4, 1+1, …). Separate from plate inks below.</div>
+                                {% else %}
+                                <input type="text" class="erp-input plate-input-readonly" value="{{ print_color_resolved }}" readonly>
+                                <input type="hidden" name="print_color" value="{{ print_color_resolved }}">
+                                <div class="erp-form-help">From SKU / planning master. Change it on SKU master if needed.</div>
+                                {% endif %}
+                            </div>
+
+                            <div class="erp-form-field">
+                                <label class="erp-form-label">Plate Inks <span class="req">*</span></label>
                                 <div style="display:flex; gap:8px; flex-wrap:wrap;" id="color-buttons-container">
-                                    <button type="button" class="color-btn plate-color-btn erp-btn erp-btn-secondary" data-color="Cyan">Cyan</button>
-                                    <button type="button" class="color-btn plate-color-btn erp-btn erp-btn-secondary" data-color="Magenta">Magenta</button>
-                                    <button type="button" class="color-btn plate-color-btn erp-btn erp-btn-secondary" data-color="Yellow">Yellow</button>
-                                    <button type="button" class="color-btn plate-color-btn erp-btn erp-btn-secondary" data-color="Black">Black</button>
-                                    <button type="button" class="color-btn plate-color-btn erp-btn erp-btn-secondary" data-color="Special">Special</button>
-                                    <button type="button" class="color-btn plate-color-btn erp-btn erp-btn-secondary" data-color="Cancel">Cancel</button>
+                                    {% for ink in plate_ink_options %}
+                                    <button type="button" class="color-btn plate-color-btn erp-btn erp-btn-secondary" data-color="{{ ink }}">{{ ink }}</button>
+                                    {% endfor %}
                                 </div>
                                 <input type="hidden" id="id_plate_color" name="plate_color" value="{{ plate_request.plate_color|default:'' }}" required>
+                                <div class="erp-form-help">Ink separations for the plate vendor (not the production print-color pattern).</div>
                             </div>
 
                             {% if plate_request.planning_job and plate_request.planning_job.repeat_flag == 'New' %}
@@ -329,9 +356,27 @@
                             </div>
                             {% endif %}
 
-                            <div class="erp-form-field">
-                                <label for="id_plate_quantity" class="erp-form-label">Plate Quantity</label>
-                                <input type="number" id="id_plate_quantity" name="plate_quantity" value="{{ plate_request.plate_quantity|default:'' }}" class="erp-input">
+                            <div class="erp-form-grid">
+                                <div class="erp-form-field">
+                                    <label for="id_sets_required" class="erp-form-label">Sets Required</label>
+                                    <input type="number" id="id_sets_required" name="sets_required" min="1" step="1" value="{{ suggested_sets_required|default:1 }}" class="erp-input" data-suggested="{{ plate_set_suggestion.sets_required|default:1 }}">
+                                    <div class="erp-form-help">
+                                        Suggested from impressions
+                                        ({% if plate_set_suggestion.impressions %}{{ plate_set_suggestion.impressions }}{% else %}—{% endif %})
+                                        ÷ plate life
+                                        ({{ plate_set_suggestion.plate_life_impressions|default:25000 }}).
+                                        Override if needed.
+                                    </div>
+                                </div>
+                                <div class="erp-form-field">
+                                    <label for="id_plate_quantity" class="erp-form-label">Plate Quantity <span class="req">*</span></label>
+                                    <input type="number" id="id_plate_quantity" name="plate_quantity" min="1" step="1" value="{% if suggested_plate_quantity %}{{ suggested_plate_quantity }}{% endif %}" class="erp-input" required>
+                                    <div class="erp-form-help" id="plate-quantity-help">
+                                        Total plates = sets × inks.
+                                        <span id="plate-quantity-preview"></span>
+                                        All sets issued to production together.
+                                    </div>
+                                </div>
                             </div>
 
                             <div class="erp-form-field">
@@ -386,8 +431,31 @@
                             <p style="margin:0;">Available for production. Planning job is updated to "Plate Received".</p>
                         </div>
 
+                    {% elif plate_request.status == 'archived' %}
+                        <div class="plate-detail-empty">
+                            <h4 style="margin:0 0 4px; font-size:0.95rem; font-weight:600; color:#2d3748;">Request Closed</h4>
+                            <p style="margin:0;">{{ plate_request.progress|default:plate_request.get_status_display }}</p>
+                            {% if plate_request.remarks %}<p class="erp-help-text" style="margin-top:8px;">{{ plate_request.remarks }}</p>{% endif %}
+                        </div>
+
                     {% else %}
                         <p class="plate-detail-empty">No actions available for status: {{ plate_request.get_status_display }}</p>
+                    {% endif %}
+
+                    {% if plate_request.status == 'draft' or plate_request.status == 'sent_to_vendor' or plate_request.status == 'received_from_vendor' %}
+                    <form method="POST" action="{% url 'printing_plates:request_action' plate_request.pk %}" class="plate-action-stack" style="margin-top:16px; padding-top:14px; border-top:1px solid #e2e8f0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="cancel_request">
+                        <div class="plate-action-callout is-warning">Plates not required? Cancel this request. It will leave the open queue and be kept in history as archived.</div>
+                        <div class="erp-form-field">
+                            <label for="id_cancel_reason" class="erp-form-label">Cancel reason <span class="req">*</span></label>
+                            <textarea id="id_cancel_reason" name="cancel_reason" rows="2" class="erp-input" required placeholder="e.g. Plates already available / wrong request / not needed for this job"></textarea>
+                        </div>
+                        <button type="submit" class="erp-btn erp-btn-danger" style="width:100%; justify-content:center;"
+                            onclick="return confirm('Cancel this plate request? Plates will be marked as not required.');">
+                            <i class="fas fa-ban"></i> Cancel Request (Plates Not Required)
+                        </button>
+                    </form>
                     {% endif %}
                 {% else %}
                     <div class="plate-detail-empty">
@@ -408,7 +476,40 @@ document.addEventListener("DOMContentLoaded", function() {
     if (!colorInput) return;
 
     const buttons = document.querySelectorAll(".color-btn");
+    const setsInput = document.getElementById("id_sets_required");
+    const qtyInput = document.getElementById("id_plate_quantity");
+    const preview = document.getElementById("plate-quantity-preview");
     let selectedColors = colorInput.value ? colorInput.value.split(",").map(c => c.trim()).filter(Boolean) : [];
+    let qtyOverridden = false;
+
+    function inkCount() {
+        return selectedColors.length;
+    }
+
+    function setsValue() {
+        const value = parseInt(setsInput && setsInput.value, 10);
+        return Number.isFinite(value) && value > 0 ? value : 1;
+    }
+
+    function suggestedQty() {
+        const inks = inkCount();
+        if (inks <= 0) return '';
+        return String(setsValue() * inks);
+    }
+
+    function updateQuantityPreview() {
+        const inks = inkCount();
+        const sets = setsValue();
+        const qty = suggestedQty();
+        if (preview) {
+            preview.textContent = inks
+                ? ` Suggested: ${qty} (${sets} set${sets === 1 ? '' : 's'} × ${inks} ink${inks === 1 ? '' : 's'}).`
+                : ' Select plate inks to calculate total plates.';
+        }
+        if (qtyInput && !qtyOverridden && qty) {
+            qtyInput.value = qty;
+        }
+    }
 
     buttons.forEach(btn => {
         const color = btn.getAttribute("data-color");
@@ -426,8 +527,22 @@ document.addEventListener("DOMContentLoaded", function() {
                 btn.classList.add("is-active");
             }
             colorInput.value = selectedColors.join(", ");
+            updateQuantityPreview();
         });
     });
+
+    if (setsInput) {
+        setsInput.addEventListener("input", function() {
+            qtyOverridden = false;
+            updateQuantityPreview();
+        });
+    }
+    if (qtyInput) {
+        qtyInput.addEventListener("input", function() {
+            qtyOverridden = true;
+        });
+    }
+    updateQuantityPreview();
 });
 
 function quickAddVendor() {

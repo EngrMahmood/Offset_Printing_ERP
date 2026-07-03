@@ -2,14 +2,36 @@
 {% load static %}
 
 {% block title %}{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %} - Offset ERP{% endblock %}
-{% block extra_head %}{% endblock %}
+{% block extra_head %}
+<style>
+    .dispatch-search-wrap { position: relative; }
+    .dispatch-search-results {
+        position: absolute; left: 0; right: 0; z-index: 20;
+        border: 1px solid #c9d9ea; border-radius: 8px; background: #fff;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+        max-height: 240px; overflow: auto; margin-top: 6px; display: none;
+    }
+    .dispatch-search-result-item {
+        width: 100%; text-align: left; background: #fff; border: none;
+        border-bottom: 1px solid #eef2f6; padding: 10px 12px; cursor: pointer; font-size: 13px;
+    }
+    .dispatch-search-result-item:last-child { border-bottom: none; }
+    .dispatch-search-result-item:hover { background: #f5f9ff; }
+    .dispatch-search-result-item .result-main { font-weight: 600; color: #1f3249; }
+    .dispatch-search-result-item .result-meta { margin-top: 3px; font-size: 12px; color: #64748b; }
+    .dispatch-selected-chip {
+        display: inline-flex; align-items: center; gap: 8px; margin-top: 8px;
+        padding: 6px 10px; border-radius: 999px; background: #eef6ff;
+        border: 1px solid #bfdcff; color: #1e3a5f; font-size: 12px; font-weight: 600;
+    }
+    .dispatch-selected-chip.is-hidden { display: none !important; }
+</style>
+{% endblock %}
 {% block header_title %}{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %}{% endblock %}
-{% block header_subtitle %}Log shift output, waste, downtime, and machine execution data against released job cards.{% endblock %}
+{% block header_subtitle %}Log shift printing output, waste, downtime, and machine execution data against released job cards.{% endblock %}
 {% block header_actions %}{% endblock %}
 
 {% block content %}
-    <!-- TEMPLATE_COPY_PRODUCTION_ENTRY_HTML -->
-    {% include 'theme/production_context_nav.html' %}
     <style>
         /* Inline override to enforce job info compact layout immediately */
         .job-info-card { font-size: 11pt !important; }
@@ -46,7 +68,7 @@
                     <div><strong>GSM</strong><div id="ji_gsm" class="job-info-value"></div></div>
                 </div>
                 <div class="job-info-row">
-                    <div><strong>Colors</strong><div id="ji_colors" class="job-info-value"></div></div>
+                    <div><strong>Print Color</strong><div id="ji_colors" class="job-info-value"></div></div>
                     <div><strong>Job Type</strong><div id="ji_job_type" class="job-info-value"></div></div>
                     <div><strong>Due Date</strong><div id="ji_due_date" class="job-info-value"></div></div>
                 </div>
@@ -56,10 +78,22 @@
                     <div><strong>Produced</strong><div id="ji_produced" class="job-info-badge produced"></div></div>
                     <div><strong>Remaining</strong><div id="ji_remaining" class="job-info-badge balance"></div></div>
                 </div>
+                <div class="job-info-row erp-form-grid__full" id="pass_tracking_panel" style="display:none;grid-column:1/-1;">
+                    <div style="grid-column:1/-1;">
+                        <strong>Print Pass Progress</strong>
+                        <div id="ji_pass_type" class="job-info-value" style="margin-bottom:6px;"></div>
+                        <div id="ji_pass_meters" style="display:flex;flex-direction:column;gap:4px;font-size:12px;"></div>
+                        <div id="ji_total_impressions" class="job-info-value" style="margin-top:6px;"></div>
+                        <div id="ji_legacy_notice" class="erp-alert erp-alert-warning" style="display:none;margin-top:8px;font-size:12px;padding:8px 10px;"></div>
+                        <div id="ji_waiting_plate_notice" class="erp-alert erp-alert-warning" style="display:none;margin-top:8px;font-size:12px;padding:8px 10px;">
+                            Waiting for plate — replacement plates are in progress. Printing is still allowed; use care until graphics issues new plates.
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <form id="production_form" method="POST" action="{% url 'production_entry' %}" {% if is_view_mode %}onsubmit="return false;"{% endif %}>
+        <form id="production_form" method="POST" action="{% url 'printing_production_entry' %}" {% if is_view_mode %}onsubmit="return false;"{% endif %}>
             {% csrf_token %}
             <input type="hidden" name="edit_id" value="{{ edit_record.id|default:'' }}">
             {% with view_disabled=is_view_mode|yesno:"disabled," %}
@@ -70,13 +104,19 @@
                 </div>
 
                 <div class="erp-form-grid">
-                    <div class="erp-form-field">
-                        <label for="job_card_search">Search Job Card</label>
-                        <input id="job_card_search" type="text" class="erp-input" placeholder="Search job card by number, SKU, customer..." {{ view_disabled }}>
-                    </div>
-                    <div class="erp-form-field">
-                        <label for="job_card">Job Card</label>
-                        <select id="job_card" name="job_card" class="erp-select" required {{ view_disabled }}>
+                    <div class="erp-form-field erp-form-grid__full dispatch-search-wrap">
+                        <label for="job_card_search">Job Card <span class="required">*</span></label>
+                        <input type="text" id="job_card_search" class="erp-input" placeholder="Search by Job Card No, SKU, PO, or customer..." autocomplete="off" {% if is_view_mode %}disabled{% endif %}>
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;">
+                            <p id="job_card_search_meta" class="erp-help-text" style="margin:0;">Start typing to search job cards.</p>
+                            <button type="button" id="job_card_clear" class="erp-btn erp-btn-secondary" style="padding:4px 10px;font-size:12px;" {% if is_view_mode %}disabled{% endif %}>Clear</button>
+                        </div>
+                        <div id="job_card_selected_chip" class="dispatch-selected-chip is-hidden">
+                            <i class="fas fa-id-card"></i>
+                            <span id="job_card_selected_label">-</span>
+                        </div>
+                        <div id="job_card_results" class="dispatch-search-results"></div>
+                        <select id="job_card" name="job_card" class="erp-select" required style="display:none;" {% if is_view_mode %}disabled{% endif %}>
                             <option value="">Select job card</option>
                             {% for card in job_cards %}
                             <option value="{{ card.id }}" {% if edit_record and edit_record.job_card_id == card.id %}selected{% endif %}>
@@ -149,18 +189,22 @@
 
                     <div class="erp-form-field erp-form-field-full" style="margin-top:1rem;">
                         <h3 class="erp-section-title" style="margin:0;font-size:1rem;">Production Output & Quality</h3>
-                        <p class="erp-card-subtitle" style="margin:0.25rem 0 0;color:#475569;">Record impressions, good sheets, waste and intermediate pass status.</p>
+                        <p class="erp-card-subtitle" style="margin:0.25rem 0 0;color:#475569;">Select the print pass, then record impressions, good sheets (final pass only), and waste.</p>
                     </div>
+
+                    <div class="erp-form-field" id="print_pass_field" style="display:none;">
+                        <label for="print_pass_number">Print Pass <span class="required">*</span></label>
+                        <select id="print_pass_number" name="print_pass_number" class="erp-select" {{ view_disabled }}>
+                            <option value="1">Pass 1</option>
+                        </select>
+                        <p id="print_pass_help" class="erp-help-text">Non-final passes: impressions and waste only. Good sheets on the final pass.</p>
+                    </div>
+                    <input type="hidden" id="print_pass_number_single" name="print_pass_number" value="1" disabled>
 
                     <div class="erp-form-field">
                         <label for="impressions">Impressions Produced</label>
                         <input id="impressions" name="impressions" type="number" min="0" value="{{ edit_record.impressions|default:'' }}" required {{ view_disabled }}>
-                        <p class="erp-help-text">Minimum impressions are advisory only for the selected pass type; the entry will still save unless the total exceeds the allowed maximum.</p>
-                    </div>
-
-                    <div class="erp-form-field" style="display:flex;align-items:center;gap:8px;">
-                        <input id="intermediate_pass" name="intermediate_pass" type="checkbox" {% if edit_record.intermediate_pass %}checked{% endif %} {{ view_disabled }}>
-                        <label for="intermediate_pass" style="margin:0;cursor:pointer;">Intermediate pass (no final usable output)</label>
+                        <p class="erp-help-text">Per-pass and total impression limits are shown in Job Information above.</p>
                     </div>
 
                     <div class="erp-form-field">
@@ -289,10 +333,10 @@
                         <tr>
                             <th>Date</th>
                             <th>Shift</th>
+                            <th>Pass</th>
                             <th>Impressions</th>
                             <th>Good</th>
                             <th>Waste</th>
-                            <th>Intermediate</th>
                             <th>Run Time</th>
                             <th>Make Ready</th>
                             <th>Downtime</th>
@@ -319,10 +363,11 @@
     <script>
         window.JOB_INFO_MAP = {{ job_card_info_json|safe }};
         window.JOB_MACHINE_MAP = {{ job_card_machine_json|safe }};
+        window.PRINTING_JOB_SEARCH_URL = "{% url 'printing_job_card_search' %}";
         window.CURRENT_RECORD_IMPRESSIONS = {{ edit_record.impressions|default:'null' }};
         window.CURRENT_RECORD_ID = {{ edit_record.id|default:'null' }};
+        window.EDIT_RECORD_PASS = {{ edit_record.print_pass_number|default:'null' }};
         window.IS_VIEW_MODE = {{ is_view_mode|yesno:"true,false" }};
-        // TEMPLATE_UPDATED_VIEW_MODE
     </script>
     <!-- Master-data modal -->
     <div id="master_modal" class="modal is-hidden" role="dialog" aria-modal="true" aria-hidden="true" style="position:fixed;left:0;top:0;width:100%;height:100%;display:flex;align-items:center;justify-content:center;z-index:2000;">

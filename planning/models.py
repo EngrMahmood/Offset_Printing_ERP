@@ -96,6 +96,16 @@ class PlanningJob(models.Model):
 
     front_pass = models.PositiveIntegerField(null=True, blank=True)
     back_pass = models.PositiveIntegerField(null=True, blank=True)
+    JOB_PROCESS_TYPE_CHOICES = [
+        ('print_and_pack', 'Print + Pack'),
+        ('cut_and_pack', 'Cut & Pack (no printing)'),
+    ]
+    job_process_type = models.CharField(
+        max_length=20,
+        choices=JOB_PROCESS_TYPE_CHOICES,
+        default='print_and_pack',
+        db_index=True,
+    )
     print_passes = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
@@ -425,28 +435,15 @@ class PlanningJob(models.Model):
 
     @property
     def number_of_colors(self):
+        from core.print_colors import print_color_total_units
+
+        units = print_color_total_units(self.color_spec_display)
+        if units:
+            return units
         if self.total_colors is not None:
             return self.total_colors
         if self.front_colors is not None or self.back_colors is not None:
             return (self.front_colors or 0) + (self.back_colors or 0)
-
-        raw_value = (self.color_spec_display or '').strip()
-        if not raw_value:
-            return None
-
-        plus_match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw_value)
-        if plus_match:
-            return int(plus_match.group(1)) + int(plus_match.group(2))
-
-        single_match = re.fullmatch(r'(\d+)\s*(?:colou?r(?:s)?)?', raw_value, re.IGNORECASE)
-        if single_match:
-            return int(single_match.group(1))
-
-        numbers = re.findall(r'\d+', raw_value)
-        if len(numbers) == 1:
-            return int(numbers[0])
-        if len(numbers) == 2:
-            return int(numbers[0]) + int(numbers[1])
         return None
 
     @property
@@ -480,6 +477,19 @@ class PlanningJob(models.Model):
         return self.plate_requests.filter(status='available_for_production').exists()
 
     @property
+    def latest_cancelled_plate_request(self):
+        """Most recent plate request cancelled by graphics (plates not required)."""
+        for req in self.plate_requests.all():
+            if getattr(req, 'is_cancelled', False):
+                return req
+        # Fallback if not prefetched / ordering differs
+        return (
+            self.plate_requests.filter(progress__istartswith='Cancelled')
+            .order_by('-requested_at', '-created_at', '-id')
+            .first()
+        )
+
+    @property
     def effective_machine_name(self):
         if str(self.machine_name or '').strip():
             return str(self.machine_name).strip()
@@ -497,8 +507,17 @@ class PlanningJob(models.Model):
             return str(recipe.plate_set_no).strip()
         return ''
 
+    def is_cut_and_pack(self):
+        return (self.job_process_type or 'print_and_pack') == 'cut_and_pack'
+
     def pre_submit_qc_validation_errors(self):
         errors = {}
+        if self.is_cut_and_pack:
+            if self.wastage_sheets is None:
+                errors['wastage_sheets'] = 'Wastage is required before QC approval.'
+            if not str(self.purchase_material_origin or '').strip():
+                errors['purchase_material_origin'] = 'Purchase Material Origin is required before QC approval.'
+            return errors
         if not self.effective_plate_set_no:
             errors['plate_set_no'] = 'Plate Set is required before QC approval.'
         if self.wastage_sheets is None:
@@ -526,6 +545,8 @@ class PlanningJob(models.Model):
         super().clean()
 
     def save(self, *args, **kwargs):
+        from core.print_colors import apply_print_color_to_planning_job
+
         update_fields = kwargs.get('update_fields')
         if update_fields is not None:
             update_fields = set(update_fields)
@@ -533,6 +554,11 @@ class PlanningJob(models.Model):
         self.status = self.workflow_status
         if update_fields is not None:
             update_fields.add('status')
+
+        if apply_print_color_to_planning_job(self):
+            if update_fields is not None:
+                update_fields.add('color_spec')
+                update_fields.add('total_colors')
 
         calculated_total_sheet_quantity = self.calculated_sheets_required
         if calculated_total_sheet_quantity is not None:

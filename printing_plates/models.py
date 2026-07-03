@@ -17,6 +17,32 @@ class PlateRequest(models.Model):
         (STATUS_ARCHIVED, 'Archived'),
     ]
 
+    SOURCE_REPLACEMENT = 'replacement'
+    SOURCE_PLANNING = 'planning'
+    SOURCE_PRODUCTION_PLATE_DAMAGE = 'production_plate_damage'
+
+    REASON_DAMAGED_DURING_RUN = 'damaged_during_run'
+    REASON_DAMAGED_BEFORE_PRINTING = 'damaged_before_printing'
+    REASON_WRONG_PLATES = 'wrong_plates_received'
+    REASON_WORN_OUT = 'worn_out'
+    REASON_VENDOR_DEFECT = 'vendor_defect'
+    REASON_OTHER = 'other'
+
+    REPLACEMENT_REASON_CHOICES = [
+        (REASON_DAMAGED_DURING_RUN, 'Damaged during run'),
+        (REASON_DAMAGED_BEFORE_PRINTING, 'Damaged before printing'),
+        (REASON_WRONG_PLATES, 'Wrong plates received'),
+        (REASON_WORN_OUT, 'Worn out'),
+        (REASON_VENDOR_DEFECT, 'Vendor defect'),
+        (REASON_OTHER, 'Other'),
+    ]
+
+    OPEN_STATUSES = (
+        STATUS_DRAFT,
+        STATUS_SENT,
+        STATUS_RECEIVED,
+    )
+
     planning_job = models.ForeignKey(
         'planning.PlanningJob',
         on_delete=models.PROTECT,
@@ -61,10 +87,33 @@ class PlateRequest(models.Model):
     new_set_no = models.CharField(max_length=120, blank=True)
     awc_no = models.CharField(max_length=120, blank=True)
     plate_quantity = models.PositiveIntegerField(null=True, blank=True)
+    sets_required = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text='Number of plate sets ordered (all issued to production together for now)',
+    )
     plate_color = models.CharField(max_length=120, blank=True)
     vendor = models.CharField(max_length=120, blank=True)
     remarks = models.TextField(blank=True)
     source = models.CharField(max_length=120, blank=True)
+    replacement_reason = models.CharField(
+        max_length=40,
+        choices=REPLACEMENT_REASON_CHOICES,
+        blank=True,
+        default='',
+    )
+    damaged_colors = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text='Colours needing remake, e.g. Cyan, Magenta',
+    )
+    replaces_request = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='replacement_requests',
+    )
     impression = models.CharField(max_length=120, blank=True)
     progress = models.CharField(max_length=120, blank=True)
     challan = models.CharField(max_length=120, blank=True)
@@ -114,6 +163,7 @@ class PlateRequest(models.Model):
             models.Index(fields=['planning_job']),
             models.Index(fields=['status']),
             models.Index(fields=['requested_at']),
+            models.Index(fields=['source']),
         ]
         verbose_name = 'Plate Request'
         verbose_name_plural = 'Plate Requests'
@@ -165,14 +215,25 @@ class PlateRequest(models.Model):
         return ''
 
     @property
+    def print_color_display(self):
+        if self.planning_job and (self.planning_job.color_spec or '').strip():
+            return self.planning_job.color_spec.strip()
+        if self.sku_recipe and (self.sku_recipe.color_spec or '').strip():
+            return self.sku_recipe.color_spec.strip()
+        if self.job_card and (self.job_card.colour or '').strip():
+            return self.job_card.colour.strip()
+        return ''
+
+    @property
     def no_of_colors(self):
+        from core.print_colors import print_color_total_units
+
         if self.job_card and self.job_card.total_colors is not None:
             return self.job_card.total_colors
-        if self.planning_job and self.planning_job.total_colors is not None:
-            return self.planning_job.total_colors
-        if self.planning_job and self.planning_job.color_spec:
-            return self.planning_job.color_spec
-        return ''
+        if self.planning_job and self.planning_job.number_of_colors is not None:
+            return self.planning_job.number_of_colors
+        units = print_color_total_units(self.print_color_display)
+        return units or ''
 
     @property
     def impressions(self):
@@ -181,6 +242,12 @@ class PlateRequest(models.Model):
         if self.planning_job and self.planning_job.planned_total_impressions is not None:
             return self.planning_job.planned_total_impressions
         return None
+
+    @property
+    def plate_quantity_display(self):
+        from printing_plates.plate_set_helpers import format_plate_quantity_display
+
+        return format_plate_quantity_display(self.plate_quantity, self.sets_required)
 
     @property
     def jc_number(self):
@@ -222,6 +289,8 @@ class PlateRequest(models.Model):
 
     @property
     def plate_request_type(self):
+        if self.is_replacement:
+            return 'Replacement'
         flag = ''
         if self.planning_job:
             flag = self.planning_job.repeat_flag
@@ -233,5 +302,63 @@ class PlateRequest(models.Model):
         elif flag == 'Repeat':
             return 'Repeat'
         return ''
+
+    @property
+    def is_replacement(self):
+        return (self.source or '') in {
+            self.SOURCE_REPLACEMENT,
+            self.SOURCE_PRODUCTION_PLATE_DAMAGE,
+        } or bool(self.replacement_reason)
+
+    @property
+    def display_set_no(self):
+        value = (self.set_no or self.new_set_no or '').strip()
+        if value:
+            return value
+        if self.planning_job and (self.planning_job.plate_set_no or '').strip():
+            return self.planning_job.plate_set_no.strip()
+        if self.job_card and (self.job_card.plate_set_no or '').strip():
+            return self.job_card.plate_set_no.strip()
+        return ''
+
+    @property
+    def display_awc_no(self):
+        value = (self.awc_no or '').strip()
+        if value:
+            return value
+        if self.planning_job:
+            return (self.planning_job.awc_no_display or '').strip()
+        return ''
+
+    @property
+    def is_open(self):
+        return self.status in self.OPEN_STATUSES
+
+    @property
+    def is_cancelled(self):
+        progress = (self.progress or '').strip().lower()
+        remarks = (self.remarks or '').lower()
+        return progress.startswith('cancelled') or 'cancelled — plates not required' in remarks
+
+    @property
+    def status_label_display(self):
+        if self.is_cancelled:
+            return 'Cancelled'
+        return self.get_status_display()
+
+    @property
+    def cancel_reason_display(self):
+        if not self.is_cancelled:
+            return ''
+        remarks = (self.remarks or '').strip()
+        for line in remarks.splitlines():
+            lowered = line.lower()
+            if 'plates not required' in lowered:
+                return line.split(':', 1)[-1].strip() or line.strip()
+        return remarks
+
+    @property
+    def replacement_reason_display(self):
+        return self.get_replacement_reason_display() if self.replacement_reason else ''
 
 

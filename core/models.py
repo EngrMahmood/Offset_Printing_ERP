@@ -20,6 +20,10 @@ class Machine(models.Model):
         default=15,
         help_text="Default setup/make-ready minutes per color for planning"
     )
+    plate_life_impressions = models.PositiveIntegerField(
+        default=25000,
+        help_text="Impressions one plate set can run before a replacement set is needed",
+    )
 
     is_active = models.BooleanField(default=True)
 
@@ -58,6 +62,40 @@ class ProductType(models.Model):
         return self.name
 
 
+class PrintColor(models.Model):
+    """Production print-colour patterns (1, 2, 4, 1+1, 2+1, …). Admin-managed master."""
+
+    name = models.CharField(
+        max_length=20,
+        unique=True,
+        help_text='Production colour pattern, e.g. 1, 2, 4, 1+1, 2+1',
+    )
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name = 'Print Color'
+        verbose_name_plural = 'Print Colors'
+
+    def __str__(self):
+        return self.name
+
+    @property
+    def total_units(self):
+        """Numeric colour units for setup/pass logic (1+1 → 2, 4 → 4)."""
+        import re
+        raw = (self.name or '').strip()
+        match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw)
+        if match:
+            return int(match.group(1)) + int(match.group(2))
+        match = re.fullmatch(r'(\d+)', raw)
+        if match:
+            return int(match.group(1))
+        return 0
+
+
 class Material(models.Model):
     name = models.CharField(max_length=100, unique=True)
 
@@ -80,6 +118,17 @@ class Supervisor(models.Model):
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
+        return self.name
+
+
+class Sorter(models.Model):
+    name = models.CharField(max_length=100)
+    employee_code = models.CharField(max_length=50, null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        if self.employee_code:
+            return f'{self.name} ({self.employee_code})'
         return self.name
 
 
@@ -500,7 +549,7 @@ class JobCard(models.Model):
 
     @property
     def extra_sheets_used(self):
-        total_consumed = self.productions.filter(is_active=True).aggregate(
+        total_consumed = self.printing_productions.aggregate(
             total_output=Sum('output_sheets'),
             total_waste=Sum('waste_sheets'),
         )
@@ -509,13 +558,49 @@ class JobCard(models.Model):
     
     @property
     def total_production(self):
-        return self.productions.filter(is_active=True).aggregate(total=Sum('output_sheets'))['total'] or 0
+        return self.printing_productions.aggregate(total=Sum('output_sheets'))['total'] or 0
+
+    @property
+    def printing_productions(self):
+        return self.productions.filter(is_active=True, entry_type='printing')
+
+    @property
+    def packing_productions(self):
+        return self.productions.filter(is_active=True, entry_type='packing')
+
+    @property
+    def total_printed_pcs(self):
+        return sum(p.pcs_produced for p in self.printing_productions)
 
     @property
     def total_production_pcs(self):
-        return sum(
-            p.pcs_produced for p in self.productions.filter(is_active=True)
-        )
+        return self.total_printed_pcs
+
+    @property
+    def total_packed_pcs(self):
+        return self.packing_productions.aggregate(total=Sum('packing_qty'))['total'] or 0
+
+    @property
+    def total_sorting_waste_pcs(self):
+        return self.packing_productions.aggregate(total=Sum('sorting_waste_qty'))['total'] or 0
+
+    @property
+    def total_packing_used_pcs(self):
+        return int(self.total_packed_pcs or 0) + int(self.total_sorting_waste_pcs or 0)
+
+    @property
+    def packing_limit_pcs(self):
+        if self.is_print_job:
+            return int(self.total_printed_pcs or 0)
+        return int(self.order_qty or 0)
+
+    @property
+    def remaining_packing_allowance_pcs(self):
+        return max(0, self.packing_limit_pcs - self.total_packing_used_pcs)
+
+    @property
+    def process_type_label(self):
+        return 'Print + Pack' if self.is_print_job else 'Cut & Pack'
 
     @property
     def total_dispatch(self):
@@ -579,16 +664,33 @@ class Production(models.Model):
         
             ]
 
+    ENTRY_TYPE_CHOICES = [
+        ('printing', 'Printing'),
+        ('packing', 'Packing'),
+    ]
+
+    entry_type = models.CharField(
+        max_length=20,
+        choices=ENTRY_TYPE_CHOICES,
+        default='printing',
+        db_index=True,
+    )
+
     job_card = models.ForeignKey('JobCard', on_delete=models.CASCADE, related_name='productions')
 
     date = models.DateField()
     shift = models.CharField(max_length=1, choices=SHIFT_CHOICES)
 
-    machine = models.ForeignKey('Machine', on_delete=models.PROTECT)
+    machine = models.ForeignKey('Machine', on_delete=models.PROTECT, null=True, blank=True)
 
-    output_sheets = models.PositiveIntegerField()
+    output_sheets = models.PositiveIntegerField(default=0)
     waste_sheets = models.PositiveIntegerField(default=0)
     intermediate_pass = models.BooleanField(default=False, help_text="Mark as an intermediate print pass with no final usable output")
+    print_pass_number = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text='Which print pass this run belongs to (1..N from planning).',
+    )
 
     WASTE_CHOICES = [
         ('paper_jam', 'Paper Jam (Affects OEE Quality)'),
@@ -607,10 +709,29 @@ class Production(models.Model):
         help_text="Primary reason for waste"
     )
 
-    impressions = models.PositiveIntegerField(help_text="Total impressions produced (sheets × passes)")
+    impressions = models.PositiveIntegerField(
+        default=0,
+        help_text="Total impressions produced (sheets × passes)",
+    )
 
-    planned_time = models.FloatField(help_text="in minutes")
-    run_time = models.FloatField(help_text="in minutes")
+    packing_qty = models.PositiveIntegerField(
+        default=0,
+        help_text="Good pieces packed (dispatchable)",
+    )
+    sorting_waste_qty = models.PositiveIntegerField(
+        default=0,
+        help_text="Pieces rejected during sorting",
+    )
+    sorter = models.ForeignKey(
+        'Sorter',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        limit_choices_to={'is_active': True},
+    )
+
+    planned_time = models.FloatField(default=0, help_text="in minutes")
+    run_time = models.FloatField(default=0, help_text="in minutes")
     downtime_minutes = models.FloatField(default=0, help_text="in minutes")
     make_ready_time = models.FloatField(default=0, help_text="in minutes")
 
@@ -677,6 +798,8 @@ class Production(models.Model):
 
     @property
     def pcs_produced(self):
+        if self.entry_type != 'printing':
+            return 0
         if self.job_card.ups:
             return self.output_sheets * self.job_card.ups
         return 0
@@ -719,11 +842,44 @@ class Production(models.Model):
                 'Production can only start after the Job Card has been released for execution.'
             )
 
-        existing = Production.objects.filter(job_card=self.job_card, is_active=True)\
-            .exclude(id=self.id)\
-            .aggregate(
-                total_output=Sum('output_sheets'),
-                total_waste=Sum('waste_sheets')
+        if self.entry_type == 'packing':
+            packing_qty = int(self.packing_qty or 0)
+            sorting_waste = int(self.sorting_waste_qty or 0)
+            if packing_qty < 0 or sorting_waste < 0:
+                errors['packing_qty'] = 'Packing and sorting waste quantities cannot be negative.'
+            if packing_qty == 0 and sorting_waste == 0:
+                errors['packing_qty'] = 'Enter packing qty and/or sorting waste qty.'
+            if not self.sorter_id:
+                errors['sorter'] = 'Sorter is required for packing entry.'
+            if not self.shift:
+                errors['shift'] = 'Shift is required.'
+
+            existing_used = Production.objects.filter(
+                job_card=self.job_card,
+                is_active=True,
+                entry_type='packing',
+            ).exclude(id=self.id).aggregate(
+                packed=Sum('packing_qty'),
+                waste=Sum('sorting_waste_qty'),
+            )
+            already_used = int(existing_used['packed'] or 0) + int(existing_used['waste'] or 0)
+            limit = self.job_card.packing_limit_pcs if self.job_card else 0
+            if already_used + packing_qty + sorting_waste > limit:
+                errors['packing_qty'] = (
+                    f'Packing qty + sorting waste cannot exceed allowed limit ({limit:,} pcs). '
+                    f'Already logged: {already_used:,}; remaining: {max(0, limit - already_used):,}.'
+                )
+            if errors:
+                raise ValidationError(errors)
+            return
+
+        existing = Production.objects.filter(
+            job_card=self.job_card,
+            is_active=True,
+            entry_type='printing',
+        ).exclude(id=self.id).aggregate(
+            total_output=Sum('output_sheets'),
+            total_waste=Sum('waste_sheets'),
         )
 
         existing_output = existing['total_output'] or 0
@@ -732,12 +888,22 @@ class Production(models.Model):
         total_existing_consumption = existing_output + existing_waste
         current_consumption = (self.output_sheets or 0) + (self.waste_sheets or 0)
 
-    # 🔴 MAIN VALIDATION (FIXED)
         if total_existing_consumption + current_consumption > self.job_card.total_sheets_allowed_with_tolerance:
             errors['output_sheets'] = (
                 "Total sheets (production + waste) exceed allowed sheets with tolerance! "
                 f"Allowed: {self.job_card.total_sheets_allowed_with_tolerance}"
             )
+
+        if self.print_pass_number and self.job_card:
+            from production.printing_pass_helpers import get_job_card_pass_count
+            total_passes = get_job_card_pass_count(self.job_card)
+            if self.print_pass_number < 1 or self.print_pass_number > total_passes:
+                errors['print_pass_number'] = f'Print pass must be between 1 and {total_passes}.'
+            elif self.print_pass_number < total_passes and (self.output_sheets or 0) > 0:
+                errors['output_sheets'] = 'Good sheets are only allowed on the final print pass.'
+            elif self.print_pass_number >= total_passes and (self.output_sheets or 0) <= 0:
+                errors['output_sheets'] = 'Good sheets are required on the final print pass.'
+            self.intermediate_pass = self.print_pass_number < total_passes
 
         # Impressions validation
         if self.impressions < 0:
@@ -746,6 +912,7 @@ class Production(models.Model):
         existing_impressions = Production.objects.filter(
             job_card=self.job_card,
             is_active=True,
+            entry_type='printing',
         ).exclude(id=self.id).aggregate(total_impressions=Sum('impressions'))
         total_existing_impressions = existing_impressions['total_impressions'] or 0
         total_impressions = total_existing_impressions + (self.impressions or 0)
@@ -1028,15 +1195,19 @@ class Dispatch(models.Model):
         total_after = existing_dispatch + (self.dispatch_qty or 0)
 
         if self.job_card.is_print_job:
-            total_production = self.job_card.total_production_pcs
+            total_production = self.job_card.total_packed_pcs
             if total_after > total_production:
-                if self.job_card.ups in (None, 0) and self.job_card.productions.filter(is_active=True).exists():
+                if self.job_card.ups in (None, 0) and self.job_card.packing_productions.exists():
+                    errors['dispatch_qty'] = (
+                        "Dispatch cannot be validated because no packed quantity is recorded yet."
+                    )
+                elif self.job_card.ups in (None, 0) and self.job_card.printing_productions.exists():
                     errors['dispatch_qty'] = (
                         "Dispatch cannot be validated because print job UPS is missing. "
                         "Please set UPS on the job card before dispatching."
                     )
                 else:
-                    errors['dispatch_qty'] = "Dispatch cannot exceed total produced quantity!"
+                    errors['dispatch_qty'] = "Dispatch cannot exceed total packed quantity!"
         else:
             # Cut & Pack jobs: dispatch directly against order qty (no production entry needed)
             if total_after > self.job_card.order_qty:

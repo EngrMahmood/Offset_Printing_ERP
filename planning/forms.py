@@ -11,9 +11,15 @@ _COLOR_SINGLE_RE = re.compile(r'^(\d+)\s*(?:colou?r(?:s)?)?$', re.IGNORECASE)
 
 
 def _normalize_color_spec_value(raw_value):
+    from core.print_colors import resolve_print_color_name
+
     raw_text = str(raw_value or '').strip()
     if not raw_text:
         return ''
+
+    resolved = resolve_print_color_name(raw_text)
+    if resolved:
+        return resolved
 
     lowered = raw_text.lower()
     if re.search(r'color|colour|colours|colors', lowered):
@@ -38,17 +44,21 @@ def _normalize_color_spec_value(raw_value):
 
     plus_match = _COLOR_PLUS_RE.fullmatch(normalized)
     if plus_match:
-        return f"{int(plus_match.group(1))}+{int(plus_match.group(2))}"
+        candidate = f"{int(plus_match.group(1))}+{int(plus_match.group(2))}"
+        return resolve_print_color_name(candidate) or candidate
 
     single_match = _COLOR_SINGLE_RE.fullmatch(normalized)
     if single_match:
-        return f"{int(single_match.group(1))} color"
+        candidate = str(int(single_match.group(1)))
+        return resolve_print_color_name(candidate) or candidate
 
     numbers = re.findall(r'[0-9]+', normalized)
     if len(numbers) == 1:
-        return f"{int(numbers[0])} color"
+        candidate = str(int(numbers[0]))
+        return resolve_print_color_name(candidate) or candidate
     if len(numbers) == 2:
-        return f"{int(numbers[0])}+{int(numbers[1])}"
+        candidate = f"{int(numbers[0])}+{int(numbers[1])}"
+        return resolve_print_color_name(candidate) or candidate
 
     return raw_text
 
@@ -97,6 +107,7 @@ class PlanningJobFinalizationForm(forms.ModelForm):
     class Meta:
         model = PlanningJob
         fields = [
+            'job_process_type',
             'delivery_date',
             'wastage_sheets',
             'print_passes',
@@ -111,6 +122,7 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             'requirement': forms.Textarea(attrs={'rows': 3}),
         }
         labels = {
+            'job_process_type': 'Job Process',
             'print_passes': 'No. of Passes',
             'requirement': 'Special Instructions',
             'purchase_material_origin': 'Purchase Material Origin',
@@ -142,6 +154,16 @@ class PlanningJobFinalizationForm(forms.ModelForm):
                 choices=PURCHASE_MATERIAL_ORIGIN_CHOICES,
                 attrs={'class': 'erp-select'},
             )
+        if 'job_process_type' in self.fields:
+            self.fields['job_process_type'].widget = forms.Select(
+                attrs={'class': 'erp-select', 'id': 'id_job_process_type'},
+            )
+
+    def _is_cut_and_pack(self):
+        value = self.data.get('job_process_type') if self.data else None
+        if value:
+            return value == 'cut_and_pack'
+        return self.instance.is_cut_and_pack() if self.instance and self.instance.pk else False
 
     def clean_print_passes(self):
         value = self.cleaned_data.get('print_passes')
@@ -154,14 +176,17 @@ class PlanningJobFinalizationForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
+        cut_and_pack = (cleaned.get('job_process_type') or getattr(self.instance, 'job_process_type', '') or 'print_and_pack') == 'cut_and_pack'
+
         required_messages = {
             'delivery_date': 'Delivery Date is required.',
             'wastage_sheets': 'Wastage Sheets is required.',
-            'print_passes': 'No. of Passes is required.',
             'purchase_material_origin': 'Purchase Material Origin is required.',
             'destination': 'Destination is required.',
             'requirement': 'Special Instructions is required.',
         }
+        if not cut_and_pack:
+            required_messages['print_passes'] = 'No. of Passes is required.'
 
         for field_name, message in required_messages.items():
             value = cleaned.get(field_name)
@@ -169,11 +194,16 @@ class PlanningJobFinalizationForm(forms.ModelForm):
                 if value is None:
                     self.add_error(field_name, message)
             elif field_name == 'print_passes':
-                if value is None:
+                if not cut_and_pack and value is None:
                     self.add_error(field_name, message)
             else:
                 if not str(value or '').strip():
                     self.add_error(field_name, message)
+
+        if cut_and_pack:
+            cleaned['print_passes'] = None
+            cleaned['planned_total_impressions'] = None
+            return cleaned
 
         print_passes = cleaned.get('print_passes')
         if print_passes and not self.errors.get('print_passes') and not self.errors.get('wastage_sheets'):
@@ -191,7 +221,7 @@ class PlanningJobFinalizationForm(forms.ModelForm):
                 cleaned['planned_total_impressions'] = preview_job.calculated_planned_total_impressions
 
         status = (cleaned.get('status') or self.instance.status or '').strip().lower()
-        if status in PLANNING_QC_GATE_STATUSES:
+        if status in PLANNING_QC_GATE_STATUSES and not cut_and_pack:
             if not getattr(self.instance, 'plate_set_no', '').strip():
                 self.add_error(None, 'Plate Set is required before QC approval.')
 
@@ -265,6 +295,7 @@ class SkuRecipeForm(forms.ModelForm):
         app_field.widget.attrs.setdefault('required', 'required')
 
         from core.models import Machine, ProductType
+        from core.print_colors import get_print_color_choices
 
         product_types = ProductType.objects.all().order_by('name')
         product_type_choices = [('', 'Select Product Type')] + [(item.name, item.name) for item in product_types]
@@ -285,6 +316,14 @@ class SkuRecipeForm(forms.ModelForm):
             machine_choices.append((current_value, current_value))
         self.fields['machine_name'].widget = forms.Select(choices=machine_choices, attrs={'class': 'erp-select', 'style': 'flex: 1;'})
 
+        current_color = self.instance.color_spec if self.instance else None
+        self.fields['color_spec'].widget = forms.Select(
+            choices=get_print_color_choices(include_legacy=current_color),
+            attrs={'class': 'erp-select', 'style': 'flex: 1;'},
+        )
+        self.fields['color_spec'].label = 'Print Color'
+        self.fields['color_spec'].help_text = 'Production colour pattern (1, 2, 4, 1+1, …). Admin manages the list.'
+
         self.fields['job_name'].widget.attrs.setdefault('required', 'required')
         self.fields['material'].widget.attrs.setdefault('required', 'required')
         self.fields['color_spec'].widget.attrs.setdefault('required', 'required')
@@ -298,25 +337,28 @@ class SkuRecipeForm(forms.ModelForm):
         self.fields['size_w_mm'].widget.attrs.setdefault('required', 'required')
         self.fields['size_h_mm'].widget.attrs.setdefault('required', 'required')
         self.fields['material'].label = 'Material Type'
+        self.fields['awc_no'].label = 'AWC #'
+        self.fields['awc_no'].help_text = 'Artwork code unique to this SKU/design. Cannot be reused on another SKU.'
 
-        self.fields['color_spec'].widget.attrs.setdefault('placeholder', 'e.g. 4 color or 1+1')
         if 'die_cutting' in self.fields:
             self.fields['die_cutting'].widget.attrs.setdefault('required', 'required')
 
     def clean_color_spec(self):
-        value = _normalize_color_spec_value(self.cleaned_data.get('color_spec'))
+        from core.print_colors import resolve_print_color_name
+
+        value = str(self.cleaned_data.get('color_spec') or '').strip()
         if not value:
             return ''
 
-        plus_match = _COLOR_PLUS_RE.fullmatch(value)
-        if plus_match:
-            return f"{int(plus_match.group(1))}+{int(plus_match.group(2))}"
+        resolved = resolve_print_color_name(value)
+        if resolved:
+            return resolved
 
-        single_match = _COLOR_SINGLE_RE.fullmatch(value)
-        if single_match:
-            return f"{int(single_match.group(1))} color"
+        current = (self.instance.color_spec if self.instance and self.instance.pk else '') or ''
+        if current and value == current:
+            return value
 
-        raise forms.ValidationError('Use color format like 4 color or 1+1.')
+        raise forms.ValidationError('Select a print color from the master list (admin can add new values).')
 
     def clean_application(self):
         value = _normalize_application_value(self.cleaned_data.get('application'))
@@ -327,6 +369,23 @@ class SkuRecipeForm(forms.ModelForm):
         if value in allowed:
             return value
         raise forms.ValidationError('Select Application as UV, Lamination Gloss, Lamination Matt, or NO.')
+
+    def clean_awc_no(self):
+        from planning.services import get_awc_conflict_message
+
+        value = str(self.cleaned_data.get('awc_no') or '').strip()
+        if not value:
+            return ''
+
+        sku = str(self.cleaned_data.get('sku') or getattr(self.instance, 'sku', '') or '').strip()
+        conflict = get_awc_conflict_message(
+            value,
+            sku=sku,
+            exclude_recipe_id=self.instance.pk if self.instance and self.instance.pk else None,
+        )
+        if conflict:
+            raise forms.ValidationError(conflict)
+        return value
 
     def _normalize_decimal_field(self, value):
         if value is None:
@@ -340,6 +399,15 @@ class SkuRecipeForm(forms.ModelForm):
 
     def clean_size_h_mm(self):
         return self._normalize_decimal_field(self.cleaned_data.get('size_h_mm'))
+
+    def save(self, commit=True):
+        from core.print_colors import apply_print_color_to_sku_recipe
+
+        recipe = super().save(commit=False)
+        apply_print_color_to_sku_recipe(recipe)
+        if commit:
+            recipe.save()
+        return recipe
 
 
 class JobCardLayoutForm(forms.ModelForm):

@@ -198,7 +198,12 @@
                             {% elif job.status == 'released' %}
                                 <span class="erp-badge erp-badge-dark">Planning Done</span>
                             {% else %}
-                                <span style="color:#999;">—</span>
+                                <span style="color:#999;">-</span>
+                            {% endif %}
+                            {% if job.latest_cancelled_plate %}
+                            <div style="margin-top:4px;">
+                                <span class="erp-badge erp-badge-danger" title="{% if job.latest_cancelled_plate.cancel_reason_display %}{{ job.latest_cancelled_plate.cancel_reason_display }}{% else %}Plates not required{% endif %}">Plate Cancelled</span>
+                            </div>
                             {% endif %}
                         </td>
                         <td>{% if job.planning_stage_changed_by_display %}{{ job.planning_stage_changed_by_display }}{% if job.planning_stage_changed_at %} @ {{ job.planning_stage_changed_at|date:'Y-m-d H:i' }}{% endif %}{% else %}-{% endif %}</td>

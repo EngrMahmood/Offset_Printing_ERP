@@ -1,0 +1,214 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}{% if is_view_mode %}View Packing Entry{% elif edit_record %}Edit Packing Entry{% else %}Packing Production Entry{% endif %} - Offset ERP{% endblock %}
+{% block header_title %}{% if is_view_mode %}View Packing Entry{% elif edit_record %}Edit Packing Entry{% else %}Packing Production Entry{% endif %}{% endblock %}
+{% block header_subtitle %}Log packed pieces and sorting waste against released job cards.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dispatch-search-wrap { position: relative; }
+    .dispatch-search-results {
+        position: absolute; left: 0; right: 0; z-index: 20;
+        border: 1px solid #c9d9ea; border-radius: 8px; background: #fff;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+        max-height: 240px; overflow: auto; margin-top: 6px; display: none;
+    }
+    .dispatch-search-result-item {
+        width: 100%; text-align: left; background: #fff; border: none;
+        border-bottom: 1px solid #eef2f6; padding: 10px 12px; cursor: pointer; font-size: 13px;
+    }
+    .dispatch-search-result-item:last-child { border-bottom: none; }
+    .dispatch-search-result-item:hover { background: #f5f9ff; }
+    .dispatch-search-result-item .result-main { font-weight: 600; color: #1f3249; }
+    .dispatch-search-result-item .result-meta { margin-top: 3px; font-size: 12px; color: #64748b; }
+    .dispatch-selected-chip {
+        display: inline-flex; align-items: center; gap: 8px; margin-top: 8px;
+        padding: 6px 10px; border-radius: 999px; background: #eef6ff;
+        border: 1px solid #bfdcff; color: #1e3a5f; font-size: 12px; font-weight: 600;
+    }
+    .dispatch-selected-chip.is-hidden { display: none !important; }
+</style>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack production-entry packing-entry">
+
+        {% if messages %}
+            {% for message in messages %}
+                <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+
+        <div class="erp-card-shell job-info-card is-hidden" id="job_info_card">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h2 class="erp-section-title">Job Context</h2>
+                    <p class="erp-card-subtitle">Read-only — packing limit and balances</p>
+                </div>
+            </div>
+            <div class="job-info-grid" style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0.75rem 1rem;">
+                <div><strong>Job Card</strong><div id="ji_job_card" class="job-info-value"></div></div>
+                <div><strong>SKU</strong><div id="ji_sku" class="job-info-value"></div></div>
+                <div><strong>Product</strong><div id="ji_product" class="job-info-value"></div></div>
+                <div><strong>Process</strong><div id="ji_process" class="job-info-value"></div></div>
+                <div><strong>Order Qty</strong><div id="ji_order_qty" class="job-info-badge"></div></div>
+                <div><strong>Produced Pcs</strong><div id="ji_produced_pcs" class="job-info-badge"></div></div>
+                <div><strong>Pack Limit</strong><div id="ji_pack_limit" class="job-info-badge"></div></div>
+                <div><strong>Already Packed</strong><div id="ji_packed" class="job-info-badge produced"></div></div>
+                <div><strong>Sorting Waste</strong><div id="ji_sort_waste" class="job-info-value"></div></div>
+                <div><strong>Used (Pack+Waste)</strong><div id="ji_used" class="job-info-value"></div></div>
+                <div><strong>Remaining Allowed</strong><div id="ji_remaining" class="job-info-badge balance"></div></div>
+                <div><strong>Dispatched</strong><div id="ji_dispatched" class="job-info-value"></div></div>
+                <div><strong>Delivery</strong><div id="ji_delivery" class="job-info-value"></div></div>
+                <div><strong>Material</strong><div id="ji_material" class="job-info-value"></div></div>
+                <div><strong>Destination</strong><div id="ji_destination" class="job-info-value"></div></div>
+            </div>
+        </div>
+
+        <form id="packing_form" method="POST" action="{% url 'packing_production_entry' %}" {% if is_view_mode %}onsubmit="return false;"{% endif %}>
+            {% csrf_token %}
+            <input type="hidden" name="edit_id" value="{{ edit_record.id|default:'' }}">
+            {% with view_disabled=is_view_mode|yesno:"disabled," %}
+
+            <div class="erp-card-shell">
+                <div class="erp-card-header">
+                    <h2 class="erp-section-title">Packing Entry</h2>
+                </div>
+                <div class="erp-form-grid">
+                    <div class="erp-form-field erp-form-grid__full dispatch-search-wrap">
+                        <label for="job_card_search">Job Card <span>*</span></label>
+                        <input type="text" id="job_card_search" class="erp-input" placeholder="Search by Job Card No, SKU, PO, or customer..." autocomplete="off" {% if is_view_mode %}disabled{% endif %}>
+                        <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;">
+                            <p id="job_card_search_meta" class="erp-help-text" style="margin:0;">Start typing to search job cards with printing entry (or cut &amp; pack jobs).</p>
+                            <button type="button" id="job_card_clear" class="erp-btn erp-btn-secondary" style="padding:4px 10px;font-size:12px;" {% if is_view_mode %}disabled{% endif %}>Clear</button>
+                        </div>
+                        <div id="job_card_selected_chip" class="dispatch-selected-chip is-hidden">
+                            <i class="fas fa-id-card"></i>
+                            <span id="job_card_selected_label">-</span>
+                        </div>
+                        <div id="job_card_results" class="dispatch-search-results"></div>
+                        <select id="job_card" name="job_card" class="erp-select" required style="display:none;" {% if is_view_mode %}disabled{% endif %}>
+                            <option value="">Select job card</option>
+                            {% for card in job_cards %}
+                            <option value="{{ card.id }}" {% if edit_record and edit_record.job_card_id == card.id %}selected{% endif %}>
+                                {{ card.job_card_no }} - {{ card.SKU }}{% if not card.is_print_job %} (Cut &amp; Pack){% endif %}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="erp-form-field">
+                        <label for="packing_qty">Packing Qty (good pieces) <span>*</span></label>
+                        <input id="packing_qty" name="packing_qty" type="number" min="0" class="erp-input" value="{{ edit_record.packing_qty|default:'' }}" {{ view_disabled }}>
+                    </div>
+                    <div class="erp-form-field">
+                        <label for="sorting_waste_qty">Sorting Waste Qty (pieces)</label>
+                        <input id="sorting_waste_qty" name="sorting_waste_qty" type="number" min="0" class="erp-input" value="{{ edit_record.sorting_waste_qty|default:0 }}" {{ view_disabled }}>
+                    </div>
+                    <div class="erp-form-field">
+                        <label for="shift">Shift <span>*</span></label>
+                        <select id="shift" name="shift" class="erp-select" required {{ view_disabled }}>
+                            <option value="">Choose shift</option>
+                            <option value="A" {% if edit_record and edit_record.shift == 'A' %}selected{% endif %}>Shift A</option>
+                            <option value="B" {% if edit_record and edit_record.shift == 'B' %}selected{% endif %}>Shift B</option>
+                        </select>
+                    </div>
+                    <div class="erp-form-field">
+                        <label for="date">Packing Date <span>*</span></label>
+                        <input id="date" name="date" type="date" class="erp-input" value="{% if edit_record %}{{ edit_record.date|date:'Y-m-d' }}{% else %}{{ today|date:'Y-m-d' }}{% endif %}" required {{ view_disabled }}>
+                    </div>
+                    <div class="erp-form-field">
+                        <label for="sorter">Sorter <span>*</span></label>
+                        <div style="display:flex;gap:8px;align-items:center;">
+                            <select id="sorter" name="sorter" class="erp-select" required style="flex:1;" {{ view_disabled }}>
+                                <option value="">Select sorter</option>
+                                {% for sorter in sorters %}
+                                <option value="{{ sorter.id }}" {% if edit_record and edit_record.sorter_id == sorter.id %}selected{% endif %}>{{ sorter }}</option>
+                                {% endfor %}
+                            </select>
+                            <button type="button" class="erp-btn master-add" onclick="openSorterModal()" title="Add Sorter" {{ view_disabled }}>+</button>
+                        </div>
+                    </div>
+                    <div class="erp-form-field">
+                        <label>Entered By</label>
+                        <input type="text" class="erp-input" readonly value="{% if edit_record and edit_record.created_by %}{{ edit_record.created_by.get_full_name|default:edit_record.created_by.username }}{% else %}{{ current_user_display }}{% endif %}">
+                    </div>
+                    <div class="erp-form-field">
+                        <label for="status">Status</label>
+                        <select id="status" name="status" class="erp-select" {{ view_disabled }}>
+                            <option value="in_progress" {% if not edit_record or edit_record.status == 'in_progress' %}selected{% endif %}>In Progress</option>
+                            <option value="completed" {% if edit_record and edit_record.status == 'completed' %}selected{% endif %}>Completed</option>
+                        </select>
+                    </div>
+                    <div class="erp-form-field erp-form-grid__full">
+                        <label for="remarks">Remarks</label>
+                        <textarea id="remarks" name="remarks" rows="2" class="erp-textarea" {{ view_disabled }}>{{ edit_record.remark_notes|default:'' }}</textarea>
+                    </div>
+                    {% if edit_record %}
+                    <div class="erp-form-field erp-form-grid__full">
+                        <label for="change_reason">Change Reason <span>*</span></label>
+                        <textarea id="change_reason" name="change_reason" rows="2" class="erp-textarea" required {{ view_disabled }}></textarea>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+            {% endwith %}
+        </form>
+
+        <div class="erp-card-shell" id="packing_summary">
+            <div class="erp-card-header"><h2 class="erp-section-title">Entry Summary</h2></div>
+            <div class="production-summary-grid">
+                <div>This entry (pack + waste): <span id="sum_entry_total">0</span></div>
+                <div>After save — total packed: <span id="sum_total_packed">-</span></div>
+                <div>After save — total waste: <span id="sum_total_waste">-</span></div>
+                <div>Remaining allowance: <span id="sum_remaining">-</span></div>
+            </div>
+            <div id="summary_warnings" class="summary-warnings"></div>
+        </div>
+
+        <div class="erp-card-shell history-card is-hidden" id="history_card">
+            <div class="erp-card-header">
+                <h2 class="erp-section-title">Recent Packing History</h2>
+            </div>
+            <div class="erp-table-wrapper">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th><th>Shift</th><th>Pack Qty</th><th>Sort Waste</th><th>Sorter</th><th>Entered By</th>
+                        </tr>
+                    </thead>
+                    <tbody id="history_body"></tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="sticky-actions">
+            {% if not is_view_mode %}
+            <button type="submit" form="packing_form" class="erp-btn erp-btn-primary">Save Packing Entry</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <div id="sorter_modal" class="modal is-hidden" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:2000;">
+        <div class="modal-backdrop" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);" onclick="closeSorterModal()"></div>
+        <div class="modal-panel" style="position:relative;z-index:2001;background:#fff;padding:20px;border-radius:8px;width:420px;">
+            <h3>Add Sorter</h3>
+            <div style="display:flex;flex-direction:column;gap:8px;margin-top:12px;">
+                <input id="sorter_modal_name" class="erp-input" placeholder="Name">
+                <input id="sorter_modal_code" class="erp-input" placeholder="Employee code (optional)">
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;">
+                <button type="button" class="erp-btn" onclick="closeSorterModal()">Cancel</button>
+                <button type="button" class="erp-btn erp-btn-primary" onclick="saveSorterModal()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        window.PACKING_JOB_INFO_MAP = {{ job_card_info_json|safe }};
+        window.PACKING_JOB_SEARCH_URL = "{% url 'packing_job_card_search' %}";
+        window.CURRENT_RECORD_ID = "{{ edit_record.id|default:'' }}";
+        window.IS_PACKING_VIEW_MODE = {{ is_view_mode|yesno:"true,false" }};
+    </script>
+    <script src="{% static 'production/js/packing_entry.js' %}?v=2"></script>
+{% endblock %}

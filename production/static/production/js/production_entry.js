@@ -1,11 +1,25 @@
 document.addEventListener('DOMContentLoaded', function(){
     const jobSelect = document.getElementById('job_card');
-    const jobSearch = document.getElementById('job_card_search');
+    const jobSearchInput = document.getElementById('job_card_search');
+    const jobCardResults = document.getElementById('job_card_results');
+    const jobCardSearchMeta = document.getElementById('job_card_search_meta');
+    const jobCardClear = document.getElementById('job_card_clear');
+    const jobCardSelectedChip = document.getElementById('job_card_selected_chip');
+    const jobCardSelectedLabel = document.getElementById('job_card_selected_label');
     const jobInfoCard = document.getElementById('job_info_card');
     const historyCard = document.getElementById('history_card');
     const ji = id => document.getElementById(id);
-    const originalJobCardOptions = jobSelect ? Array.from(jobSelect.options).map(opt => ({ value: opt.value, text: opt.text, selected: opt.selected })) : [];
     window.__productionEntryLoaded = true;
+
+    let searchTimer = null;
+    let activeSearchRequest = null;
+
+    function debounce(fn, delay) {
+        return function (...args) {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(() => fn.apply(this, args), delay);
+        };
+    }
     function parseNumber(v){
         if(!v) return 0;
         const n = parseFloat(v.toString().replace(/,/g, ''));
@@ -61,6 +75,14 @@ document.addEventListener('DOMContentLoaded', function(){
         ji('ji_produced').textContent = info.produced_qty;
         ji('ji_remaining').textContent = info.remaining_qty;
         ji('sum_pass_type').textContent = info.pass_type || 'Single Pass';
+        renderPassMeters(info);
+        syncPrintPassControls(info);
+        syncOutputSheetsForPass(info);
+
+        const waitingPlateNotice = document.getElementById('ji_waiting_plate_notice');
+        if (waitingPlateNotice) {
+            waitingPlateNotice.style.display = info.waiting_for_plate ? 'block' : 'none';
+        }
 
         // Machine auto-display + fallback selection logic
         try{
@@ -101,10 +123,10 @@ document.addEventListener('DOMContentLoaded', function(){
                 tr.innerHTML = `
                     <td>${h.date}</td>
                     <td>${h.shift}</td>
+                    <td>${h.pass_label || '-'}</td>
                     <td>${h.impressions}</td>
                     <td>${h.output}</td>
                     <td>${h.waste}</td>
-                    <td>${h.intermediate}</td>
                     <td>${h.runtime}</td>
                     <td>${h.make_ready}</td>
                     <td>${h.downtime}</td>
@@ -117,6 +139,137 @@ document.addEventListener('DOMContentLoaded', function(){
         }
 
         updateSummary();
+    }
+
+    function getSelectedPassNumber() {
+        const passCount = parseNumber(window.JOB_INFO_MAP?.[jobSelect.value]?.pass_count) || 1;
+        if (passCount <= 1) {
+            return 1;
+        }
+        return parseInt(document.getElementById('print_pass_number')?.value || '1', 10);
+    }
+
+    function isFinalPassSelected(info) {
+        const passCount = parseNumber(info?.pass_count) || 1;
+        if (passCount <= 1) {
+            return true;
+        }
+        return getSelectedPassNumber() >= passCount;
+    }
+
+    function renderPassMeters(info) {
+        const panel = document.getElementById('pass_tracking_panel');
+        const meters = document.getElementById('ji_pass_meters');
+        const passType = document.getElementById('ji_pass_type');
+        const totalLine = document.getElementById('ji_total_impressions');
+        const legacyNotice = document.getElementById('ji_legacy_notice');
+        if (!panel || !meters || !info) {
+            return;
+        }
+        const passCount = parseNumber(info.pass_count) || 1;
+        if (passCount <= 1 && !info.legacy_notice) {
+            panel.style.display = 'none';
+            return;
+        }
+        panel.style.display = 'block';
+        if (passCount <= 1) {
+            if (passType) {
+                passType.textContent = info.pass_type || 'Single-pass';
+            }
+            meters.innerHTML = '';
+            if (totalLine) {
+                totalLine.textContent = `Total impressions: ${info.total_impressions_used_display || info.used_impressions} / ${info.total_impressions_allowed_display || info.allowed_impressions}`;
+            }
+            if (legacyNotice) {
+                legacyNotice.style.display = 'block';
+                legacyNotice.textContent = info.legacy_notice;
+            }
+            return;
+        }
+        if (passType) {
+            passType.textContent = info.pass_type || `${passCount}-pass job`;
+        }
+        meters.innerHTML = '';
+        (info.pass_rows || []).forEach((row) => {
+            const line = document.createElement('div');
+            line.textContent = `${row.label}: ${row.used_display} / ~${row.budget_display} impressions`;
+            meters.appendChild(line);
+        });
+        if (totalLine) {
+            totalLine.textContent = `Total impressions: ${info.total_impressions_used_display || info.used_impressions} / ${info.total_impressions_allowed_display || info.allowed_impressions}`;
+        }
+        if (legacyNotice) {
+            if (info.legacy_notice) {
+                legacyNotice.style.display = 'block';
+                legacyNotice.textContent = info.legacy_notice;
+            } else {
+                legacyNotice.style.display = 'none';
+                legacyNotice.textContent = '';
+            }
+        }
+    }
+
+    function syncPrintPassControls(info) {
+        const field = document.getElementById('print_pass_field');
+        const select = document.getElementById('print_pass_number');
+        const single = document.getElementById('print_pass_number_single');
+        const passCount = parseNumber(info?.pass_count) || 1;
+        if (!field || !select || !single) {
+            return;
+        }
+        if (passCount <= 1) {
+            field.style.display = 'none';
+            select.disabled = true;
+            select.removeAttribute('name');
+            single.disabled = false;
+            single.setAttribute('name', 'print_pass_number');
+            single.value = '1';
+            return;
+        }
+        field.style.display = '';
+        select.disabled = false;
+        select.setAttribute('name', 'print_pass_number');
+        single.disabled = true;
+        single.removeAttribute('name');
+        const suggested = info.suggested_pass || 1;
+        const currentValue = window.EDIT_RECORD_PASS || suggested;
+        select.innerHTML = '';
+        for (let passNo = 1; passNo <= passCount; passNo += 1) {
+            const option = document.createElement('option');
+            option.value = String(passNo);
+            option.textContent = passNo >= passCount ? `Pass ${passNo} (final)` : `Pass ${passNo}`;
+            select.appendChild(option);
+        }
+        select.value = String(currentValue);
+        window.EDIT_RECORD_PASS = null;
+    }
+
+    function syncOutputSheetsForPass(info) {
+        const outputEl = ji('output_sheets');
+        const help = document.getElementById('print_pass_help');
+        if (!outputEl || !info) {
+            return;
+        }
+        const passCount = parseNumber(info.pass_count) || 1;
+        const passNo = getSelectedPassNumber();
+        const finalPass = isFinalPassSelected(info);
+        if (isViewMode) {
+            return;
+        }
+        if (finalPass) {
+            outputEl.disabled = false;
+            outputEl.setAttribute('required', 'required');
+            if (help) {
+                help.textContent = 'Final pass — enter good sheets and impressions.';
+            }
+        } else {
+            outputEl.value = '';
+            outputEl.disabled = true;
+            outputEl.removeAttribute('required');
+            if (help) {
+                help.textContent = `Pass ${passNo} of ${passCount} — impressions and waste only. You can log another Pass ${passNo} entry later if the run resumes.`;
+            }
+        }
     }
 
     function updateSummary(){
@@ -133,11 +286,11 @@ document.addEventListener('DOMContentLoaded', function(){
         const impressions = parseNumber(ji('impressions').value);
         const makeReady = parseNumber(ji('make_ready_time').value);
         const downtime = parseNumber(ji('downtime_minutes').value);
-        const intermediatePass = ji('intermediate_pass')?.checked;
+        const finalPass = isFinalPassSelected(info);
         const currentEntryOutput = parseNumber(ji('output_sheets').value);
 
         const displayProducedBefore = isViewMode ? Math.max(0, producedBefore - currentEntryOutput) : producedBefore;
-        const displayAfterSave = isViewMode ? producedBefore : producedBefore + (intermediatePass ? 0 : currentEntryOutput);
+        const displayAfterSave = isViewMode ? producedBefore : producedBefore + (finalPass ? currentEntryOutput : 0);
 
         ji('sum_order_qty').textContent = orderQtyRaw ? orderQty.toLocaleString() : '-';
         ji('sum_produced_before').textContent = displayProducedBefore ? displayProducedBefore.toLocaleString() : '-';
@@ -157,9 +310,10 @@ document.addEventListener('DOMContentLoaded', function(){
         ji('sum_waste_pct').textContent = wastePct.toFixed(1) + '%';
 
         const basePassCount = parseNumber(info.pass_count) || 1;
-        const effectivePassCount = intermediatePass ? Math.max(basePassCount, 2) : basePassCount;
+        const selectedPass = getSelectedPassNumber();
+        const effectivePassCount = finalPass ? basePassCount : selectedPass;
         const minImpressions = totalHandled > 0 ? totalHandled * effectivePassCount : 0;
-        ji('sum_pass_type').textContent = intermediatePass ? `Intermediate pass (${effectivePassCount}-pass)` : `${effectivePassCount}-pass`;
+        ji('sum_pass_type').textContent = finalPass ? `${basePassCount}-pass (final)` : `Pass ${selectedPass} of ${basePassCount}`;
         ji('sum_min_impressions').textContent = minImpressions.toLocaleString();
 
         const allowedImpressions = parseNumber(info.allowed_impressions);
@@ -173,7 +327,7 @@ document.addEventListener('DOMContentLoaded', function(){
         ji('sum_allowed_impressions').textContent = allowedImpressions.toLocaleString();
         ji('sum_remaining_impressions').textContent = remainingAllowedAfter.toLocaleString();
 
-        const progressGood = intermediatePass ? 0 : good;
+        const progressGood = finalPass ? good : 0;
         const currentEntry = progressGood;
         const afterSave = isViewMode ? producedBefore : producedBefore + progressGood;
         const remaining = Math.max(0, orderQty - afterSave);
@@ -216,25 +370,149 @@ document.addEventListener('DOMContentLoaded', function(){
         ji('summary_warnings').innerHTML = warnings.join('');
     }
 
-    function filterJobCards(){
-        if(!jobSearch || !jobSelect) return;
-        const query = jobSearch.value.trim().toLowerCase();
-        const selectedValue = jobSelect.value;
-        jobSelect.innerHTML = '';
-        originalJobCardOptions.forEach(opt => {
-            const matches = !opt.value || opt.text.toLowerCase().includes(query) || opt.value === selectedValue;
-            if(matches){
-                const elem = document.createElement('option');
-                elem.value = opt.value;
-                elem.text = opt.text;
-                if(opt.value === selectedValue) elem.selected = true;
-                jobSelect.appendChild(elem);
-            }
+    function ensureJobOption(jobId, label) {
+        let option = Array.from(jobSelect.options).find((opt) => opt.value === String(jobId));
+        if (!option) {
+            option = document.createElement('option');
+            option.value = jobId;
+            option.textContent = label;
+            jobSelect.appendChild(option);
+        }
+        return option;
+    }
+
+    function setSelectedChip(label) {
+        if (!label) {
+            jobCardSelectedChip?.classList.add('is-hidden');
+            if (jobCardSelectedLabel) jobCardSelectedLabel.textContent = '-';
+            return;
+        }
+        jobCardSelectedChip?.classList.remove('is-hidden');
+        if (jobCardSelectedLabel) jobCardSelectedLabel.textContent = label;
+    }
+
+    function selectJobCard(jobId, label, info, machine, plan) {
+        if (info) {
+            window.JOB_INFO_MAP = window.JOB_INFO_MAP || {};
+            window.JOB_INFO_MAP[String(jobId)] = info;
+        }
+        if (machine) {
+            window.JOB_MACHINE_MAP = window.JOB_MACHINE_MAP || {};
+            window.JOB_MACHINE_MAP[String(jobId)] = machine;
+        }
+        if (plan) {
+            window.JOB_PLAN_MAP = window.JOB_PLAN_MAP || {};
+            window.JOB_PLAN_MAP[String(jobId)] = plan;
+        }
+        const option = ensureJobOption(jobId, label);
+        jobSelect.value = String(jobId);
+        jobSearchInput.value = label || option.text;
+        jobCardResults.style.display = 'none';
+        jobCardSearchMeta.textContent = 'Selected job card loaded.';
+        setSelectedChip(label || option.text);
+        populateJobInfo();
+    }
+
+    function renderSearchResults(results) {
+        if (!jobCardResults) return;
+        jobCardResults.innerHTML = '';
+        if (!results.length) {
+            jobCardResults.style.display = 'block';
+            jobCardSearchMeta.textContent = 'No matching job cards found.';
+            const noRow = document.createElement('div');
+            noRow.className = 'dispatch-search-result-item';
+            noRow.textContent = 'No results';
+            noRow.style.cursor = 'default';
+            jobCardResults.appendChild(noRow);
+            return;
+        }
+        results.forEach((item) => {
+            const row = document.createElement('button');
+            row.type = 'button';
+            row.className = 'dispatch-search-result-item';
+            row.innerHTML = `
+                <div class="result-main">${item.job_card_no} · ${item.sku}</div>
+                <div class="result-meta">${item.customer} · Remaining: ${item.remaining_display} pcs</div>
+            `;
+            row.addEventListener('click', () => selectJobCard(item.id, item.label, item.info, item.machine, item.plan));
+            jobCardResults.appendChild(row);
         });
+        jobCardResults.style.display = 'block';
+        jobCardSearchMeta.textContent = `Showing ${results.length} result(s). Click one to select.`;
+    }
+
+    function filterPreloadedJobCards(query) {
+        const options = Array.from(jobSelect.options).filter((opt, idx) => idx > 0);
+        return options
+            .filter((opt) => !query || (opt.text || '').toLowerCase().includes(query))
+            .slice(0, 30)
+            .map((opt) => {
+                const info = window.JOB_INFO_MAP ? window.JOB_INFO_MAP[opt.value] : null;
+                return {
+                    id: opt.value,
+                    label: opt.text,
+                    job_card_no: info ? info.job_card_no : opt.text,
+                    sku: info ? info.product : '-',
+                    customer: info ? info.customer : '-',
+                    remaining_display: info ? info.remaining_qty : '-',
+                    info,
+                    machine: window.JOB_MACHINE_MAP ? window.JOB_MACHINE_MAP[opt.value] : null,
+                    plan: window.JOB_PLAN_MAP ? window.JOB_PLAN_MAP[opt.value] : null,
+                };
+            });
+    }
+
+    function runJobCardSearch() {
+        if (!jobSearchInput || !jobSelect) return;
+        const query = (jobSearchInput.value || '').trim();
+        if (!query) {
+            jobCardResults.style.display = 'none';
+            jobCardSearchMeta.textContent = 'Start typing to search job cards.';
+            return;
+        }
+        if (query.length < 2) {
+            renderSearchResults(filterPreloadedJobCards(query.toLowerCase()));
+            return;
+        }
+        if (activeSearchRequest) activeSearchRequest.abort();
+        activeSearchRequest = new AbortController();
+        const params = new URLSearchParams({ q: query });
+        if (window.CURRENT_RECORD_ID) params.set('edit_id', window.CURRENT_RECORD_ID);
+        jobCardSearchMeta.textContent = 'Searching...';
+        fetch(`${window.PRINTING_JOB_SEARCH_URL}?${params.toString()}`, {
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            signal: activeSearchRequest.signal,
+        })
+            .then((response) => (response.ok ? response.json() : Promise.reject()))
+            .then((data) => renderSearchResults(data.results || []))
+            .catch((err) => {
+                if (err.name === 'AbortError') return;
+                renderSearchResults(filterPreloadedJobCards(query.toLowerCase()));
+            })
+            .finally(() => {
+                activeSearchRequest = null;
+            });
+    }
+
+    function clearJobCardSelection() {
+        jobSelect.value = '';
+        jobSearchInput.value = '';
+        jobCardResults.style.display = 'none';
+        jobCardSearchMeta.textContent = 'Start typing to search job cards.';
+        setSelectedChip('');
+        populateJobInfo();
     }
 
     jobSelect && jobSelect.addEventListener('change', populateJobInfo);
-    jobSearch && jobSearch.addEventListener('input', filterJobCards);
+    jobSearchInput && jobSearchInput.addEventListener('input', debounce(runJobCardSearch, 300));
+    jobSearchInput && jobSearchInput.addEventListener('focus', runJobCardSearch);
+    jobCardClear && jobCardClear.addEventListener('click', clearJobCardSelection);
+
+    document.addEventListener('click', (event) => {
+        if (!jobCardResults?.contains(event.target) && event.target !== jobSearchInput) {
+            jobCardResults.style.display = 'none';
+        }
+    });
 
     // Machine override toggle
     const machineOverrideEl = document.getElementById('machine_override');
@@ -255,22 +533,24 @@ document.addEventListener('DOMContentLoaded', function(){
     }
 
     if(jobSelect && jobSelect.value){
+        const selectedOpt = jobSelect.options[jobSelect.selectedIndex];
+        if (selectedOpt && jobSearchInput) {
+            jobSearchInput.value = selectedOpt.text;
+            jobCardSearchMeta.textContent = 'Selected job card loaded.';
+            setSelectedChip(selectedOpt.text);
+        }
         populateJobInfo();
     }
+
+    ji('print_pass_number')?.addEventListener('change', function(){
+        const info = window.JOB_INFO_MAP ? window.JOB_INFO_MAP[jobSelect.value] : null;
+        syncOutputSheetsForPass(info);
+        updateSummary();
+    });
 
     ['output_sheets','waste_sheets','impressions','run_time','make_ready_time','downtime_minutes'].forEach(id=>{
         const el = ji(id);
         el && el.addEventListener('input', updateSummary);
-    });
-
-    ji('intermediate_pass')?.addEventListener('change', function(){
-        const outputEl = ji('output_sheets');
-        if(this.checked){
-            outputEl.removeAttribute('required');
-        } else {
-            outputEl.setAttribute('required', 'required');
-        }
-        updateSummary();
     });
 
     // waste/downtime 'Other' toggles
@@ -289,7 +569,7 @@ document.addEventListener('DOMContentLoaded', function(){
         const runTimeVal = parseNumber(ji('run_time').value);
         const makeReadyVal = parseNumber(ji('make_ready_time').value);
         const downtimeVal = parseNumber(ji('downtime_minutes').value);
-        const intermediatePass = ji('intermediate_pass')?.checked;
+        const finalPass = isFinalPassSelected(window.JOB_INFO_MAP?.[jobSelect.value] || {});
         const outputVal = parseNumber(ji('output_sheets').value);
 
         if(impressionsVal < 0){
@@ -321,8 +601,12 @@ document.addEventListener('DOMContentLoaded', function(){
             actionStatus.textContent = 'Impressions should be entered before saving.';
             return;
         }
-        if(!intermediatePass && outputVal <= 0){
-            actionStatus.textContent = 'Enter good output sheets or mark this as an intermediate pass.';
+        if(!finalPass && outputVal > 0){
+            actionStatus.textContent = 'Good sheets are only allowed on the final print pass.';
+            return;
+        }
+        if(finalPass && outputVal <= 0){
+            actionStatus.textContent = 'Enter good output sheets for the final print pass.';
             return;
         }
         if(jobSelect.value && impressionsVal > remainingAllowed){
@@ -334,9 +618,6 @@ document.addEventListener('DOMContentLoaded', function(){
         this.textContent = 'Saving...';
         form.submit();
     });
-
-    // initial populate if preselected
-    if(jobSelect && jobSelect.value) populateJobInfo();
 
     /* Master-data modal handling */
     function getCookie(name){

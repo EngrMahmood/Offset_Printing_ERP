@@ -47,7 +47,7 @@
             {% endif %}
             {% if nav.can_access_production %}
             <a href="{% url 'production_dashboard' %}"
-               class="erp-topnav-module {% if url == 'production_dashboard' or url == 'production_entry' or url == 'production_wip' or url == 'production_records' %}is-active{% endif %}">
+               class="erp-topnav-module {% if url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'released_jobs' or url == 'request_plate_remake' %}is-active{% endif %}">
                 Production
             </a>
             <a href="{% url 'manual_working:manual_working_list' %}"
@@ -239,15 +239,19 @@
         </a>
     </div>
 
-    {% elif url == 'production_dashboard' or url == 'production_entry' or url == 'production_wip' or url == 'production_records' %}
+    {% elif url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'released_jobs' or url == 'request_plate_remake' %}
     <div class="erp-subnav">
         <a href="{% url 'production_dashboard' %}"
            class="erp-subnav-link {% if url == 'production_dashboard' %}is-active{% endif %}">
             Dashboard
         </a>
-        <a href="{% url 'production_entry' %}"
-           class="erp-subnav-link {% if url == 'production_entry' %}is-active{% endif %}">
+        <a href="{% url 'printing_production_entry' %}"
+           class="erp-subnav-link {% if url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' %}is-active{% endif %}">
             Production Entry
+        </a>
+        <a href="{% url 'released_jobs' %}"
+           class="erp-subnav-link {% if url == 'released_jobs' or url == 'request_plate_remake' %}is-active{% endif %}">
+            Released Jobs
         </a>
         <a href="{% url 'production_wip' %}"
            class="erp-subnav-link {% if url == 'production_wip' %}is-active{% endif %}">
@@ -258,6 +262,7 @@
             Production Records
         </a>
     </div>
+    {% include 'theme/production_context_nav.html' %}
 
 
     {% elif url == 'dispatch_records' or url == 'dispatch_entry' %}

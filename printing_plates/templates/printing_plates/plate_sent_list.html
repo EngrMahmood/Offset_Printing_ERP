@@ -37,36 +37,16 @@
                             <span class="badge" style="background:{% if not vendor_filter %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ all_count }}</span>
                         </a>
                     </li>
+                    {% for item in vendor_options %}
                     <li>
-                        <a href="?vendor=Dot Max" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'Dot Max' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
-                            <span>Dot Max</span>
-                            <span class="badge" style="background:{% if vendor_filter == 'Dot Max' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.Dot_Max|default:0 }}</span>
+                        <a href="?vendor={{ item.name|urlencode }}" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter|lower == item.name|lower %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
+                            <span>{{ item.name }}</span>
+                            <span class="badge" style="background:{% if vendor_filter|lower == item.name|lower %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ item.count }}</span>
                         </a>
                     </li>
-                    <li>
-                        <a href="?vendor=Ali Print Pack" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'Ali Print Pack' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
-                            <span>Ali Print Pack</span>
-                            <span class="badge" style="background:{% if vendor_filter == 'Ali Print Pack' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.Ali_Print_Pack|default:0 }}</span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="?vendor=Daniyal Process" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'Daniyal Process' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
-                            <span>Daniyal Process</span>
-                            <span class="badge" style="background:{% if vendor_filter == 'Daniyal Process' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.Daniyal_Process|default:0 }}</span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="?vendor=In House" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'In House' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
-                            <span>In House</span>
-                            <span class="badge" style="background:{% if vendor_filter == 'In House' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.In_House|default:0 }}</span>
-                        </a>
-                    </li>
-                    <li>
-                        <a href="?vendor=Cancel" style="display:flex; justify-content:space-between; align-items:center; padding:8px 12px; border-radius:6px; text-decoration:none; font-size:0.85rem; color:{% if vendor_filter == 'Cancel' %}#6f42c1; background:#f4f0fa; font-weight:600;{% else %}#4a5568;{% endif %}" class="filter-link">
-                            <span>Cancel</span>
-                            <span class="badge" style="background:{% if vendor_filter == 'Cancel' %}#6f42c1; color:#fff;{% else %}#edf2f7; color:#4a5568;{% endif %}; padding:2px 8px; border-radius:12px; font-size:0.75rem;">{{ vendor_counts.Cancel|default:0 }}</span>
-                        </a>
-                    </li>
+                    {% empty %}
+                    <li><span class="erp-help-text">No vendors in master yet.</span></li>
+                    {% endfor %}
                 </ul>
 
                 <hr style="border:0; border-top:1px solid rgba(0,0,0,0.06); margin:16px 0;">
@@ -104,7 +84,7 @@
                                     <th>SKU</th>
                                     <th>Plate Qty</th>
                                     <th>Machine Name</th>
-                                    <th>Plate Color</th>
+                                    <th>Plate Inks</th>
                                     <th>Impression</th>
                                     <th>Remarks</th>
                                     <th>Requested By</th>
@@ -126,7 +106,7 @@
                                     <td>{{ req.new_set_no|default:'—' }}</td>
                                     <td><strong>{{ req.vendor|default:'—' }}</strong></td>
                                     <td title="{{ req.sku }}">{{ req.sku|default:'—' }}</td>
-                                    <td>{{ req.plate_quantity|default:'—' }}</td>
+                                    <td>{{ req.plate_quantity_display|default:req.plate_quantity|default:'—' }}</td>
                                     <td>{{ req.machine_display|default:'—' }}</td>
                                     <td>{{ req.plate_color|default:'—' }}</td>
                                     <td>{{ req.impression|default:'—' }}</td>

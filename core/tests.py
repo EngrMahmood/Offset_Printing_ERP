@@ -18,6 +18,11 @@ class DispatchValidationTests(TestCase):
         self.user = get_user_model().objects.create_user(username='tester', password='testpass')
         self.machine = Machine.objects.create(name='Test Machine')
 
+    def _ensure_sorter(self):
+        from core.models import Sorter
+        sorter, _ = Sorter.objects.get_or_create(name='Test Sorter')
+        return sorter
+
     def test_print_job_dispatch_within_produced_pieces_succeeds(self):
         job_card = JobCard.objects.create(
             job_card_no='JC-01-26-1071',
@@ -35,6 +40,7 @@ class DispatchValidationTests(TestCase):
         )
         Production.objects.create(
             job_card=job_card,
+            entry_type='printing',
             date='2026-01-01',
             shift='A',
             machine=self.machine,
@@ -43,6 +49,15 @@ class DispatchValidationTests(TestCase):
             impressions=100,
             planned_time=60,
             run_time=60,
+        )
+        Production.objects.create(
+            job_card=job_card,
+            entry_type='packing',
+            date='2026-01-01',
+            shift='A',
+            packing_qty=50,
+            sorting_waste_qty=0,
+            sorter=self._ensure_sorter(),
         )
 
         dispatch = Dispatch(
@@ -73,6 +88,7 @@ class DispatchValidationTests(TestCase):
         )
         Production.objects.create(
             job_card=job_card,
+            entry_type='printing',
             date='2026-01-01',
             shift='A',
             machine=self.machine,
@@ -81,6 +97,15 @@ class DispatchValidationTests(TestCase):
             impressions=50,
             planned_time=60,
             run_time=60,
+        )
+        Production.objects.create(
+            job_card=job_card,
+            entry_type='packing',
+            date='2026-01-01',
+            shift='A',
+            packing_qty=50,
+            sorting_waste_qty=0,
+            sorter=self._ensure_sorter(),
         )
 
         dispatch = Dispatch(

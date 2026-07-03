@@ -1,0 +1,315 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Released Jobs - Production{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack erp-records-shell">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Production</div>
+                <h2 class="erp-section-title">Released Jobs</h2>
+                <p class="erp-section-desc">Jobs released from planning. Request plate replacement when plates are damaged or need remake.</p>
+            </div>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+                <span class="erp-status-chip info"><span class="erp-status-dot"></span>{{ total_count }} jobs</span>
+                <span class="erp-status-chip warning"><span class="erp-status-dot"></span>{{ waiting_count }} waiting for plate</span>
+                <span class="erp-status-chip success"><span class="erp-status-dot"></span>{{ ready_count }} ready</span>
+            </div>
+        </div>
+
+        <form method="get" class="erp-form-grid" style="margin-bottom:16px; align-items:end;">
+            <div class="erp-form-field" style="grid-column: span 2;">
+                <label for="q">Search</label>
+                <input type="text" id="q" name="q" value="{{ q }}" class="erp-input" placeholder="JC no, SKU, customer, plate set…">
+            </div>
+            <div class="erp-form-field">
+                <label for="plate_status">Plate status</label>
+                <select id="plate_status" name="plate_status" class="erp-select">
+                    <option value="">All</option>
+                    <option value="waiting" {% if plate_status == 'waiting' %}selected{% endif %}>Waiting for plate</option>
+                    <option value="ready" {% if plate_status == 'ready' %}selected{% endif %}>Ready</option>
+                </select>
+            </div>
+            <div class="erp-form-field">
+                <button type="submit" class="erp-btn erp-btn-primary">Filter</button>
+                <a href="{% url 'released_jobs' %}" class="erp-btn erp-btn-secondary">Clear</a>
+            </div>
+        </form>
+
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>JC No</th>
+                        <th>SKU</th>
+                        <th>Customer</th>
+                        <th>Machine</th>
+                        <th>Plate Set</th>
+                        <th>AWC No</th>
+                        <th>Planning Stage</th>
+                        <th>Last Production</th>
+                        <th>Plate Status</th>
+                        <th>Remakes</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td><strong>{{ row.jc_number }}</strong></td>
+                        <td>{{ row.sku }}</td>
+                        <td>{{ row.customer }}</td>
+                        <td>{{ row.machine }}</td>
+                        <td>{{ row.plate_set_no }}</td>
+                        <td>{{ row.awc_no }}</td>
+                        <td>{{ row.planning_stage }}</td>
+                        <td>{% if row.last_production_date %}{{ row.last_production_date|date:"d-M-Y" }}{% else %}—{% endif %}</td>
+                        <td>
+                            {% if row.waiting_for_plate %}
+                            <span class="erp-badge erp-badge-warning">Waiting for plate</span>
+                            {% else %}
+                            <span class="erp-badge erp-badge-success">Ready</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ row.remake_count }}</td>
+                        <td style="white-space:nowrap;">
+                            {% if can_request %}
+                            <button
+                                type="button"
+                                class="erp-btn erp-btn-warning request-plate-btn"
+                                data-job-id="{{ row.job_card.id }}"
+                                data-jc="{{ row.jc_number }}"
+                                data-sku="{{ row.sku }}"
+                                data-plate-set="{{ row.plate_set_no }}"
+                                data-awc="{{ row.awc_no }}"
+                                data-stage="{{ row.planning_stage }}"
+                                data-has-entry="{% if row.has_printing_entry %}1{% else %}0{% endif %}"
+                            >Request plates</button>
+                            {% endif %}
+                            {% if row.history %}
+                            <button type="button" class="erp-btn erp-btn-secondary history-btn" data-target="history-{{ row.job_card.id }}">History</button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% if row.history %}
+                    <tr id="history-{{ row.job_card.id }}" class="plate-history-row is-hidden">
+                        <td colspan="11">
+                            <div class="plate-history-panel">
+                                <strong>Plate request history</strong>
+                                <table class="erp-table" style="margin-top:8px;">
+                                    <thead>
+                                        <tr>
+                                            <th>When</th>
+                                            <th>By</th>
+                                            <th>Type</th>
+                                            <th>Reason</th>
+                                            <th>Colours</th>
+                                            <th>Set / AWC</th>
+                                            <th>Status</th>
+                                            <th>Notes</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for req in row.history %}
+                                        <tr>
+                                            <td>{% if req.requested_at %}{{ req.requested_at|date:"d-M-Y H:i" }}{% else %}{{ req.created_at|date:"d-M-Y H:i" }}{% endif %}</td>
+                                            <td>{% if req.requested_by %}{{ req.requested_by.get_username }}{% else %}—{% endif %}</td>
+                                            <td>{{ req.plate_request_type|default:"—" }}</td>
+                                            <td>{{ req.replacement_reason_display|default:"—" }}</td>
+                                            <td>{{ req.damaged_colors|default:req.plate_color|default:"—" }}</td>
+                                            <td>{{ req.display_set_no|default:"—" }} / {{ req.display_awc_no|default:"—" }}</td>
+                                            <td>
+                                                {% if req.is_cancelled %}
+                                                <span class="erp-badge erp-badge-danger">Cancelled</span>
+                                                {% else %}
+                                                {{ req.get_status_display }}
+                                                {% endif %}
+                                            </td>
+                                            <td>{% if req.is_cancelled and req.cancel_reason_display %}{{ req.cancel_reason_display }}{% else %}{{ req.remarks|default:"—"|truncatechars:80 }}{% endif %}</td>
+                                        </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                    {% empty %}
+                    <tr>
+                        <td colspan="11" style="text-align:center;">No released print jobs found.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="erp-pagination" style="margin-top:12px;">
+            {% if page_obj.has_previous %}
+            <a class="erp-btn erp-btn-secondary" href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&plate_status={{ plate_status }}">Previous</a>
+            {% endif %}
+            <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            {% if page_obj.has_next %}
+            <a class="erp-btn erp-btn-secondary" href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&plate_status={{ plate_status }}">Next</a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </section>
+</div>
+
+<div id="plate_remake_modal" class="erp-modal is-hidden" aria-hidden="true" style="display:none;">
+    <div class="erp-modal-backdrop" data-close-modal></div>
+    <div class="erp-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="plate_remake_title">
+        <div class="erp-card-header">
+            <h3 id="plate_remake_title" class="erp-section-title">Request Plate Replacement</h3>
+            <button type="button" class="erp-btn erp-btn-secondary" data-close-modal>Close</button>
+        </div>
+        <form method="post" action="{% url 'request_plate_remake' %}" id="plate_remake_form">
+            {% csrf_token %}
+            <input type="hidden" name="job_card_id" id="remake_job_card_id">
+            <div class="erp-form-grid">
+                <div class="erp-form-field">
+                    <label>Job Card</label>
+                    <div id="remake_jc" class="job-info-value">—</div>
+                </div>
+                <div class="erp-form-field">
+                    <label>SKU</label>
+                    <div id="remake_sku" class="job-info-value">—</div>
+                </div>
+                <div class="erp-form-field">
+                    <label>Current Plate Set</label>
+                    <div id="remake_plate_set" class="job-info-value">—</div>
+                </div>
+                <div class="erp-form-field">
+                    <label>AWC No</label>
+                    <div id="remake_awc" class="job-info-value">—</div>
+                </div>
+                <div class="erp-form-field">
+                    <label>Planning Stage</label>
+                    <div id="remake_stage" class="job-info-value">—</div>
+                </div>
+                <div class="erp-form-field erp-form-grid__full" id="remake_entry_warning" style="display:none;">
+                    <div class="erp-alert erp-alert-warning" style="padding:8px 10px;font-size:13px;">
+                        No printing entry logged yet for this job. You can still request plates.
+                    </div>
+                </div>
+                <div class="erp-form-field erp-form-grid__full">
+                    <label for="remake_reason">Reason <span class="required">*</span></label>
+                    <select id="remake_reason" name="reason" class="erp-select" required>
+                        <option value="">Select reason</option>
+                        {% for value, label in reason_choices %}
+                        <option value="{{ value }}">{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-form-field erp-form-grid__full">
+                    <label>Damaged colours <span class="required">*</span></label>
+                    <div style="display:flex; gap:8px; flex-wrap:wrap;" id="remake-color-buttons">
+                        {% for ink in plate_ink_options %}
+                        <button type="button" class="color-btn plate-color-btn erp-btn erp-btn-secondary" data-color="{{ ink }}">{{ ink }}</button>
+                        {% endfor %}
+                    </div>
+                    <input type="hidden" id="remake_damaged_colors" name="damaged_colors" value="" required>
+                    <p class="erp-help-text">Select at least one colour that needs remake.</p>
+                </div>
+                <div class="erp-form-field erp-form-grid__full">
+                    <label for="remake_notes">Notes</label>
+                    <textarea id="remake_notes" name="notes" class="erp-input" rows="3" placeholder="Describe damage or what needs remake"></textarea>
+                    <p class="erp-help-text">Required when reason is Other.</p>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:16px;">
+                <button type="button" class="erp-btn erp-btn-secondary" data-close-modal>Cancel</button>
+                <button type="submit" class="erp-btn erp-btn-warning">Send to Graphics</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<style>
+.plate-history-row.is-hidden { display: none; }
+.plate-history-panel { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px 12px; }
+.erp-modal { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; }
+.erp-modal.is-hidden { display:none !important; }
+.erp-modal-backdrop { position:absolute; inset:0; background:rgba(15,23,42,.45); }
+.erp-modal-dialog { position:relative; background:#fff; border-radius:12px; width:min(640px,94vw); max-height:90vh; overflow:auto; padding:16px 18px; box-shadow:0 20px 50px rgba(0,0,0,.2); }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    const modal = document.getElementById('plate_remake_modal');
+    const colorInput = document.getElementById('remake_damaged_colors');
+    let selectedColors = [];
+
+    function openModal() {
+        modal.classList.remove('is-hidden');
+        modal.style.display = 'flex';
+        modal.setAttribute('aria-hidden', 'false');
+    }
+    function closeModal() {
+        modal.classList.add('is-hidden');
+        modal.style.display = 'none';
+        modal.setAttribute('aria-hidden', 'true');
+        selectedColors = [];
+        colorInput.value = '';
+        document.querySelectorAll('#remake-color-buttons .color-btn').forEach(btn => btn.classList.remove('is-active'));
+        document.getElementById('plate_remake_form').reset();
+    }
+
+    document.querySelectorAll('[data-close-modal]').forEach(el => el.addEventListener('click', closeModal));
+
+    document.querySelectorAll('.request-plate-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            document.getElementById('remake_job_card_id').value = this.dataset.jobId;
+            document.getElementById('remake_jc').textContent = this.dataset.jc || '—';
+            document.getElementById('remake_sku').textContent = this.dataset.sku || '—';
+            document.getElementById('remake_plate_set').textContent = this.dataset.plateSet || '—';
+            document.getElementById('remake_awc').textContent = this.dataset.awc || '—';
+            document.getElementById('remake_stage').textContent = this.dataset.stage || '—';
+            document.getElementById('remake_entry_warning').style.display = this.dataset.hasEntry === '1' ? 'none' : 'block';
+            openModal();
+        });
+    });
+
+    document.querySelectorAll('.history-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const row = document.getElementById(this.dataset.target);
+            if (!row) return;
+            row.classList.toggle('is-hidden');
+        });
+    });
+
+    document.querySelectorAll('#remake-color-buttons .color-btn').forEach(btn => {
+        btn.addEventListener('click', function () {
+            const color = this.getAttribute('data-color');
+            if (selectedColors.includes(color)) {
+                selectedColors = selectedColors.filter(item => item !== color);
+                this.classList.remove('is-active');
+            } else {
+                selectedColors.push(color);
+                this.classList.add('is-active');
+            }
+            colorInput.value = selectedColors.join(', ');
+        });
+    });
+
+    document.getElementById('plate_remake_form').addEventListener('submit', function (e) {
+        const reason = document.getElementById('remake_reason').value;
+        const notes = (document.getElementById('remake_notes').value || '').trim();
+        const colors = (document.getElementById('remake_damaged_colors').value || '').trim();
+        if (!colors) {
+            e.preventDefault();
+            alert('Select at least one damaged colour.');
+            return;
+        }
+        if (reason === 'other' && !notes) {
+            e.preventDefault();
+            alert('Notes are required when reason is Other.');
+        }
+    });
+});
+</script>
+{% endblock %}

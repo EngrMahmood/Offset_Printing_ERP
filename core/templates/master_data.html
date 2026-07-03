@@ -76,6 +76,7 @@
                     <th>Status</th>
                     <th>Speed (imp/hr)</th>
                     <th>Setup Min/Color</th>
+                    <th>Plate Life (imp/set)</th>
                     <th>Active Job Cards</th>
                     <th>Active Production Entries</th>
                     <th>Actions</th>
@@ -96,10 +97,11 @@
                                 <input type="text" name="new_name" value="{{ row.record.name }}" required placeholder="Machine name">
                                 <input type="number" name="standard_impressions_per_hour" value="{{ row.record.standard_impressions_per_hour }}" min="0.01" step="0.01" required placeholder="Speed (imp/hr)">
                                 <input type="number" name="standard_setup_minutes_per_color" value="{{ row.record.standard_setup_minutes_per_color }}" min="0.01" step="0.01" required placeholder="Setup min/color">
+                                <input type="number" name="plate_life_impressions" value="{{ row.record.plate_life_impressions }}" min="1" step="1" required placeholder="Plate life (imp/set)">
                             </div>
                             <button type="submit" class="btn btn-green">Edit</button>
                         </form>
-                        <div class="compact-note">Name, Speed, Setup Min/Color (all in one form).</div>
+                        <div class="compact-note">Name, Speed, Setup Min/Color, Plate Life (all in one form).</div>
                         {% else %}
                         <div>{{ row.record.name }}</div>
                         {% endif %}
@@ -113,6 +115,7 @@
                     </td>
                     <td>{{ row.record.standard_impressions_per_hour }}</td>
                     <td>{{ row.record.standard_setup_minutes_per_color }}</td>
+                    <td>{{ row.record.plate_life_impressions }}</td>
                     <td>{{ row.job_card_count }}</td>
                     <td>{{ row.production_count }}</td>
                     <td>
@@ -137,7 +140,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="8">No machines found.</td></tr>
+                <tr><td colspan="9">No machines found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -484,6 +487,71 @@
                 </tr>
                 {% empty %}
                 <tr><td colspan="5">No product types found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+
+        <h2 class="section-header">Print Colors (Production)</h2>
+        <p class="erp-help-text" style="margin:0 0 10px;">Used on SKU / planning as print colour pattern (1, 2, 4, 1+1, …). Only admin can add or edit.</p>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="print_color">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="e.g. 3+1" required>
+            <button type="submit" class="btn btn-green">Add Print Color</button>
+        </form>
+        {% endif %}
+        <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Print Color</th>
+                    <th>Active</th>
+                    <th>SKU Recipes</th>
+                    <th>Planning Jobs</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in print_color_rows %}
+                <tr>
+                    <td>{{ row.record.id }}</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:flex;gap:8px;align-items:center;">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="print_color">
+                            <input type="hidden" name="action" value="edit_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <input type="text" name="new_name" value="{{ row.record.name }}" required>
+                            <button type="submit" class="btn btn-green">Edit</button>
+                        </form>
+                        {% else %}
+                        {{ row.record.name }}
+                        {% endif %}
+                    </td>
+                    <td>{% if row.record.is_active %}Yes{% else %}No{% endif %}</td>
+                    <td>{{ row.sku_recipe_count }}</td>
+                    <td>{{ row.planning_job_count }}</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete print color {{ row.record.name|escapejs }} permanently?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="print_color">
+                            <input type="hidden" name="action" value="delete_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6">No print colors found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

@@ -17,10 +17,6 @@
     {% with current_step='master' %}
     {% endwith %}
 
-    {% for msg in messages %}
-        <div class="erp-alert {% if 'error' in msg.tags %}is-error{% elif 'warning' in msg.tags %}is-warning{% else %}is-info{% endif %}">{{ msg }}</div>
-    {% endfor %}
-
     <!-- Sub-tabs: Master / Pending SKUs -->
     <div class="erp-tab-strip">
         <a class="erp-tab is-active" href="{% url 'planning:sku_recipes' %}">Master</a>

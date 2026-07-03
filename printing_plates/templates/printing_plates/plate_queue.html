@@ -4,25 +4,12 @@
 
 {% block content %}
 <div class="erp-page-stack erp-records-shell">
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
-        <div class="erp-actions">
-            <a href="{% url 'printing_plates:dashboard' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-chart-line"></i> Dashboard</a>
-            <a href="{% url 'printing_plates:request_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-file-invoice"></i> Plate Requests</a>
-            <a href="{% url 'printing_plates:sent_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-paper-plane"></i> Plate Sent</a>
-            <a href="{% url 'printing_plates:received_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-check-circle"></i> Plate Received</a>
-            <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-primary"><i class="fas fa-list"></i> Plate Queue</a>
-        </div>
-        <div>
-            <a href="{% url 'printing_plates:request_add' %}" class="erp-btn" style="background-color: #6f42c1; color: white; border: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
-                <i class="fas fa-plus"></i> Add
-            </a>
-        </div>
-    </div>
+    {% include 'printing_plates/includes/plates_nav.html' with active_tab='queue' %}
 
     <section class="erp-section-shell">
         <div class="erp-card-header">
-            <h2>Printing Plates Queue</h2>
-            <p>Jobs currently waiting for plate making and designer review.</p>
+            <h2>Plate Queue</h2>
+            <p>Open plate requests waiting on graphics (draft, sent, or received). Same data as Plate Requests — active work only.</p>
         </div>
 
         <div class="erp-records-layout">
@@ -32,23 +19,63 @@
                     <button type="button" class="erp-btn erp-btn-secondary erp-records-filter-toggle" aria-expanded="true">Collapse</button>
                 </div>
                 <div class="erp-records-filter-body">
-                    <form method="GET" class="erp-filter-group">
-                        <div class="erp-filter-group">
-                            <label for="q" class="erp-field-label">Search</label>
-                            <input id="q" name="q" value="{{ q }}" placeholder="JC, SKU or Job Name" class="erp-input" style="width:100%;">
-                        </div>
+                    <ul class="plates-filter-list">
+                        <li>
+                            <a href="?type=&status=&q={{ q|urlencode }}" class="plates-filter-link{% if not request_type and not status_filter %} is-active{% endif %}">
+                                <span>All open</span>
+                                <span class="plates-filter-count">{{ all_count }}</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="?type=replacement&status={{ status_filter|urlencode }}&q={{ q|urlencode }}" class="plates-filter-link{% if request_type == 'replacement' %} is-active{% endif %}">
+                                <span>Replacement</span>
+                                <span class="plates-filter-count">{{ replacement_count }}</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="?type=new_artwork&status={{ status_filter|urlencode }}&q={{ q|urlencode }}" class="plates-filter-link{% if request_type == 'new_artwork' %} is-active{% endif %}">
+                                <span>New Artwork</span>
+                                <span class="plates-filter-count">{{ new_artwork_count }}</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="?type=repeat&status={{ status_filter|urlencode }}&q={{ q|urlencode }}" class="plates-filter-link{% if request_type == 'repeat' %} is-active{% endif %}">
+                                <span>Repeat</span>
+                                <span class="plates-filter-count">{{ repeat_count }}</span>
+                            </a>
+                        </li>
+                    </ul>
 
-                        <div class="erp-filter-group">
-                            <label for="stage" class="erp-field-label">Plate Making Stage</label>
-                            <select id="stage" name="stage" class="erp-select" style="width:100%;">
-                                <option value="">All Stages</option>
-                                <option value="new_plate_making" {% if stage == "new_plate_making" %}selected{% endif %}>New Plate Making</option>
-                                <option value="repeat_plate_making" {% if stage == "repeat_plate_making" %}selected{% endif %}>Repeat Plate Making</option>
-                            </select>
-                        </div>
+                    <hr style="border:0; border-top:1px solid rgba(0,0,0,0.06); margin:12px 0;">
 
-                        <div class="erp-filter-actions" style="margin-top: 10px;">
-                            <button type="submit" class="erp-btn erp-btn-primary" style="width:100%; justify-content:center;">Apply Filters</button>
+                    <ul class="plates-filter-list">
+                        <li>
+                            <a href="?type={{ request_type|urlencode }}&status=draft&q={{ q|urlencode }}" class="plates-filter-link{% if status_filter == 'draft' %} is-active{% endif %}">
+                                <span>Draft</span>
+                                <span class="plates-filter-count">{{ draft_count }}</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="?type={{ request_type|urlencode }}&status=sent_to_vendor&q={{ q|urlencode }}" class="plates-filter-link{% if status_filter == 'sent_to_vendor' %} is-active{% endif %}">
+                                <span>Sent</span>
+                                <span class="plates-filter-count">{{ sent_count }}</span>
+                            </a>
+                        </li>
+                        <li>
+                            <a href="?type={{ request_type|urlencode }}&status=received_from_vendor&q={{ q|urlencode }}" class="plates-filter-link{% if status_filter == 'received_from_vendor' %} is-active{% endif %}">
+                                <span>Received</span>
+                                <span class="plates-filter-count">{{ received_count }}</span>
+                            </a>
+                        </li>
+                    </ul>
+
+                    <form method="GET" class="erp-filter-group" style="margin-top:12px;">
+                        <input type="hidden" name="type" value="{{ request_type }}">
+                        <input type="hidden" name="status" value="{{ status_filter }}">
+                        <label for="q" class="erp-field-label">Search</label>
+                        <input id="q" name="q" value="{{ q }}" placeholder="JC, SKU, AWC, set no" class="erp-input" style="width:100%;">
+                        <div class="erp-filter-actions" style="margin-top:10px;">
+                            <button type="submit" class="erp-btn erp-btn-primary" style="width:100%; justify-content:center;">Apply</button>
                             <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary" style="width:100%; justify-content:center;">Clear</a>
                         </div>
                     </form>
@@ -60,30 +87,17 @@
                     <div class="erp-table-meta" style="margin:0;">
                         <p class="erp-table-meta-text" style="margin:0;">
                             {% if is_paginated %}
-                            Showing page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} · {{ planning_jobs|length }} row(s) on this page · {{ queue_count }} total
+                            Showing page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} · {{ queue_count }} matching
                             {% else %}
-                            {{ queue_count }} job(s) in queue
+                            {{ queue_count }} open request(s)
                             {% endif %}
                         </p>
                     </div>
                 </div>
 
-                {% if planning_jobs %}
+                {% if plate_requests %}
                     <div class="erp-table-scroll erp-records-table-wrap">
                         <table class="erp-table erp-table-dense plate-queue-table">
-                            <colgroup>
-                                <col class="col-jc">
-                                <col class="col-type">
-                                <col class="col-sku">
-                                <col class="col-job">
-                                <col class="col-awc">
-                                <col class="col-stage">
-                                <col class="col-plate-set">
-                                <col class="col-colors">
-                                <col class="col-impression">
-                                <col class="col-progress">
-                                <col class="col-requested">
-                            </colgroup>
                             <thead>
                                 <tr>
                                     <th>JC Number</th>
@@ -91,97 +105,57 @@
                                     <th>SKU</th>
                                     <th>Job Name</th>
                                     <th>AWC No</th>
-                                    <th>Stage</th>
+                                    <th>Workflow</th>
                                     <th>Plate Set</th>
-                                    <th>Colors</th>
-                                    <th>Impression</th>
+                                    <th>Inks / Print Color</th>
                                     <th>Progress</th>
                                     <th>Requested</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for job in planning_jobs %}
-                                {% with req=job.plate_requests.all|first %}
+                                {% for req in plate_requests %}
                                 <tr>
                                     <td>
-                                        <div class="plate-queue-jc">
-                                            <strong><a href="{% url 'planning:job_detail' job.id %}">{{ job.jc_number|default:'—' }}</a></strong>
-                                        </div>
+                                        <strong>
+                                            <a href="{% url 'printing_plates:request_detail' req.pk %}" class="plates-jc-link">
+                                                {{ req.jc_number|default:'—' }}
+                                            </a>
+                                        </strong>
                                     </td>
                                     <td class="erp-plate-type-cell">
-                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with repeat_flag=job.repeat_flag planning_stage=job.planning_stage %}
+                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type repeat_flag=req.planning_job.repeat_flag|default:'' planning_stage=req.planning_job.planning_stage|default:'' %}
                                     </td>
-                                    <td title="{{ job.sku|default:'' }}">{{ job.sku|default:'—' }}</td>
-                                    <td title="{{ job.job_name|default:'' }}">{{ job.job_name|default:'—' }}</td>
-                                    <td>{{ job.awc_no_display|default:req.awc_no|default:'—' }}</td>
-                                    <td>
-                                        {% if job.planning_stage == 'new_plate_making' %}
-                                            <span class="erp-badge erp-badge-info">New Plate</span>
-                                        {% elif job.planning_stage == 'repeat_plate_making' %}
-                                            <span class="erp-badge erp-badge-warning">Repeat Plate</span>
-                                        {% else %}
-                                            <span class="erp-badge">{{ job.get_planning_stage_display|default:job.planning_stage|default:'—' }}</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>{{ job.effective_plate_set_no|default:req.set_no|default:req.new_set_no|default:'—' }}</td>
-                                    <td title="{% if job.total_colors %}{{ job.total_colors }} colors{% elif job.color_spec_display %}{{ job.color_spec_display }}{% elif req.plate_color %}{{ req.plate_color }}{% endif %}">
-                                        {% if job.total_colors %}
-                                            {{ job.total_colors }}
-                                        {% elif job.color_spec_display %}
-                                            {{ job.color_spec_display }}
-                                        {% elif req.plate_color %}
-                                            {{ req.plate_color }}
-                                        {% else %}
-                                            —
-                                        {% endif %}
+                                    <td title="{{ req.sku|default:'' }}">{{ req.sku|default:'—' }}</td>
+                                    <td title="{{ req.job_name|default:'' }}">{{ req.job_name|default:'—' }}</td>
+                                    <td>{{ req.display_awc_no|default:'—' }}</td>
+                                    <td><span class="erp-badge">{{ req.get_status_display }}</span></td>
+                                    <td>{{ req.display_set_no|default:'—' }}</td>
+                                    <td title="{{ req.damaged_colors|default:req.plate_color|default:req.print_color_display|default:'' }}">
+                                        {{ req.damaged_colors|default:req.plate_color|default:req.print_color_display|default:'—' }}
                                     </td>
                                     <td>
-                                        {% if req.impression %}
-                                            {{ req.impression }}
-                                        {% elif job.planned_total_impressions %}
-                                            {{ job.planned_total_impressions }}
-                                        {% elif job.calculated_planned_total_impressions %}
-                                            {{ job.calculated_planned_total_impressions }}
-                                        {% else %}
-                                            —
-                                        {% endif %}
+                                        <a href="{% url 'printing_plates:request_detail' req.pk %}">
+                                            {{ req.progress|default:req.get_status_display }}
+                                        </a>
                                     </td>
-                                    <td class="plate-queue-progress">
-                                        {% if req %}
-                                            <a href="{% url 'printing_plates:request_detail' req.pk %}">
-                                                {{ req.progress|default:req.get_status_display|default:'—' }}
-                                            </a>
-                                        {% else %}
-                                            <span class="erp-text-muted">No request yet</span>
-                                        {% endif %}
-                                    </td>
-                                    <td>
-                                        {% if req.requested_at %}
-                                            {{ req.requested_at|date:'Y-m-d H:i' }}
-                                        {% elif job.planning_stage_changed_at %}
-                                            {{ job.planning_stage_changed_at|date:'Y-m-d H:i' }}
-                                        {% else %}
-                                            {{ job.updated_at|date:'Y-m-d H:i' }}
-                                        {% endif %}
-                                    </td>
+                                    <td>{{ req.requested_at|date:'Y-m-d H:i'|default:req.created_at|date:'Y-m-d H:i'|default:'—' }}</td>
                                 </tr>
-                                {% endwith %}
                                 {% endfor %}
                             </tbody>
                         </table>
                     </div>
                 {% else %}
-                    <p class="erp-empty-state">No plate-related jobs found in the queue matching the criteria.</p>
+                    <p class="erp-empty-state">No open plate requests in the queue.</p>
                 {% endif %}
 
                 {% if is_paginated %}
                 <nav class="erp-pagination" aria-label="Page navigation" style="margin-top: 15px;">
                     {% if page_obj.has_previous %}
-                        <a href="?q={{ q|urlencode }}&stage={{ stage|urlencode }}&page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary">Previous</a>
+                        <a href="?q={{ q|urlencode }}&type={{ request_type|urlencode }}&status={{ status_filter|urlencode }}&page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary">Previous</a>
                     {% endif %}
                     <span class="erp-table-meta-text">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
                     {% if page_obj.has_next %}
-                        <a href="?q={{ q|urlencode }}&stage={{ stage|urlencode }}&page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary">Next</a>
+                        <a href="?q={{ q|urlencode }}&type={{ request_type|urlencode }}&status={{ status_filter|urlencode }}&page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary">Next</a>
                     {% endif %}
                 </nav>
                 {% endif %}

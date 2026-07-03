@@ -16,6 +16,62 @@ from core.jc_numbering import allocate_next_jc_number
 
 NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
 
+
+def get_awc_conflict_message(awc_no, *, sku='', exclude_recipe_id=None, exclude_plate_request_id=None):
+    """AWC is unique per design/SKU. Same SKU may reuse its code (repeat/remake)."""
+    awc = (awc_no or '').strip()
+    if not awc:
+        return ''
+
+    sku_key = (sku or '').strip()
+
+    recipe_qs = SkuRecipe.objects.filter(awc_no__iexact=awc).exclude(awc_no='')
+    if exclude_recipe_id:
+        recipe_qs = recipe_qs.exclude(pk=exclude_recipe_id)
+    if sku_key:
+        recipe_qs = recipe_qs.exclude(sku__iexact=sku_key)
+    other_recipe = recipe_qs.order_by('id').first()
+    if other_recipe:
+        return (
+            f'AWC # "{awc}" is already assigned to SKU {other_recipe.sku}. '
+            'Artwork codes are unique per design/SKU.'
+        )
+
+    from printing_plates.models import PlateRequest
+
+    plate_qs = (
+        PlateRequest.objects.filter(awc_no__iexact=awc)
+        .exclude(awc_no='')
+        .select_related('planning_job', 'sku_recipe', 'job_card')
+        .order_by('id')
+    )
+    if exclude_plate_request_id:
+        plate_qs = plate_qs.exclude(pk=exclude_plate_request_id)
+
+    for req in plate_qs[:100]:
+        req_sku = ''
+        if req.sku_recipe_id and req.sku_recipe:
+            req_sku = (req.sku_recipe.sku or '').strip()
+        if not req_sku and req.planning_job_id and req.planning_job:
+            req_sku = (req.planning_job.sku or '').strip()
+        if not req_sku and req.job_card_id and req.job_card:
+            req_sku = (getattr(req.job_card, 'SKU', None) or '').strip()
+
+        if sku_key and req_sku and req_sku.lower() == sku_key.lower():
+            continue
+        if req_sku and (not sku_key or req_sku.lower() != sku_key.lower()):
+            return (
+                f'AWC # "{awc}" is already assigned to SKU {req_sku}. '
+                'Artwork codes are unique per design/SKU.'
+            )
+        if not req_sku and sku_key:
+            return (
+                f'AWC # "{awc}" is already used on another plate request. '
+                'Artwork codes are unique per design/SKU.'
+            )
+    return ''
+
+
 def _user_is_admin(user):
     profile = getattr(user, 'profile', None)
     return getattr(user, 'is_superuser', False) or (profile is not None and profile.normalized_role == 'admin')
@@ -70,18 +126,21 @@ def get_sku_recipe_field_role(field_name):
     return 'shared'
 
 
-def sku_recipe_field_editable_by_user(field_name, user, *, is_readonly=False):
+def sku_recipe_field_editable_by_user(field_name, user, *, is_readonly=False, recipe=None):
     if is_readonly:
         return False
     if _user_is_admin(user):
         return True
 
-    role = get_sku_recipe_field_role(field_name)
-    if role == 'shared':
-        return field_name != 'sku'
+    # SKU and job name are identity fields — admin only.
+    if field_name in SKU_RECIPE_SHARED_FIELDS:
+        return False
 
+    role = get_sku_recipe_field_role(field_name)
     if _user_is_graphics_designer(user):
         return role == 'designer'
+    if role == 'designer':
+        return planner_can_edit_designer_fields(recipe)
     return role == 'planner'
 
 
@@ -102,11 +161,24 @@ def get_sku_recipe_form_ui_context(user, *, is_readonly=False):
     }
 
 
-def enrich_sku_recipe_form_ui(form, user, *, is_readonly=False):
+def planner_can_edit_designer_fields(recipe):
+    """
+    After change management (Reopen SKU / send back to Draft), planner may edit
+    designer layout fields (machine-driven plate size, print sheet size, etc.).
+    First-time drafts keep designer fields for graphics only.
+    """
+    if not recipe or recipe.master_data_status == 'approved':
+        return False
+    return bool(recipe.last_rejected_at or (recipe.rejection_comment or '').strip())
+
+
+def enrich_sku_recipe_form_ui(form, user, *, is_readonly=False, recipe=None):
     """Attach role metadata used by SKU master templates for highlights and badges."""
     for field_name, field in form.fields.items():
         role = get_sku_recipe_field_role(field_name)
-        is_mine = sku_recipe_field_editable_by_user(field_name, user, is_readonly=is_readonly)
+        is_mine = sku_recipe_field_editable_by_user(
+            field_name, user, is_readonly=is_readonly, recipe=recipe,
+        )
         field.sku_role = role
         field.sku_role_label = SKU_RECIPE_FIELD_ROLE_LABELS[role]
         field.sku_is_mine = is_mine
@@ -117,32 +189,50 @@ def enrich_sku_recipe_form_ui(form, user, *, is_readonly=False):
     return form
 
 
-def apply_sku_recipe_form_role_permissions(form, user, *, is_readonly=False):
+def apply_sku_recipe_form_role_permissions(form, user, *, is_readonly=False, recipe=None):
     """Restrict SKU master fields by role: planners edit planner fields, designers edit layout fields."""
     if is_readonly:
         for field in form.fields.values():
             field.disabled = True
-        return enrich_sku_recipe_form_ui(form, user, is_readonly=True)
+        return enrich_sku_recipe_form_ui(form, user, is_readonly=True, recipe=recipe)
 
     if _user_is_admin(user):
-        return enrich_sku_recipe_form_ui(form, user, is_readonly=False)
+        return enrich_sku_recipe_form_ui(form, user, is_readonly=False, recipe=recipe)
+
+    # SKU + job name locked for everyone except admin.
+    for field_name in SKU_RECIPE_SHARED_FIELDS:
+        if field_name in form.fields:
+            form.fields[field_name].disabled = True
 
     if _user_is_graphics_designer(user):
         for field_name in SKU_RECIPE_PLANNER_FIELDS:
             if field_name in form.fields:
                 form.fields[field_name].disabled = True
-        return enrich_sku_recipe_form_ui(form, user, is_readonly=False)
+        return enrich_sku_recipe_form_ui(form, user, is_readonly=False, recipe=recipe)
 
-    for field_name in SKU_RECIPE_DESIGNER_FIELDS:
-        if field_name in form.fields:
-            form.fields[field_name].disabled = True
+    # Planner: unlock designer fields only during change management (reopened SKU).
+    if not planner_can_edit_designer_fields(recipe):
+        for field_name in SKU_RECIPE_DESIGNER_FIELDS:
+            if field_name in form.fields:
+                form.fields[field_name].disabled = True
 
-    return enrich_sku_recipe_form_ui(form, user, is_readonly=is_readonly)
+    return enrich_sku_recipe_form_ui(form, user, is_readonly=is_readonly, recipe=recipe)
 
 
 def merge_preserved_sku_recipe_fields(posted, recipe, user):
-    """Keep existing designer-field values when a planner cannot edit them."""
-    if not recipe or _user_is_admin(user) or _user_is_graphics_designer(user):
+    """Keep locked field values when the current user cannot edit them."""
+    if not recipe:
+        return posted
+
+    if not _user_is_admin(user):
+        for field_name in SKU_RECIPE_SHARED_FIELDS:
+            value = getattr(recipe, field_name, None)
+            if value is not None and str(value).strip():
+                posted[field_name] = str(value)
+
+    if _user_is_admin(user) or _user_is_graphics_designer(user):
+        return posted
+    if planner_can_edit_designer_fields(recipe):
         return posted
 
     for field_name in SKU_RECIPE_DESIGNER_FIELDS:
@@ -151,6 +241,295 @@ def merge_preserved_sku_recipe_fields(posted, recipe, user):
             if value is not None and str(value).strip():
                 posted[field_name] = str(value)
     return posted
+
+
+# Fields that affect plate size / layout — warn about plate remake when these change.
+PLATE_REMAKE_IMPACT_FIELDS = {
+    'machine_name': 'Machine',
+    'print_sheet_size': 'Print Sheet Size',
+    'size_w_mm': 'Size Width',
+    'size_h_mm': 'Size Height',
+    'ups': 'UPS',
+}
+
+
+def sku_has_jobs_with_plates(sku):
+    """True when any job for this SKU has plates sent, received, issued, or archived."""
+    sku_value = (sku or '').strip()
+    if not sku_value:
+        return False
+
+    from printing_plates.models import PlateRequest
+
+    plate_statuses = {
+        PlateRequest.STATUS_SENT,
+        PlateRequest.STATUS_RECEIVED,
+        PlateRequest.STATUS_AVAILABLE,
+        PlateRequest.STATUS_ARCHIVED,
+    }
+    if PlateRequest.objects.filter(
+        Q(planning_job__sku__iexact=sku_value) | Q(job_card__SKU__iexact=sku_value) | Q(sku_recipe__sku__iexact=sku_value),
+        status__in=plate_statuses,
+    ).exists():
+        return True
+
+    return PlanningJob.objects.filter(
+        sku__iexact=sku_value,
+        planning_stage__in={'plate_received', 'repeat_plate_making', 'new_plate_making', 'planning_done'},
+    ).exists()
+
+
+def get_plate_remake_impact_changes(old_values, new_values):
+    """Return labels of plate-impact fields that changed between old and new value maps."""
+    changed = []
+    for field_name, label in PLATE_REMAKE_IMPACT_FIELDS.items():
+        old_value = old_values.get(field_name)
+        new_value = new_values.get(field_name)
+        if not _master_sync_field_values_equal(old_value, new_value, field_name=field_name):
+            changed.append(label)
+    return changed
+
+
+def build_plate_remake_warning(changed_labels, *, context='save'):
+    if not changed_labels:
+        return ''
+    labels = ', '.join(changed_labels)
+    if context == 'sync':
+        return (
+            f'Plate remake may be required ({labels} changed). '
+            'Machine change needs plates sized for that press even if print sheet size stays the same. '
+            'If plates already exist, use Production → Released Jobs → Request plates.'
+        )
+    return (
+        f'Plate remake may be required ({labels} changed). '
+        'Machine change needs plates sized for that press even if print sheet size stays the same. '
+        'After re-approval, sync the job and use Production → Released Jobs → Request plates if plates already exist.'
+    )
+
+
+def get_plate_remake_warning_for_recipe_save(recipe, previous_values):
+    if not recipe or not sku_has_jobs_with_plates(recipe.sku):
+        return ''
+    new_values = {field: getattr(recipe, field, None) for field in PLATE_REMAKE_IMPACT_FIELDS}
+    changed = get_plate_remake_impact_changes(previous_values or {}, new_values)
+    return build_plate_remake_warning(changed, context='save')
+
+
+def job_has_plates(job):
+    from printing_plates.models import PlateRequest
+
+    plate_statuses = {
+        PlateRequest.STATUS_SENT,
+        PlateRequest.STATUS_RECEIVED,
+        PlateRequest.STATUS_AVAILABLE,
+        PlateRequest.STATUS_ARCHIVED,
+    }
+    if PlateRequest.objects.filter(
+        Q(planning_job=job) | Q(job_card__planning_job=job),
+        status__in=plate_statuses,
+    ).exists():
+        return True
+    return (job.planning_stage or '') in {
+        'plate_received',
+        'repeat_plate_making',
+        'new_plate_making',
+        'planning_done',
+    }
+
+
+def get_plate_remake_warning_for_job_sync(job, diffs):
+    if not diffs or not job_has_plates(job):
+        return ''
+    changed = [
+        PLATE_REMAKE_IMPACT_FIELDS[field_name]
+        for field_name in PLATE_REMAKE_IMPACT_FIELDS
+        if field_name in diffs
+    ]
+    if not changed:
+        return ''
+    return build_plate_remake_warning(changed, context='sync')
+
+
+SKU_RECIPE_STATUS_ORDER = {'approved': 0, 'reviewed': 1, 'pending_review': 2, 'draft': 3}
+
+PLANNING_TO_SKU_RECIPE_FIELDS = (
+    'job_name',
+    'material',
+    'application',
+    'machine_name',
+    'color_spec',
+    'size_w_mm',
+    'size_h_mm',
+    'ups',
+    'print_sheet_size',
+    'purchase_sheet_size',
+    'purchase_sheet_ups',
+    'plate_set_no',
+    'remarks',
+)
+
+
+def get_best_sku_recipe_for_sku(sku):
+    sku_value = (sku or '').strip()
+    if not sku_value:
+        return None
+    candidates = list(SkuRecipe.objects.filter(sku__iexact=sku_value))
+    if not candidates:
+        return None
+    return min(
+        candidates,
+        key=lambda recipe: SKU_RECIPE_STATUS_ORDER.get(recipe.master_data_status or '', 99),
+    )
+
+
+def ensure_sku_recipe_for_planning_job(planning_job, *, actor=None, create_if_missing=True):
+    """Return the SKU master row for a planning job, creating a draft when missing."""
+    sku = (getattr(planning_job, 'sku', None) or '').strip()
+    if not sku:
+        return None
+
+    recipe = get_best_sku_recipe_for_sku(sku)
+    if recipe or not create_if_missing:
+        return recipe
+
+    return SkuRecipe.objects.create(
+        sku=sku,
+        job_name=(planning_job.job_name or '').strip() or sku,
+        master_data_status='draft',
+        created_by=actor,
+    )
+
+
+def sync_planning_job_fields_to_sku_recipe(planning_job, recipe, *, submit_for_review=False):
+    """Copy planning/designer fields onto the SKU master when recipe values are blank."""
+    if not planning_job or not recipe:
+        return False
+
+    from core.print_colors import apply_print_color_to_planning_job, apply_print_color_to_sku_recipe
+
+    apply_print_color_to_planning_job(planning_job)
+
+    update_fields = []
+    for field_name in PLANNING_TO_SKU_RECIPE_FIELDS:
+        source_value = getattr(planning_job, field_name, None)
+        if source_value is None or (isinstance(source_value, str) and not source_value.strip()):
+            continue
+
+        current_value = getattr(recipe, field_name, None)
+        if isinstance(current_value, str):
+            if current_value.strip():
+                continue
+        elif current_value is not None:
+            continue
+
+        setattr(recipe, field_name, source_value)
+        update_fields.append(field_name)
+
+    if apply_print_color_to_sku_recipe(recipe) and 'color_spec' not in update_fields:
+        update_fields.append('color_spec')
+
+    if submit_for_review and recipe.master_data_status == 'draft' and update_fields:
+        missing = _missing_required_master_fields(recipe, recipe.job_name or planning_job.job_name)
+        if not missing:
+            recipe.master_data_status = 'pending_review'
+            update_fields.append('master_data_status')
+
+    if update_fields:
+        update_fields.append('updated_at')
+        recipe.save(update_fields=list(dict.fromkeys(update_fields)))
+        return True
+    return False
+
+
+def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, submit_for_review=True):
+    """Persist designer layout specs from plate making onto the SKU master."""
+    if not planning_job or not recipe:
+        return False
+
+    simple_fields = {
+        'size_w_mm': 'size_w_mm',
+        'size_h_mm': 'size_h_mm',
+        'ups': 'ups',
+        'print_sheet_size': 'print_sheet_size',
+        'purchase_sheet_size': 'purchase_sheet_size',
+        'purchase_sheet_ups': 'purchase_sheet_ups',
+        'die_cutting': 'die_cutting',
+        # plate_color chips are ink names only — never overwrite production print color (color_spec).
+        'awc_no': 'awc_no',
+    }
+
+    posted_awc = str(posted_values.get('awc_no') or '').strip()
+    if posted_awc:
+        conflict = get_awc_conflict_message(
+            posted_awc,
+            sku=recipe.sku or getattr(planning_job, 'sku', ''),
+            exclude_recipe_id=recipe.pk if recipe.pk else None,
+        )
+        if conflict:
+            raise ValueError(conflict)
+
+    update_fields = []
+    for recipe_field, posted_field in simple_fields.items():
+        raw_value = posted_values.get(posted_field)
+        if raw_value is None:
+            continue
+        value = str(raw_value).strip()
+        if not value:
+            continue
+
+        if recipe_field in {'size_w_mm', 'size_h_mm', 'ups', 'purchase_sheet_ups'}:
+            try:
+                value = int(round(float(value)))
+            except (TypeError, ValueError):
+                continue
+
+        setattr(recipe, recipe_field, value)
+        update_fields.append(recipe_field)
+
+    set_no = str(posted_values.get('set_no') or '').strip()
+    new_set_no = str(posted_values.get('new_set_no') or '').strip()
+    plate_set_no = set_no or new_set_no
+    if plate_set_no:
+        recipe.plate_set_no = plate_set_no
+        update_fields.append('plate_set_no')
+
+    # Only send to QC when all approval-required fields are present.
+    # Incomplete recipes stay Draft so planner can finish material/application/etc.
+    if submit_for_review and recipe.master_data_status in {'draft', ''}:
+        missing = _missing_required_master_fields(recipe, recipe.job_name or planning_job.job_name)
+        if not missing:
+            recipe.master_data_status = 'pending_review'
+            update_fields.append('master_data_status')
+
+    if update_fields:
+        update_fields.append('updated_at')
+        recipe.save(update_fields=list(dict.fromkeys(update_fields)))
+        return True
+    return False
+
+
+def build_sku_recipe_initial_from_planning_job(planning_job, *, recipe=None, po_defaults=None):
+    """Build form initial values, preferring recipe then planning job then PO defaults."""
+    po_defaults = po_defaults or {}
+    initial = {
+        'sku': (planning_job.sku or '').strip(),
+        'job_name': (recipe.job_name if recipe else '') or (planning_job.job_name or '').strip() or (planning_job.sku or '').strip(),
+        'default_unit_cost': (recipe.default_unit_cost if recipe else None) or po_defaults.get('default_unit_cost'),
+        'color_spec': (recipe.color_spec if recipe else '') or (planning_job.color_spec or '') or po_defaults.get('color_spec', ''),
+        'application': (recipe.application if recipe else '') or (planning_job.application or '') or po_defaults.get('application', ''),
+        'machine_name': (recipe.machine_name if recipe else '') or (planning_job.machine_name or ''),
+        'material': (recipe.material if recipe else '') or (planning_job.material or ''),
+        'plate_set_no': (recipe.plate_set_no if recipe else '') or (planning_job.plate_set_no or ''),
+        'size_w_mm': (recipe.size_w_mm if recipe else None) or planning_job.size_w_mm,
+        'size_h_mm': (recipe.size_h_mm if recipe else None) or planning_job.size_h_mm,
+        'ups': (recipe.ups if recipe else None) or planning_job.ups,
+        'print_sheet_size': (recipe.print_sheet_size if recipe else '') or (planning_job.print_sheet_size or ''),
+        'purchase_sheet_size': (recipe.purchase_sheet_size if recipe else '') or (planning_job.purchase_sheet_size or ''),
+        'purchase_sheet_ups': (recipe.purchase_sheet_ups if recipe else None) or planning_job.purchase_sheet_ups,
+        'notes': (recipe.notes if recipe else '') or '',
+        'remarks': (recipe.remarks if recipe else '') or (planning_job.remarks or '') or po_defaults.get('remarks', ''),
+    }
+    return initial
 
 
 def prepare_sku_recipe_form_for_master_entry(form, *, action=''):
@@ -252,7 +631,7 @@ def _build_job_card_pdf_bytes(job, scan_url):
 
     material_data = [
         [Paragraph('ORDER QTY', label_style), _format_job_value(job.order_qty), Paragraph('PRINT PCS', label_style), _format_job_value(job.print_pcs)],
-        [Paragraph('MATERIAL TYPE', label_style), _format_job_value(job.material), Paragraph('COLOR', label_style), _format_job_value(job.color_spec)],
+        [Paragraph('MATERIAL TYPE', label_style), _format_job_value(job.material), Paragraph('PRINT COLOR', label_style), _format_job_value(job.color_spec)],
         [Paragraph('APPLICATION', label_style), _format_job_value(job.application), Paragraph('PRINT SHEET SIZE', label_style), _format_job_value(job.print_sheet_size)],
         [Paragraph('UPS', label_style), _format_job_value(job.ups), Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
         [Paragraph('ACTUAL SHEETS', label_style), _format_job_value(job.calculated_sheets_required), Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
@@ -1094,8 +1473,9 @@ def _collect_pending_sku_rows(po_docs):
 MASTER_SYNC_FIELD_LABELS = {
     'job_name': 'Job Name',
     'material': 'Material',
-    'color_spec': 'Color',
+    'color_spec': 'Print Color',
     'application': 'Application',
+    'machine_name': 'Machine',
     'size_w_mm': 'Size W (mm)',
     'size_h_mm': 'Size H (mm)',
     'ups': 'UPS',
@@ -1243,6 +1623,10 @@ def apply_master_data_sync(job, actor):
         'balance_qty',
         'total_colors',
     ])
+
+    from core.print_colors import apply_print_color_to_planning_job
+
+    apply_print_color_to_planning_job(job)
 
     with transaction.atomic():
         job.save()

@@ -1,6 +1,6 @@
 from django.contrib.auth.mixins import LoginRequiredMixin, UserPassesTestMixin
-from django.db.models import Prefetch, Q
-from django.urls import reverse_lazy
+from django.db.models import Q
+from django.urls import reverse, reverse_lazy
 from django.utils import timezone
 from django.contrib import messages
 from django.views.generic import ListView, DetailView, CreateView, TemplateView
@@ -8,6 +8,7 @@ from django.views.generic import ListView, DetailView, CreateView, TemplateView
 from planning.models import PlanningJob
 from .forms import PlateRequestForm
 from .models import PlateRequest
+from .services import build_vendor_filter_options
 from core.models import Vendor
 
 
@@ -22,37 +23,33 @@ class PlateDashboardView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Templa
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
+        replacement_filter = (
+            Q(source__in=['replacement', 'production_plate_damage'])
+            | ~Q(replacement_reason='')
+        )
+
         # 1. Plate Request Counts
         req_qs = PlateRequest.objects.all()
         context['req_all_count'] = req_qs.count()
         context['req_repeat_count'] = req_qs.filter(
             Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
-        ).count()
+        ).exclude(replacement_filter).count()
         context['req_new_artwork_count'] = req_qs.filter(
             Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
-        ).count()
-        
-        # 2. Plate Sent Counts
+        ).exclude(replacement_filter).count()
+        context['req_replacement_count'] = req_qs.filter(replacement_filter).count()
+
+        # 2. Plate Sent Counts (vendors from master + used values)
         sent_qs = PlateRequest.objects.filter(status=PlateRequest.STATUS_SENT)
         context['sent_all_count'] = sent_qs.count()
-        
-        vendors = ['Dot Max', 'Ali Print Pack', 'Daniyal Process', 'In House', 'Cancel']
-        sent_counts = {}
-        for v in vendors:
-            sent_counts[v.replace(' ', '_')] = sent_qs.filter(vendor=v).count()
-        context['sent_counts'] = sent_counts
-        
+        context['sent_vendor_options'] = build_vendor_filter_options(sent_qs)
+
         # 3. Plate Received Counts
         rec_qs = PlateRequest.objects.filter(status=PlateRequest.STATUS_RECEIVED)
         context['rec_all_count'] = rec_qs.count()
         context['rec_empty_count'] = rec_qs.filter(vendor='').count()
-        
-        rec_counts = {}
-        for v in vendors:
-            rec_counts[v.replace(' ', '_')] = rec_qs.filter(vendor=v).count()
-        context['rec_counts'] = rec_counts
-        
+        context['rec_vendor_options'] = build_vendor_filter_options(rec_qs)
+
         return context
 
 
@@ -69,19 +66,32 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
 
         # Type filter from AppSheet sidebar
         self.request_type = self.request.GET.get('type', '').strip().lower()
+        replacement_filter = (
+            Q(source__in=['replacement', 'production_plate_damage'])
+            | ~Q(replacement_reason='')
+        )
         if self.request_type == 'repeat':
             queryset = queryset.filter(
                 Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
-            )
+            ).exclude(replacement_filter)
         elif self.request_type == 'new_artwork':
             queryset = queryset.filter(
                 Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
+            ).exclude(replacement_filter)
+        elif self.request_type == 'replacement':
+            queryset = queryset.filter(replacement_filter)
+        elif self.request_type == 'cancelled':
+            queryset = queryset.filter(
+                Q(progress__istartswith='Cancelled')
+                | Q(remarks__icontains='Cancelled — plates not required')
+                | Q(remarks__icontains='Cancelled - plates not required')
+                | Q(status=PlateRequest.STATUS_ARCHIVED, progress__icontains='Cancel')
             )
         elif self.request_type == 'empty':
             queryset = queryset.exclude(
                 Q(planning_job__repeat_flag='New') | Q(planning_job__repeat_flag='Repeat') |
                 Q(job_card__planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='Repeat')
-            )
+            ).exclude(replacement_filter)
 
         # General search filter
         q = self.request.GET.get('q', '').strip()
@@ -102,19 +112,31 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
         
         # Calculate dynamic counts for sidebar
         base_qs = PlateRequest.objects.all()
-        
+        replacement_filter = (
+            Q(source__in=['replacement', 'production_plate_damage'])
+            | ~Q(replacement_reason='')
+        )
+
         context['repeat_count'] = base_qs.filter(
             Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
-        ).count()
-        
+        ).exclude(replacement_filter).count()
+
         context['new_artwork_count'] = base_qs.filter(
             Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
+        ).exclude(replacement_filter).count()
+
+        context['replacement_count'] = base_qs.filter(replacement_filter).count()
+        context['cancelled_count'] = base_qs.filter(
+            Q(progress__istartswith='Cancelled')
+            | Q(remarks__icontains='Cancelled — plates not required')
+            | Q(remarks__icontains='Cancelled - plates not required')
+            | Q(status=PlateRequest.STATUS_ARCHIVED, progress__icontains='Cancel')
         ).count()
-        
+
         context['empty_count'] = base_qs.exclude(
             Q(planning_job__repeat_flag='New') | Q(planning_job__repeat_flag='Repeat') |
             Q(job_card__planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='Repeat')
-        ).count()
+        ).exclude(replacement_filter).count()
 
         context['all_count'] = base_qs.count()
         context['request_type'] = self.request_type
@@ -124,52 +146,91 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
 
 
 class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
-    model = PlanningJob
+    """Active plate work: open plate requests only (same source of truth as Plate Requests)."""
+
+    model = PlateRequest
     template_name = 'printing_plates/plate_queue.html'
-    context_object_name = 'planning_jobs'
+    context_object_name = 'plate_requests'
     paginate_by = 50
 
     def get_queryset(self):
-        active_statuses = [
-            PlateRequest.STATUS_DRAFT,
-            PlateRequest.STATUS_SENT,
-            PlateRequest.STATUS_RECEIVED,
-        ]
-        active_plate_requests = Prefetch(
-            'plate_requests',
-            queryset=PlateRequest.objects.order_by('-requested_at', '-created_at'),
-        )
-        queryset = PlanningJob.objects.filter(
-            planning_stage__in=['new_plate_making', 'repeat_plate_making']
-        ).filter(
-            Q(plate_requests__status__in=active_statuses) | Q(plate_requests__isnull=True)
-        ).select_related('job_card').prefetch_related(active_plate_requests).distinct().order_by('-updated_at', '-id')
+        queryset = PlateRequest.objects.filter(
+            status__in=[
+                PlateRequest.STATUS_DRAFT,
+                PlateRequest.STATUS_SENT,
+                PlateRequest.STATUS_RECEIVED,
+            ]
+        ).select_related(
+            'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by'
+        ).order_by('-requested_at', '-created_at')
 
-        # Search filter
         q = self.request.GET.get('q', '').strip()
         if q:
             queryset = queryset.filter(
-                Q(jc_number__icontains=q) |
-                Q(job_name__icontains=q) |
-                Q(sku__icontains=q)
+                Q(job_card__job_card_no__icontains=q)
+                | Q(planning_job__jc_number__icontains=q)
+                | Q(planning_job__job_name__icontains=q)
+                | Q(planning_job__sku__icontains=q)
+                | Q(sku_recipe__sku__icontains=q)
+                | Q(awc_no__icontains=q)
+                | Q(set_no__icontains=q)
+                | Q(new_set_no__icontains=q)
             )
 
-        # Stage filter
-        stage = self.request.GET.get('stage', '').strip()
-        if stage in ['new_plate_making', 'repeat_plate_making']:
-            queryset = queryset.filter(planning_stage=stage)
+        self.request_type = self.request.GET.get('type', '').strip().lower()
+        replacement_filter = (
+            Q(source__in=['replacement', 'production_plate_damage'])
+            | ~Q(replacement_reason='')
+        )
+        if self.request_type == 'replacement':
+            queryset = queryset.filter(replacement_filter)
+        elif self.request_type == 'repeat':
+            queryset = queryset.filter(
+                Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
+            ).exclude(replacement_filter)
+        elif self.request_type == 'new_artwork':
+            queryset = queryset.filter(
+                Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
+            ).exclude(replacement_filter)
+
+        self.status_filter = self.request.GET.get('status', '').strip()
+        if self.status_filter in {
+            PlateRequest.STATUS_DRAFT,
+            PlateRequest.STATUS_SENT,
+            PlateRequest.STATUS_RECEIVED,
+        }:
+            queryset = queryset.filter(status=self.status_filter)
 
         return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
+        base_qs = PlateRequest.objects.filter(
+            status__in=[
+                PlateRequest.STATUS_DRAFT,
+                PlateRequest.STATUS_SENT,
+                PlateRequest.STATUS_RECEIVED,
+            ]
+        )
+        replacement_filter = (
+            Q(source__in=['replacement', 'production_plate_damage'])
+            | ~Q(replacement_reason='')
+        )
         context['q'] = self.request.GET.get('q', '')
-        context['stage'] = self.request.GET.get('stage', '')
-        page_obj = context.get('page_obj')
-        if page_obj is not None:
-            context['queue_count'] = page_obj.paginator.count
-        else:
-            context['queue_count'] = len(context.get('planning_jobs') or [])
+        context['request_type'] = getattr(self, 'request_type', '')
+        context['status_filter'] = getattr(self, 'status_filter', '')
+        context['queue_count'] = self.get_queryset().count()
+        context['all_count'] = base_qs.count()
+        context['replacement_count'] = base_qs.filter(replacement_filter).count()
+        context['repeat_count'] = base_qs.filter(
+            Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
+        ).exclude(replacement_filter).count()
+        context['new_artwork_count'] = base_qs.filter(
+            Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
+        ).exclude(replacement_filter).count()
+        context['draft_count'] = base_qs.filter(status=PlateRequest.STATUS_DRAFT).count()
+        context['sent_count'] = base_qs.filter(status=PlateRequest.STATUS_SENT).count()
+        context['received_count'] = base_qs.filter(status=PlateRequest.STATUS_RECEIVED).count()
         return context
 
 
@@ -187,10 +248,10 @@ class PlateSentListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListVie
             'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by', 'sent_by'
         ).order_by('-sent_at', '-requested_at')
 
-        # Vendor filter from sidebar
+        # Vendor filter from sidebar (soft-coded master + used vendors)
         self.vendor_filter = self.request.GET.get('vendor', '').strip()
         if self.vendor_filter:
-            queryset = queryset.filter(vendor=self.vendor_filter)
+            queryset = queryset.filter(vendor__iexact=self.vendor_filter)
 
         # Search filter
         q = self.request.GET.get('q', '').strip()
@@ -208,18 +269,8 @@ class PlateSentListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListVie
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # Base query of sent requests
         base_qs = PlateRequest.objects.filter(status=PlateRequest.STATUS_SENT)
-        
-        # Setup vendor counts
-        vendors = ['Dot Max', 'Ali Print Pack', 'Daniyal Process', 'In House', 'Cancel']
-        counts = {}
-        for v in vendors:
-            key_name = v.replace(' ', '_')
-            counts[key_name] = base_qs.filter(vendor=v).count()
-            
-        context['vendor_counts'] = counts
+        context['vendor_options'] = build_vendor_filter_options(base_qs)
         context['all_count'] = base_qs.count()
         context['vendor_filter'] = self.vendor_filter
         context['q'] = self.request.GET.get('q', '')
@@ -237,12 +288,12 @@ class PlateReceivedListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Lis
             'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by', 'received_by'
         ).order_by('-received_at', '-requested_at')
 
-        # Vendor filter from sidebar
+        # Vendor filter from sidebar (soft-coded master + used vendors)
         self.vendor_filter = self.request.GET.get('vendor', '').strip()
         if self.vendor_filter == 'empty':
             queryset = queryset.filter(vendor='')
         elif self.vendor_filter:
-            queryset = queryset.filter(vendor=self.vendor_filter)
+            queryset = queryset.filter(vendor__iexact=self.vendor_filter)
 
         # Search filter
         q = self.request.GET.get('q', '').strip()
@@ -260,18 +311,8 @@ class PlateReceivedListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Lis
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # Base query of received requests
         base_qs = PlateRequest.objects.filter(status=PlateRequest.STATUS_RECEIVED)
-        
-        # Setup vendor counts
-        vendors = ['Dot Max', 'Ali Print Pack', 'Daniyal Process', 'In House', 'Cancel']
-        counts = {}
-        for v in vendors:
-            key_name = v.replace(' ', '_')
-            counts[key_name] = base_qs.filter(vendor=v).count()
-            
-        context['vendor_counts'] = counts
+        context['vendor_options'] = build_vendor_filter_options(base_qs)
         context['empty_count'] = base_qs.filter(vendor='').count()
         context['all_count'] = base_qs.count()
         context['vendor_filter'] = self.vendor_filter
@@ -287,6 +328,8 @@ class PlateRequestDetailView(LoginRequiredMixin, GraphicsDesignerAccessMixin, De
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
         context['vendors'] = Vendor.objects.filter(is_active=True).order_by('name')
+        from printing_plates.constants import PLATE_INK_OPTIONS
+        context['plate_ink_options'] = PLATE_INK_OPTIONS
 
         # Resolve the best available master recipe for this plate request's SKU,
         # falling back through: approved > reviewed > pending_review > draft.
@@ -299,18 +342,46 @@ class PlateRequestDetailView(LoginRequiredMixin, GraphicsDesignerAccessMixin, De
             or ''
         ).strip()
 
-        master_recipe = plate_request.sku_recipe  # default: linked recipe
+        master_recipe = plate_request.sku_recipe
         if sku:
-            from planning.models import SkuRecipe
-            _STATUS_ORDER = {'approved': 0, 'reviewed': 1, 'pending_review': 2, 'draft': 3}
-            all_recipes = list(SkuRecipe.objects.filter(sku__iexact=sku))
-            if all_recipes:
-                master_recipe = min(
-                    all_recipes,
-                    key=lambda r: _STATUS_ORDER.get(r.master_data_status or '', 99)
+            from planning.services import (
+                ensure_sku_recipe_for_planning_job,
+                get_best_sku_recipe_for_sku,
+                sync_planning_job_fields_to_sku_recipe,
+            )
+            master_recipe = master_recipe or get_best_sku_recipe_for_sku(sku)
+            if plate_request.planning_job and not master_recipe:
+                master_recipe = ensure_sku_recipe_for_planning_job(
+                    plate_request.planning_job,
+                    actor=self.request.user,
                 )
+            if plate_request.planning_job and master_recipe:
+                sync_planning_job_fields_to_sku_recipe(plate_request.planning_job, master_recipe)
 
         context['master_recipe'] = master_recipe
+
+        from core.print_colors import get_print_color_choices, resolve_print_color_name
+
+        current_print_color = ''
+        if plate_request.planning_job and (plate_request.planning_job.color_spec or '').strip():
+            current_print_color = plate_request.planning_job.color_spec.strip()
+        elif master_recipe and (master_recipe.color_spec or '').strip():
+            current_print_color = master_recipe.color_spec.strip()
+        context['current_print_color'] = current_print_color
+        context['print_color_resolved'] = resolve_print_color_name(current_print_color) or current_print_color
+        context['print_color_missing'] = not bool(current_print_color)
+        context['print_color_choices'] = get_print_color_choices(include_legacy=current_print_color)
+
+        from printing_plates.plate_set_helpers import build_plate_set_suggestion
+
+        suggestion = build_plate_set_suggestion(plate_request)
+        context['plate_set_suggestion'] = suggestion
+        context['suggested_sets_required'] = plate_request.sets_required or suggestion['sets_required']
+        context['suggested_plate_quantity'] = (
+            plate_request.plate_quantity
+            if plate_request.plate_quantity is not None
+            else suggestion['plate_quantity']
+        )
         return context
 
 
@@ -335,54 +406,123 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
             new_set_no = request.POST.get('new_set_no', '').strip()
             awc_no = request.POST.get('awc_no', '').strip()
             plate_color = request.POST.get('plate_color', '').strip()
+            print_color = request.POST.get('print_color', '').strip()
             plate_quantity = request.POST.get('plate_quantity', '').strip()
+            sets_required_raw = request.POST.get('sets_required', '').strip()
             remarks = request.POST.get('remarks', '').strip()
             
             if not vendor:
                 messages.error(request, "Vendor is required.")
                 return redirect('printing_plates:request_detail', pk=pk)
-                
+            if not plate_color:
+                messages.error(request, "Plate inks are required (Cyan, Magenta, Yellow, Black, Special 1/2).")
+                return redirect('printing_plates:request_detail', pk=pk)
+
+            from core.print_colors import (
+                apply_print_color_to_planning_job,
+                apply_print_color_to_sku_recipe,
+                resolve_print_color_name,
+            )
+            from planning.services import (
+                apply_designer_layout_to_sku_recipe,
+                ensure_sku_recipe_for_planning_job,
+                get_awc_conflict_message,
+                sync_planning_job_fields_to_sku_recipe,
+            )
+            from printing_plates.plate_set_helpers import build_plate_set_suggestion
+
+            planning_job = plate_request.planning_job
+            recipe = plate_request.sku_recipe
+            if planning_job and not recipe:
+                recipe = ensure_sku_recipe_for_planning_job(planning_job, actor=request.user)
+                if recipe:
+                    plate_request.sku_recipe = recipe
+                    plate_request.save(update_fields=['sku_recipe'])
+
+            sku_for_awc = (
+                (recipe.sku if recipe else '')
+                or (planning_job.sku if planning_job else '')
+                or (plate_request.job_card.SKU if plate_request.job_card_id else '')
+                or ''
+            ).strip()
+            awc_conflict = get_awc_conflict_message(
+                awc_no,
+                sku=sku_for_awc,
+                exclude_recipe_id=recipe.pk if recipe and recipe.pk else None,
+                exclude_plate_request_id=plate_request.pk,
+            )
+            if awc_conflict:
+                messages.error(request, awc_conflict)
+                return redirect('printing_plates:request_detail', pk=pk)
+
+            existing_print_color = ''
+            if planning_job and (planning_job.color_spec or '').strip():
+                existing_print_color = planning_job.color_spec.strip()
+            elif recipe and (recipe.color_spec or '').strip():
+                existing_print_color = recipe.color_spec.strip()
+
+            resolved_print_color = resolve_print_color_name(print_color) or resolve_print_color_name(existing_print_color)
+            if not resolved_print_color and not existing_print_color:
+                messages.error(
+                    request,
+                    "Print Color is required (production pattern: 1, 2, 4, 1+1, …). Select from the master list.",
+                )
+                return redirect('printing_plates:request_detail', pk=pk)
+            if print_color and not resolve_print_color_name(print_color) and not existing_print_color:
+                messages.error(request, "Select a print color from the master list.")
+                return redirect('printing_plates:request_detail', pk=pk)
+
+            suggestion = build_plate_set_suggestion(plate_request, plate_color=plate_color)
+            try:
+                sets_required = int(sets_required_raw) if sets_required_raw else int(suggestion['sets_required'])
+            except (TypeError, ValueError):
+                messages.error(request, "Sets required must be a valid integer.")
+                return redirect('printing_plates:request_detail', pk=pk)
+            if sets_required < 1:
+                messages.error(request, "Sets required must be at least 1.")
+                return redirect('printing_plates:request_detail', pk=pk)
+
+            if plate_quantity:
+                try:
+                    plate_quantity_value = int(plate_quantity)
+                except ValueError:
+                    messages.error(request, "Plate Quantity must be a valid integer.")
+                    return redirect('printing_plates:request_detail', pk=pk)
+            else:
+                plate_quantity_value = suggestion['plate_quantity']
+            if not plate_quantity_value or plate_quantity_value < 1:
+                messages.error(request, "Plate Quantity (total plates) is required.")
+                return redirect('printing_plates:request_detail', pk=pk)
+
+            if not plate_request.machine_id and suggestion.get('machine'):
+                plate_request.machine = suggestion['machine']
+
             plate_request.vendor = vendor
             plate_request.set_no = set_no
             plate_request.new_set_no = new_set_no
             plate_request.awc_no = awc_no
             plate_request.plate_color = plate_color
-            if plate_quantity:
-                try:
-                    plate_request.plate_quantity = int(plate_quantity)
-                except ValueError:
-                    messages.error(request, "Plate Quantity must be a valid integer.")
-                    return redirect('printing_plates:request_detail', pk=pk)
+            plate_request.sets_required = sets_required
+            plate_request.plate_quantity = plate_quantity_value
             plate_request.remarks = remarks
 
-            planning_job = plate_request.planning_job
             if planning_job:
                 planning_job.remarks = remarks
-                planning_job.save(update_fields=['remarks'])
+                if resolved_print_color:
+                    apply_print_color_to_planning_job(planning_job, resolved_print_color)
+                    planning_job.save()
+                else:
+                    planning_job.save(update_fields=['remarks'])
 
-            # If sku_recipe was not linked at plate request creation time,
-            # resolve the best available recipe now and link it.
-            if not plate_request.sku_recipe:
-                sku = (
-                    (planning_job.sku if planning_job else None) or ''
-                ).strip()
-                if sku:
-                    from planning.models import SkuRecipe as _SR
-                    _STATUS_ORDER = {'approved': 0, 'reviewed': 1, 'pending_review': 2, 'draft': 3}
-                    _candidates = list(_SR.objects.filter(sku__iexact=sku))
-                    if _candidates:
-                        plate_request.sku_recipe = min(
-                            _candidates,
-                            key=lambda r: _STATUS_ORDER.get(r.master_data_status or '', 99)
-                        )
-                        plate_request.save(update_fields=['sku_recipe'])
-
-            recipe = plate_request.sku_recipe
             if recipe:
                 recipe.remarks = remarks
                 recipe.notes = remarks
-                recipe.save(update_fields=['remarks', 'notes'])
-                
+                if resolved_print_color:
+                    apply_print_color_to_sku_recipe(recipe, resolved_print_color)
+                    recipe.save()
+                else:
+                    recipe.save(update_fields=['remarks', 'notes'])
+
             # Process Designer Layout specifications for New jobs
             if plate_request.planning_job and plate_request.planning_job.repeat_flag == 'New':
                 size_w_mm = request.POST.get('size_w_mm', '').strip()
@@ -397,37 +537,31 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                     messages.error(request, "All layout specification fields are required for new jobs.")
                     return redirect('printing_plates:request_detail', pk=pk)
 
-                recipe = plate_request.sku_recipe
+                if planning_job and not recipe:
+                    recipe = ensure_sku_recipe_for_planning_job(planning_job, actor=request.user)
+                    if recipe:
+                        plate_request.sku_recipe = recipe
+                        plate_request.save(update_fields=['sku_recipe'])
+
                 if recipe:
-                    try:
-                        recipe.size_w_mm = int(round(float(size_w_mm)))
-                        recipe.size_h_mm = int(round(float(size_h_mm)))
-                    except ValueError:
-                        messages.error(request, "Size Width and Height must be valid numbers.")
-                        return redirect('printing_plates:request_detail', pk=pk)
-                    
-                    recipe.print_sheet_size = print_sheet_size
-                    try:
-                        recipe.ups = int(round(float(ups)))
-                    except ValueError:
-                        messages.error(request, "Ups must be a valid number.")
-                        return redirect('printing_plates:request_detail', pk=pk)
+                    apply_designer_layout_to_sku_recipe(
+                        planning_job,
+                        recipe,
+                        {
+                            'size_w_mm': size_w_mm,
+                            'size_h_mm': size_h_mm,
+                            'print_sheet_size': print_sheet_size,
+                            'ups': ups,
+                            'purchase_sheet_size': purchase_sheet_size,
+                            'purchase_sheet_ups': purchase_sheet_ups,
+                            'die_cutting': die_cutting,
+                            'plate_color': plate_color,
+                            'awc_no': awc_no,
+                            'set_no': set_no,
+                            'new_set_no': new_set_no,
+                        },
+                    )
 
-                    recipe.purchase_sheet_size = purchase_sheet_size
-                    try:
-                        recipe.purchase_sheet_ups = int(round(float(purchase_sheet_ups)))
-                    except ValueError:
-                        messages.error(request, "Purchase Sheet Ups must be a valid number.")
-                        return redirect('printing_plates:request_detail', pk=pk)
-
-                    recipe.color_spec = plate_color
-                    recipe.awc_no = awc_no
-                    recipe.die_cutting = die_cutting
-                    recipe.plate_set_no = set_no or new_set_no
-                    recipe.master_data_status = 'pending_review'
-                    recipe.save()
-
-                planning_job = plate_request.planning_job
                 if planning_job:
                     try:
                         planning_job.size_w_mm = int(round(float(size_w_mm)))
@@ -436,17 +570,19 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                         planning_job.purchase_sheet_ups = int(round(float(purchase_sheet_ups)))
                     except ValueError:
                         pass
-                    
+
                     planning_job.print_sheet_size = print_sheet_size
                     planning_job.purchase_sheet_size = purchase_sheet_size
-                    planning_job.color_spec = plate_color
                     planning_job.plate_set_no = set_no or new_set_no
                     planning_job.save()
             else:
-                planning_job = plate_request.planning_job
                 if planning_job:
                     planning_job.plate_set_no = set_no or new_set_no
                     planning_job.save()
+                    if recipe:
+                        recipe.plate_set_no = set_no or new_set_no
+                        recipe.save(update_fields=['plate_set_no', 'updated_at'])
+                    sync_planning_job_fields_to_sku_recipe(planning_job, recipe)
 
             plate_request.status = PlateRequest.STATUS_SENT
             plate_request.sent_by = request.user
@@ -473,8 +609,32 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
         elif action == 'issue_to_production':
             plate_request.status = PlateRequest.STATUS_AVAILABLE
             plate_request.save()  # Triggers save() hook to transition planning stage to plate_received
-            messages.success(request, "Plates issued to production. Planning stage updated to Plate Received.")
-            
+            if plate_request.is_replacement:
+                messages.success(
+                    request,
+                    "Replacement plates issued to production. Job is Ready again (no longer Waiting for plate).",
+                )
+            else:
+                messages.success(request, "Plates issued to production. Planning stage updated to Plate Received.")
+
+        elif action == 'cancel_request':
+            from django.core.exceptions import ValidationError
+            from printing_plates.services import cancel_plate_request
+
+            reason = (request.POST.get('cancel_reason') or request.POST.get('remarks') or '').strip()
+            try:
+                cancel_plate_request(plate_request, actor=request.user, reason=reason)
+            except ValidationError as exc:
+                message = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+                messages.error(request, message)
+                return redirect('printing_plates:request_detail', pk=pk)
+            messages.success(
+                request,
+                'Plate request cancelled (plates not required). '
+                'Find it under Plate Requests → filter Cancelled (also on the planning job detail).',
+            )
+            return redirect(reverse('printing_plates:request_list') + '?type=cancelled')
+
         return redirect('printing_plates:request_detail', pk=pk)
 
 

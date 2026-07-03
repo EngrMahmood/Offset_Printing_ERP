@@ -7,6 +7,8 @@ from django.db.models import Q, Sum, Count, F
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
+from django.urls import reverse
+from django.views.decorators.http import require_GET
 import json
 import re
 from datetime import datetime, timedelta
@@ -24,6 +26,7 @@ from core.models import (
     ProductionDowntime,
     ProductionWipStatus,
     Supervisor,
+    Sorter,
 )
 from core.views import permission_required
 from core.services import (
@@ -42,6 +45,14 @@ from core.services import (
 )
 from workflow.services import start_production
 from production.services import OEECalculator
+from production.printing_entry_helpers import (
+    build_printing_job_card_maps,
+    get_effective_job_card_plan,
+    get_remaining_planned_for_job_card,
+    printing_job_cards_queryset,
+    resolve_related_machine,
+)
+from production.printing_pass_helpers import get_job_card_pass_count, validate_print_pass_number
 
 # Resolve the active user model
 User = get_user_model()
@@ -152,95 +163,46 @@ def create_supervisor_ajax(request):
 
 
 @login_required
+def create_sorter_ajax(request):
+    if request.method != 'POST':
+        return JsonResponse({'error': 'invalid_method'}, status=405)
+    if not getattr(request.user, 'profile', None) or not request.user.profile.can_manage_masters():
+        return JsonResponse({'error': 'forbidden'}, status=403)
+    name = (request.POST.get('name') or '').strip()
+    emp = (request.POST.get('employee_code') or '').strip()
+    if not name:
+        return JsonResponse({'error': 'name_required'}, status=400)
+    try:
+        sorter = Sorter.objects.create(name=name, employee_code=emp or None)
+    except Exception as e:
+        return JsonResponse({'error': str(e)}, status=500)
+    display_name = f'{sorter.name} ({sorter.employee_code})' if sorter.employee_code else sorter.name
+    return JsonResponse({'id': sorter.id, 'name': sorter.name, 'display_name': display_name})
+
+
+@login_required
 @permission_required('can_edit_production')
 def production_entry(request):
+    """Backward-compatible alias for printing production entry."""
+    return printing_production_entry(request)
+
+
+@login_required
+@permission_required('can_edit_production')
+def printing_production_entry(request):
     """Production data entry form for operators"""
     view_id = (request.GET.get('view') or '').strip()
     is_view_mode = bool(view_id)
     edit_id = '' if is_view_mode else (request.POST.get('edit_id') or request.GET.get('edit') or '').strip()
     edit_record = get_active_record_or_404(Production, view_id) if is_view_mode else (get_active_record_or_404(Production, edit_id) if edit_id else None)
+    if edit_record and edit_record.entry_type == 'packing':
+        target = 'packing_production_entry'
+        if is_view_mode:
+            return redirect(f'{reverse(target)}?view={edit_record.pk}')
+        if edit_id:
+            return redirect(f'{reverse(target)}?edit={edit_record.pk}')
     if edit_record and not is_view_mode and not ensure_edit_lock_allowed(request, 'production', edit_record):
         return redirect('production_records')
-
-    def resolve_related_machine(job_card):
-        if job_card.machine_name_id:
-            return job_card.machine_name
-
-        display_name = (job_card.machine_name_display or '').strip()
-        if not display_name:
-            return None
-
-        machine = Machine.objects.filter(name__iexact=display_name).first()
-        if machine:
-            return machine
-
-        machine = Machine.objects.filter(name__istartswith=display_name).first()
-        if machine:
-            return machine
-
-        machine = Machine.objects.filter(name__icontains=display_name).first()
-        if machine:
-            return machine
-
-        normalized = re.sub(r'[^A-Za-z0-9 ]+', ' ', display_name).strip()
-        if normalized and normalized != display_name:
-            machine = Machine.objects.filter(name__icontains=normalized).first()
-            if machine:
-                return machine
-
-        return None
-
-    def get_effective_job_card_plan(job_card):
-        planned_run = float(job_card.estimated_run_time_minutes or 0)
-        planned_setup = float(job_card.estimated_setup_time_minutes or 0)
-        planned_total = float(job_card.estimated_total_time_minutes or 0)
-        machine_obj = resolve_related_machine(job_card)
-
-        if planned_total <= 0 and job_card.total_impressions_required and machine_obj:
-            fallback_run, fallback_setup, fallback_total = compute_planned_minutes(
-                job_card.total_impressions_required,
-                machine_obj,
-                job_card.colour,
-            )
-            planned_run = float(planned_run or fallback_run or 0)
-            planned_setup = float(planned_setup or fallback_setup or 0)
-            planned_total = float(planned_total or fallback_total or 0)
-
-        return {
-            'machine_obj': machine_obj,
-            'planned_total': planned_total,
-            'planned_run': planned_run,
-            'planned_setup': planned_setup,
-        }
-
-    def get_remaining_planned_for_job_card(job_card, planned_total, exclude_production_id=None):
-        if planned_total <= 0:
-            return 0
-        allocated_qs = job_card.productions.filter(is_active=True)
-        if exclude_production_id:
-            allocated_qs = allocated_qs.exclude(pk=exclude_production_id)
-        allocated = float(allocated_qs.aggregate(total=Sum('planned_time'))['total'] or 0)
-        return max(planned_total - allocated, 0)
-
-    def get_job_card_pass_count(job_card):
-        if job_card.planning_job and job_card.planning_job.print_passes:
-            return int(job_card.planning_job.print_passes)
-
-        if job_card.planning_job:
-            front_pass = int(job_card.planning_job.front_pass or 0)
-            back_pass = int(job_card.planning_job.back_pass or 0)
-            if front_pass > 0 or back_pass > 0:
-                return max(1, front_pass + back_pass)
-        colour = (job_card.colour or '').strip()
-        match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', colour)
-        if match:
-            front = int(match.group(1))
-            back = int(match.group(2))
-            return max(1, front + back)
-        match = re.search(r'(\d+)', colour)
-        if match:
-            return max(1, int(match.group(1)))
-        return 1
 
     if request.method == 'POST' and not is_view_mode:
         job_card_id = request.POST.get('job_card')
@@ -252,7 +214,7 @@ def production_entry(request):
         impressions = request.POST.get('impressions')
         output_sheets = request.POST.get('output_sheets')
         waste_sheets = request.POST.get('waste_sheets')
-        intermediate_pass = request.POST.get('intermediate_pass') == 'on'
+        print_pass_number_raw = (request.POST.get('print_pass_number') or '').strip()
         downtime_minutes = request.POST.get('downtime_minutes')
         make_ready_time = request.POST.get('make_ready_time')
         planned_time = request.POST.get('planned_time')
@@ -333,6 +295,17 @@ def production_entry(request):
             downtime_val = float(sum(item['minutes'] for item in downtime_entries)) if downtime_entries else legacy_downtime_val
             primary_downtime_category = downtime_entries[0]['category'] if downtime_entries else downtime_category
 
+            job_card = get_active_record_or_404(JobCard, job_card_id)
+            try:
+                print_pass_number = int(print_pass_number_raw or 1)
+            except (TypeError, ValueError):
+                raise ValueError('Print pass is required.')
+            pass_meta = validate_print_pass_number(
+                job_card,
+                print_pass_number,
+                exclude_production_id=edit_record.pk if edit_record else None,
+            )
+            intermediate_pass = pass_meta['intermediate_pass']
             if intermediate_pass:
                 output_sheets_val = 0
 
@@ -353,17 +326,16 @@ def production_entry(request):
             if waste_sheets_val < 0:
                 raise ValueError('Waste sheets cannot be negative')
             if not intermediate_pass and output_sheets_val <= 0:
-                raise ValueError('Good sheets must be greater than 0 unless this is an intermediate pass')
+                raise ValueError('Good sheets must be greater than 0 for the final print pass')
             if downtime_val > 0 and not primary_downtime_category:
                 raise ValueError('Downtime category is required when downtime is greater than 0')
             if waste_sheets_val > 0 and not waste_reason:
                 raise ValueError('Waste reason is required when waste sheets are greater than 0')
-            if intermediate_pass and impressions_val <= 0:
-                raise ValueError('Impressions must be greater than 0 for intermediate pass entry')
-            if intermediate_pass and waste_sheets_val < 0:
+            if impressions_val <= 0:
+                raise ValueError('Impressions must be greater than 0')
+            if waste_sheets_val < 0:
                 raise ValueError('Waste sheets cannot be negative')
 
-            job_card = get_active_record_or_404(JobCard, job_card_id)
             if machine_override and machine_id:
                 machine = get_object_or_404(Machine, pk=machine_id)
             elif job_card.machine_name_id:
@@ -420,6 +392,7 @@ def production_entry(request):
                     raise ValueError('Please specify overrun reason details for "Other".')
 
             payload = {
+                'entry_type': 'printing',
                 'job_card': job_card,
                 'machine': machine,
                 'operator': operator,
@@ -429,6 +402,7 @@ def production_entry(request):
                 'output_sheets': output_sheets_val,
                 'waste_sheets': waste_sheets_val,
                 'intermediate_pass': intermediate_pass,
+                'print_pass_number': print_pass_number,
                 'planned_time': planned_time_val,
                 'run_time': run_time_val,
                 'make_ready_time': make_ready_time_val,
@@ -491,7 +465,7 @@ def production_entry(request):
             log_change('production', record, {}, request.user, 'create', create_reason)
 
             messages.success(request, f'Production data saved successfully for Job Card {job_card.job_card_no}')
-            return redirect('production_entry')
+            return redirect('printing_production_entry')
 
         except ValidationError as e:
             if hasattr(e, 'message_dict'):
@@ -508,80 +482,15 @@ def production_entry(request):
         except Exception as e:
             messages.error(request, f'Error saving production data: {str(e)}')
 
-    job_cards = JobCard.objects.filter(is_active=True, status__in=JOB_CARD_PRODUCTION_START_STATUSES).order_by('-created_at')
-    if edit_record:
-        job_cards = JobCard.objects.filter(is_active=True).filter(Q(status__in=JOB_CARD_PRODUCTION_START_STATUSES) | Q(pk=edit_record.job_card_id)).distinct().order_by('-created_at')
+    job_cards = list(printing_job_cards_queryset(edit_record)[:200])
     machines = Machine.objects.filter(is_active=True)
     operators = Operator.objects.all()
     supervisors = Supervisor.objects.filter(is_active=True).order_by('name')
 
-    job_card_plan_map = {}
-    job_card_machine_map = {}
-    job_card_info_map = {} # for Section 1 Read-only card
-    for j in job_cards:
-        plan = get_effective_job_card_plan(j)
-        remaining_planned = get_remaining_planned_for_job_card(
-            j,
-            plan['planned_total'],
-            exclude_production_id=edit_record.pk if edit_record else None,
-        )
-
-        job_card_plan_map[str(j.id)] = {
-            'planned_total': plan['planned_total'],
-            'planned_setup': plan['planned_setup'],
-            'planned_run': plan['planned_run'],
-            'remaining_planned': remaining_planned,
-        }
-        resolved_machine = plan['machine_obj']
-        job_card_machine_map[str(j.id)] = {
-            'machine_id': str(resolved_machine.id) if resolved_machine else (j.machine_name_id or ''),
-            'mapped_machine_name': resolved_machine.name if resolved_machine else '',
-            'job_card_machine_name': j.machine_name_display or '',
-        }
-
-        # Dynamic production history for last 5 entries
-        history_qs = j.productions.filter(is_active=True).order_by('-date', '-created_at')[:5]
-        history_data = []
-        for h in history_qs:
-            history_data.append({
-                'date': h.date.strftime('%d-%b') if h.date else '',
-                'shift': h.shift,
-                'impressions': f"{h.impressions:,}",
-                'output': f"{h.output_sheets:,}",
-                'waste': f"{h.waste_sheets:,}",
-                'intermediate': 'Yes' if h.intermediate_pass else 'No',
-                'runtime': h.run_time,
-                'make_ready': f"{float(h.make_ready_time or 0):g}",
-                'downtime': f"{float(h.downtime_minutes or 0):g}",
-                'status': h.get_status_display(),
-            })
-
-        pass_count = get_job_card_pass_count(j)
-        total_impressions_used = j.productions.filter(is_active=True).aggregate(total=Sum('impressions'))['total'] or 0
-        allowed_impressions = j.total_impressions_allowed_with_tolerance or 0
-        remaining_impressions = max(0, allowed_impressions - total_impressions_used)
-
-        job_card_info_map[str(j.id)] = {
-            'job_card_no': j.job_card_no,
-            'customer': j.destination or '-',
-            'product': j.planning_job.job_name if j.planning_job else (j.SKU or '-'),
-            'machine': j.machine_name_display or '-',
-            'paper': j.material.name if j.material else '-',
-            'gsm': '-', # Assuming it's in the name for now per subagent
-            'colors': str(j.total_colors) if j.total_colors else '-',
-            'order_qty': f"{j.order_qty:,}",
-            'required_sheets': f"{int(j.total_sheet_quantity_display or 0):,}",
-            'produced_qty': f"{int(j.total_production_pcs or 0):,}",
-            'remaining_qty': f"{max(0, j.order_qty - (j.total_production_pcs or 0)):,}",
-            'due_date': j.planning_job.delivery_date.strftime('%Y-%m-%d') if j.planning_job and j.planning_job.delivery_date else '-',
-            'job_type': (j.planning_job.repeat_flag if j.planning_job and getattr(j.planning_job, 'repeat_flag', None) else "New Job"),
-            'pass_count': pass_count,
-            'pass_type': f"{pass_count}-pass" if pass_count > 1 else 'Single-pass',
-            'allowed_impressions': f"{allowed_impressions:,}",
-            'used_impressions': f"{total_impressions_used:,}",
-            'remaining_impressions': f"{remaining_impressions:,}",
-            'history': history_data
-        }
+    job_card_plan_map, job_card_machine_map, job_card_info_map = build_printing_job_card_maps(
+        job_cards,
+        edit_record=edit_record,
+    )
 
     context = {
         'job_cards': job_cards,
@@ -607,6 +516,45 @@ def production_entry(request):
     }
 
     return render(request, 'production/production_entry.html', context)
+
+
+@login_required
+@permission_required('can_edit_production')
+@require_GET
+def printing_job_card_search(request):
+    """Server-side job card search for printing production entry."""
+    query = (request.GET.get('q') or '').strip()
+    edit_id = (request.GET.get('edit_id') or '').strip()
+    edit_record = get_active_record_or_404(Production, edit_id) if edit_id else None
+
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+
+    qs = printing_job_cards_queryset(edit_record).filter(
+        Q(job_card_no__icontains=query)
+        | Q(SKU__icontains=query)
+        | Q(PO_No__icontains=query)
+        | Q(destination__icontains=query)
+        | Q(planning_job__job_name__icontains=query)
+    ).select_related('planning_job', 'material', 'machine_name')[:30]
+
+    plan_map, machine_map, info_map = build_printing_job_card_maps(list(qs), edit_record=edit_record)
+    results = []
+    for job_card in qs:
+        job_id = str(job_card.id)
+        info = info_map.get(job_id, {})
+        results.append({
+            'id': job_card.id,
+            'label': f'{job_card.job_card_no} - {job_card.SKU}',
+            'job_card_no': job_card.job_card_no,
+            'sku': job_card.SKU or '-',
+            'customer': info.get('customer', job_card.destination or '-'),
+            'remaining_display': info.get('remaining_qty', '-'),
+            'info': info,
+            'machine': machine_map.get(job_id),
+            'plan': plan_map.get(job_id),
+        })
+    return JsonResponse({'results': results})
 
 
 @login_required
@@ -648,7 +596,7 @@ def production_records(request):
         per_page = 50
 
     records = Production.objects.filter(is_active=True, job_card__is_active=True).select_related(
-        'job_card', 'machine', 'operator', 'supervisor', 'created_by'
+        'job_card', 'machine', 'operator', 'supervisor', 'sorter', 'created_by'
     ).order_by('-date', '-id')
 
     if query:
@@ -924,7 +872,13 @@ def production_dashboard(request):
     else:
         days = max((end_date - start_date).days + 1, 1)
 
-    period_productions = Production.objects.filter(is_active=True, job_card__is_active=True, date__gte=start_date, date__lte=end_date)
+    period_productions = Production.objects.filter(
+        is_active=True,
+        job_card__is_active=True,
+        entry_type='printing',
+        date__gte=start_date,
+        date__lte=end_date,
+    )
     period_dispatches = Dispatch.objects.filter(is_active=True, job_card__is_active=True, dispatch_date__gte=start_date, dispatch_date__lte=end_date)
 
     total_impressions = period_productions.aggregate(total=Sum('impressions'))['total'] or 0

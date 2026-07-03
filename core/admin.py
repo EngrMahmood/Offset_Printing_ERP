@@ -7,15 +7,30 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 
-from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, DeliveryLocation, ProductType, Material, Operator, Supervisor, UserProfile, ChangeLog, EditOverrideRequest, Vendor
+from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, DeliveryLocation, PrintColor, ProductType, Material, Operator, Supervisor, Sorter, UserProfile, ChangeLog, EditOverrideRequest, Vendor
 
 User = get_user_model()
+
+
+@admin.register(Sorter)
+class SorterAdmin(admin.ModelAdmin):
+    list_display = ('name', 'employee_code', 'is_active')
+    search_fields = ('name', 'employee_code')
+    list_filter = ('is_active',)
 
 
 @admin.register(Vendor)
 class VendorAdmin(admin.ModelAdmin):
     list_display = ('name', 'is_active', 'created_at')
     search_fields = ('name',)
+
+
+@admin.register(PrintColor)
+class PrintColorAdmin(admin.ModelAdmin):
+    list_display = ('name', 'is_active', 'sort_order', 'created_at')
+    list_filter = ('is_active',)
+    search_fields = ('name',)
+    ordering = ('sort_order', 'name')
 
 
 # =========================
@@ -297,7 +312,7 @@ class SupervisorAdmin(admin.ModelAdmin):
 
 @admin.register(Machine)
 class MachineAdmin(admin.ModelAdmin):
-    list_display = ['name', 'standard_impressions_per_hour', 'is_active']
+    list_display = ['name', 'standard_impressions_per_hour', 'plate_life_impressions', 'is_active']
     search_fields = ['name']
 
 @admin.register(Department)

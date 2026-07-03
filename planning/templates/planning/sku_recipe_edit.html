@@ -16,16 +16,6 @@
     {% with current_step='master' %}
     {% endwith %}
 
-    {% if messages %}
-        {% for msg in messages %}
-            {% if msg.level == DEFAULT_MESSAGE_LEVELS.ERROR or 'error' in msg.tags %}
-                <div class="erp-alert is-error">{{ msg }}</div>
-            {% else %}
-                <div class="erp-alert is-info">{{ msg }}</div>
-            {% endif %}
-        {% endfor %}
-    {% endif %}
-
     {% if recipe %}
     <div class="erp-status-card">
         <div class="erp-status-card__block">
@@ -75,6 +65,14 @@
     </div>
     {% endif %}
 
+    {% if planner_can_edit_layout and sku_recipe_viewer_role == 'planner' %}
+    <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">
+        <strong>Change management:</strong> Layout fields (print sheet size, size, UPS, plate set, etc.) are editable for this reopened SKU.
+        Changing <strong>machine</strong> or <strong>print sheet size</strong> may require plate remake — machine plates are sized to the press even when print sheet size stays the same.
+        After re-approval, sync the job and use <strong>Production → Released Jobs → Request plates</strong> if plates already exist.
+    </div>
+    {% endif %}
+
     <section class="erp-panel sku-recipe-form">
         <form id="skuRecipeForm" method="post" novalidate>
             {% csrf_token %}
@@ -90,23 +88,17 @@
             </div><!-- /form-grid -->
 
             {% if recipe %}
-                {% if recipe.master_data_status == 'pending_review' or recipe.master_data_status == 'reviewed' or recipe.master_data_status == 'approved' %}
+                {% if recipe.master_data_status == 'approved' %}
                 <div class="erp-form-field erp-form-grid__full">
-                    <label for="rejection_comment">
-                        {% if recipe.master_data_status == 'approved' %}
-                            Reopen reason <span>*</span>
-                        {% else %}
-                            Rejection comment
-                        {% endif %}
-                    </label>
-                    <textarea name="rejection_comment" id="rejection_comment" placeholder="{% if recipe.master_data_status == 'approved' %}Enter why this approved SKU is being reopened to Draft.{% else %}Enter the reason for returning this SKU to Draft.{% endif %}"></textarea>
-                    <div class="erp-form-help">
-                        {% if recipe.master_data_status == 'approved' %}
-                            Required when using Reopen SKU.
-                        {% else %}
-                            Required when sending the SKU back to Draft.
-                        {% endif %}
-                    </div>
+                    <label for="rejection_comment">Reopen reason <span>*</span></label>
+                    <textarea name="rejection_comment" id="rejection_comment" placeholder="e.g. Change machine / print sheet size for JC-…" required></textarea>
+                    <div class="erp-form-help">Required for audit when you click Reopen SKU. Other master fields are not checked until Submit for Review.</div>
+                </div>
+                {% elif recipe.master_data_status == 'pending_review' or recipe.master_data_status == 'reviewed' %}
+                <div class="erp-form-field erp-form-grid__full">
+                    <label for="rejection_comment">Rejection comment</label>
+                    <textarea name="rejection_comment" id="rejection_comment" placeholder="Enter the reason for returning this SKU to Draft."></textarea>
+                    <div class="erp-form-help">Required when sending the SKU back to Draft.</div>
                 </div>
                 {% endif %}
             {% endif %}
@@ -114,7 +106,7 @@
             <div class="erp-form-actions">
                 {% if recipe.master_data_status == 'approved' and not can_edit_approved %}
                 <div class="erp-form-lock-notice">
-                    Approved SKU is locked. Use Reopen SKU to move it back to Draft before editing.
+                    Approved SKU is locked. Enter a <strong>Reopen reason</strong> above, then click <strong>Reopen SKU</strong>.
                 </div>
                 {% endif %}
                 {% if not recipe or recipe.master_data_status == 'draft' %}
@@ -169,6 +161,38 @@
                 });
             });
         })();
+
+        function quickAddPrintColor() {
+            const name = prompt('Enter print color pattern (e.g. 3+1 or 5):');
+            if (!name || !name.trim()) return;
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            const formData = new FormData();
+            formData.append('type', 'print_color');
+            formData.append('name', name.trim());
+            fetch('{% url "quick_add_master" %}', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.ok) {
+                    alert('Error: ' + (data.error || data.message || 'Failed to add print color.'));
+                    return;
+                }
+                const select = document.getElementById('{{ form.color_spec.id_for_label }}');
+                if (!select) return;
+                let option = Array.from(select.options).find(opt => opt.value === data.name);
+                if (!option) {
+                    option = document.createElement('option');
+                    option.value = data.name;
+                    option.textContent = data.name;
+                    select.appendChild(option);
+                }
+                select.value = data.name;
+            })
+            .catch(() => alert('An error occurred while adding print color.'));
+        }
 
         function quickAddProductType() {
             const name = prompt('Enter new product type name:');

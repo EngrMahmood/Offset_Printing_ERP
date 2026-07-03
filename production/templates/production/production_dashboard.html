@@ -10,14 +10,10 @@
 {% block header_title %}Production Dashboard{% endblock %}
 {% block header_subtitle %}Live OEE metrics, output trends and dispatch visibility{% endblock %}
 {% block header_actions %}
-{% if user.profile.can_edit_production %}
-<a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus-circle"></i> Add Production Data</a>
-{% endif %}
 <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-book"></i> Guide</a>
 {% endblock %}
 
 {% block content %}
-    {% include 'theme/production_context_nav.html' %}
     <div class="erp-page-stack production-dashboard">
         <section class="erp-section-shell">
             <form class="pd-filters" method="GET">
@@ -41,9 +37,6 @@
                     <button type="submit" class="erp-btn erp-btn-secondary">Apply Date Filter</button>
                     <a href="{% url 'production_dashboard' %}?days=7" class="erp-btn erp-btn-secondary">Reset</a>
                 </div>
-                {% if user.profile.can_edit_production %}
-                <a href="{% url 'production_entry' %}" class="erp-btn erp-btn-primary">➕ Add Production Data</a>
-                {% endif %}
             </form>
         </section>
 

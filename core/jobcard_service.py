@@ -129,7 +129,7 @@ def ensure_job_card_from_planning_job(planning_job, actor=None):
             'PO_No': planning_job.po_number,
             'SKU': planning_job.sku,
             'material': material,
-            'colour': planning_job.color_spec,
+            'colour': (planning_job.color_spec or '').strip(),
             'application': planning_job.application,
             'order_qty': int(planning_job.order_qty or 0),
             'total_impressions_required': resolve_total_impressions_required(planning_job),
@@ -145,7 +145,8 @@ def ensure_job_card_from_planning_job(planning_job, actor=None):
             'machine_name': machine,
             'department': department,
             'die_cutting': getattr(planning_job, 'die_cutting_display', '') or '',
-            'total_colors': planning_job.number_of_colors,
+            'total_colors': planning_job.number_of_colors or 0,
+            'is_print_job': not planning_job.is_cut_and_pack(),
             'created_by': planning_job.created_by or actor,
             'status': 'pending_data',
         }

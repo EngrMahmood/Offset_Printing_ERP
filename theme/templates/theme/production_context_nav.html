@@ -1,19 +1,18 @@
 {% comment %}
-  Layer 3: Production contextual navigation.
-  Render Production operations only for production-related screens.
+  Layer 3: Production entry context — printing vs packing (entry screens only).
 {% endcomment %}
-{% if url == 'production_dashboard' or url == 'production_entry' or url == 'production_wip' or url == 'production_records' %}
-<div class="erp-subnav erp-subnav-context" aria-label="Production context navigation">
-    <span class="erp-subnav-context-label">Production Context</span>
-    <a href="{% url 'production_entry' %}"
-       class="erp-subnav-link erp-subnav-context-link {% if url == 'production_entry' %}is-active{% endif %}">
-        Production Entry
+{% with url=request.resolver_match.url_name %}
+{% if url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' %}
+<div class="erp-subnav erp-subnav-context" aria-label="Production entry navigation">
+    <span class="erp-subnav-context-label">Entry Type</span>
+    <a href="{% url 'printing_production_entry' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'production_entry' or url == 'printing_production_entry' %}is-active{% endif %}">
+        Printing Entry
     </a>
-    <a href="{% url 'production_wip' %}"
-       class="erp-subnav-link erp-subnav-context-link {% if url == 'production_wip' %}is-active{% endif %}">
-        Production WIP
+    <a href="{% url 'packing_production_entry' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'packing_production_entry' %}is-active{% endif %}">
+        Packing Entry
     </a>
-     {# Dashboard and Production Records intentionally omitted from page-level context nav.
-         Module-level subnav contains those links to avoid third-layer duplication. #}
 </div>
 {% endif %}
+{% endwith %}

@@ -34,6 +34,7 @@ from .models import (
     MachineWorkSchedule,
     Material,
     Operator,
+    PrintColor,
     ProductType,
     Production,
     ProductionDowntime,
@@ -173,11 +174,35 @@ def quick_add_master(request):
     master_type = (request.POST.get('type') or '').strip().lower()
     name = (request.POST.get('name') or '').strip()
 
-    if master_type not in {'material', 'machine', 'department', 'delivery_location', 'operator', 'vendor', 'product_type'}:
+    if master_type not in {'material', 'machine', 'department', 'delivery_location', 'operator', 'vendor', 'product_type', 'print_color'}:
         return JsonResponse({'ok': False, 'error': 'Invalid master type.'}, status=400)
 
     if not name:
         return JsonResponse({'ok': False, 'error': 'Name is required.'}, status=400)
+
+    if master_type == 'print_color':
+        profile = getattr(request.user, 'profile', None)
+        if not (request.user.is_superuser or (profile and profile.role == 'admin')):
+            return JsonResponse({'ok': False, 'error': 'Only admin can add print colors.'}, status=403)
+        existing = PrintColor.objects.filter(name__iexact=name).first()
+        if existing:
+            return JsonResponse({
+                'ok': True,
+                'created': False,
+                'id': existing.id,
+                'name': existing.name,
+                'type': master_type,
+                'message': 'Already exists. Selected existing value.',
+            })
+        obj = PrintColor.objects.create(name=name, is_active=True)
+        return JsonResponse({
+            'ok': True,
+            'created': True,
+            'id': obj.id,
+            'name': obj.name,
+            'type': master_type,
+            'message': 'Created successfully.',
+        })
 
     if master_type == 'operator':
         employee_code = (request.POST.get('employee_code') or '').strip() or None
@@ -360,8 +385,9 @@ def _build_dispatch_job_card_info(job_card, edit_record_id=None):
         'po_no': job_card.PO_No or '-',
         'order_qty': job_card.order_qty,
         'order_qty_display': f'{job_card.order_qty:,}',
-        'produced_qty': int(job_card.total_production_pcs or 0),
-        'produced_qty_display': f'{int(job_card.total_production_pcs or 0):,}' if job_card.is_print_job else 'N/A',
+        'produced_qty': int(job_card.total_packed_pcs or 0) if job_card.is_print_job else int(job_card.total_packed_pcs or 0),
+        'produced_qty_display': f'{int(job_card.total_packed_pcs or 0):,}',
+        'printed_pcs_display': f'{int(job_card.total_printed_pcs or 0):,}' if job_card.is_print_job else 'N/A',
         'dispatched_before': dispatched_before,
         'dispatched_before_display': f'{dispatched_before:,}',
         'dispatched_total': dispatched_total,
@@ -1216,6 +1242,7 @@ def master_data(request):
         'product_type': ProductType,
         'supervisor': Supervisor,
         'vendor': Vendor,
+        'print_color': PrintColor,
     }
 
     if request.method == 'POST':
@@ -1226,8 +1253,19 @@ def master_data(request):
         record = get_object_or_404(model, pk=machine_id) if (model and machine_id) else None
         is_admin_user = bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin')
 
-        if action in {'rename_machine', 'edit_master', 'delete_master'} and not is_admin_user:
+        if action in {'rename_machine', 'edit_master', 'delete_master', 'create_master'} and not is_admin_user:
             messages.error(request, 'Only admin can edit or delete master values.')
+            return redirect('master_data')
+
+        if action == 'create_master' and entity_type == 'print_color':
+            new_name = (request.POST.get('new_name') or '').strip()
+            if not new_name:
+                messages.error(request, 'Print color name is required.')
+            elif PrintColor.objects.filter(name__iexact=new_name).exists():
+                messages.error(request, f'Print color "{new_name}" already exists.')
+            else:
+                PrintColor.objects.create(name=new_name, is_active=True)
+                messages.success(request, f'Print color "{new_name}" added.')
             return redirect('master_data')
 
         if action in {'rename_machine', 'edit_master'} and record:
@@ -1256,16 +1294,21 @@ def master_data(request):
                 if entity_type == 'machine':
                     speed_raw = (request.POST.get('standard_impressions_per_hour') or '').strip()
                     setup_raw = (request.POST.get('standard_setup_minutes_per_color') or '').strip()
+                    plate_life_raw = (request.POST.get('plate_life_impressions') or '').strip()
 
                     try:
                         new_speed = float(speed_raw) if speed_raw else float(record.standard_impressions_per_hour or 0)
                         new_setup = float(setup_raw) if setup_raw else float(record.standard_setup_minutes_per_color or 0)
+                        new_plate_life = int(plate_life_raw) if plate_life_raw else int(record.plate_life_impressions or 25000)
                     except ValueError:
-                        messages.error(request, 'Machine speed and setup minutes per color must be numeric values.')
+                        messages.error(request, 'Machine speed, setup minutes, and plate life must be numeric values.')
                         return redirect('master_data')
 
                     if new_speed <= 0 or new_setup <= 0:
                         messages.error(request, 'Machine speed and setup minutes per color must be greater than 0.')
+                        return redirect('master_data')
+                    if new_plate_life < 1:
+                        messages.error(request, 'Plate life impressions must be at least 1.')
                         return redirect('master_data')
 
                     if float(record.standard_impressions_per_hour) != float(new_speed):
@@ -1274,6 +1317,9 @@ def master_data(request):
                     if float(record.standard_setup_minutes_per_color) != float(new_setup):
                         record.standard_setup_minutes_per_color = new_setup
                         changed_fields.append('standard_setup_minutes_per_color')
+                    if int(record.plate_life_impressions or 0) != int(new_plate_life):
+                        record.plate_life_impressions = new_plate_life
+                        changed_fields.append('plate_life_impressions')
 
                 if changed_fields:
                     record.save(update_fields=changed_fields)
@@ -1456,6 +1502,14 @@ def master_data(request):
             'plate_request_count': PlateRequest.objects.filter(vendor=item.name).count(),
         })
 
+    print_color_rows = []
+    for item in PrintColor.objects.all().order_by('sort_order', 'name', 'id'):
+        print_color_rows.append({
+            'record': item,
+            'sku_recipe_count': SkuRecipe.objects.filter(is_active=True, color_spec__iexact=item.name).count(),
+            'planning_job_count': PlanningJob.objects.filter(is_active=True, color_spec__iexact=item.name).count(),
+        })
+
     context = {
         'machine_rows': machine_rows,
         'operator_rows': operator_rows,
@@ -1465,6 +1519,7 @@ def master_data(request):
         'delivery_location_rows': delivery_location_rows,
         'product_type_rows': product_type_rows,
         'vendor_rows': vendor_rows,
+        'print_color_rows': print_color_rows,
         'is_admin_user': bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin'),
     }
     return render(request, 'master_data.html', context)

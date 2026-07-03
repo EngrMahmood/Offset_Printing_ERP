@@ -112,7 +112,9 @@ class PlateWorkflowTestCase(TestCase):
             'set_no': 'Set-01',
             'new_set_no': 'New-Set-01',
             'awc_no': '973',
-            'plate_color': 'Black, Special',
+            'print_color': '4',
+            'plate_color': 'Black, Special 1',
+            'sets_required': '2',
             'plate_quantity': '4',
             'remarks': 'First print plates'
         })
@@ -123,10 +125,15 @@ class PlateWorkflowTestCase(TestCase):
         self.assertEqual(self.plate_request.set_no, 'Set-01')
         self.assertEqual(self.plate_request.new_set_no, 'New-Set-01')
         self.assertEqual(self.plate_request.awc_no, '973')
-        self.assertEqual(self.plate_request.plate_color, 'Black, Special')
+        self.assertEqual(self.plate_request.plate_color, 'Black, Special 1')
+        self.assertEqual(self.plate_request.sets_required, 2)
         self.assertEqual(self.plate_request.plate_quantity, 4)
+        self.assertEqual(self.plate_request.plate_quantity_display, '4 (2 sets)')
         self.assertEqual(self.plate_request.sent_by, self.designer_user)
         self.assertIsNotNone(self.plate_request.sent_at)
+        self.planning_job.refresh_from_db()
+        self.assertEqual(self.planning_job.color_spec, '4')
+        self.assertEqual(self.planning_job.total_colors, 4)
         
         # 2. Receive from Vendor
         response = self.client.post(url, {
@@ -239,6 +246,7 @@ class PlateWorkflowTestCase(TestCase):
             'set_no': 'Set-A',
             'new_set_no': 'New-Set-A',
             'awc_no': 'AWC-777',
+            'print_color': '2',
             'plate_color': 'Cyan, Yellow',
             'plate_quantity': '2',
             'remarks': 'Layout standard prep',
@@ -257,26 +265,30 @@ class PlateWorkflowTestCase(TestCase):
         
         # Verify SkuRecipe was updated and status set to pending_review
         recipe.refresh_from_db()
-        self.assertEqual(recipe.size_w_mm, 250.50)
-        self.assertEqual(recipe.size_h_mm, 350.75)
+        self.assertEqual(recipe.size_w_mm, 250)
+        self.assertEqual(recipe.size_h_mm, 351)
         self.assertEqual(recipe.print_sheet_size, '28x40')
-        self.assertEqual(recipe.ups, 4.0)
+        self.assertEqual(recipe.ups, 4)
         self.assertEqual(recipe.purchase_sheet_size, '30x42')
-        self.assertEqual(recipe.purchase_sheet_ups, 2.0)
-        self.assertEqual(recipe.color_spec, 'Cyan, Yellow')
+        self.assertEqual(recipe.purchase_sheet_ups, 2)
+        self.assertEqual(recipe.plate_set_no, 'Set-A')
         self.assertEqual(recipe.awc_no, 'AWC-777')
         self.assertEqual(recipe.die_cutting, 'Die-Standard')
-        self.assertEqual(recipe.master_data_status, 'pending_review')
+        # Plate ink chips must not overwrite production print color master field.
+        self.assertEqual(recipe.color_spec, '2')
+        self.assertNotEqual(recipe.color_spec, 'Cyan, Yellow')
         
         # Verify current PlanningJob has layout specs copied
         job.refresh_from_db()
-        self.assertEqual(job.size_w_mm, 250.50)
-        self.assertEqual(job.size_h_mm, 350.75)
+        self.assertEqual(job.size_w_mm, 250)
+        self.assertEqual(job.size_h_mm, 351)
         self.assertEqual(job.print_sheet_size, '28x40')
+        self.assertEqual(job.color_spec, '2')
+        self.assertEqual(job.total_colors, 2)
+        self.assertNotEqual(job.color_spec, 'Cyan, Yellow')
         self.assertEqual(job.ups, 4.0)
         self.assertEqual(job.purchase_sheet_size, '30x42')
         self.assertEqual(job.purchase_sheet_ups, 2.0)
-        self.assertEqual(job.color_spec, 'Cyan, Yellow')
         self.assertEqual(job.plate_set_no, 'Set-A')
         self.assertEqual(job.remarks, 'Layout standard prep')
         self.assertEqual(recipe.notes, 'Layout standard prep')
@@ -298,6 +310,8 @@ class PlateWorkflowTestCase(TestCase):
         self.planning_job.color_spec = '4 color'
         self.planning_job.repeat_flag = 'New'
         self.planning_job.save(update_fields=['sku', 'job_name', 'color_spec', 'repeat_flag', 'updated_at'])
+        self.jobcard.SKU = 'SKU-QUEUE-001'
+        self.jobcard.save(update_fields=['SKU'])
         self.plate_request.progress = 'Layout in progress'
         self.plate_request.requested_at = timezone.now()
         self.plate_request.save(update_fields=['progress', 'requested_at', 'updated_at'])
@@ -313,6 +327,7 @@ class PlateWorkflowTestCase(TestCase):
         self.assertContains(response, 'Queue Test Job')
         self.assertContains(response, 'Layout in progress')
         self.assertEqual(response.context['queue_count'], 1)
+        self.assertEqual(response.context['plate_requests'][0].plate_request_type, 'New Artwork')
 
     def test_plate_request_list_renders_columns(self):
         self.plate_request.progress = 'Layout in progress'
@@ -338,4 +353,205 @@ class PlateWorkflowTestCase(TestCase):
         self.assertContains(response, 'Design & Layout Specifications')
         self.assertContains(response, 'Action Panel')
         self.assertContains(response, 'JC-0001')
+
+    def test_request_plate_remake_requires_issued_plates(self):
+        from django.core.exceptions import ValidationError
+        from printing_plates.services import request_plate_remake
+
+        self.plate_request.status = PlateRequest.STATUS_DRAFT
+        self.plate_request.save(update_fields=['status'])
+        self.planning_job.planning_stage = 'new_plate_making'
+        self.planning_job.plate_set_no = ''
+        self.planning_job.save(update_fields=['planning_stage', 'plate_set_no'])
+        self.jobcard.plate_set_no = ''
+        self.jobcard.save(update_fields=['plate_set_no'])
+        with self.assertRaises(ValidationError):
+            request_plate_remake(
+                self.jobcard,
+                actor=self.admin_user,
+                reason=PlateRequest.REASON_DAMAGED_DURING_RUN,
+                damaged_colors='Cyan',
+                notes='Cracked',
+            )
+
+    def test_request_plate_remake_requires_damaged_colors(self):
+        from django.core.exceptions import ValidationError
+        from printing_plates.services import request_plate_remake
+
+        self.plate_request.status = PlateRequest.STATUS_AVAILABLE
+        self.plate_request.save(update_fields=['status'])
+        with self.assertRaises(ValidationError):
+            request_plate_remake(
+                self.jobcard,
+                actor=self.admin_user,
+                reason=PlateRequest.REASON_DAMAGED_DURING_RUN,
+                damaged_colors='',
+                notes='Cracked',
+            )
+
+    def test_request_plate_remake_allows_legacy_plate_received_jobs(self):
+        from printing_plates.services import request_plate_remake
+
+        self.plate_request.delete()
+        self.planning_job.planning_stage = 'plate_received'
+        self.planning_job.plate_set_no = 'LEGACY-SET'
+        self.planning_job.save(update_fields=['planning_stage', 'plate_set_no'])
+        self.jobcard.plate_set_no = 'LEGACY-SET'
+        self.jobcard.save(update_fields=['plate_set_no'])
+
+        replacement = request_plate_remake(
+            self.jobcard,
+            actor=self.admin_user,
+            reason=PlateRequest.REASON_DAMAGED_BEFORE_PRINTING,
+            damaged_colors='Black',
+            notes='Old job plates damaged',
+        )
+        self.assertEqual(replacement.set_no, 'LEGACY-SET')
+        self.assertEqual(replacement.damaged_colors, 'Black')
+
+    def test_request_plate_remake_creates_replacement_and_keeps_history(self):
+        from printing_plates.services import (
+            get_plate_remake_count,
+            job_is_waiting_for_plates,
+            request_plate_remake,
+        )
+
+        self.plate_request.status = PlateRequest.STATUS_AVAILABLE
+        self.plate_request.set_no = 'SET-OLD'
+        self.plate_request.awc_no = 'AWC-1'
+        self.plate_request.save(update_fields=['status', 'set_no', 'awc_no'])
+
+        replacement = request_plate_remake(
+            self.jobcard,
+            actor=self.admin_user,
+            reason=PlateRequest.REASON_DAMAGED_DURING_RUN,
+            damaged_colors='Cyan, Black',
+            notes='Plate cracked on press',
+        )
+
+        self.plate_request.refresh_from_db()
+        self.planning_job.refresh_from_db()
+
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_ARCHIVED)
+        self.assertEqual(replacement.source, PlateRequest.SOURCE_REPLACEMENT)
+        self.assertEqual(replacement.replacement_reason, PlateRequest.REASON_DAMAGED_DURING_RUN)
+        self.assertEqual(replacement.damaged_colors, 'Cyan, Black')
+        self.assertEqual(replacement.replaces_request_id, self.plate_request.pk)
+        self.assertEqual(replacement.awc_no, 'AWC-1')
+        self.assertEqual(self.planning_job.planning_stage, 'repeat_plate_making')
+        self.assertTrue(job_is_waiting_for_plates(self.jobcard))
+        self.assertEqual(get_plate_remake_count(self.jobcard), 1)
+
+    def test_replacement_filter_on_plate_request_list(self):
+        self.plate_request.status = PlateRequest.STATUS_AVAILABLE
+        self.plate_request.save(update_fields=['status'])
+        from printing_plates.services import request_plate_remake
+        request_plate_remake(
+            self.jobcard,
+            actor=self.admin_user,
+            reason=PlateRequest.REASON_WORN_OUT,
+            damaged_colors='Magenta',
+            notes='Worn',
+        )
+
+        self.client.login(username='designer', password='password')
+        response = self.client.get(reverse('printing_plates:request_list') + '?type=replacement')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.context['request_type'], 'replacement')
+        self.assertGreaterEqual(response.context['replacement_count'], 1)
+        self.assertGreaterEqual(response.context['list_count'], 1)
+
+    def test_awc_no_cannot_be_reused_on_different_sku(self):
+        from planning.models import SkuRecipe
+
+        SkuRecipe.objects.create(
+            sku='SKU-OTHER',
+            job_name='Other Design',
+            awc_no='AWC-UNIQUE-1',
+            master_data_status='approved',
+            is_active=True,
+        )
+        self.planning_job.sku = 'SKU-001'
+        self.planning_job.save(update_fields=['sku', 'updated_at'])
+        self.jobcard.SKU = 'SKU-001'
+        self.jobcard.save(update_fields=['SKU'])
+
+        self.client.login(username='designer', password='password')
+        url = reverse('printing_plates:request_action', kwargs={'pk': self.plate_request.pk})
+        response = self.client.post(url, {
+            'action': 'send_to_vendor',
+            'vendor': 'Dot Max',
+            'print_color': '4',
+            'plate_color': 'Black',
+            'awc_no': 'AWC-UNIQUE-1',
+            'sets_required': '1',
+            'plate_quantity': '1',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.plate_request.refresh_from_db()
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_DRAFT)
+        self.assertNotEqual(self.plate_request.awc_no, 'AWC-UNIQUE-1')
+
+    def test_awc_no_can_be_reused_on_same_sku(self):
+        from planning.models import SkuRecipe
+
+        recipe = SkuRecipe.objects.create(
+            sku='SKU-001',
+            job_name='Same Design',
+            awc_no='AWC-SAME-1',
+            master_data_status='approved',
+            is_active=True,
+        )
+        self.planning_job.sku = 'SKU-001'
+        self.planning_job.save(update_fields=['sku', 'updated_at'])
+        self.jobcard.SKU = 'SKU-001'
+        self.jobcard.save(update_fields=['SKU'])
+        self.plate_request.sku_recipe = recipe
+        self.plate_request.save(update_fields=['sku_recipe'])
+
+        self.client.login(username='designer', password='password')
+        url = reverse('printing_plates:request_action', kwargs={'pk': self.plate_request.pk})
+        response = self.client.post(url, {
+            'action': 'send_to_vendor',
+            'vendor': 'Dot Max',
+            'print_color': '4',
+            'plate_color': 'Black',
+            'awc_no': 'AWC-SAME-1',
+            'sets_required': '1',
+            'plate_quantity': '1',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.plate_request.refresh_from_db()
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_SENT)
+        self.assertEqual(self.plate_request.awc_no, 'AWC-SAME-1')
+
+    def test_multi_set_quantity_suggested_from_impressions_and_inks(self):
+        from printing_plates.plate_set_helpers import build_plate_set_suggestion, suggest_sets_required
+
+        self.machine.plate_life_impressions = 25000
+        self.machine.save(update_fields=['plate_life_impressions'])
+        self.jobcard.total_impressions_required = 100000
+        self.jobcard.save(update_fields=['total_impressions_required'])
+        self.planning_job.color_spec = '4'
+        self.planning_job.save(update_fields=['color_spec', 'updated_at'])
+
+        self.assertEqual(suggest_sets_required(100000, 25000), 4)
+        suggestion = build_plate_set_suggestion(self.plate_request, plate_color='Cyan, Magenta, Yellow, Black')
+        self.assertEqual(suggestion['sets_required'], 4)
+        self.assertEqual(suggestion['plate_quantity'], 16)
+
+        self.client.login(username='designer', password='password')
+        url = reverse('printing_plates:request_action', kwargs={'pk': self.plate_request.pk})
+        response = self.client.post(url, {
+            'action': 'send_to_vendor',
+            'vendor': 'Dot Max',
+            'print_color': '4',
+            'plate_color': 'Cyan, Magenta, Yellow, Black',
+            # omit sets/quantity — server should suggest 4 sets × 4 inks = 16
+        })
+        self.assertEqual(response.status_code, 302)
+        self.plate_request.refresh_from_db()
+        self.assertEqual(self.plate_request.sets_required, 4)
+        self.assertEqual(self.plate_request.plate_quantity, 16)
+        self.assertEqual(self.plate_request.plate_quantity_display, '16 (4 sets)')
 

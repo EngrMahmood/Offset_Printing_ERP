@@ -32,7 +32,7 @@
     {# ── Context notice ── #}
     {% if is_readonly %}
     <div class="erp-alert erp-alert-info">
-        <strong>Read-only View</strong> — This form is open in inspection mode for QC review. Use the <em>Back To QC Review Queue</em> button below to return and take approval action.
+        <strong>QC Review View</strong> — Fields are read-only. Use <em>Approve</em> or <em>Reject</em> below, or return to the QC review queue.
     </div>
     {% else %}
     {% if recipe_status != 'missing' and recipe_status != 'approved' %}
@@ -155,7 +155,19 @@
                 {% endif %}
             </div>
             {% else %}
+            {% if user_can_approve_qc and recipe and recipe_status != 'approved' and recipe_status != 'missing' %}
+            <div class="erp-form-field erp-form-grid__full" style="margin-bottom:12px;">
+                <label for="rejection_comment">Reject reason</label>
+                <textarea id="rejection_comment" name="rejection_comment" class="erp-input" rows="3" placeholder="Required when rejecting / sending back to Draft"></textarea>
+            </div>
+            {% endif %}
             <div class="erp-form-actions">
+                {% if user_can_approve_qc and recipe and recipe_status != 'approved' and recipe_status != 'missing' %}
+                <button type="submit" class="erp-btn erp-btn-success" name="action" value="approve"
+                    {% if missing_required_fields %}disabled title="Missing: {{ missing_required_fields|join:', ' }}"{% endif %}>Approve</button>
+                <button type="submit" class="erp-btn erp-btn-warning" name="action" value="reject"
+                    onclick="return confirmRejectSku();">Reject / Send Back</button>
+                {% endif %}
                 <a class="erp-btn erp-btn-secondary" href="{% url 'qc:master_review' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To QC Review Queue</a>
                 <a class="erp-btn erp-btn-secondary" href="{% url 'planning:pending_skus' %}{% if return_po or return_q %}?{% if return_po %}po={{ return_po|urlencode }}{% endif %}{% if return_po and return_q %}&{% endif %}{% if return_q %}q={{ return_q|urlencode }}{% endif %}{% endif %}">Back To Pending SKUs</a>
             </div>
@@ -168,6 +180,48 @@
 
 {% block extra_js %}
 <script>
+function confirmRejectSku() {
+    const reason = (document.getElementById('rejection_comment')?.value || '').trim();
+    if (!reason) {
+        alert('Enter a reject reason before sending this SKU back to Draft.');
+        document.getElementById('rejection_comment')?.focus();
+        return false;
+    }
+    return confirm('Send this SKU back to Draft for planner correction?');
+}
+
+function quickAddPrintColor() {
+    const name = prompt('Enter print color pattern (e.g. 3+1 or 5):');
+    if (!name || !name.trim()) return;
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const formData = new FormData();
+    formData.append('type', 'print_color');
+    formData.append('name', name.trim());
+    fetch('{% url "quick_add_master" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.ok) {
+            alert('Error: ' + (data.error || data.message || 'Failed to add print color.'));
+            return;
+        }
+        const select = document.getElementById('{{ form.color_spec.id_for_label }}');
+        if (!select) return;
+        let option = Array.from(select.options).find(opt => opt.value === data.name);
+        if (!option) {
+            option = document.createElement('option');
+            option.value = data.name;
+            option.textContent = data.name;
+            select.appendChild(option);
+        }
+        select.value = data.name;
+    })
+    .catch(() => alert('An error occurred while adding print color.'));
+}
+
 function quickAddProductType() {
     const name = prompt('Enter new product type name:');
     if (!name || !name.trim()) return;

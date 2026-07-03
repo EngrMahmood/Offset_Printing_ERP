@@ -1,4 +1,6 @@
-{% if plate_request_type == 'New Artwork' or repeat_flag|lower == 'new' or planning_stage == 'new_plate_making' %}
+{% if plate_request_type == 'Replacement' %}
+<span class="erp-plate-type-flag is-repeat" title="Plate replacement from production">Replacement</span>
+{% elif plate_request_type == 'New Artwork' or repeat_flag|lower == 'new' or planning_stage == 'new_plate_making' %}
 <span class="erp-plate-type-flag is-new">New</span>
 {% elif plate_request_type == 'Repeat' or repeat_flag|lower == 'repeat' or planning_stage == 'repeat_plate_making' %}
 <span class="erp-plate-type-flag is-repeat">Repeat</span>

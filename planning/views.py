@@ -32,7 +32,7 @@ from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
 from django.db import OperationalError, transaction
-from django.db.models import Count, Q, Sum
+from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.deletion import ProtectedError
 from django.http import Http404, HttpResponse
 from django.utils import timezone
@@ -69,6 +69,15 @@ from .services import (
     merge_preserved_sku_recipe_fields,
     prepare_sku_recipe_form_for_master_entry,
     get_sku_recipe_form_ui_context,
+    get_best_sku_recipe_for_sku,
+    ensure_sku_recipe_for_planning_job,
+    sync_planning_job_fields_to_sku_recipe,
+    build_sku_recipe_initial_from_planning_job,
+    get_plate_remake_warning_for_recipe_save,
+    get_plate_remake_warning_for_job_sync,
+    planner_can_edit_designer_fields,
+    PLATE_REMAKE_IMPACT_FIELDS,
+    SKU_RECIPE_STATUS_ORDER,
     can_request_master_data_sync,
     dismiss_master_data_sync_request,
     get_master_data_field_diffs,
@@ -270,7 +279,7 @@ COST_MISMATCH_NOTE_PREFIX = 'COST ALERT:'
 SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('job_name', 'Job Name'),
     ('material', 'Material'),
-    ('color_spec', 'Color'),
+    ('color_spec', 'Print Color'),
     ('application', 'Application'),
     ('product_type', 'Product Type'),
     ('print_sheet_size', 'Print Sheet'),
@@ -414,7 +423,7 @@ def _job_card_layout_field_labels():
         'department': 'Department',
         'job_name': 'Job Name',
         'material_display': 'Material',
-        'color_spec_display': 'Color',
+        'color_spec_display': 'Print Color',
         'number_of_colors': 'Color Count',
         'application_display': 'Application',
         'repeat_flag': 'Repeat Flag',
@@ -776,9 +785,16 @@ def planning_sku_recipes_list(request):
 
 @login_required
 def planning_home(request):
+    from printing_plates.models import PlateRequest
+
     _user_can_plan = getattr(getattr(request.user, 'profile', None), 'can_plan', lambda: False)()
     user_can_release = _user_can_plan
-    queryset = PlanningJob.objects.select_related('job_card', 'planning_stage_changed_by').filter(
+    queryset = PlanningJob.objects.select_related('job_card', 'planning_stage_changed_by').prefetch_related(
+        Prefetch(
+            'plate_requests',
+            queryset=PlateRequest.objects.order_by('-requested_at', '-created_at', '-id'),
+        )
+    ).filter(
         is_active=True,
     )
 
@@ -1158,6 +1174,7 @@ def planning_home(request):
         job.job_card_workflow_status = job_card.workflow_status if job_card else ''
         job.has_job_card = bool(job_card)
         job.planning_stage_changed_by_display = _display_user_identity(getattr(job, 'planning_stage_changed_by', None))
+        job.latest_cancelled_plate = job.latest_cancelled_plate_request
         if job_card:
             job.job_card_status_label = job_card.workflow_status_label
             log = status_logs.get(job_card.id)
@@ -1545,6 +1562,9 @@ def planning_job_detail(request, job_id):
     if status_now == 'draft' and not qc_recipe_warning:
         qc_submission_blockers = preview_job_qc_submission_blockers(job)
 
+    plate_requests = list(job.plate_requests.select_related('requested_by').order_by('-requested_at', '-created_at')[:12])
+    latest_cancelled_plate = next((req for req in plate_requests if req.is_cancelled), None)
+
     return render(
         request,
         'planning/planning_job_detail.html',
@@ -1576,6 +1596,8 @@ def planning_job_detail(request, job_id):
             'user_can_approve_planning': user_can_approve_planning,
             'pending_change_request': pending_change_request,
             'active_machines': active_machines,
+            'plate_requests': plate_requests,
+            'latest_cancelled_plate': latest_cancelled_plate,
         },
     )
 
@@ -1601,11 +1623,15 @@ def planning_job_master_sync(request, job_id):
 
     try:
         if action == 'request_master_sync':
+            pre_sync_diffs = get_master_data_field_diffs(job)
             request_master_data_sync(job, actor=request.user, reason=reason)
             messages.success(
                 request,
                 f'Master data sync requested for {job.jc_number}. An approver can apply the update from this job or the Approval Queue.',
             )
+            plate_warning = get_plate_remake_warning_for_job_sync(job, pre_sync_diffs)
+            if plate_warning:
+                messages.warning(request, plate_warning)
         elif action == 'apply_master_sync':
             if not (user_can_approve_planning or _user_is_admin(request.user)):
                 messages.error(request, 'You do not have permission to apply master data sync.')
@@ -1619,6 +1645,7 @@ def planning_job_master_sync(request, job_id):
                     'This job card is locked. Use Reopen & Apply Master Sync instead.',
                 )
                 return _redirect()
+            pre_sync_diffs = get_master_data_field_diffs(job)
             job, result = apply_master_data_sync(job, actor=request.user)
             updated_fields = result.get('updated_fields') or []
             if updated_fields:
@@ -1628,6 +1655,9 @@ def planning_job_master_sync(request, job_id):
                 )
             else:
                 messages.info(request, f'{job.jc_number} already matches approved SKU master data.')
+            plate_warning = get_plate_remake_warning_for_job_sync(job, pre_sync_diffs)
+            if plate_warning:
+                messages.warning(request, plate_warning)
             if updated_fields and not result.get('job_card_refreshed'):
                 messages.warning(
                     request,
@@ -1637,6 +1667,7 @@ def planning_job_master_sync(request, job_id):
             if not (user_can_approve_planning or _user_is_admin(request.user)):
                 messages.error(request, 'You do not have permission to reopen and apply master data sync.')
                 return _redirect()
+            pre_sync_diffs = get_master_data_field_diffs(job)
             job, result = reopen_and_apply_master_data_sync(
                 job,
                 actor=request.user,
@@ -1650,6 +1681,9 @@ def planning_job_master_sync(request, job_id):
                 )
             else:
                 messages.info(request, f'{job.jc_number} already matches approved SKU master data.')
+            plate_warning = get_plate_remake_warning_for_job_sync(job, pre_sync_diffs)
+            if plate_warning:
+                messages.warning(request, plate_warning)
         elif action == 'dismiss_master_sync':
             if not (
                 _user_is_admin(request.user)
@@ -2868,9 +2902,17 @@ def sku_recipe_edit(request, recipe_id=None):
             'can_admin_actions': can_admin_actions,
             'missing_required_fields': _missing_required_master_fields(current_recipe) if current_recipe else [],
             'is_readonly': False,
+            'planner_can_edit_layout': planner_can_edit_designer_fields(current_recipe),
         }
         context.update(get_sku_recipe_form_ui_context(request.user, is_readonly=False))
         return context
+
+    def _apply_form_permissions(form_obj, recipe_obj=None):
+        apply_sku_recipe_form_role_permissions(
+            form_obj,
+            request.user,
+            recipe=recipe_obj if recipe_obj is not None else recipe,
+        )
 
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
@@ -2895,13 +2937,54 @@ def sku_recipe_edit(request, recipe_id=None):
             messages.success(request, f'SKU Recipe "{recipe.sku}" archived.')
             return redirect('planning:sku_recipes')
 
+        if recipe and action == 'reopen_sku' and recipe.master_data_status == 'approved':
+            # Reopen unlocks the SKU without validating master fields.
+            # Only the reopen reason is required (audit trail).
+            comment = (request.POST.get('rejection_comment') or '').strip()
+            if not comment:
+                messages.error(request, 'Enter a reopen reason, then click Reopen SKU.')
+                locked_form = SkuRecipeForm(instance=recipe)
+                _apply_form_permissions(locked_form)
+                return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(locked_form))
+
+            recipe.master_data_status = 'draft'
+            recipe.reviewed_by = None
+            recipe.reviewed_at = None
+            recipe.approved_by = None
+            recipe.approved_at = None
+            recipe.rejection_comment = comment
+            recipe.last_rejected_by = request.user
+            recipe.last_rejected_at = timezone.now()
+            recipe.save(update_fields=[
+                'master_data_status',
+                'reviewed_by',
+                'reviewed_at',
+                'approved_by',
+                'approved_at',
+                'rejection_comment',
+                'last_rejected_by',
+                'last_rejected_at',
+                'updated_at',
+            ])
+            messages.success(
+                request,
+                f'SKU Recipe "{recipe.sku}" reopened to Draft. Update fields, then Submit for Review when complete.',
+            )
+            return redirect('planning:sku_recipe_edit', recipe_id=recipe.id)
+
         if recipe and recipe.master_data_status == 'approved' and action != 'reopen_sku':
             messages.error(request, 'Approved SKU is locked. Use Reopen SKU before making edits.')
             locked_form = SkuRecipeForm(instance=recipe)
-            apply_sku_recipe_form_role_permissions(locked_form, request.user)
+            _apply_form_permissions(locked_form)
             return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(locked_form))
 
-        form = SkuRecipeForm(request.POST, instance=recipe)
+        previous_plate_values = {
+            field: getattr(recipe, field, None) for field in PLATE_REMAKE_IMPACT_FIELDS
+        } if recipe else {}
+
+        posted = request.POST.copy()
+        posted = merge_preserved_sku_recipe_fields(posted, recipe, request.user)
+        form = SkuRecipeForm(posted, instance=recipe)
         if form.is_valid():
             obj = form.save(commit=False)
             if not recipe_id:
@@ -2919,7 +3002,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     missing = _missing_required_master_fields(obj)
                     if missing:
                         messages.error(request, f'Cannot submit for review. Missing required fields: {", ".join(missing)}.')
-                        apply_sku_recipe_form_role_permissions(form, request.user)
+                        _apply_form_permissions(form, obj)
                         return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
                     obj.master_data_status = 'pending_review'
                     obj.reviewed_by = None
@@ -2931,7 +3014,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     missing = _missing_required_master_fields(obj)
                     if missing:
                         messages.error(request, f'Cannot submit for approval. Missing required fields: {", ".join(missing)}.')
-                        apply_sku_recipe_form_role_permissions(form, request.user)
+                        _apply_form_permissions(form, obj)
                         return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
                     obj.master_data_status = 'reviewed'
                     obj.reviewed_by = request.user
@@ -2943,7 +3026,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     missing = _missing_required_master_fields(obj)
                     if missing:
                         messages.error(request, f'Cannot approve. Missing required fields: {", ".join(missing)}.')
-                        apply_sku_recipe_form_role_permissions(form, request.user)
+                        _apply_form_permissions(form, obj)
                         return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
                     obj.master_data_status = 'approved'
                     obj.approved_by = request.user
@@ -2955,7 +3038,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     comment = (request.POST.get('rejection_comment') or '').strip()
                     if not comment:
                         messages.error(request, 'Please provide a reason when sending a record back to Draft.')
-                        apply_sku_recipe_form_role_permissions(form, request.user)
+                        _apply_form_permissions(form, obj)
                         return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
                     obj.master_data_status = 'draft'
                     obj.reviewed_by = None
@@ -2966,21 +3049,6 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.last_rejected_by = request.user
                     obj.last_rejected_at = timezone.now()
                     messages.success(request, f'SKU Recipe "{obj.sku}" moved back to Draft.')
-                elif action == 'reopen_sku' and current_status == 'approved':
-                    comment = (request.POST.get('rejection_comment') or '').strip()
-                    if not comment:
-                        messages.error(request, 'Please provide a reopen reason before moving approved SKU back to Draft.')
-                        apply_sku_recipe_form_role_permissions(form, request.user)
-                        return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
-                    obj.master_data_status = 'draft'
-                    obj.reviewed_by = None
-                    obj.reviewed_at = None
-                    obj.approved_by = None
-                    obj.approved_at = None
-                    obj.rejection_comment = comment
-                    obj.last_rejected_by = request.user
-                    obj.last_rejected_at = timezone.now()
-                    messages.success(request, f'SKU Recipe "{obj.sku}" reopened to Draft.')
                 else:
                     messages.info(request, f'SKU Recipe "{obj.sku}" saved without changing workflow status.')
             else:
@@ -2995,6 +3063,9 @@ def sku_recipe_edit(request, recipe_id=None):
                     messages.success(request, f'SKU Recipe "{obj.sku}" saved as Draft. Submit for approval from SKU Recipe Master.')
 
             obj.save()
+            plate_warning = get_plate_remake_warning_for_recipe_save(obj, previous_plate_values)
+            if plate_warning and action != 'reopen_sku':
+                messages.warning(request, plate_warning)
             if _do_sync_on_approve:
                 try:
                     sync_result = _sync_new_jobs_for_approved_sku(obj.sku, actor=request.user)
@@ -3012,7 +3083,7 @@ def sku_recipe_edit(request, recipe_id=None):
     else:
         form = SkuRecipeForm(instance=recipe)
 
-    apply_sku_recipe_form_role_permissions(form, request.user)
+    _apply_form_permissions(form)
 
     return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form))
 
@@ -3663,6 +3734,15 @@ def pending_sku_master_entry(request):
         url = reverse('qc:pending_skus')
         return redirect(f'{url}?{urlencode(params)}' if params else url)
 
+    def _redirect_qc_review():
+        params = {}
+        if return_po:
+            params['po'] = return_po
+        if return_q:
+            params['q'] = return_q
+        url = reverse('qc:master_review')
+        return redirect(f'{url}?{urlencode(params)}' if params else url)
+
     try:
         po_doc_id = int(po_doc_id_raw)
     except (TypeError, ValueError):
@@ -3681,6 +3761,7 @@ def pending_sku_master_entry(request):
     po_number = payload.get('po_number') or '-'
     items = _sanitize_po_payload_items(payload)
     is_admin_user = _user_is_admin(request.user)
+    user_can_approve_qc = bool(profile and profile.can_approve_sku_master_review())
 
     suggested_item = None
     sku_key = _sku_key(sku)
@@ -3699,19 +3780,92 @@ def pending_sku_master_entry(request):
     po_remarks = (suggested_item.get('remarks') or '').strip()
 
     # Fetch the best available recipe using priority: approved > reviewed > pending_review > draft
-    _STATUS_ORDER = {'approved': 0, 'reviewed': 1, 'pending_review': 2, 'draft': 3}
     _all_recipes = list(SkuRecipe.objects.filter(sku__iexact=sku))
     recipe = None
     if _all_recipes:
-        recipe = min(_all_recipes, key=lambda r: _STATUS_ORDER.get(r.master_data_status or '', 99))
+        recipe = min(_all_recipes, key=lambda r: SKU_RECIPE_STATUS_ORDER.get(r.master_data_status or '', 99))
+
+    po_number_val = payload.get('po_number') or ''
+    job_obj = PlanningJob.objects.filter(po_number=po_number_val, sku__iexact=sku).first()
+    if job_obj and not recipe:
+        recipe = ensure_sku_recipe_for_planning_job(job_obj, actor=request.user)
+        sync_planning_job_fields_to_sku_recipe(job_obj, recipe)
 
 
     if request.method == 'POST':
+        action = (request.POST.get('action') or 'save_draft').strip()
+
+        # QC actions from readonly review view (approve / reject).
+        if is_readonly and action in {'approve', 'back_to_draft', 'reject'}:
+            if not user_can_approve_qc:
+                messages.error(request, 'You do not have permission to review SKU master records.')
+                return _redirect_qc_review()
+            if not recipe:
+                messages.error(request, f'SKU recipe for {sku} was not found.')
+                return _redirect_qc_review()
+
+            current_status = (recipe.master_data_status or 'draft').lower()
+            if action == 'approve':
+                if current_status not in {'pending_review', 'reviewed'}:
+                    messages.error(request, f'SKU {sku} is not in QC review queue.')
+                    return _redirect_qc_review()
+                missing_required = _missing_required_master_fields(recipe, recipe.job_name or po_job_name)
+                if missing_required:
+                    messages.error(
+                        request,
+                        f'SKU {sku} cannot be approved. Missing required fields: {", ".join(missing_required)}.',
+                    )
+                    return _redirect_qc_review()
+                if current_status == 'pending_review':
+                    recipe.reviewed_by = request.user
+                    recipe.reviewed_at = timezone.now()
+                recipe.master_data_status = 'approved'
+                recipe.approved_by = request.user
+                recipe.approved_at = timezone.now()
+                recipe.rejection_comment = ''
+                recipe.last_rejected_by = None
+                recipe.last_rejected_at = None
+                recipe.save(update_fields=[
+                    'master_data_status', 'reviewed_by', 'reviewed_at',
+                    'approved_by', 'approved_at', 'rejection_comment',
+                    'last_rejected_by', 'last_rejected_at', 'updated_at',
+                ])
+                sync_result = _sync_new_jobs_for_approved_sku(sku, actor=request.user)
+                messages.success(
+                    request,
+                    f'SKU {sku} approved. Planning jobs refreshed: updated {sync_result["updated"]}, '
+                    f'locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.',
+                )
+                return _redirect_qc_review()
+
+            # reject / back_to_draft
+            rejection_comment = (request.POST.get('rejection_comment') or '').strip()
+            if current_status == 'draft':
+                messages.info(request, f'SKU {sku} is already in Draft.')
+                return _redirect_qc_review()
+            if not rejection_comment:
+                messages.error(request, 'Reason is required to reject / send back this SKU.')
+                return _redirect_qc_review()
+            recipe.master_data_status = 'draft'
+            recipe.reviewed_by = None
+            recipe.reviewed_at = None
+            recipe.approved_by = None
+            recipe.approved_at = None
+            recipe.rejection_comment = rejection_comment
+            recipe.last_rejected_by = request.user
+            recipe.last_rejected_at = timezone.now()
+            recipe.save(update_fields=[
+                'master_data_status', 'reviewed_by', 'reviewed_at',
+                'approved_by', 'approved_at', 'rejection_comment',
+                'last_rejected_by', 'last_rejected_at', 'updated_at',
+            ])
+            messages.warning(request, f'SKU {sku} sent back to Draft. Reason: {rejection_comment}')
+            return _redirect_qc_review()
+
         if is_readonly:
             messages.error(request, 'Read-only mode does not allow edits.')
             return _redirect_pending()
 
-        action = (request.POST.get('action') or 'save_draft').strip()
         if recipe and action == 'delete':
             if recipe.master_data_status == 'approved' and not is_admin_user:
                 messages.error(request, 'Approved records can only be deleted by admin users.')
@@ -3744,7 +3898,7 @@ def pending_sku_master_entry(request):
             posted['application'] = po_application
         posted = merge_preserved_sku_recipe_fields(posted, recipe, request.user)
         form = SkuRecipeForm(posted, instance=recipe)
-        apply_sku_recipe_form_role_permissions(form, request.user, is_readonly=is_readonly)
+        apply_sku_recipe_form_role_permissions(form, request.user, is_readonly=is_readonly, recipe=recipe)
         prepare_sku_recipe_form_for_master_entry(form, action=action)
         if form.is_valid():
             action = (request.POST.get('action') or 'save_draft').strip()
@@ -3843,19 +3997,28 @@ def pending_sku_master_entry(request):
                 messages.success(request, f'SKU {sku} saved as Draft.')
                 return _redirect_pending()
     else:
-        initial = {
-            'sku': sku,
-            'job_name': po_job_name,
-            'default_unit_cost': (recipe.default_unit_cost if recipe else None) or po_unit_cost,
-            'color_spec': (recipe.color_spec if recipe else '') or po_color_spec,
-            'application': (recipe.application if recipe else '') or po_application,
-            'machine_name': (recipe.machine_name if recipe else ''),
-            'plate_set_no': (recipe.plate_set_no if recipe else ''),
-            'notes': (recipe.notes if recipe else ''),
-            'remarks': (recipe.remarks if recipe else '') or po_remarks,
+        po_defaults = {
+            'default_unit_cost': po_unit_cost,
+            'color_spec': po_color_spec,
+            'application': po_application,
+            'remarks': po_remarks,
         }
+        if job_obj:
+            initial = build_sku_recipe_initial_from_planning_job(job_obj, recipe=recipe, po_defaults=po_defaults)
+        else:
+            initial = {
+                'sku': sku,
+                'job_name': po_job_name,
+                'default_unit_cost': (recipe.default_unit_cost if recipe else None) or po_unit_cost,
+                'color_spec': (recipe.color_spec if recipe else '') or po_color_spec,
+                'application': (recipe.application if recipe else '') or po_application,
+                'machine_name': (recipe.machine_name if recipe else ''),
+                'plate_set_no': (recipe.plate_set_no if recipe else ''),
+                'notes': (recipe.notes if recipe else ''),
+                'remarks': (recipe.remarks if recipe else '') or po_remarks,
+            }
         form = SkuRecipeForm(instance=recipe, initial=initial)
-        apply_sku_recipe_form_role_permissions(form, request.user, is_readonly=is_readonly)
+        apply_sku_recipe_form_role_permissions(form, request.user, is_readonly=is_readonly, recipe=recipe)
 
     form.fields['sku'].widget.attrs['readonly'] = True
 
@@ -3869,8 +4032,8 @@ def pending_sku_master_entry(request):
         if cost_alert:
             mismatch_alerts.append(cost_alert)
 
-    po_number_val = payload.get('po_number') or ''
-    job_obj = PlanningJob.objects.filter(po_number=po_number_val, sku__iexact=sku).first()
+    if not job_obj:
+        job_obj = PlanningJob.objects.filter(sku__iexact=sku).order_by('-updated_at').first()
     is_new_job = (job_obj.repeat_flag == 'New') if job_obj else True
     # Also treat as Repeat if there is any bulk-uploaded recipe in the database
     if is_new_job and recipe:
@@ -3895,6 +4058,7 @@ def pending_sku_master_entry(request):
         'is_new_job': is_new_job,
         'repeat_flag_display': repeat_flag_display,
         'jc_number': (job_obj.jc_number if job_obj else '') or '',
+        'user_can_approve_qc': user_can_approve_qc,
     }
     context['can_admin_actions'] = is_admin_user
     context.update(get_sku_recipe_form_ui_context(request.user, is_readonly=is_readonly))

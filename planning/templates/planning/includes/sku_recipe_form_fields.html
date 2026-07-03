@@ -51,7 +51,20 @@
     <span class="sku-recipe-section__badge sku-recipe-section__badge--designer">Designer</span>
 </div>
 
-{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.color_spec label='Color (e.g. 4 color or 1+1)' required=True %}
+{% with field=form.color_spec %}
+<div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">
+    <span class="sku-recipe-field__badge{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">{{ field.sku_role_label }}</span>
+    <label for="{{ form.color_spec.id_for_label }}">Print Color <span>*</span></label>
+    <div style="display:flex; gap:8px; align-items:center;">
+        {{ form.color_spec }}
+        {% if can_admin_actions and not is_readonly %}
+        <button type="button" class="erp-btn erp-btn-secondary sm" onclick="quickAddPrintColor()" title="Admin: add print color">+</button>
+        {% endif %}
+    </div>
+    {% if form.color_spec.help_text %}<div class="erp-form-help">{{ form.color_spec.help_text }}</div>{% endif %}
+    {% if form.color_spec.errors %}<div class="erp-form-error">{{ form.color_spec.errors.0 }}</div>{% endif %}
+</div>
+{% endwith %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.size_w_mm label='Size Width (mm)' required=True %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.size_h_mm label='Size Height (mm)' required=True %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.ups label='Ups' required=True %}
@@ -59,7 +72,7 @@
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.purchase_sheet_size label='Purchase Sheet Size' required=True full_width=True %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.purchase_sheet_ups label='Purchase Sheet Ups' required=True %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.plate_set_no label='Plate Set No.' %}
-{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.awc_no label='AWC No.' %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.awc_no label='AWC #' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.die_cutting label='Die Cutting' required=True %}
 
 <hr class="erp-form-sep erp-form-grid__full">
