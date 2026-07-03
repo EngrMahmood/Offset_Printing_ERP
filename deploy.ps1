@@ -1,6 +1,9 @@
 # Deploy Offset ERP to the development server (Windows).
-# Backup the database first, then run:
+# Backup the database first, then run from PowerShell:
 #   .\deploy.ps1
+#
+# If the window closes too fast, run:
+#   powershell -NoExit -File .\deploy.ps1
 #
 # Options are passed through to scripts/deploy_dev.py, for example:
 #   .\deploy.ps1 --git-pull
@@ -9,6 +12,12 @@
 $ErrorActionPreference = 'Stop'
 $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 Set-Location $ProjectRoot
+
+$LogDir = Join-Path $ProjectRoot 'logs'
+if (-not (Test-Path $LogDir)) {
+    New-Item -ItemType Directory -Path $LogDir | Out-Null
+}
+$LogFile = Join-Path $LogDir ("deploy_{0:yyyyMMdd_HHmmss}.log" -f (Get-Date))
 
 $Python = $null
 if ($env:VIRTUAL_ENV) {
@@ -22,5 +31,34 @@ if (-not $Python) {
 }
 
 $deployArgs = @('scripts/deploy_dev.py', '--confirm-backup') + $args
-& $Python @deployArgs
-exit $LASTEXITCODE
+$exitCode = 0
+
+Write-Host ""
+Write-Host "Offset ERP deploy"
+Write-Host "Log file: $LogFile"
+Write-Host ""
+
+try {
+    & $Python @deployArgs 2>&1 | Tee-Object -FilePath $LogFile
+    if ($LASTEXITCODE) {
+        $exitCode = $LASTEXITCODE
+    }
+}
+catch {
+    $_ | Out-String | Tee-Object -FilePath $LogFile -Append
+    Write-Host "Deploy failed: $_" -ForegroundColor Red
+    $exitCode = 1
+}
+
+Write-Host ""
+if ($exitCode -eq 0) {
+    Write-Host "Deploy finished successfully." -ForegroundColor Green
+}
+else {
+    Write-Host "Deploy finished with errors. Exit code: $exitCode" -ForegroundColor Red
+}
+Write-Host "Full output saved to: $LogFile"
+Write-Host ""
+Read-Host "Press Enter to close"
+
+exit $exitCode

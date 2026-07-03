@@ -133,6 +133,14 @@ def maybe_run_tests(python_exe: str, *, dry_run: bool) -> None:
     )
 
 
+def repair_migrations(python_exe: str, *, dry_run: bool) -> None:
+    _print_header('Migration repair')
+    if dry_run:
+        run_command([python_exe, 'scripts/repair_migrations.py'], dry_run=True, check=False)
+        return
+    run_command([python_exe, 'scripts/repair_migrations.py', '--apply'], dry_run=False, check=False)
+
+
 def deploy(args: argparse.Namespace) -> None:
     ensure_project_root()
     python_exe = sys.executable
@@ -165,6 +173,8 @@ def deploy(args: argparse.Namespace) -> None:
             run_preflight_checks()
 
     show_pending_migrations(python_exe, dry_run=args.dry_run)
+
+    repair_migrations(python_exe, dry_run=args.dry_run)
 
     _print_header('Apply migrations')
     run_command([python_exe, 'manage.py', 'migrate', '--noinput'], dry_run=args.dry_run)
