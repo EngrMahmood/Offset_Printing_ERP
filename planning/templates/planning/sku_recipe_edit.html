@@ -8,6 +8,10 @@
     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipes' %}">&#8592; Back to SKU Recipes</a>
 {% endblock %}
 
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'planning/css/sku_recipe_form.css' %}?v=1">
+{% endblock %}
+
 {% block content %}
     {% with current_step='master' %}
     {% endwith %}
@@ -65,7 +69,13 @@
     </div>
     {% endif %}
 
-    <section class="erp-panel">
+    {% if recipe and missing_required_fields %}
+    <div class="erp-alert is-error">
+        <strong>Missing required fields before approval:</strong> {{ missing_required_fields|join:', ' }}
+    </div>
+    {% endif %}
+
+    <section class="erp-panel sku-recipe-form">
         <form id="skuRecipeForm" method="post" novalidate>
             {% csrf_token %}
             {% if form.non_field_errors %}
@@ -74,145 +84,29 @@
                 </div>
             {% endif %}
             <p class="erp-form-required-note">Fields marked <span>*</span> are required for SKU master approval.</p>
+            {% include 'planning/includes/sku_recipe_role_legend.html' %}
             <div class="erp-form-grid">
-
-                <!-- Identity -->
-                <div class="erp-form-section">Identity</div>
-
-                <div class="erp-form-field erp-form-grid__full">
-                    <label for="{{ form.sku.id_for_label }}">SKU <span>*</span></label>
-                    {{ form.sku }}
-                    {% if form.sku.errors %}<div class="erp-form-error">{{ form.sku.errors.0 }}</div>{% endif %}
-                    <div class="erp-form-help">Exact SKU code as it appears in the PO PDF (case-sensitive).</div>
-                </div>
-
-                <div class="erp-form-field erp-form-grid__full">
-                    <label for="{{ form.job_name.id_for_label }}">Job Name</label>
-                    {{ form.job_name }}
-                    {% if form.job_name.errors %}<div class="erp-form-error">{{ form.job_name.errors.0 }}</div>{% endif %}
-                </div>
-
-                <hr class="erp-form-sep erp-form-grid__full">
-
-                <!-- Material & Spec -->
-                <div class="erp-form-section">Material &amp; Specification</div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.material.id_for_label }}">Material Type <span>*</span></label>
-                    {{ form.material }}
-                    {% if form.material.errors %}<div class="erp-form-error">{{ form.material.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.color_spec.id_for_label }}">Color (e.g. 4 color or 1+1) <span>*</span></label>
-                    {{ form.color_spec }}
-                    {% if form.color_spec.errors %}<div class="erp-form-error">{{ form.color_spec.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.application.id_for_label }}">Application (UV / Lamination Gloss / Lamination Matt / NO) <span>*</span></label>
-                    {{ form.application }}
-                    {% if form.application.errors %}<div class="erp-form-error">{{ form.application.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.product_type.id_for_label }}">Product Type <span>*</span></label>
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        {{ form.product_type }}
-                        {% if can_admin_actions %}
-                        <button type="button" class="erp-btn erp-btn-secondary sm" onclick="quickAddProductType()" title="Add product type">+</button>
-                        {% endif %}
-                    </div>
-                    {% if form.product_type.errors %}<div class="erp-form-error">{{ form.product_type.errors.0 }}</div>{% endif %}
-                </div>
-
-                <hr class="erp-form-sep erp-form-grid__full">
-
-                <!-- Dimensions -->
-                <div class="erp-form-section">Dimensions &amp; Layout</div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm) <span>*</span></label>
-                    {{ form.size_w_mm }}
-                    {% if form.size_w_mm.errors %}<div class="erp-form-error">{{ form.size_w_mm.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm) <span>*</span></label>
-                    {{ form.size_h_mm }}
-                    {% if form.size_h_mm.errors %}<div class="erp-form-error">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.ups.id_for_label }}">Ups <span>*</span></label>
-                    {{ form.ups }}
-                    {% if form.ups.errors %}<div class="erp-form-error">{{ form.ups.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet Size <span>*</span></label>
-                    {{ form.print_sheet_size }}
-                    {% if form.print_sheet_size.errors %}<div class="erp-form-error">{{ form.print_sheet_size.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field erp-form-grid__full">
-                    <label for="{{ form.purchase_sheet_size.id_for_label }}">Purchase Sheet Size <span>*</span></label>
-                    {{ form.purchase_sheet_size }}
-                    {% if form.purchase_sheet_size.errors %}<div class="erp-form-error">{{ form.purchase_sheet_size.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.purchase_sheet_ups.id_for_label }}">Purchase Sheet Ups <span>*</span></label>
-                    {{ form.purchase_sheet_ups }}
-                    {% if form.purchase_sheet_ups.errors %}<div class="erp-form-error">{{ form.purchase_sheet_ups.errors.0 }}</div>{% endif %}
-                </div>
-
-                <hr class="erp-form-sep erp-form-grid__full">
-
-                <!-- Routing -->
-                <div class="erp-form-section">Routing &amp; Cost</div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.default_unit_cost.id_for_label }}">Default Unit Cost</label>
-                    {{ form.default_unit_cost }}
-                    {% if form.default_unit_cost.errors %}<div class="erp-form-error">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.daily_demand.id_for_label }}">Daily Demand</label>
-                    {{ form.daily_demand }}
-                    {% if form.daily_demand.errors %}<div class="erp-form-error">{{ form.daily_demand.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.awc_no.id_for_label }}">AWC No.</label>
-                    {{ form.awc_no }}
-                    {% if form.awc_no.errors %}<div class="erp-form-error">{{ form.awc_no.errors.0 }}</div>{% endif %}
-                </div>
-
-                <div class="erp-form-field">
-                    <label for="{{ form.die_cutting.id_for_label }}">Die</label>
-                    {{ form.die_cutting }}
-                    {% if form.die_cutting.errors %}<div class="erp-form-error">{{ form.die_cutting.errors.0 }}</div>{% endif %}
-                </div>
-
-                <hr class="erp-form-sep erp-form-grid__full">
-
-                <!-- Notes -->
-                <div class="erp-form-field erp-form-grid__full">
-                    <label for="{{ form.notes.id_for_label }}">Notes</label>
-                    {{ form.notes }}
-                    {% if form.notes.errors %}<div class="erp-form-error">{{ form.notes.errors.0 }}</div>{% endif %}
-                </div>
-
+                {% include 'planning/includes/sku_recipe_form_fields.html' %}
             </div><!-- /form-grid -->
 
             {% if recipe %}
                 {% if recipe.master_data_status == 'pending_review' or recipe.master_data_status == 'reviewed' or recipe.master_data_status == 'approved' %}
                 <div class="erp-form-field erp-form-grid__full">
-                    <label for="rejection_comment">Rejection comment</label>
-                    <textarea name="rejection_comment" id="rejection_comment" placeholder="Enter the reason for returning this SKU to Draft. This helps the planner correct the issue."></textarea>
-                    <div class="erp-form-help">Required when sending the SKU back to Draft.</div>
+                    <label for="rejection_comment">
+                        {% if recipe.master_data_status == 'approved' %}
+                            Reopen reason <span>*</span>
+                        {% else %}
+                            Rejection comment
+                        {% endif %}
+                    </label>
+                    <textarea name="rejection_comment" id="rejection_comment" placeholder="{% if recipe.master_data_status == 'approved' %}Enter why this approved SKU is being reopened to Draft.{% else %}Enter the reason for returning this SKU to Draft.{% endif %}"></textarea>
+                    <div class="erp-form-help">
+                        {% if recipe.master_data_status == 'approved' %}
+                            Required when using Reopen SKU.
+                        {% else %}
+                            Required when sending the SKU back to Draft.
+                        {% endif %}
+                    </div>
                 </div>
                 {% endif %}
             {% endif %}

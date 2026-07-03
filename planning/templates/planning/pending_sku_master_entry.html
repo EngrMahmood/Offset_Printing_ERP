@@ -8,6 +8,11 @@
 {% block header_actions %}
     <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
 {% endblock %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'planning/css/sku_recipe_form.css' %}?v=1">
+{% endblock %}
+
 {% block content %}
 <div class="erp-page-stack">
 
@@ -98,7 +103,7 @@
     </section>
 
     {# ── Master data form ── #}
-    <section class="erp-section-shell">
+    <section class="erp-section-shell sku-recipe-form">
         <div class="erp-card-header">
             <div class="erp-card-title-stack">
                 <div class="erp-eyebrow">Master Data</div>
@@ -106,7 +111,9 @@
                 <p class="erp-section-desc">Fields marked <span style="color:#8a3f00; font-weight:700;">*</span> are required before QC can approve.</p>
             </div>
             {% if not is_readonly %}
-            <span class="erp-status-chip warning"><span class="erp-status-dot"></span>Planner Entry</span>
+            <span class="erp-status-chip warning"><span class="erp-status-dot"></span>
+                {% if sku_recipe_viewer_role == 'designer' %}Designer Entry{% elif sku_recipe_viewer_role == 'admin' %}Admin Entry{% else %}Planner Entry{% endif %}
+            </span>
             {% else %}
             <span class="erp-status-chip info"><span class="erp-status-dot"></span>QC View</span>
             {% endif %}
@@ -127,111 +134,9 @@
             <input type="hidden" name="return_q" value="{{ return_q }}">
             <input type="hidden" name="readonly" value="{% if is_readonly %}1{% endif %}">
 
+            {% include 'planning/includes/sku_recipe_role_legend.html' %}
             <div class="erp-form-grid" style="grid-template-columns:repeat(3, minmax(0, 1fr)); margin-bottom:14px;">
-                <div class="erp-form-field">
-                    <label for="{{ form.sku.id_for_label }}">SKU</label>
-                    {{ form.sku }}
-                    {% if form.sku.errors %}<div class="field-error-text">{{ form.sku.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label>Job Name</label>
-                    <input type="text" value="{{ suggested_job_name }}" readonly>
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.material.id_for_label }}">Material Type <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.material }}
-                    {% if form.material.errors %}<div class="field-error-text">{{ form.material.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.color_spec.id_for_label }}">Color <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.color_spec }}
-                    {% if form.color_spec.errors %}<div class="field-error-text">{{ form.color_spec.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.application.id_for_label }}">Application <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.application }}
-                    {% if form.application.errors %}<div class="field-error-text">{{ form.application.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.product_type.id_for_label }}">Product Type <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    <div style="display:flex; gap:8px; align-items:center;">
-                        {{ form.product_type }}
-                        {% if can_admin_actions and not is_readonly %}
-                        <button type="button" class="erp-btn erp-btn-secondary sm" onclick="quickAddProductType()" title="Add product type">+</button>
-                        {% endif %}
-                    </div>
-                    {% if form.product_type.errors %}<div class="field-error-text">{{ form.product_type.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.machine_name.id_for_label }}">Machine Name <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.machine_name }}
-                    {% if form.machine_name.errors %}<div class="field-error-text">{{ form.machine_name.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.plate_set_no.id_for_label }}">Plate Set No.</label>
-                    {{ form.plate_set_no }}
-                    {% if form.plate_set_no.errors %}<div class="field-error-text">{{ form.plate_set_no.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.size_w_mm.id_for_label }}">Size Width (mm) <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.size_w_mm }}
-                    {% if form.size_w_mm.errors %}<div class="field-error-text">{{ form.size_w_mm.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.size_h_mm.id_for_label }}">Size Height (mm) <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.size_h_mm }}
-                    {% if form.size_h_mm.errors %}<div class="field-error-text">{{ form.size_h_mm.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.print_sheet_size.id_for_label }}">Print Sheet <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.print_sheet_size }}
-                    {% if form.print_sheet_size.errors %}<div class="field-error-text">{{ form.print_sheet_size.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.purchase_sheet_size.id_for_label }}">Purchase Sheet <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.purchase_sheet_size }}
-                    {% if form.purchase_sheet_size.errors %}<div class="field-error-text">{{ form.purchase_sheet_size.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.purchase_sheet_ups.id_for_label }}">Purchase Sheet Ups</label>
-                    {{ form.purchase_sheet_ups }}
-                    {% if form.purchase_sheet_ups.errors %}<div class="field-error-text">{{ form.purchase_sheet_ups.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.ups.id_for_label }}">UPS <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.ups }}
-                    {% if form.ups.errors %}<div class="field-error-text">{{ form.ups.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.default_unit_cost.id_for_label }}">Unit Cost</label>
-                    {{ form.default_unit_cost }}
-                    {% if form.default_unit_cost.errors %}<div class="field-error-text">{{ form.default_unit_cost.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.daily_demand.id_for_label }}">Daily Demand</label>
-                    {{ form.daily_demand }}
-                    {% if form.daily_demand.errors %}<div class="field-error-text">{{ form.daily_demand.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.awc_no.id_for_label }}">AWC No.</label>
-                    {{ form.awc_no }}
-                    {% if form.awc_no.errors %}<div class="field-error-text">{{ form.awc_no.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field">
-                    <label for="{{ form.die_cutting.id_for_label }}">Die Cutting <span style="color:#8a3f00; font-weight:700;">*</span></label>
-                    {{ form.die_cutting }}
-                    {% if form.die_cutting.errors %}<div class="field-error-text">{{ form.die_cutting.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field" style="grid-column: 1 / -1;">
-                    <label for="{{ form.remarks.id_for_label }}">Remarks</label>
-                    {{ form.remarks }}
-                    {% if form.remarks.errors %}<div class="field-error-text">{{ form.remarks.errors.0 }}</div>{% endif %}
-                </div>
-                <div class="erp-form-field" style="grid-column: 1 / -1;">
-                    <label for="{{ form.notes.id_for_label }}">Notes</label>
-                    {{ form.notes }}
-                    {% if form.notes.errors %}<div class="field-error-text">{{ form.notes.errors.0 }}</div>{% endif %}
-                </div>
+                {% include 'planning/includes/sku_recipe_form_fields.html' %}
             </div>
 
             {% if not is_readonly %}

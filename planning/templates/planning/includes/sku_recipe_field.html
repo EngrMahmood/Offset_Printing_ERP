@@ -1,0 +1,13 @@
+{% with field=bound_field.field %}
+<div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}{% if full_width %} erp-form-grid__full{% endif %}{% if extra_class %} {{ extra_class }}{% endif %}">
+    <span class="sku-recipe-field__badge{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">{{ field.sku_role_label }}</span>
+    <label for="{{ bound_field.id_for_label }}">{{ label }}{% if required %} <span>*</span>{% endif %}</label>
+    {{ bound_field }}
+    {% if bound_field.errors %}
+        <div class="erp-form-error">{{ bound_field.errors.0 }}</div>
+    {% endif %}
+    {% if help_text %}
+        <div class="erp-form-help">{{ help_text }}</div>
+    {% endif %}
+</div>
+{% endwith %}

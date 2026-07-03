@@ -855,6 +855,17 @@ class PendingSkuMasterEntryPlannerTests(TestCase):
 		self.assertFalse(form.fields['die_cutting'].disabled)
 		self.assertFalse(form.fields['plate_set_no'].disabled)
 
+	def test_pending_sku_master_entry_shows_role_legend(self):
+		po_doc = self._create_po_document()
+		from django.urls import reverse
+		url = reverse('planning:pending_sku_master_entry') + f"?po_doc_id={po_doc.id}&sku=TEST-SKU-100"
+		response = self.client.get(url)
+		self.assertEqual(response.status_code, 200)
+		self.assertContains(response, 'sku-recipe-legend')
+		self.assertContains(response, 'Planner fields')
+		self.assertContains(response, 'Designer fields')
+		self.assertEqual(response.context['sku_recipe_viewer_role'], 'planner')
+
 
 class SkuRecipeFormRolePermissionTests(TestCase):
 	def test_product_type_required_for_qc_submission(self):
@@ -878,7 +889,7 @@ class SkuRecipeFormRolePermissionTests(TestCase):
 
 	def test_graphics_designer_cannot_edit_product_type(self):
 		from planning.forms import SkuRecipeForm
-		from planning.services import apply_sku_recipe_form_role_permissions
+		from planning.services import apply_sku_recipe_form_role_permissions, get_sku_recipe_form_ui_context
 
 		designer_user = get_user_model().objects.create_user(username='designer_role_user', password='testpass123')
 		designer_profile, _ = UserProfile.objects.get_or_create(user=designer_user)
@@ -890,6 +901,13 @@ class SkuRecipeFormRolePermissionTests(TestCase):
 		apply_sku_recipe_form_role_permissions(form, designer_user)
 		self.assertTrue(form.fields['product_type'].disabled)
 		self.assertFalse(form.fields['color_spec'].disabled)
+		self.assertEqual(form.fields['color_spec'].sku_role, 'designer')
+		self.assertTrue(form.fields['color_spec'].sku_is_mine)
+		self.assertEqual(form.fields['material'].sku_role, 'planner')
+		self.assertFalse(form.fields['material'].sku_is_mine)
+
+		ui = get_sku_recipe_form_ui_context(designer_user)
+		self.assertEqual(ui['sku_recipe_viewer_role'], 'designer')
 
 
 class PoRemarksExtractorTests(TestCase):

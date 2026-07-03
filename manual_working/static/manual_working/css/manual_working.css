@@ -1,0 +1,147 @@
+.manual-working-page .manual-working-scroll-hint {
+    margin: 0 0 12px;
+    font-size: 12px;
+    color: #5b6f84;
+}
+
+.manual-working-page .manual-working-board {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 100%;
+    min-width: 0;
+}
+
+.manual-working-page .manual-working-dt-top,
+.manual-working-page .manual-working-dt-bottom {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.manual-working-page .manual-working-dt-top .dt-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.manual-working-page .manual-working-dt-top .dataTables_filter {
+    margin: 0;
+}
+
+.manual-working-page .manual-working-dt-top .dataTables_filter label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    font-size: 12px;
+    color: #445a70;
+}
+
+.manual-working-page .manual-working-dt-top .dataTables_filter input {
+    min-width: 220px;
+    padding: 6px 10px;
+    border: 1px solid #d9e2ec;
+    border-radius: 4px;
+}
+
+.manual-working-page .manual-working-dt-bottom .dataTables_info {
+    font-size: 12px;
+    color: #5b6f84;
+}
+
+.manual-working-page .manual-working-dt-bottom .dataTables_paginate {
+    margin-left: auto;
+}
+
+.manual-working-page .manual-working-table-scroll {
+    width: 100%;
+    min-width: 0;
+    overflow: auto;
+    max-height: calc(100vh - 340px);
+    border: 1px solid #d9e2ec;
+    border-radius: 6px;
+    background: #fff;
+    -webkit-overflow-scrolling: touch;
+}
+
+.manual-working-page .manual-working-table {
+    width: max-content;
+    min-width: 100%;
+    table-layout: auto;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.manual-working-page .manual-working-table th,
+.manual-working-page .manual-working-table td {
+    white-space: nowrap;
+    min-width: 88px;
+    max-width: 260px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    vertical-align: middle;
+    background: #fff;
+}
+
+.manual-working-page .manual-working-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #eef3f8;
+    box-shadow: inset 0 -1px 0 #d9e2ec;
+    font-size: 10px;
+    padding: 9px 10px;
+    overflow: visible;
+    text-overflow: clip;
+    min-width: 110px !important;
+    width: auto !important;
+    color: #445a70;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.manual-working-page .manual-working-table.dataTable thead th {
+    min-width: 110px !important;
+    width: auto !important;
+}
+
+.manual-working-page .manual-working-table tbody td {
+    padding: 8px 10px;
+    font-size: 11px;
+    border-bottom: 1px solid #eef2f7;
+}
+
+.manual-working-page .manual-working-table tbody tr:hover td {
+    background: #f8fbff;
+}
+
+.manual-working-page .manual-working-table .manual-working-sticky-col {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    min-width: 120px;
+    max-width: 160px;
+    box-shadow: 1px 0 0 #d9e2ec;
+}
+
+.manual-working-page .manual-working-table thead .manual-working-sticky-col {
+    z-index: 4;
+    background: #eef3f8;
+}
+
+.manual-working-page .manual-working-table tbody .manual-working-sticky-col {
+    background: #fff;
+}
+
+.manual-working-page .manual-working-table tbody tr:hover .manual-working-sticky-col {
+    background: #f8fbff;
+}
+
+/* Hide duplicate DataTables chrome if wrapper is not fully removed */
+.manual-working-page .manual-working-board > .dataTables_wrapper:empty {
+    display: none;
+}

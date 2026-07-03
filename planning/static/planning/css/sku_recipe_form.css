@@ -1,0 +1,156 @@
+.sku-recipe-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 12px 14px;
+    border: 1px solid #d9e2ec;
+    border-radius: 8px;
+    background: #f8fbff;
+}
+
+.sku-recipe-legend__item {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #445a70;
+}
+
+.sku-recipe-legend__swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 4px;
+    border: 1px solid rgba(0, 0, 0, 0.08);
+}
+
+.sku-recipe-legend__swatch--planner { background: #e8f2ff; }
+.sku-recipe-legend__swatch--designer { background: #f3ecff; }
+.sku-recipe-legend__swatch--shared { background: #eef6ee; }
+.sku-recipe-legend__swatch--mine { box-shadow: inset 0 0 0 2px #1d6fd8; }
+
+.sku-recipe-form .erp-form-section.sku-recipe-section--planner,
+.sku-recipe-form .erp-form-section.sku-recipe-section--designer,
+.sku-recipe-form .erp-form-section.sku-recipe-section--shared {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.sku-recipe-form .sku-recipe-section__badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.sku-recipe-section__badge--planner {
+    color: #1f4f82;
+    background: #dbeafe;
+}
+
+.sku-recipe-section__badge--designer {
+    color: #5b3f8f;
+    background: #ede4ff;
+}
+
+.sku-recipe-section__badge--shared {
+    color: #2f6b3f;
+    background: #e3f3e7;
+}
+
+.sku-recipe-field {
+    position: relative;
+    border-radius: 8px;
+    padding: 10px 12px 12px;
+    border: 1px solid transparent;
+    transition: background-color 0.15s ease, border-color 0.15s ease;
+}
+
+.sku-recipe-field--planner {
+    background: #f5f9ff;
+    border-color: #d7e6fb;
+}
+
+.sku-recipe-field--designer {
+    background: #faf7ff;
+    border-color: #e4d9fb;
+}
+
+.sku-recipe-field--shared {
+    background: #f7fbf7;
+    border-color: #dce9df;
+}
+
+.sku-recipe-field.is-mine {
+    box-shadow: inset 0 0 0 2px rgba(29, 111, 216, 0.35);
+}
+
+.sku-recipe-field--designer.is-mine {
+    box-shadow: inset 0 0 0 2px rgba(91, 63, 143, 0.4);
+}
+
+.sku-recipe-field--shared.is-mine {
+    box-shadow: inset 0 0 0 2px rgba(47, 107, 63, 0.35);
+}
+
+.sku-recipe-field.is-other {
+    opacity: 0.92;
+}
+
+.sku-recipe-field.is-other input,
+.sku-recipe-field.is-other select,
+.sku-recipe-field.is-other textarea {
+    background: #f3f5f8;
+}
+
+.sku-recipe-field__badge {
+    display: inline-flex;
+    margin-bottom: 6px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.sku-recipe-field--planner .sku-recipe-field__badge {
+    color: #1f4f82;
+    background: #dbeafe;
+}
+
+.sku-recipe-field--designer .sku-recipe-field__badge {
+    color: #5b3f8f;
+    background: #ede4ff;
+}
+
+.sku-recipe-field--shared .sku-recipe-field__badge {
+    color: #2f6b3f;
+    background: #e3f3e7;
+}
+
+.sku-recipe-field__badge.is-mine::after {
+    content: ' • Your field';
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+}
+
+.sku-recipe-field__badge.is-other::after {
+    content: ' • Other role';
+    font-weight: 600;
+    text-transform: none;
+    letter-spacing: 0;
+    opacity: 0.8;
+}
+
+.sku-recipe-viewer-note {
+    margin: 0 0 14px;
+    font-size: 12px;
+    color: #5b6f84;
+}

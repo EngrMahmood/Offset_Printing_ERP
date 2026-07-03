@@ -1,0 +1,73 @@
+<div class="erp-form-section sku-recipe-section--shared">
+    Identity
+    <span class="sku-recipe-section__badge sku-recipe-section__badge--shared">Shared</span>
+</div>
+
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.sku label='SKU' required=True full_width=True help_text='Exact SKU code as it appears in the PO PDF (case-sensitive).' %}
+
+{% if suggested_job_name %}
+<div class="erp-form-field sku-recipe-field sku-recipe-field--shared erp-form-grid__full">
+    <span class="sku-recipe-field__badge">Shared</span>
+    <label>Job Name <span>*</span></label>
+    <input type="text" value="{{ suggested_job_name }}" readonly>
+    <div class="erp-form-help">Taken from the PO line item.</div>
+</div>
+{% else %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.job_name label='Job Name' required=True full_width=True %}
+{% endif %}
+
+<hr class="erp-form-sep erp-form-grid__full">
+
+<div class="erp-form-section sku-recipe-section--planner">
+    Planner Entry
+    <span class="sku-recipe-section__badge sku-recipe-section__badge--planner">Planner</span>
+</div>
+
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.material label='Material Type' required=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.application label='Application (UV / Lamination Gloss / Lamination Matt / NO)' required=True %}
+
+{% with field=form.product_type.field %}
+<div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">
+    <span class="sku-recipe-field__badge{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">{{ field.sku_role_label }}</span>
+    <label for="{{ form.product_type.id_for_label }}">Product Type <span>*</span></label>
+    <div style="display:flex; gap:8px; align-items:center;">
+        {{ form.product_type }}
+        {% if can_admin_actions and not is_readonly %}
+        <button type="button" class="erp-btn erp-btn-secondary sm" onclick="quickAddProductType()" title="Add product type">+</button>
+        {% endif %}
+    </div>
+    {% if form.product_type.errors %}<div class="erp-form-error">{{ form.product_type.errors.0 }}</div>{% endif %}
+</div>
+{% endwith %}
+
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.machine_name label='Machine Name' required=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.default_unit_cost label='Default Unit Cost' %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.daily_demand label='Daily Demand' %}
+
+<hr class="erp-form-sep erp-form-grid__full">
+
+<div class="erp-form-section sku-recipe-section--designer">
+    Designer / Layout Entry
+    <span class="sku-recipe-section__badge sku-recipe-section__badge--designer">Designer</span>
+</div>
+
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.color_spec label='Color (e.g. 4 color or 1+1)' required=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.size_w_mm label='Size Width (mm)' required=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.size_h_mm label='Size Height (mm)' required=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.ups label='Ups' required=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.print_sheet_size label='Print Sheet Size' required=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.purchase_sheet_size label='Purchase Sheet Size' required=True full_width=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.purchase_sheet_ups label='Purchase Sheet Ups' required=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.plate_set_no label='Plate Set No.' %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.awc_no label='AWC No.' %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.die_cutting label='Die Cutting' required=True %}
+
+<hr class="erp-form-sep erp-form-grid__full">
+
+<div class="erp-form-section sku-recipe-section--planner">
+    Notes
+    <span class="sku-recipe-section__badge sku-recipe-section__badge--planner">Planner</span>
+</div>
+
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.remarks label='Remarks' full_width=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.notes label='Notes' full_width=True %}

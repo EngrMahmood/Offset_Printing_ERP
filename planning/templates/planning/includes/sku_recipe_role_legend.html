@@ -1,0 +1,28 @@
+<div class="sku-recipe-legend" aria-label="SKU field ownership legend">
+    <div class="sku-recipe-legend__item">
+        <span class="sku-recipe-legend__swatch sku-recipe-legend__swatch--planner"></span>
+        <span>Planner fields</span>
+    </div>
+    <div class="sku-recipe-legend__item">
+        <span class="sku-recipe-legend__swatch sku-recipe-legend__swatch--designer"></span>
+        <span>Designer fields</span>
+    </div>
+    <div class="sku-recipe-legend__item">
+        <span class="sku-recipe-legend__swatch sku-recipe-legend__swatch--shared"></span>
+        <span>Shared fields</span>
+    </div>
+    <div class="sku-recipe-legend__item">
+        <span class="sku-recipe-legend__swatch sku-recipe-legend__swatch--mine"></span>
+        <span>Highlighted border = fields you should fill</span>
+    </div>
+</div>
+
+{% if sku_recipe_viewer_role == 'planner' %}
+<p class="sku-recipe-viewer-note">Fill the blue <strong>Planner</strong> fields. Purple <strong>Designer</strong> fields will be completed by Graphics / Plate Making.</p>
+{% elif sku_recipe_viewer_role == 'designer' %}
+<p class="sku-recipe-viewer-note">Fill the purple <strong>Designer</strong> layout fields. Blue <strong>Planner</strong> fields are handled by Planning.</p>
+{% elif sku_recipe_viewer_role == 'admin' %}
+<p class="sku-recipe-viewer-note">Admin view: all fields are editable. Colors show the usual owner for each field.</p>
+{% elif sku_recipe_viewer_role == 'readonly' %}
+<p class="sku-recipe-viewer-note">Read-only review. Colors show whether each field is normally filled by Planner or Designer.</p>
+{% endif %}

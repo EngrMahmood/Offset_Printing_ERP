@@ -14,6 +14,11 @@
     }
 
     function fitRecordsTable(wrap) {
+        if (wrap.classList.contains('manual-working-table-wrap')
+            || wrap.classList.contains('manual-working-board')
+            || wrap.dataset.skipRecordsFit === 'true') {
+            return;
+        }
         const table = wrap.querySelector('table');
         if (!table) return;
 

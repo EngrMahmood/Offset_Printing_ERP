@@ -8,9 +8,11 @@
 {% block extra_head %}
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/jquery.dataTables.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.1/css/buttons.dataTables.min.css">
+    <link rel="stylesheet" href="{% static 'manual_working/css/manual_working.css' %}?v=3">
 {% endblock %}
 
 {% block content %}
+    <div class="manual-working-page">
     <div class="erp-section-divider">
         Manual Working Transition Board
         <span class="erp-badge is-count">{{ rows|length }}</span>
@@ -90,8 +92,12 @@
         </div>
     </form>
 
-    <div class="erp-table-wrap erp-table-scroll erp-records-table-wrap">
-        <table id="manual-working-table" class="erp-table erp-table-dense" style="min-width:3000px; width:100%; white-space:nowrap;">
+    <p class="manual-working-scroll-hint">Use the scrollbar below the table to move across all columns. The header stays fixed while you scroll down.</p>
+
+    <div class="manual-working-board" data-skip-records-fit="true">
+        <div class="manual-working-dt-top"></div>
+        <div class="manual-working-table-scroll" tabindex="0" aria-label="Manual working data table">
+            <table id="manual-working-table" class="erp-table erp-table-dense manual-working-table">
             <thead>
                 <tr>
                     <th>JC No</th>
@@ -281,6 +287,9 @@
                 {% endfor %}
             </tbody>
         </table>
+        </div>
+        <div class="manual-working-dt-bottom"></div>
+    </div>
     </div>
 {% endblock %}
 
@@ -290,5 +299,5 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
     <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
-    <script src="{% static 'manual_working/js/manual_working_datatables.js' %}"></script>
+    <script src="{% static 'manual_working/js/manual_working_datatables.js' %}?v=3"></script>
 {% endblock %}

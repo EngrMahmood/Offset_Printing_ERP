@@ -50,26 +50,94 @@ SKU_RECIPE_PLANNER_FIELDS = [
     'remarks',
 ]
 
+SKU_RECIPE_SHARED_FIELDS = [
+    'sku',
+    'job_name',
+]
+
+SKU_RECIPE_FIELD_ROLE_LABELS = {
+    'planner': 'Planner',
+    'designer': 'Designer',
+    'shared': 'Shared',
+}
+
+
+def get_sku_recipe_field_role(field_name):
+    if field_name in SKU_RECIPE_PLANNER_FIELDS:
+        return 'planner'
+    if field_name in SKU_RECIPE_DESIGNER_FIELDS:
+        return 'designer'
+    return 'shared'
+
+
+def sku_recipe_field_editable_by_user(field_name, user, *, is_readonly=False):
+    if is_readonly:
+        return False
+    if _user_is_admin(user):
+        return True
+
+    role = get_sku_recipe_field_role(field_name)
+    if role == 'shared':
+        return field_name != 'sku'
+
+    if _user_is_graphics_designer(user):
+        return role == 'designer'
+    return role == 'planner'
+
+
+def get_sku_recipe_form_ui_context(user, *, is_readonly=False):
+    if is_readonly:
+        viewer_role = 'readonly'
+    elif _user_is_admin(user):
+        viewer_role = 'admin'
+    elif _user_is_graphics_designer(user):
+        viewer_role = 'designer'
+    else:
+        viewer_role = 'planner'
+
+    return {
+        'sku_recipe_viewer_role': viewer_role,
+        'sku_recipe_planner_fields': SKU_RECIPE_PLANNER_FIELDS,
+        'sku_recipe_designer_fields': SKU_RECIPE_DESIGNER_FIELDS,
+    }
+
+
+def enrich_sku_recipe_form_ui(form, user, *, is_readonly=False):
+    """Attach role metadata used by SKU master templates for highlights and badges."""
+    for field_name, field in form.fields.items():
+        role = get_sku_recipe_field_role(field_name)
+        is_mine = sku_recipe_field_editable_by_user(field_name, user, is_readonly=is_readonly)
+        field.sku_role = role
+        field.sku_role_label = SKU_RECIPE_FIELD_ROLE_LABELS[role]
+        field.sku_is_mine = is_mine
+        css_class = field.widget.attrs.get('class', '')
+        marker = f'sku-field--{role}'
+        state = 'is-your-role' if is_mine else 'is-other-role'
+        field.widget.attrs['class'] = f'{css_class} {marker} {state}'.strip()
+    return form
+
 
 def apply_sku_recipe_form_role_permissions(form, user, *, is_readonly=False):
     """Restrict SKU master fields by role: planners edit planner fields, designers edit layout fields."""
     if is_readonly:
         for field in form.fields.values():
             field.disabled = True
-        return
+        return enrich_sku_recipe_form_ui(form, user, is_readonly=True)
 
     if _user_is_admin(user):
-        return
+        return enrich_sku_recipe_form_ui(form, user, is_readonly=False)
 
     if _user_is_graphics_designer(user):
         for field_name in SKU_RECIPE_PLANNER_FIELDS:
             if field_name in form.fields:
                 form.fields[field_name].disabled = True
-        return
+        return enrich_sku_recipe_form_ui(form, user, is_readonly=False)
 
     for field_name in SKU_RECIPE_DESIGNER_FIELDS:
         if field_name in form.fields:
             form.fields[field_name].disabled = True
+
+    return enrich_sku_recipe_form_ui(form, user, is_readonly=is_readonly)
 
 
 def merge_preserved_sku_recipe_fields(posted, recipe, user):

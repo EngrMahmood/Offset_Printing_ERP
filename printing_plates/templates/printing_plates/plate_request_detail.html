@@ -1,6 +1,11 @@
 {% extends 'theme/base.html' %}
+{% load static %}
 
 {% block title %}Plate Request #{{ plate_request.pk }} — {{ plate_request.jc_number|default:'Detail' }}{% endblock %}
+
+{% block extra_head %}
+    <link rel="stylesheet" href="{% static 'planning/css/sku_recipe_form.css' %}?v=1">
+{% endblock %}
 
 {% block header_actions %}
     <a href="{% url 'printing_plates:request_list' %}" class="erp-btn erp-btn-secondary">Back to Requests</a>
@@ -284,32 +289,40 @@
 
                             {% if plate_request.planning_job and plate_request.planning_job.repeat_flag == 'New' %}
                             <div class="plate-action-callout is-warning">New Job Layout Specifications (Will save to Master SKU)</div>
-                            <div class="erp-form-grid">
-                                <div class="erp-form-field">
+                            <p class="sku-recipe-viewer-note">Purple fields below are <strong>Designer</strong> layout specs — same fields as SKU master.</p>
+                            <div class="erp-form-grid sku-recipe-form">
+                                <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
+                                    <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_size_w_mm" class="erp-form-label">Size Width (mm) <span class="req">*</span></label>
                                     <input type="number" step="1" id="id_size_w_mm" name="size_w_mm" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.size_w_mm %}{{ plate_request.planning_job.size_w_mm }}{% elif master_recipe %}{{ master_recipe.size_w_mm|default:'' }}{% endif %}">
                                 </div>
-                                <div class="erp-form-field">
+                                <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
+                                    <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_size_h_mm" class="erp-form-label">Size Height (mm) <span class="req">*</span></label>
                                     <input type="number" step="1" id="id_size_h_mm" name="size_h_mm" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.size_h_mm %}{{ plate_request.planning_job.size_h_mm }}{% elif master_recipe %}{{ master_recipe.size_h_mm|default:'' }}{% endif %}">
                                 </div>
-                                <div class="erp-form-field">
+                                <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
+                                    <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_print_sheet_size" class="erp-form-label">Print Sheet Size (inches) <span class="req">*</span></label>
                                     <input type="text" id="id_print_sheet_size" name="print_sheet_size" required placeholder="e.g. 28x40" class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.print_sheet_size %}{{ plate_request.planning_job.print_sheet_size }}{% elif master_recipe %}{{ master_recipe.print_sheet_size|default:'' }}{% endif %}">
                                 </div>
-                                <div class="erp-form-field">
+                                <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
+                                    <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_ups" class="erp-form-label">Ups <span class="req">*</span></label>
                                     <input type="number" step="1" id="id_ups" name="ups" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.ups %}{{ plate_request.planning_job.ups }}{% elif master_recipe %}{{ master_recipe.ups|default:'' }}{% endif %}">
                                 </div>
-                                <div class="erp-form-field">
+                                <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
+                                    <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_purchase_sheet_size" class="erp-form-label">Purchase Sheet Size (inches) <span class="req">*</span></label>
                                     <input type="text" id="id_purchase_sheet_size" name="purchase_sheet_size" required placeholder="e.g. 30x42" class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_size %}{{ plate_request.planning_job.purchase_sheet_size }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_size|default:'' }}{% endif %}">
                                 </div>
-                                <div class="erp-form-field">
+                                <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
+                                    <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_purchase_sheet_ups" class="erp-form-label">Purchase Sheet Ups <span class="req">*</span></label>
                                     <input type="number" step="1" id="id_purchase_sheet_ups" name="purchase_sheet_ups" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_ups %}{{ plate_request.planning_job.purchase_sheet_ups }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_ups|default:'' }}{% endif %}">
                                 </div>
-                                <div class="erp-form-field erp-form-grid__full">
+                                <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine erp-form-grid__full">
+                                    <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_die_cutting" class="erp-form-label">Die Cutting <span class="req">*</span></label>
                                     <input type="text" id="id_die_cutting" name="die_cutting" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.sku_recipe and plate_request.planning_job.sku_recipe.die_cutting %}{{ plate_request.planning_job.sku_recipe.die_cutting }}{% elif master_recipe %}{{ master_recipe.die_cutting|default:'' }}{% endif %}">
                                 </div>

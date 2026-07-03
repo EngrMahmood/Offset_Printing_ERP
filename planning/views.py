@@ -68,6 +68,7 @@ from .services import (
     apply_sku_recipe_form_role_permissions,
     merge_preserved_sku_recipe_fields,
     prepare_sku_recipe_form_for_master_entry,
+    get_sku_recipe_form_ui_context,
     can_request_master_data_sync,
     dismiss_master_data_sync_request,
     get_master_data_field_diffs,
@@ -2857,6 +2858,20 @@ def sku_recipe_edit(request, recipe_id=None):
     can_edit_approved = not (recipe and recipe.master_data_status == 'approved')
     can_admin_actions = is_admin_user
 
+    def _sku_recipe_edit_context(form, recipe_obj=None):
+        current_recipe = recipe_obj if recipe_obj is not None else recipe
+        context = {
+            'form': form,
+            'recipe': current_recipe,
+            'page_title': page_title,
+            'can_edit_approved': not (current_recipe and current_recipe.master_data_status == 'approved'),
+            'can_admin_actions': can_admin_actions,
+            'missing_required_fields': _missing_required_master_fields(current_recipe) if current_recipe else [],
+            'is_readonly': False,
+        }
+        context.update(get_sku_recipe_form_ui_context(request.user, is_readonly=False))
+        return context
+
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
         _do_sync_on_approve = False
@@ -2884,7 +2899,7 @@ def sku_recipe_edit(request, recipe_id=None):
             messages.error(request, 'Approved SKU is locked. Use Reopen SKU before making edits.')
             locked_form = SkuRecipeForm(instance=recipe)
             apply_sku_recipe_form_role_permissions(locked_form, request.user)
-            return render(request, 'planning/sku_recipe_edit.html', {'form': locked_form, 'recipe': recipe, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
+            return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(locked_form))
 
         form = SkuRecipeForm(request.POST, instance=recipe)
         if form.is_valid():
@@ -2901,6 +2916,11 @@ def sku_recipe_edit(request, recipe_id=None):
 
             if recipe_id and action:
                 if action == 'submit_review' and current_status == 'draft':
+                    missing = _missing_required_master_fields(obj)
+                    if missing:
+                        messages.error(request, f'Cannot submit for review. Missing required fields: {", ".join(missing)}.')
+                        apply_sku_recipe_form_role_permissions(form, request.user)
+                        return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
                     obj.master_data_status = 'pending_review'
                     obj.reviewed_by = None
                     obj.reviewed_at = None
@@ -2908,6 +2928,11 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.approved_at = None
                     messages.success(request, f'SKU Recipe "{obj.sku}" submitted for review. Status: Pending Review.')
                 elif action == 'review' and current_status == 'pending_review':
+                    missing = _missing_required_master_fields(obj)
+                    if missing:
+                        messages.error(request, f'Cannot submit for approval. Missing required fields: {", ".join(missing)}.')
+                        apply_sku_recipe_form_role_permissions(form, request.user)
+                        return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
                     obj.master_data_status = 'reviewed'
                     obj.reviewed_by = request.user
                     obj.reviewed_at = timezone.now()
@@ -2919,7 +2944,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     if missing:
                         messages.error(request, f'Cannot approve. Missing required fields: {", ".join(missing)}.')
                         apply_sku_recipe_form_role_permissions(form, request.user)
-                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
+                        return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
                     obj.master_data_status = 'approved'
                     obj.approved_by = request.user
                     obj.approved_at = timezone.now()
@@ -2931,7 +2956,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     if not comment:
                         messages.error(request, 'Please provide a reason when sending a record back to Draft.')
                         apply_sku_recipe_form_role_permissions(form, request.user)
-                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
+                        return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
                     obj.master_data_status = 'draft'
                     obj.reviewed_by = None
                     obj.reviewed_at = None
@@ -2946,7 +2971,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     if not comment:
                         messages.error(request, 'Please provide a reopen reason before moving approved SKU back to Draft.')
                         apply_sku_recipe_form_role_permissions(form, request.user)
-                        return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
+                        return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form, obj))
                     obj.master_data_status = 'draft'
                     obj.reviewed_by = None
                     obj.reviewed_at = None
@@ -2989,13 +3014,7 @@ def sku_recipe_edit(request, recipe_id=None):
 
     apply_sku_recipe_form_role_permissions(form, request.user)
 
-    return render(request, 'planning/sku_recipe_edit.html', {
-        'form': form,
-        'recipe': recipe,
-        'page_title': page_title,
-        'can_edit_approved': can_edit_approved,
-        'can_admin_actions': can_admin_actions,
-    })
+    return render(request, 'planning/sku_recipe_edit.html', _sku_recipe_edit_context(form))
 
 
 @login_required
@@ -3860,6 +3879,7 @@ def pending_sku_master_entry(request):
 
     context = {
         'form': form,
+        'recipe': current_recipe,
         'sku': sku,
         'po_doc_id': po_doc_id,
         'po_number': po_number,
@@ -3877,6 +3897,7 @@ def pending_sku_master_entry(request):
         'jc_number': (job_obj.jc_number if job_obj else '') or '',
     }
     context['can_admin_actions'] = is_admin_user
+    context.update(get_sku_recipe_form_ui_context(request.user, is_readonly=is_readonly))
     return render(request, 'planning/pending_sku_master_entry.html', context)
 
 
