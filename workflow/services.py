@@ -230,7 +230,7 @@ def _has_letters_and_digits(value):
 SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('job_name', 'Job Name'),
     ('material', 'Material'),
-    ('color_spec', 'Color'),
+    ('color_spec', 'Print Color'),
     ('application', 'Application'),
     ('product_type', 'Product Type'),
     ('print_sheet_size', 'Print Sheet'),
@@ -242,6 +242,11 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
 
 def _missing_required_master_fields(recipe, fallback_job_name=''):
     missing = []
+    cut_and_pack = bool(
+        recipe and (getattr(recipe, 'job_process_type', '') or 'print_and_pack') == 'cut_and_pack'
+    )
+    skip_for_cut_and_pack = {'color_spec'}
+
     if not recipe:
         fallback = (fallback_job_name or '').strip()
         return [
@@ -251,6 +256,8 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
         ]
 
     for field, label in SKU_MASTER_APPROVAL_REQUIRED_FIELDS:
+        if cut_and_pack and field in skip_for_cut_and_pack:
+            continue
         value = getattr(recipe, field, None)
         if isinstance(value, str):
             if not value.strip():
@@ -563,6 +570,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'repeat_flag': 'New' if forward_as_new else 'Repeat',
             'requirement': _sync_new_sku_requirement(current_requirement, forward_as_new),
             'material': recipe.material,
+            'job_process_type': recipe.job_process_type or 'print_and_pack',
             'color_spec': recipe.color_spec,
             'application': recipe.application,
             'size_w_mm': recipe.size_w_mm,

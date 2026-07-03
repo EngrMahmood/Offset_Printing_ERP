@@ -23,6 +23,7 @@
     <span class="sku-recipe-section__badge sku-recipe-section__badge--planner">Planner</span>
 </div>
 
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.job_process_type label='Job Process' required=True help_text='Print + Pack needs print color and plates. Cut & Pack has no printing. After approval, change only via Reopen SKU.' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.material label='Material Type' required=True %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.application label='Application (UV / Lamination Gloss / Lamination Matt / NO)' required=True %}
 
@@ -51,10 +52,10 @@
     <span class="sku-recipe-section__badge sku-recipe-section__badge--designer">Designer</span>
 </div>
 
-{% with field=form.color_spec %}
+{% with field=form.color_spec.field %}
 <div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">
     <span class="sku-recipe-field__badge{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">{{ field.sku_role_label }}</span>
-    <label for="{{ form.color_spec.id_for_label }}">Print Color <span>*</span></label>
+    <label for="{{ form.color_spec.id_for_label }}">Print Color <span id="print-color-required-mark">*</span></label>
     <div style="display:flex; gap:8px; align-items:center;">
         {{ form.color_spec }}
         {% if can_admin_actions and not is_readonly %}

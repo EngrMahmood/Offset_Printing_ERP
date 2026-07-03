@@ -107,7 +107,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
     class Meta:
         model = PlanningJob
         fields = [
-            'job_process_type',
             'delivery_date',
             'wastage_sheets',
             'print_passes',
@@ -122,7 +121,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             'requirement': forms.Textarea(attrs={'rows': 3}),
         }
         labels = {
-            'job_process_type': 'Job Process',
             'print_passes': 'No. of Passes',
             'requirement': 'Special Instructions',
             'purchase_material_origin': 'Purchase Material Origin',
@@ -154,15 +152,15 @@ class PlanningJobFinalizationForm(forms.ModelForm):
                 choices=PURCHASE_MATERIAL_ORIGIN_CHOICES,
                 attrs={'class': 'erp-select'},
             )
-        if 'job_process_type' in self.fields:
-            self.fields['job_process_type'].widget = forms.Select(
-                attrs={'class': 'erp-select', 'id': 'id_job_process_type'},
-            )
+
+        # Cut & Pack jobs (from SKU master) do not use print passes.
+        if self.instance and self.instance.pk and self.instance.is_cut_and_pack():
+            if 'print_passes' in self.fields:
+                self.fields['print_passes'].required = False
+                self.fields['print_passes'].widget = forms.HiddenInput()
+                self.fields['print_passes'].widget.attrs.pop('required', None)
 
     def _is_cut_and_pack(self):
-        value = self.data.get('job_process_type') if self.data else None
-        if value:
-            return value == 'cut_and_pack'
         return self.instance.is_cut_and_pack() if self.instance and self.instance.pk else False
 
     def clean_print_passes(self):
@@ -176,7 +174,8 @@ class PlanningJobFinalizationForm(forms.ModelForm):
 
     def clean(self):
         cleaned = super().clean()
-        cut_and_pack = (cleaned.get('job_process_type') or getattr(self.instance, 'job_process_type', '') or 'print_and_pack') == 'cut_and_pack'
+        # Job process comes from SKU master only (no planning override).
+        cut_and_pack = self._is_cut_and_pack()
 
         required_messages = {
             'delivery_date': 'Delivery Date is required.',
@@ -246,6 +245,8 @@ class PlanningJobFinalizationForm(forms.ModelForm):
 
     def save(self, commit=True):
         job = super().save(commit=False)
+        # Keep job process aligned with SKU master (not editable on planning).
+        job.sync_job_process_type_from_sku_master()
         job.sync_planned_total_impressions()
         if commit:
             job.save()
@@ -262,6 +263,7 @@ class SkuRecipeForm(forms.ModelForm):
         fields = [
             'sku',
             'job_name',
+            'job_process_type',
             'material',
             'color_spec',
             'application',
@@ -326,7 +328,6 @@ class SkuRecipeForm(forms.ModelForm):
 
         self.fields['job_name'].widget.attrs.setdefault('required', 'required')
         self.fields['material'].widget.attrs.setdefault('required', 'required')
-        self.fields['color_spec'].widget.attrs.setdefault('required', 'required')
         self.fields['application'].widget.attrs.setdefault('required', 'required')
         self.fields['machine_name'].widget.attrs.setdefault('required', 'required')
         self.fields['machine_name'].required = True
@@ -340,8 +341,40 @@ class SkuRecipeForm(forms.ModelForm):
         self.fields['awc_no'].label = 'AWC #'
         self.fields['awc_no'].help_text = 'Artwork code unique to this SKU/design. Cannot be reused on another SKU.'
 
+        from planning.models import SkuRecipe as SkuRecipeModel
+        self.fields['job_process_type'].widget = forms.Select(
+            choices=SkuRecipeModel.JOB_PROCESS_TYPE_CHOICES,
+            attrs={'class': 'erp-select', 'id': 'id_job_process_type'},
+        )
+        self.fields['job_process_type'].label = 'Job Process'
+        self.fields['job_process_type'].help_text = (
+            'Print + Pack needs print color and plates. Cut & Pack has no printing. '
+            'To change after approval, use Reopen SKU (change management).'
+        )
+        self.fields['job_process_type'].required = True
+
+        # Print Color required only for Print + Pack (validated in clean()).
+        process_value = ''
+        if self.data:
+            process_value = (self.data.get('job_process_type') or '').strip()
+        elif self.instance and self.instance.pk:
+            process_value = (self.instance.job_process_type or '').strip()
+        if process_value != 'cut_and_pack':
+            self.fields['color_spec'].required = True
+            self.fields['color_spec'].widget.attrs.setdefault('required', 'required')
+        else:
+            self.fields['color_spec'].required = False
+            self.fields['color_spec'].widget.attrs.pop('required', None)
+
         if 'die_cutting' in self.fields:
             self.fields['die_cutting'].widget.attrs.setdefault('required', 'required')
+
+    def clean(self):
+        cleaned = super().clean()
+        process = (cleaned.get('job_process_type') or 'print_and_pack').strip()
+        if process != 'cut_and_pack' and not (cleaned.get('color_spec') or '').strip():
+            self.add_error('color_spec', 'Print Color is required for Print + Pack jobs.')
+        return cleaned
 
     def clean_color_spec(self):
         from core.print_colors import resolve_print_color_name

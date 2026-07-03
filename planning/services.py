@@ -96,6 +96,7 @@ SKU_RECIPE_DESIGNER_FIELDS = [
 ]
 
 SKU_RECIPE_PLANNER_FIELDS = [
+    'job_process_type',
     'material',
     'application',
     'machine_name',
@@ -515,6 +516,7 @@ def build_sku_recipe_initial_from_planning_job(planning_job, *, recipe=None, po_
         'sku': (planning_job.sku or '').strip(),
         'job_name': (recipe.job_name if recipe else '') or (planning_job.job_name or '').strip() or (planning_job.sku or '').strip(),
         'default_unit_cost': (recipe.default_unit_cost if recipe else None) or po_defaults.get('default_unit_cost'),
+        'job_process_type': (recipe.job_process_type if recipe else '') or 'print_and_pack',
         'color_spec': (recipe.color_spec if recipe else '') or (planning_job.color_spec or '') or po_defaults.get('color_spec', ''),
         'application': (recipe.application if recipe else '') or (planning_job.application or '') or po_defaults.get('application', ''),
         'machine_name': (recipe.machine_name if recipe else '') or (planning_job.machine_name or ''),
@@ -741,6 +743,11 @@ def _sku_key(sku):
 
 def _missing_required_master_fields(recipe, fallback_job_name=''):
     missing = []
+    cut_and_pack = bool(
+        recipe and (getattr(recipe, 'job_process_type', '') or 'print_and_pack') == 'cut_and_pack'
+    )
+    skip_for_cut_and_pack = {'color_spec'}
+
     if not recipe:
         fallback = (fallback_job_name or '').strip()
         return [
@@ -750,6 +757,8 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
         ]
 
     for field, label in SKU_MASTER_APPROVAL_REQUIRED_FIELDS:
+        if cut_and_pack and field in skip_for_cut_and_pack:
+            continue
         value = getattr(recipe, field, None)
         if isinstance(value, str):
             if not value.strip():
@@ -773,6 +782,10 @@ def sync_recipe_operational_fields_to_job(job, recipe=None):
     if not str(job.plate_set_no or '').strip() and str(recipe.plate_set_no or '').strip():
         job.plate_set_no = str(recipe.plate_set_no).strip()
         update_fields.append('plate_set_no')
+    recipe_process = (getattr(recipe, 'job_process_type', None) or '').strip()
+    if recipe_process and recipe_process != (job.job_process_type or 'print_and_pack'):
+        job.job_process_type = recipe_process
+        update_fields.append('job_process_type')
 
     if update_fields:
         update_fields.append('updated_at')
@@ -1143,6 +1156,8 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             job_name_value = fallback_job_name
 
         material_value = (item.get('material') or '').strip() or (recipe.material if recipe else (existing_job.material if existing_job else ''))
+        # Job process is SKU-master owned; planning never overrides.
+        job_process_type_value = (recipe.job_process_type if recipe else '') or 'print_and_pack'
         color_spec_value = (item.get('color_spec') or item.get('color') or '').strip() or (recipe.color_spec if recipe else (existing_job.color_spec if existing_job else ''))
         application_value = (item.get('application') or '').strip() or (recipe.application if recipe else (existing_job.application if existing_job else ''))
         size_w_mm_value = _to_decimal(item.get('size_w_mm') or '') or (recipe.size_w_mm if recipe else (existing_job.size_w_mm if existing_job else None))
@@ -1190,6 +1205,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'repeat_flag': 'New' if forward_as_new else 'Repeat',
             'requirement': requirement_value,
             'material': material_value,
+            'job_process_type': job_process_type_value,
             'color_spec': color_spec_value,
             'application': application_value,
             'size_w_mm': size_w_mm_value,
@@ -1324,6 +1340,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'repeat_flag': 'New' if forward_as_new else 'Repeat',
             'requirement': _sync_new_sku_requirement(current_requirement, forward_as_new),
             'material': recipe.material,
+            'job_process_type': recipe.job_process_type or 'print_and_pack',
             'color_spec': recipe.color_spec,
             'application': recipe.application,
             'size_w_mm': recipe.size_w_mm,
@@ -1473,6 +1490,7 @@ def _collect_pending_sku_rows(po_docs):
 MASTER_SYNC_FIELD_LABELS = {
     'job_name': 'Job Name',
     'material': 'Material',
+    'job_process_type': 'Job Process',
     'color_spec': 'Print Color',
     'application': 'Application',
     'machine_name': 'Machine',

@@ -279,6 +279,7 @@ COST_MISMATCH_NOTE_PREFIX = 'COST ALERT:'
 SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('job_name', 'Job Name'),
     ('material', 'Material'),
+    ('job_process_type', 'Job Process'),
     ('color_spec', 'Print Color'),
     ('application', 'Application'),
     ('product_type', 'Product Type'),
@@ -2917,6 +2918,7 @@ def sku_recipe_edit(request, recipe_id=None):
     if request.method == 'POST':
         action = request.POST.get('action', '').strip()
         _do_sync_on_approve = False
+        _notify_sku_event = None
         if recipe and action == 'delete':
             if recipe.master_data_status == 'approved' and not is_admin_user:
                 messages.error(request, 'Approved records can only be deleted by admin users.')
@@ -3010,6 +3012,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.approved_by = None
                     obj.approved_at = None
                     messages.success(request, f'SKU Recipe "{obj.sku}" submitted for review. Status: Pending Review.')
+                    _notify_sku_event = 'pending_review'
                 elif action == 'review' and current_status == 'pending_review':
                     missing = _missing_required_master_fields(obj)
                     if missing:
@@ -3049,6 +3052,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.last_rejected_by = request.user
                     obj.last_rejected_at = timezone.now()
                     messages.success(request, f'SKU Recipe "{obj.sku}" moved back to Draft.')
+                    _notify_sku_event = 'sent_back'
                 else:
                     messages.info(request, f'SKU Recipe "{obj.sku}" saved without changing workflow status.')
             else:
@@ -3063,6 +3067,18 @@ def sku_recipe_edit(request, recipe_id=None):
                     messages.success(request, f'SKU Recipe "{obj.sku}" saved as Draft. Submit for approval from SKU Recipe Master.')
 
             obj.save()
+            if _notify_sku_event == 'pending_review':
+                try:
+                    from core.notifications import notify_sku_pending_review
+                    notify_sku_pending_review(obj, actor=request.user)
+                except Exception:
+                    logger.exception('SKU pending-review notification failed for %s', obj.sku)
+            elif _notify_sku_event == 'sent_back':
+                try:
+                    from core.notifications import notify_sku_sent_back
+                    notify_sku_sent_back(obj, actor=request.user)
+                except Exception:
+                    logger.exception('SKU sent-back notification failed for %s', obj.sku)
             plate_warning = get_plate_remake_warning_for_recipe_save(obj, previous_plate_values)
             if plate_warning and action != 'reopen_sku':
                 messages.warning(request, plate_warning)
@@ -3859,6 +3875,11 @@ def pending_sku_master_entry(request):
                 'approved_by', 'approved_at', 'rejection_comment',
                 'last_rejected_by', 'last_rejected_at', 'updated_at',
             ])
+            try:
+                from core.notifications import notify_sku_sent_back
+                notify_sku_sent_back(recipe, actor=request.user)
+            except Exception:
+                logger.exception('SKU sent-back notification failed for %s', sku)
             messages.warning(request, f'SKU {sku} sent back to Draft. Reason: {rejection_comment}')
             return _redirect_qc_review()
 

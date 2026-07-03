@@ -342,6 +342,12 @@ def request_plate_remake(job_card, actor=None, reason='', damaged_colors='', not
             after_status=plate_request.status,
         )
 
+    try:
+        from core.notifications import notify_plate_replacement
+        notify_plate_replacement(plate_request, actor=actor)
+    except Exception:
+        pass
+
     return plate_request
 
 
@@ -418,6 +424,12 @@ def cancel_plate_request(plate_request, actor=None, reason=''):
             before_status=before_status,
             after_status=plate_request.status,
         )
+
+    try:
+        from core.notifications import notify_plate_cancelled
+        notify_plate_cancelled(plate_request, actor=actor)
+    except Exception:
+        pass
 
     return plate_request
 

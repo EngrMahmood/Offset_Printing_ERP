@@ -88,6 +88,26 @@
         </div>
 
         <div class="erp-topnav-actions">
+            {% if request.user.is_authenticated %}
+            <div class="erp-notify" id="erp-notify-root"
+                 data-list-url="{% url 'notification_list' %}"
+                 data-mark-all-url="{% url 'notification_mark_all_read' %}"
+                 data-mark-read-url-template="{% url 'notification_mark_read' 0 %}">
+                <button type="button" class="erp-notify-btn" id="erp-notify-btn" title="Notifications" aria-label="Notifications">
+                    <i class="fas fa-bell"></i>
+                    <span class="erp-notify-badge" id="erp-notify-badge"></span>
+                </button>
+                <div class="erp-notify-panel" id="erp-notify-panel" role="menu" aria-label="Notification list">
+                    <div class="erp-notify-panel__header">
+                        <span class="erp-notify-panel__title">Notifications</span>
+                        <button type="button" class="erp-notify-panel__action" id="erp-notify-mark-all">Mark all read</button>
+                    </div>
+                    <div class="erp-notify-list" id="erp-notify-list">
+                        <div class="erp-notify-empty">Loading…</div>
+                    </div>
+                </div>
+            </div>
+            {% endif %}
             <div class="erp-topnav-user-info">
                 <i class="far fa-user-circle"></i>
                 <span>{{ request.user.username|default:'Guest' }}</span>

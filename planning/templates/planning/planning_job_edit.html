@@ -46,6 +46,7 @@
         <div class="erp-info-grid">
             <div class="erp-info-item"><div class="erp-info-item__label">SKU</div><div class="erp-info-item__value">{{ job.sku|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Job Name</div><div class="erp-info-item__value">{{ job.job_name|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Job Process</div><div class="erp-info-item__value">{{ job.job_process_type_label|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Material Type</div><div class="erp-info-item__value">{{ job.material_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Print Color</div><div class="erp-info-item__value">{{ job.color_spec_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Application</div><div class="erp-info-item__value">{{ job.application_display|default:'-' }}</div></div>

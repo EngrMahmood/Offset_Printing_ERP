@@ -238,6 +238,9 @@
 
         <h3 class="erp-section-title" style="font-size:1rem;">20. SKU Master &amp; QC Master Entry</h3>
         <ul style="margin:0 0 18px 20px;">
+            <li><strong>Job Process</strong> (Planner, SKU master only): Print + Pack or Cut &amp; Pack (no printing). Planning jobs use this value with no override; change only via Reopen SKU / master sync.</li>
+            <li><strong>Print Color</strong> (Designer): production pattern from master (1, 2, 4, 1+1, …). Required for Print + Pack; not required for Cut &amp; Pack.</li>
+            <li>Other designer fields: layout (size, ups, sheets, AWC #, die cutting, plate set).</li>
             <li>Designer layout fields from plate making sync into the SKU master when blank.</li>
             <li>Incomplete recipes stay Draft until required fields are filled; planner submits for review.</li>
             <li>QC can open master entry in readonly mode to Approve or Reject/Send Back (reason required).</li>

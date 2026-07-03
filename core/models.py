@@ -1277,6 +1277,40 @@ class ChangeLog(models.Model):
 
 
 # =========================
+# IN-APP NOTIFICATIONS
+# =========================
+
+class Notification(models.Model):
+    """Per-user in-app notification (navbar bell + optional toast)."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='notifications')
+    event_type = models.CharField(max_length=80, db_index=True)
+    title = models.CharField(max_length=200)
+    message = models.TextField(blank=True)
+    link = models.CharField(max_length=500, blank=True)
+    entity_type = models.CharField(max_length=60, blank=True)
+    entity_id = models.PositiveIntegerField(null=True, blank=True)
+    is_read = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    created_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='notifications_created',
+    )
+
+    class Meta:
+        ordering = ['-created_at', '-id']
+        indexes = [
+            models.Index(fields=['user', 'is_read', '-created_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.user_id}: {self.title}'
+
+
+# =========================
 # USER ROLES & PERMISSIONS
 # =========================
 

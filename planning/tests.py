@@ -782,16 +782,19 @@ class PendingSkuMasterEntryPlannerTests(TestCase):
 		# Verify that remarks display in form remarks initial value
 		self.assertEqual(form.initial.get('remarks'), 'Mocked PO Remarks')
 		
-		# Verify that designer fields are disabled on the form
+		# Designer fields (including Print Color) are disabled for planner on first draft
 		self.assertTrue(form.fields['color_spec'].disabled)
 		self.assertTrue(form.fields['size_w_mm'].disabled)
 		self.assertTrue(form.fields['ups'].disabled)
 		self.assertTrue(form.fields['die_cutting'].disabled)
+		self.assertEqual(form.fields['color_spec'].sku_role, 'designer')
 		
-		# Verify that planner fields are NOT disabled
+		# Planner fields (including Job Process) are editable
 		self.assertFalse(form.fields['material'].disabled)
 		self.assertFalse(form.fields['application'].disabled)
 		self.assertFalse(form.fields['product_type'].disabled)
+		self.assertFalse(form.fields['job_process_type'].disabled)
+		self.assertEqual(form.fields['job_process_type'].sku_role, 'planner')
 
 	def test_pending_sku_master_entry_send_to_plate_making(self):
 		from core.models import Machine
@@ -905,6 +908,10 @@ class SkuRecipeFormRolePermissionTests(TestCase):
 		self.assertTrue(form.fields['color_spec'].sku_is_mine)
 		self.assertEqual(form.fields['material'].sku_role, 'planner')
 		self.assertFalse(form.fields['material'].sku_is_mine)
+		self.assertEqual(form.fields['job_process_type'].sku_role, 'planner')
+		self.assertTrue(form.fields['job_process_type'].disabled)
+		self.assertFalse(form.fields['size_w_mm'].disabled)
+		self.assertEqual(form.fields['size_w_mm'].sku_role, 'designer')
 
 		ui = get_sku_recipe_form_ui_context(designer_user)
 		self.assertEqual(ui['sku_recipe_viewer_role'], 'designer')

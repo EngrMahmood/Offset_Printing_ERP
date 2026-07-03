@@ -7,7 +7,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 
-from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, DeliveryLocation, PrintColor, ProductType, Material, Operator, Supervisor, Sorter, UserProfile, ChangeLog, EditOverrideRequest, Vendor
+from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, DeliveryLocation, PrintColor, ProductType, Material, Operator, Supervisor, Sorter, UserProfile, ChangeLog, EditOverrideRequest, Vendor, Notification
 
 User = get_user_model()
 
@@ -31,6 +31,14 @@ class PrintColorAdmin(admin.ModelAdmin):
     list_filter = ('is_active',)
     search_fields = ('name',)
     ordering = ('sort_order', 'name')
+
+
+@admin.register(Notification)
+class NotificationAdmin(admin.ModelAdmin):
+    list_display = ('title', 'user', 'event_type', 'is_read', 'created_at')
+    list_filter = ('event_type', 'is_read', 'created_at')
+    search_fields = ('title', 'message', 'user__username')
+    readonly_fields = ('created_at',)
 
 
 # =========================

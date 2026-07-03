@@ -507,8 +507,37 @@ class PlanningJob(models.Model):
             return str(recipe.plate_set_no).strip()
         return ''
 
+    @property
+    def job_process_type_display(self):
+        """Job process is owned by SKU master; planning does not override."""
+        recipe = self.approved_sku_recipe or self.sku_recipe
+        if recipe and (recipe.job_process_type or '').strip():
+            return recipe.job_process_type.strip()
+        return (self.job_process_type or 'print_and_pack').strip() or 'print_and_pack'
+
+    @property
+    def job_process_type_label(self):
+        value = self.job_process_type_display
+        return dict(self.JOB_PROCESS_TYPE_CHOICES).get(value, value)
+
     def is_cut_and_pack(self):
-        return (self.job_process_type or 'print_and_pack') == 'cut_and_pack'
+        return self.job_process_type_display == 'cut_and_pack'
+
+    def sync_job_process_type_from_sku_master(self):
+        """Copy job process from SKU master onto this job (no planning override)."""
+        recipe = self.approved_sku_recipe or self.sku_recipe
+        if not recipe and (self.sku or '').strip():
+            from planning.services import get_best_sku_recipe_for_sku
+            recipe = get_best_sku_recipe_for_sku(self.sku)
+        process = ''
+        if recipe and (recipe.job_process_type or '').strip():
+            process = recipe.job_process_type.strip()
+        if not process:
+            return False
+        if (self.job_process_type or 'print_and_pack') == process:
+            return False
+        self.job_process_type = process
+        return True
 
     def pre_submit_qc_validation_errors(self):
         errors = {}
@@ -559,6 +588,10 @@ class PlanningJob(models.Model):
             if update_fields is not None:
                 update_fields.add('color_spec')
                 update_fields.add('total_colors')
+
+        if self.sync_job_process_type_from_sku_master():
+            if update_fields is not None:
+                update_fields.add('job_process_type')
 
         calculated_total_sheet_quantity = self.calculated_sheets_required
         if calculated_total_sheet_quantity is not None:
@@ -694,6 +727,16 @@ class SkuRecipe(models.Model):
     application = models.CharField(max_length=120, blank=True)
     product_type = models.CharField(max_length=100, blank=True)
     machine_name = models.CharField(max_length=120, blank=True)
+    JOB_PROCESS_TYPE_CHOICES = [
+        ('print_and_pack', 'Print + Pack'),
+        ('cut_and_pack', 'Cut & Pack (no printing)'),
+    ]
+    job_process_type = models.CharField(
+        max_length=20,
+        choices=JOB_PROCESS_TYPE_CHOICES,
+        default='print_and_pack',
+        help_text='Default process for jobs using this SKU. Cut & Pack skips printing/plates.',
+    )
     plate_set_no = models.CharField(max_length=120, blank=True)
 
     size_w_mm = models.IntegerField(null=True, blank=True)
