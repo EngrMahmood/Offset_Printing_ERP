@@ -4,7 +4,7 @@
 
 {% block title %}Bulk Upload SKU Recipes{% endblock %}
 {% block header_title %}Bulk Upload SKU Recipes{% endblock %}
-{% block header_subtitle %}Import or refresh recipe master data from CSV or XLSX, then route uploaded rows back through approval.{% endblock %}
+{% block header_subtitle %}Import Google Sheet CSV/XLSX. New SKUs are created as Draft; existing SKUs only fill blank fields (never wiped or demoted).{% endblock %}
 {% block header_actions %}
     <a href="{% url 'erp_readme' %}" class="erp-btn erp-btn-secondary">Guide</a>
 {% endblock %}
@@ -18,7 +18,7 @@
         <div class="erp-card-header">
             <div>
                 <h1 class="erp-section-title">Bulk Upload SKU Recipes</h1>
-                <p class="erp-section-desc">Upload master SKU data from CSV or XLSX. All uploaded rows are saved as <strong>Draft</strong> and must go through Review → Approve before PO sync.</p>
+                <p class="erp-section-desc">Upload Google Sheet CSV/XLSX. <strong>Remarks</strong>→Notes, <strong>AWC No</strong>→master, <strong>Purchase Material</strong>→job Purchase Material Origin (local/import), Machine/Plate Set fill master blanks. Existing rows only fill blanks — approved status is kept.</p>
             </div>
             <div class="erp-actions">
                 <a class="erp-btn erp-btn-secondary" href="{% url 'planning:sku_recipes' %}">SKU Master</a>

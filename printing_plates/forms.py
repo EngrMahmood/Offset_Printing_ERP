@@ -47,7 +47,13 @@ class PlateRequestForm(forms.ModelForm):
             'image': 'Image',
         }
         widgets = {
+            'awc_no': forms.TextInput(attrs={'inputmode': 'text', 'autocomplete': 'off'}),
             'remarks': forms.Textarea(attrs={'rows': 4}),
             'requested_at': forms.DateTimeInput(attrs={'type': 'datetime-local'}),
             'link': forms.URLInput(attrs={'placeholder': 'https://'}),
         }
+
+    def clean_awc_no(self):
+        from planning.services import normalize_awc_no
+
+        return normalize_awc_no(self.cleaned_data.get('awc_no'))

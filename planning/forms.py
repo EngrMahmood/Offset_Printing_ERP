@@ -299,9 +299,18 @@ class SkuRecipeForm(forms.ModelForm):
         from core.models import Machine, ProductType
         from core.print_colors import get_print_color_choices
 
+        def _current_field_value(field_name):
+            if self.data and field_name in self.data:
+                return (self.data.get(field_name) or '').strip()
+            if self.initial and self.initial.get(field_name) not in (None, ''):
+                return self.initial.get(field_name)
+            if self.instance is not None:
+                return getattr(self.instance, field_name, None)
+            return None
+
         product_types = ProductType.objects.all().order_by('name')
         product_type_choices = [('', 'Select Product Type')] + [(item.name, item.name) for item in product_types]
-        current_product_type = self.instance.product_type if self.instance else None
+        current_product_type = _current_field_value('product_type')
         if current_product_type and current_product_type not in [item.name for item in product_types]:
             product_type_choices.append((current_product_type, current_product_type))
         self.fields['product_type'].widget = forms.Select(
@@ -313,12 +322,12 @@ class SkuRecipeForm(forms.ModelForm):
 
         machines = Machine.objects.filter(is_active=True).order_by('name')
         machine_choices = [('', 'Select Machine')] + [(m.name, m.name) for m in machines]
-        current_value = self.instance.machine_name if self.instance else None
+        current_value = _current_field_value('machine_name')
         if current_value and current_value not in [m.name for m in machines]:
             machine_choices.append((current_value, current_value))
         self.fields['machine_name'].widget = forms.Select(choices=machine_choices, attrs={'class': 'erp-select', 'style': 'flex: 1;'})
 
-        current_color = self.instance.color_spec if self.instance else None
+        current_color = _current_field_value('color_spec')
         self.fields['color_spec'].widget = forms.Select(
             choices=get_print_color_choices(include_legacy=current_color),
             attrs={'class': 'erp-select', 'style': 'flex: 1;'},
@@ -339,7 +348,14 @@ class SkuRecipeForm(forms.ModelForm):
         self.fields['size_h_mm'].widget.attrs.setdefault('required', 'required')
         self.fields['material'].label = 'Material Type'
         self.fields['awc_no'].label = 'AWC #'
-        self.fields['awc_no'].help_text = 'Artwork code unique to this SKU/design. Cannot be reused on another SKU.'
+        self.fields['awc_no'].help_text = (
+            'Artwork code (letters and/or numbers). Unique per SKU/design. '
+            'Stored as text, not a decimal.'
+        )
+        self.fields['awc_no'].widget = forms.TextInput(attrs={
+            'inputmode': 'text',
+            'autocomplete': 'off',
+        })
 
         from planning.models import SkuRecipe as SkuRecipeModel
         self.fields['job_process_type'].widget = forms.Select(
@@ -410,9 +426,9 @@ class SkuRecipeForm(forms.ModelForm):
         raise forms.ValidationError('Select Application as UV, Lamination Gloss, Lamination Matt, or NO.')
 
     def clean_awc_no(self):
-        from planning.services import get_awc_conflict_message
+        from planning.services import get_awc_conflict_message, normalize_awc_no
 
-        value = str(self.cleaned_data.get('awc_no') or '').strip()
+        value = normalize_awc_no(self.cleaned_data.get('awc_no'))
         if not value:
             return ''
 

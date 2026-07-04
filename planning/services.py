@@ -17,9 +17,61 @@ from core.jc_numbering import allocate_next_jc_number
 NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
 
 
+def normalize_die_cutting(raw_value):
+    """Die cutting is Yes/No only (boolean-style). Legacy die names map to YES."""
+    if raw_value is None:
+        return ''
+    if isinstance(raw_value, bool):
+        return 'YES' if raw_value else 'NO'
+    text = str(raw_value).strip()
+    if not text:
+        return ''
+    lowered = text.lower()
+    if lowered in {'no', 'none', 'n/a', 'na', 'nil', 'false', '0', 'n', 'not applicable'}:
+        return 'NO'
+    if lowered in {'yes', 'y', 'true', '1'}:
+        return 'YES'
+    # Historical free-text die names mean die is used.
+    return 'YES'
+
+
+def normalize_awc_no(raw_value):
+    """
+    AWC # is always a free-text string (letters, digits, punctuation).
+
+    Excel often delivers numeric codes as floats (1050.0); store as '1050', never '1050.0'.
+    Values like 'AWC-777' or '12A' are kept as-is.
+    """
+    if raw_value is None:
+        return ''
+    if isinstance(raw_value, bool):
+        return ''
+    if isinstance(raw_value, int):
+        return str(raw_value)
+    if isinstance(raw_value, float):
+        if raw_value != raw_value:  # NaN
+            return ''
+        if raw_value == int(raw_value):
+            return str(int(raw_value))
+        text = format(raw_value, 'f').rstrip('0').rstrip('.')
+        return text
+    if isinstance(raw_value, Decimal):
+        if raw_value == raw_value.to_integral_value():
+            return str(int(raw_value))
+        return format(raw_value, 'f').rstrip('0').rstrip('.')
+
+    text = str(raw_value).strip()
+    if not text or text.lower() in {'none', 'nan'}:
+        return ''
+    # Excel/CSV artifact: "3483.0" / "3483.00"
+    if re.fullmatch(r'\d+\.0+', text):
+        return text.split('.', 1)[0]
+    return text
+
+
 def get_awc_conflict_message(awc_no, *, sku='', exclude_recipe_id=None, exclude_plate_request_id=None):
     """AWC is unique per design/SKU. Same SKU may reuse its code (repeat/remake)."""
-    awc = (awc_no or '').strip()
+    awc = normalize_awc_no(awc_no)
     if not awc:
         return ''
 
@@ -302,37 +354,55 @@ def _safe_color_spec(*candidates):
 
 
 def build_sku_recipe_initial_from_recipe(recipe=None, *, planning_job=None, po_defaults=None):
-    """Full SKU form initial: recipe first, then planning job, then PO defaults."""
+    """Full SKU form initial: recipe first, then planning jobs for the SKU, then PO defaults.
+
+    Layout data often lives on planning jobs while the draft recipe row is still sparse.
+    Fall back across all jobs for the SKU so master entry shows complete known data.
+    """
+    from planning.models import PlanningJob
+    from core.print_colors import normalize_print_color_for_form
+
     po_defaults = po_defaults or {}
-    recipe = recipe
-    job = planning_job
+    jobs = []
+    if planning_job is not None:
+        jobs.append(planning_job)
+    sku_hint = ''
+    if recipe is not None and (recipe.sku or '').strip():
+        sku_hint = recipe.sku.strip()
+    elif planning_job is not None and (planning_job.sku or '').strip():
+        sku_hint = planning_job.sku.strip()
+    if sku_hint:
+        for job in PlanningJob.objects.filter(sku__iexact=sku_hint).order_by('-updated_at', '-id'):
+            if planning_job is not None and job.pk == planning_job.pk:
+                continue
+            jobs.append(job)
 
     def _r(name, default=''):
         if recipe is not None:
             value = getattr(recipe, name, None)
             if not _field_is_blank(value):
                 return value
-        if job is not None and hasattr(job, name):
-            value = getattr(job, name, None)
-            if not _field_is_blank(value):
-                return value
+        for job in jobs:
+            if hasattr(job, name):
+                value = getattr(job, name, None)
+                if not _field_is_blank(value):
+                    return value
         if name in po_defaults and not _field_is_blank(po_defaults.get(name)):
             return po_defaults.get(name)
         return default
 
-    sku = _r('sku', '')
-    if not sku and job is not None:
-        sku = (job.sku or '').strip()
-
+    sku = _r('sku', '') or sku_hint
     job_name = _r('job_name', '')
-    if not job_name and job is not None:
-        job_name = (job.job_name or '').strip() or sku
+    if not job_name:
+        job_name = sku
 
-    color_spec = _safe_color_spec(
-        getattr(recipe, 'color_spec', None) if recipe else None,
-        getattr(job, 'color_spec', None) if job else None,
-        po_defaults.get('color_spec'),
-    )
+    color_candidates = []
+    if recipe is not None:
+        color_candidates.append(getattr(recipe, 'color_spec', None))
+    for job in jobs:
+        color_candidates.append(getattr(job, 'color_spec', None))
+    color_candidates.append(po_defaults.get('color_spec'))
+    color_spec = normalize_print_color_for_form(_safe_color_spec(*color_candidates))
 
     return {
         'sku': sku,
@@ -366,6 +436,41 @@ def build_sku_recipe_initial_from_planning_job(planning_job, *, recipe=None, po_
         planning_job=planning_job,
         po_defaults=po_defaults,
     )
+
+
+def hydrate_sku_recipe_from_planning_jobs(recipe, *, planning_job=None):
+    """
+    Copy blank recipe fields from planning jobs for the same SKU.
+
+    Designer layout often exists only on jobs. After reopen/send-back the recipe
+    row can look empty even though jobs still hold the data — fill blanks only.
+    """
+    if not recipe:
+        return False
+
+    initial = build_sku_recipe_initial_from_recipe(recipe, planning_job=planning_job)
+    update_fields = []
+    for field_name in (
+        SKU_RECIPE_DESIGNER_FIELDS
+        + SKU_RECIPE_PLANNER_FIELDS
+        + SKU_RECIPE_SHARED_FIELDS
+    ):
+        if field_name in {'sku', 'notes', 'remarks'}:
+            continue
+        current = getattr(recipe, field_name, None)
+        if not _field_is_blank(current):
+            continue
+        value = initial.get(field_name)
+        if _field_is_blank(value):
+            continue
+        setattr(recipe, field_name, value)
+        update_fields.append(field_name)
+
+    if not update_fields:
+        return False
+    update_fields.append('updated_at')
+    recipe.save(update_fields=list(dict.fromkeys(update_fields)))
+    return True
 
 
 # Fields that affect plate size / layout — warn about plate remake when these change.
@@ -600,7 +705,7 @@ def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, 
         'awc_no': 'awc_no',
     }
 
-    posted_awc = str(posted_values.get('awc_no') or '').strip()
+    posted_awc = normalize_awc_no(posted_values.get('awc_no'))
     if posted_awc:
         conflict = get_awc_conflict_message(
             posted_awc,
@@ -617,7 +722,12 @@ def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, 
         raw_value = posted_values.get(posted_field)
         if raw_value is None:
             continue
-        value = str(raw_value).strip()
+        if recipe_field == 'awc_no':
+            value = normalize_awc_no(raw_value)
+        elif recipe_field == 'die_cutting':
+            value = normalize_die_cutting(raw_value)
+        else:
+            value = str(raw_value).strip()
         # Only skip truly empty strings. \"NO\" / \"None\" / \"N/A\" are valid die-cutting answers.
         if value == '':
             continue
@@ -727,15 +837,16 @@ def resolve_designer_layout_values(posted_values, *, recipe=None, planning_job=N
             getattr(recipe, 'purchase_sheet_ups', None),
             getattr(job, 'purchase_sheet_ups', None),
         ),
-        'die_cutting': _pick(
+        'die_cutting': normalize_die_cutting(_pick(
             posted_values.get('die_cutting'),
+            getattr(req, 'die_cutting', None),
             getattr(recipe, 'die_cutting', None),
-        ),
-        'awc_no': _pick(
+        )),
+        'awc_no': normalize_awc_no(_pick(
             posted_values.get('awc_no'),
             getattr(req, 'awc_no', None),
             getattr(recipe, 'awc_no', None),
-        ),
+        )),
         'set_no': _pick(
             posted_values.get('set_no'),
             getattr(req, 'set_no', None),

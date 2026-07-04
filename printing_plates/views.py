@@ -6,6 +6,7 @@ from django.contrib import messages
 from django.views.generic import ListView, DetailView, CreateView, TemplateView
 
 from planning.models import PlanningJob
+from planning.services import normalize_awc_no, normalize_die_cutting
 from .forms import PlateRequestForm
 from .models import PlateRequest
 from .services import build_vendor_filter_options
@@ -412,7 +413,7 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
             vendor = request.POST.get('vendor', '').strip()
             set_no = request.POST.get('set_no', '').strip()
             new_set_no = request.POST.get('new_set_no', '').strip()
-            awc_no = request.POST.get('awc_no', '').strip()
+            awc_no = normalize_awc_no(request.POST.get('awc_no', ''))
             plate_color = request.POST.get('plate_color', '').strip()
             print_color = request.POST.get('print_color', '').strip()
             plate_quantity = request.POST.get('plate_quantity', '').strip()
@@ -517,6 +518,7 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
             plate_request.sets_required = sets_required
             plate_request.plate_quantity = plate_quantity_value
             plate_request.remarks = remarks
+            plate_request.die_cutting = normalize_die_cutting(request.POST.get('die_cutting', ''))
 
             if planning_job:
                 planning_job.remarks = remarks
@@ -607,10 +609,11 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                     apply_print_color_to_planning_job(planning_job, resolved_print_color)
                 planning_job.save()
 
-            # Keep plate request AWC/set aligned with validated layout values.
+            # Keep plate request AWC/set/die aligned with validated layout values.
             plate_request.awc_no = layout_values['awc_no']
             plate_request.set_no = layout_values['set_no']
             plate_request.new_set_no = layout_values['new_set_no']
+            plate_request.die_cutting = normalize_die_cutting(layout_values.get('die_cutting'))
 
             if recipe and plate_request.sku_recipe_id != recipe.pk:
                 plate_request.sku_recipe = recipe
@@ -725,7 +728,7 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                 'purchase_sheet_size': request.POST.get('purchase_sheet_size', '').strip(),
                 'purchase_sheet_ups': request.POST.get('purchase_sheet_ups', '').strip(),
                 'die_cutting': request.POST.get('die_cutting', '').strip(),
-                'awc_no': request.POST.get('awc_no', '').strip(),
+                'awc_no': normalize_awc_no(request.POST.get('awc_no', '')),
                 'set_no': request.POST.get('set_no', plate_request.set_no or '').strip(),
                 'new_set_no': request.POST.get('new_set_no', plate_request.new_set_no or '').strip(),
             }
@@ -759,7 +762,8 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
             plate_request.awc_no = layout_values['awc_no']
             plate_request.set_no = layout_values['set_no']
             plate_request.new_set_no = layout_values['new_set_no']
-            plate_request.save(update_fields=['awc_no', 'set_no', 'new_set_no', 'updated_at'])
+            plate_request.die_cutting = normalize_die_cutting(layout_values.get('die_cutting'))
+            plate_request.save(update_fields=['awc_no', 'set_no', 'new_set_no', 'die_cutting', 'updated_at'])
 
             if planning_job:
                 try:

@@ -326,16 +326,54 @@ class PlanningJob(models.Model):
 
     @property
     def awc_no_display(self):
+        """AWC lives on SKU master; fall back to plate requests for the same SKU/job."""
+        from planning.services import normalize_awc_no
+
         recipe = self.sku_recipe
-        if recipe and (recipe.awc_no or '').strip():
-            return recipe.awc_no
+        if recipe:
+            value = normalize_awc_no(recipe.awc_no)
+            if value:
+                return value
+
+        from django.db.models import Q
+        from printing_plates.models import PlateRequest
+
+        plate_qs = PlateRequest.objects.exclude(awc_no='').order_by('-updated_at')
+        filters = Q(planning_job_id=self.pk)
+        if recipe is not None:
+            filters |= Q(sku_recipe_id=recipe.pk)
+        sku = (self.sku or '').strip()
+        if sku:
+            filters |= Q(job_card__SKU__iexact=sku) | Q(sku_recipe__sku__iexact=sku)
+        plate = plate_qs.filter(filters).first()
+        if plate:
+            return normalize_awc_no(plate.awc_no)
         return ''
 
     @property
     def die_cutting_display(self):
+        """Die cutting is Yes/No on master; fall back to plate request."""
+        from planning.services import normalize_die_cutting
+
         recipe = self.sku_recipe
-        if recipe and (recipe.die_cutting or '').strip():
-            return recipe.die_cutting
+        if recipe:
+            value = normalize_die_cutting(recipe.die_cutting)
+            if value:
+                return value
+
+        from django.db.models import Q
+        from printing_plates.models import PlateRequest
+
+        plate_qs = PlateRequest.objects.exclude(die_cutting='').order_by('-updated_at')
+        filters = Q(planning_job_id=self.pk)
+        if recipe is not None:
+            filters |= Q(sku_recipe_id=recipe.pk)
+        sku = (self.sku or '').strip()
+        if sku:
+            filters |= Q(job_card__SKU__iexact=sku) | Q(sku_recipe__sku__iexact=sku)
+        plate = plate_qs.filter(filters).first()
+        if plate:
+            return normalize_die_cutting(plate.die_cutting)
         return ''
 
     @property

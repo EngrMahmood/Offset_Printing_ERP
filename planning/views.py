@@ -76,6 +76,7 @@ from .services import (
     sync_planning_job_fields_to_sku_recipe,
     build_sku_recipe_initial_from_planning_job,
     build_sku_recipe_initial_from_recipe,
+    hydrate_sku_recipe_from_planning_jobs,
     get_plate_remake_warning_for_recipe_save,
     get_plate_remake_warning_for_job_sync,
     planner_can_edit_designer_fields,
@@ -2717,6 +2718,7 @@ def sku_recipes_list(request):
                     'approved_by', 'approved_at', 'rejection_comment',
                     'last_rejected_by', 'last_rejected_at', 'updated_at',
                 ])
+                hydrate_sku_recipe_from_planning_jobs(recipe)
                 if comment:
                     messages.warning(request, f'SKU {recipe.sku} sent back to Draft. Reason: {comment}')
                 else:
@@ -2928,6 +2930,7 @@ def sku_recipe_edit(request, recipe_id=None):
         action = request.POST.get('action', '').strip()
         _do_sync_on_approve = False
         _notify_sku_event = None
+        _hydrate_after_save = False
         if recipe and action == 'delete':
             if recipe.master_data_status == 'approved' and not is_admin_user:
                 messages.error(request, 'Approved records can only be deleted by admin users.')
@@ -2977,9 +2980,13 @@ def sku_recipe_edit(request, recipe_id=None):
                 'last_rejected_at',
                 'updated_at',
             ])
+            # Pull layout/planner blanks from planning jobs so reopen does not look empty.
+            if hydrate_sku_recipe_from_planning_jobs(recipe):
+                recipe.refresh_from_db()
             messages.success(
                 request,
-                f'SKU Recipe "{recipe.sku}" reopened to Draft. Update fields, then Submit for Review when complete.',
+                f'SKU Recipe "{recipe.sku}" reopened to Draft. Known job layout data was restored where blank. '
+                f'Update fields, then Submit for Review when complete.',
             )
             return redirect('planning:sku_recipe_edit', recipe_id=recipe.id)
 
@@ -3063,6 +3070,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.last_rejected_at = timezone.now()
                     messages.success(request, f'SKU Recipe "{obj.sku}" moved back to Draft.')
                     _notify_sku_event = 'sent_back'
+                    _hydrate_after_save = True
                 else:
                     messages.info(request, f'SKU Recipe "{obj.sku}" saved without changing workflow status.')
             else:
@@ -3077,6 +3085,9 @@ def sku_recipe_edit(request, recipe_id=None):
                     messages.success(request, f'SKU Recipe "{obj.sku}" saved as Draft. Submit for approval from SKU Recipe Master.')
 
             obj.save()
+            if _hydrate_after_save:
+                hydrate_sku_recipe_from_planning_jobs(obj)
+                obj.refresh_from_db()
             if _notify_sku_event == 'pending_review':
                 try:
                     from core.notifications import notify_sku_pending_review
@@ -3107,7 +3118,13 @@ def sku_recipe_edit(request, recipe_id=None):
             # Surface a clear top-level message so users notice validation errors
             messages.error(request, 'There are errors in the form. Please correct the highlighted fields and try again.')
     else:
-        form = SkuRecipeForm(instance=recipe)
+        if recipe and (recipe.master_data_status or '') != 'approved':
+            if hydrate_sku_recipe_from_planning_jobs(recipe):
+                recipe.refresh_from_db()
+        form = SkuRecipeForm(
+            instance=recipe,
+            initial=build_sku_recipe_initial_from_recipe(recipe) if recipe else None,
+        )
 
     _apply_form_permissions(form)
 
@@ -3117,83 +3134,26 @@ def sku_recipe_edit(request, recipe_id=None):
 @login_required
 @permission_required('can_edit_jobcard')
 def sku_recipe_bulk_upload(request):
-    """Bulk upload SKU recipes from CSV/XLSX into Draft status for approval workflow."""
+    """Bulk upload SKU recipes from Google Sheet CSV/XLSX.
+
+    Existing recipes: fill blank fields only (never wipe, never demote approved).
+    New SKUs: created as draft.
+    """
     if request.method == 'POST':
         upload_file = request.FILES.get('upload_file')
         if not upload_file:
             messages.error(request, 'Please choose a CSV or XLSX file to upload.')
             return redirect('planning:sku_recipe_bulk_upload')
 
+        from planning.sku_sheet_import import (
+            apply_sheet_values_to_recipe,
+            parse_sheet_rows,
+            row_to_field_values,
+            _sheet_row_get,
+        )
 
-        name = (upload_file.name or '').lower()
-        rows = []
-        # Map Google Sheet headers to model fields (robust, case-insensitive, and with all required fields)
-        header_to_field = {
-            'SKU': 'sku',
-            'JOB NAME': 'job_name',
-            'Material': 'material',
-            'Color': 'color_spec',
-            'Application': 'application',
-            'Product Type': 'product_type',
-            'Size W mm': 'size_w_mm',
-            'Size H mm': 'size_h_mm',
-            'Size W Inch': 'size_w_inch',
-            'Size H Inch': 'size_h_inch',
-            'Ups': 'ups',
-            'Print Sheet Size': 'print_sheet_size',
-            'Purchase Sheet Size': 'purchase_sheet_size',
-            'Purchase Sheet ups': 'purchase_sheet_ups',
-            'Cost': 'default_unit_cost',
-            'Default Unit Cost': 'default_unit_cost',
-            'Daily Demand': 'daily_demand',
-            'AWC No.': 'awc_no',
-            'AWC No': 'awc_no',
-            'Die': 'die_cutting',
-            'Notes': 'notes',
-        }
-        int_clean_fields = {'size_w_mm', 'size_h_mm', 'size_w_inch', 'size_h_inch'}
-        def clean_intlike(val):
-            try:
-                if val is None or str(val).strip() == '':
-                    return ''
-                ival = int(float(val))
-                return str(ival)
-            except:
-                return str(val) if val is not None else ''
         try:
-            if name.endswith('.csv'):
-                decoded = upload_file.read().decode('utf-8-sig')
-                reader = csv.DictReader(io.StringIO(decoded))
-                for row in reader:
-                    rows.append(row)
-            elif name.endswith('.xlsx'):
-                try:
-                    import openpyxl
-                except ImportError:
-                    messages.error(request, 'openpyxl is required for XLSX upload.')
-                    return redirect('planning:sku_recipe_bulk_upload')
-                wb = openpyxl.load_workbook(upload_file, data_only=True)
-                ws = wb.active
-                # Find header row: look for row with 'SKU' and 'JOB NAME'
-                header_row_idx = None
-                for i, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=True), 1):
-                    values = [str(c).strip() if c is not None else '' for c in row]
-                    if 'SKU' in values and 'JOB NAME' in values:
-                        header_row_idx = i
-                        header = values
-                        break
-                if not header_row_idx:
-                    messages.error(request, 'Could not find header row in Excel file. Make sure it matches the template.')
-                    return redirect('planning:sku_recipe_bulk_upload')
-                for values in ws.iter_rows(min_row=header_row_idx+1, values_only=True):
-                    row = {}
-                    for idx, key in enumerate(header):
-                        if key:
-                            row[key] = values[idx] if idx < len(values) else None
-                    rows.append(row)
-            else:
-                messages.error(request, 'Unsupported file type. Please upload CSV or XLSX.')
-                return redirect('planning:sku_recipe_bulk_upload')
+            rows = parse_sheet_rows(upload_file)
         except Exception as exc:
             messages.error(request, f'Could not read upload file: {exc}')
             return redirect('planning:sku_recipe_bulk_upload')
@@ -3204,8 +3164,7 @@ def sku_recipe_bulk_upload(request):
 
         created = 0
         updated = 0
-        failed = 0
-        sample_errors = []
+        unchanged = 0
         bulk_highlights = {}
         highlight_fields = {
             'sku', 'job_name', 'material', 'color_spec', 'application', 'product_type',
@@ -3215,79 +3174,41 @@ def sku_recipe_bulk_upload(request):
             'awc_no', 'die_cutting', 'notes',
         }
 
-        for idx, source in enumerate(rows, start=2):
-            payload = {}
-            lam_fnb = False
-            for header, field in header_to_field.items():
-                value = source.get(header, '')
-                # Robust normalization for application
-                if field == 'application':
-                    if 'f+b' in (str(value or '').lower()):
-                        lam_fnb = True
-                    payload[field] = _normalize_application_input(value)
-                elif field == 'color_spec':
-                    payload[field] = _normalize_color_spec_input(value)
-                # Remove decimals for mm columns
-                elif field in {'size_w_mm', 'size_h_mm'}:
-                    try:
-                        if value is None or str(value).strip() == '':
-                            payload[field] = ''
-                        else:
-                            payload[field] = str(int(float(value)))
-                    except:
-                        payload[field] = str(value) if value is not None else ''
-                elif field in int_clean_fields:
-                    payload[field] = clean_intlike(value)
-                else:
-                    payload[field] = '' if value is None else str(value).strip()
-            payload['lamination_front_and_back'] = lam_fnb
-            if not payload.get('sku'):
+        for source in rows:
+            sku = str(_sheet_row_get(source, 'SKU') or '').strip()
+            if not sku:
                 continue
-            existing = SkuRecipe.objects.filter(sku__iexact=payload['sku']).first()
-            form = SkuRecipeForm(payload, instance=existing)
-            if not form.is_valid():
-                failed += 1
-                if len(sample_errors) < 8:
-                    error_text = '; '.join(
-                        f"{name}: {', '.join([str(msg) for msg in msgs])}"
-                        for name, msgs in form.errors.items()
-                    )
-                    sample_errors.append(f'Row {idx} ({payload["sku"]}): {error_text}')
-                continue
-            obj = form.save(commit=False)
-            if not existing:
-                obj.created_by = request.user
-            obj.master_data_status = 'draft'
-            obj.reviewed_by = None
-            obj.reviewed_at = None
-            obj.approved_by = None
-            obj.approved_at = None
-            obj.save()
+            values = row_to_field_values(source)
+            job_name = values.get('job_name') or str(_sheet_row_get(source, 'JOB NAME') or '').strip()
+            if job_name:
+                values['job_name'] = job_name
 
+            existing = SkuRecipe.objects.filter(sku__iexact=sku).first()
             if existing:
-                changed = [field for field in form.changed_data if field in highlight_fields]
+                changed = apply_sheet_values_to_recipe(existing, values, fill_blanks_only=True)
                 if not changed:
-                    changed = [
-                        field for field in highlight_fields
-                        if str(getattr(existing, field, '') or '').strip() != str(form.cleaned_data.get(field, '') or '').strip()
-                    ]
-                if not changed:
-                    changed = ['sku']
-                bulk_highlights[str(obj.id)] = {
+                    unchanged += 1
+                    continue
+                existing.save(update_fields=list(dict.fromkeys(changed + ['updated_at'])))
+                bulk_highlights[str(existing.id)] = {
                     'type': 'updated',
-                    'fields': changed,
+                    'fields': [f for f in changed if f in highlight_fields] or ['sku'],
                 }
                 updated += 1
-            else:
-                created_fields = [
-                    field for field in form.cleaned_data
-                    if field in highlight_fields and form.cleaned_data.get(field) not in (None, '')
-                ]
-                bulk_highlights[str(obj.id)] = {
-                    'type': 'created',
-                    'fields': created_fields,
-                }
-                created += 1
+                continue
+
+            recipe = SkuRecipe(sku=sku, created_by=request.user, master_data_status='draft')
+            if job_name:
+                recipe.job_name = job_name
+            changed = apply_sheet_values_to_recipe(recipe, values, fill_blanks_only=False)
+            if 'f+b' in str(_sheet_row_get(source, 'Application') or '').lower():
+                recipe.lamination_front_and_back = True
+            recipe.save()
+            bulk_highlights[str(recipe.id)] = {
+                'type': 'created',
+                'fields': [f for f in changed if f in highlight_fields] or ['sku'],
+            }
+            created += 1
 
         if bulk_highlights:
             request.session['sku_recipe_bulk_highlights'] = bulk_highlights
@@ -3295,10 +3216,14 @@ def sku_recipe_bulk_upload(request):
         if created or updated:
             messages.success(
                 request,
-                f'Bulk upload complete. Draft recipes created {created}, updated {updated}, failed {failed}.',
+                f'Bulk upload complete. Created {created}, filled blanks on {updated}, '
+                f'unchanged {unchanged}. Existing recipes are never wiped or demoted.',
             )
-        if failed and sample_errors:
-            messages.error(request, 'Sample row errors: ' + ' | '.join(sample_errors))
+        else:
+            messages.info(
+                request,
+                f'No changes. Unchanged {unchanged}. Sheet cells only fill blank master fields.',
+            )
 
         return redirect('planning:sku_recipes')
 
@@ -3312,13 +3237,13 @@ def sku_recipe_template_download(request):
     headers = [
         'Sno.', 'SKU', 'JOB NAME', 'Order Status', 'Material', 'Color', 'Application', 'Product Type',
         'Size W mm', 'Size H mm', 'Size W Inch', 'Size H Inch', 'Ups', 'Print Sheet Size',
-        'Purchase Sheet Size', 'Purchase Sheet ups',
-        'Default Unit Cost', 'Daily Demand', 'AWC No', 'Die', 'Notes'
+        'Purchase Sheet Size', 'Purchase Sheet ups', 'Remarks', 'Default Unit Cost',
+        'Machine', 'Purchase Material', 'Daily Demand', 'AWC No', 'Plate Set No', 'Die', 'Notes',
     ]
     sample_row = [
-        '1', 'SKU-001', 'Sample Job Name', 'Repeat', 'Art Card 300gsm', '4 color', 'UV', 'Labels',
-        '100', '150', '3.94', '5.91', '4', '720x1020', '720x1020', '2',
-        '5.00', '500', 'AWC-001', 'YES', 'Sample notes'
+        '1', 'SKU-001', 'Sample Job Name', 'Repeat', 'Art Card 300gsm', '4', 'UV', 'Labels',
+        '100', '150', '3.94', '5.91', '4', '720x1020', '720x1020', '2', 'Sample remarks',
+        '5.00', 'SM 74', 'Imported', '500', 'AWC-001', '1499', 'YES', 'Sample notes',
     ]
     output = io.StringIO()
     writer = csv.writer(output)
@@ -3885,6 +3810,7 @@ def pending_sku_master_entry(request):
                 'approved_by', 'approved_at', 'rejection_comment',
                 'last_rejected_by', 'last_rejected_at', 'updated_at',
             ])
+            hydrate_sku_recipe_from_planning_jobs(recipe)
             try:
                 from core.notifications import notify_sku_sent_back
                 notify_sku_sent_back(recipe, actor=request.user)

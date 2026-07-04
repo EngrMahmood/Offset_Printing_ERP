@@ -33,6 +33,28 @@ def resolve_print_color_name(value):
     return match or ''
 
 
+def normalize_print_color_for_form(value):
+    """Map legacy text (e.g. '4 color') to master name when possible, else keep legacy."""
+    raw = str(value or '').strip()
+    if not raw:
+        return ''
+    resolved = resolve_print_color_name(raw)
+    if resolved:
+        return resolved
+
+    plus = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw)
+    if plus:
+        candidate = f'{int(plus.group(1))}+{int(plus.group(2))}'
+        return resolve_print_color_name(candidate) or candidate
+
+    single = re.fullmatch(r'(\d+)(?:\s*colou?rs?)?', raw, re.IGNORECASE)
+    if single:
+        candidate = str(int(single.group(1)))
+        return resolve_print_color_name(candidate) or candidate
+
+    return raw
+
+
 def print_color_total_units(value):
     """Numeric colour units for setup/pass logic."""
     from core.models import PrintColor

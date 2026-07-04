@@ -65,7 +65,8 @@
                     <div class="erp-info-item"><div class="erp-info-item__label">JC No</div><div class="erp-info-item__value"><strong>{{ plate_request.jc_number|default:'—' }}</strong></div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">SKU</div><div class="erp-info-item__value">{{ plate_request.sku|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Job Name</div><div class="erp-info-item__value">{{ plate_request.job_name|default:'—' }}</div></div>
-                    <div class="erp-info-item"><div class="erp-info-item__label">AWC No</div><div class="erp-info-item__value">{{ plate_request.awc_no|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">AWC No</div><div class="erp-info-item__value">{{ plate_request.display_awc_no|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Die Cutting</div><div class="erp-info-item__value">{{ plate_request.display_die_cutting|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Material</div><div class="erp-info-item__value">{{ plate_request.material_name|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Department</div><div class="erp-info-item__value">{{ plate_request.department_display|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Source</div><div class="erp-info-item__value">{{ plate_request.source|default:'—' }}</div></div>
@@ -87,12 +88,15 @@
                     </div>
                 </div>
                 <div class="erp-info-grid">
-                    <div class="erp-info-item"><div class="erp-info-item__label">Plate Set #</div><div class="erp-info-item__value">{{ plate_request.set_no|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Plate Set #</div><div class="erp-info-item__value">{{ plate_request.display_set_no|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">New Set #</div><div class="erp-info-item__value">{{ plate_request.new_set_no|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">AWC #</div><div class="erp-info-item__value">{{ plate_request.display_awc_no|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Die Cutting</div><div class="erp-info-item__value">{{ plate_request.display_die_cutting|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Plate Quantity</div><div class="erp-info-item__value">{{ plate_request.plate_quantity_display|default:plate_request.plate_quantity|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Print Color</div><div class="erp-info-item__value">{{ plate_request.print_color_display|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Plate Inks</div><div class="erp-info-item__value">{{ plate_request.plate_color|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Color Units</div><div class="erp-info-item__value">{{ plate_request.no_of_colors|default:'—' }}</div></div>
+                    <div class="erp-info-item"><div class="erp-info-item__label">Machine</div><div class="erp-info-item__value">{{ plate_request.machine_display|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Vendor</div><div class="erp-info-item__value">{{ plate_request.vendor|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Impressions</div><div class="erp-info-item__value">{{ plate_request.impressions|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Plate Impression/Ref</div><div class="erp-info-item__value">{{ plate_request.impression|default:'—' }}</div></div>
@@ -101,6 +105,12 @@
                     <div class="erp-info-item"><div class="erp-info-item__label">Box</div><div class="erp-info-item__value">{{ plate_request.box|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Link</div><div class="erp-info-item__value">{% if plate_request.link %}<a href="{{ plate_request.link }}" target="_blank" rel="noopener">Open link</a>{% else %}—{% endif %}</div></div>
                 </div>
+                {% if plate_request.status == 'draft' %}
+                <p class="erp-help-text" style="margin-top:10px;">
+                    Draft request: values above include job/SKU master when the plate row is still empty.
+                    Vendor, inks, and quantity are filled when you use <strong>Edit &amp; Send to Vendor</strong>.
+                </p>
+                {% endif %}
             </section>
 
             <section class="erp-section-shell">
@@ -114,8 +124,14 @@
                 <div class="erp-route-grid">
                     <div class="erp-route-card">
                         <div class="erp-route-card__key">Machine Name</div>
-                        <div class="erp-route-card__value">{{ plate_request.machine.name|default:'—' }}</div>
-                        <div class="erp-note">Standard Speed: {{ plate_request.machine.standard_impressions_per_hour|default:'0' }} imp/hr</div>
+                        <div class="erp-route-card__value">{{ plate_request.machine_display|default:'—' }}</div>
+                        <div class="erp-note">
+                            {% if plate_request.machine %}
+                            Standard Speed: {{ plate_request.machine.standard_impressions_per_hour|default:'0' }} imp/hr
+                            {% elif plate_request.planning_job and plate_request.planning_job.machine_name %}
+                            From planning job / SKU master
+                            {% endif %}
+                        </div>
                     </div>
                     <div class="erp-route-card">
                         <div class="erp-route-card__key">Product Size</div>
@@ -182,13 +198,7 @@
                     </div>
                     <div class="erp-route-card">
                         <div class="erp-route-card__key">Die Cutting</div>
-                        <div class="erp-route-card__value">
-                            {% if master_recipe and master_recipe.die_cutting %}
-                                {{ master_recipe.die_cutting }}
-                            {% elif plate_request.planning_job and plate_request.planning_job.die_cutting_display %}
-                                {{ plate_request.planning_job.die_cutting_display }}
-                            {% else %}—{% endif %}
-                        </div>
+                        <div class="erp-route-card__value">{{ plate_request.display_die_cutting|default:'—' }}</div>
                     </div>
                     <div class="erp-route-card">
                         <div class="erp-route-card__key">AWC #</div>
@@ -366,7 +376,12 @@
                                 <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine erp-form-grid__full">
                                     <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_die_cutting" class="erp-form-label">Die Cutting <span class="req">*</span></label>
-                                    <input type="text" id="id_die_cutting" name="die_cutting" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.sku_recipe and plate_request.planning_job.sku_recipe.die_cutting %}{{ plate_request.planning_job.sku_recipe.die_cutting }}{% elif master_recipe %}{{ master_recipe.die_cutting|default:'' }}{% endif %}">
+                                    <select id="id_die_cutting" name="die_cutting" required class="erp-select">
+                                        <option value="">Select Yes or No</option>
+                                        <option value="YES" {% if plate_request.display_die_cutting == 'YES' %}selected{% endif %}>Yes</option>
+                                        <option value="NO" {% if plate_request.display_die_cutting == 'NO' %}selected{% endif %}>No</option>
+                                    </select>
+                                    <div class="erp-form-help">Stored on the plate request as Yes/No only.</div>
                                 </div>
                             </div>
 
@@ -456,13 +471,23 @@
                         <p class="plate-detail-empty">No actions available for status: {{ plate_request.get_status_display }}</p>
                     {% endif %}
 
-                    {% if can_correct_designer_layout %}
+                    {% if can_correct_designer_layout and plate_request.status != 'draft' %}
+                    <div class="plate-action-stack" id="plate-correct-collapsed" style="margin-top:16px; padding-top:14px; border-top:1px solid #e2e8f0;">
+                        <div class="plate-action-callout is-info">
+                            SKU master is not approved. Use Edit only if designer layout needs correction.
+                        </div>
+                        <button type="button" class="erp-btn erp-btn-secondary" style="width:100%; justify-content:center;"
+                                onclick="document.getElementById('plate-correct-form-wrap').hidden=false; document.getElementById('plate-correct-collapsed').hidden=true;">
+                            <i class="fas fa-edit"></i> Edit designer fields
+                        </button>
+                    </div>
+                    <div id="plate-correct-form-wrap" hidden>
                     <form method="POST" action="{% url 'printing_plates:request_action' plate_request.pk %}" class="plate-action-stack" style="margin-top:16px; padding-top:14px; border-top:1px solid #e2e8f0;">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="update_designer_layout">
                         <div class="plate-action-callout is-warning">
                             <strong>Correct designer fields</strong> (SKU master not approved).
-                            Use this if layout was entered incorrectly. Values like Die Cutting <strong>NO</strong> are saved.
+                            Die Cutting is Yes/No only and is saved on the plate and SKU master.
                         </div>
                         <div class="erp-form-field">
                             <label for="id_corr_print_color" class="erp-form-label">Print Color <span class="req">*</span></label>
@@ -513,14 +538,23 @@
                             </div>
                             <div class="erp-form-field erp-form-grid__full">
                                 <label class="erp-form-label" for="id_corr_die">Die Cutting <span class="req">*</span></label>
-                                <input type="text" id="id_corr_die" name="die_cutting" required class="erp-input" value="{% if master_recipe and master_recipe.die_cutting %}{{ master_recipe.die_cutting }}{% endif %}" placeholder="e.g. NO or die name">
+                                <select id="id_corr_die" name="die_cutting" required class="erp-select">
+                                    <option value="">Select Yes or No</option>
+                                    <option value="YES" {% if plate_request.display_die_cutting == 'YES' %}selected{% endif %}>Yes</option>
+                                    <option value="NO" {% if plate_request.display_die_cutting == 'NO' %}selected{% endif %}>No</option>
+                                </select>
                             </div>
                         </div>
-                        <button type="submit" class="erp-btn erp-btn-secondary" style="width:100%; justify-content:center;"
-                            onclick="return confirm('Update designer fields on SKU master?');">
-                            <i class="fas fa-edit"></i> Save Designer Corrections to SKU Master
+                        <button type="submit" class="erp-btn erp-btn-primary" style="width:100%; justify-content:center;"
+                            onclick="return confirm('Update designer fields on plate and SKU master?');">
+                            <i class="fas fa-save"></i> Save Designer Corrections
+                        </button>
+                        <button type="button" class="erp-btn erp-btn-secondary" style="width:100%; justify-content:center; margin-top:8px;"
+                                onclick="document.getElementById('plate-correct-form-wrap').hidden=true; document.getElementById('plate-correct-collapsed').hidden=false;">
+                            Cancel
                         </button>
                     </form>
+                    </div>
                     {% elif master_recipe and master_recipe.master_data_status == 'approved' %}
                     <div class="plate-action-callout is-info" style="margin-top:16px;">
                         SKU master is approved. To correct designer fields, planner/admin must <strong>Reopen SKU</strong> first.

@@ -86,6 +86,20 @@ class PlateRequest(models.Model):
     set_no = models.CharField(max_length=120, blank=True)
     new_set_no = models.CharField(max_length=120, blank=True)
     awc_no = models.CharField(max_length=120, blank=True)
+    DIE_CUTTING_YES = 'YES'
+    DIE_CUTTING_NO = 'NO'
+    DIE_CUTTING_CHOICES = [
+        ('', 'Select'),
+        (DIE_CUTTING_YES, 'Yes'),
+        (DIE_CUTTING_NO, 'No'),
+    ]
+    die_cutting = models.CharField(
+        max_length=10,
+        choices=DIE_CUTTING_CHOICES,
+        blank=True,
+        default='',
+        help_text='Die cutting required: Yes or No only.',
+    )
     plate_quantity = models.PositiveIntegerField(null=True, blank=True)
     sets_required = models.PositiveIntegerField(
         null=True,
@@ -321,17 +335,33 @@ class PlateRequest(models.Model):
             return value
         if self.planning_job and (self.planning_job.plate_set_no or '').strip():
             return self.planning_job.plate_set_no.strip()
+        if self.sku_recipe and (self.sku_recipe.plate_set_no or '').strip():
+            return self.sku_recipe.plate_set_no.strip()
         if self.job_card and (self.job_card.plate_set_no or '').strip():
             return self.job_card.plate_set_no.strip()
         return ''
 
     @property
     def display_awc_no(self):
-        value = (self.awc_no or '').strip()
+        from planning.services import normalize_awc_no
+
+        value = normalize_awc_no(self.awc_no)
         if value:
             return value
         if self.planning_job:
             return (self.planning_job.awc_no_display or '').strip()
+        return ''
+
+    @property
+    def display_die_cutting(self):
+        """Die cutting is Yes/No on the plate; fall back to SKU master only."""
+        from planning.services import normalize_die_cutting
+
+        value = normalize_die_cutting(self.die_cutting)
+        if value:
+            return value
+        if self.sku_recipe:
+            return normalize_die_cutting(self.sku_recipe.die_cutting)
         return ''
 
     @property
