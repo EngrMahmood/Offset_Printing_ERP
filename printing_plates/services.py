@@ -65,14 +65,39 @@ REPLACEMENT_SOURCES = {
 VALID_REPLACEMENT_REASONS = {choice[0] for choice in PlateRequest.REPLACEMENT_REASON_CHOICES}
 
 
+def get_open_plate_request_for_planning_job(planning_job):
+    """Return the latest open plate request (draft/sent/received), if any."""
+    if not planning_job:
+        return None
+    return (
+        PlateRequest.objects.filter(
+            planning_job=planning_job,
+            status__in=PLATE_REQUEST_OPEN_STATUSES,
+        )
+        .order_by('-requested_at', '-created_at')
+        .first()
+    )
+
+
+def get_issued_plate_request_for_planning_job(planning_job):
+    """Return latest plates already issued to production for this job."""
+    if not planning_job:
+        return None
+    return (
+        PlateRequest.objects.filter(
+            planning_job=planning_job,
+            status=PlateRequest.STATUS_AVAILABLE,
+        )
+        .order_by('-updated_at', '-id')
+        .first()
+    )
+
+
 def create_or_get_plate_request_from_planning_job(planning_job, user):
     if planning_job.planning_stage not in PLANNING_TRIGGER_STAGES:
         return None
 
-    existing_request = PlateRequest.objects.filter(
-        planning_job=planning_job,
-        status__in=PLATE_REQUEST_OPEN_STATUSES,
-    ).order_by('-requested_at', '-created_at').first()
+    existing_request = get_open_plate_request_for_planning_job(planning_job)
 
     if existing_request:
         return existing_request

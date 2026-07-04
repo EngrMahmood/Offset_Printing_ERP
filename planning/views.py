@@ -64,15 +64,18 @@ from .services import (
     _sync_new_jobs_for_approved_sku, _merge_po_items_for_existing_po,
     _collect_pending_sku_rows, _normalize_po_number,
     trigger_plate_request_for_planning_job,
+    get_plate_request_block_for_master_entry,
     apply_master_data_sync,
     apply_sku_recipe_form_role_permissions,
     merge_preserved_sku_recipe_fields,
+    restore_locked_designer_fields_on_recipe,
     prepare_sku_recipe_form_for_master_entry,
     get_sku_recipe_form_ui_context,
     get_best_sku_recipe_for_sku,
     ensure_sku_recipe_for_planning_job,
     sync_planning_job_fields_to_sku_recipe,
     build_sku_recipe_initial_from_planning_job,
+    build_sku_recipe_initial_from_recipe,
     get_plate_remake_warning_for_recipe_save,
     get_plate_remake_warning_for_job_sync,
     planner_can_edit_designer_fields,
@@ -283,9 +286,15 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('color_spec', 'Print Color'),
     ('application', 'Application'),
     ('product_type', 'Product Type'),
+    ('size_w_mm', 'Size Width (mm)'),
+    ('size_h_mm', 'Size Height (mm)'),
     ('print_sheet_size', 'Print Sheet'),
     ('purchase_sheet_size', 'Purchase Sheet'),
     ('ups', 'UPS'),
+    ('purchase_sheet_ups', 'Purchase Sheet Ups'),
+    ('awc_no', 'AWC #'),
+    ('die_cutting', 'Die Cutting'),
+    ('plate_set_no', 'Plate Set No.'),
 ]
 
 _COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
@@ -2989,6 +2998,7 @@ def sku_recipe_edit(request, recipe_id=None):
         form = SkuRecipeForm(posted, instance=recipe)
         if form.is_valid():
             obj = form.save(commit=False)
+            obj = restore_locked_designer_fields_on_recipe(obj, recipe, request.user)
             if not recipe_id:
                 obj.created_by = request.user
 
@@ -3911,6 +3921,8 @@ def pending_sku_master_entry(request):
         # Job name is sourced from PO parsing; keep it authoritative and non-editable.
         posted['job_name'] = po_job_name
         posted['sku'] = sku
+        if not (posted.get('job_process_type') or '').strip():
+            posted['job_process_type'] = (recipe.job_process_type if recipe else '') or 'print_and_pack'
         if not (posted.get('default_unit_cost') or '').strip() and po_unit_cost is not None:
             posted['default_unit_cost'] = str(po_unit_cost)
         if not (posted.get('color_spec') or '').strip() and po_color_spec:
@@ -3924,12 +3936,44 @@ def pending_sku_master_entry(request):
         if form.is_valid():
             action = (request.POST.get('action') or 'save_draft').strip()
             obj = form.save(commit=False)
+            obj = restore_locked_designer_fields_on_recipe(obj, recipe, request.user)
             obj.sku = sku
             obj.job_name = po_job_name
             if not recipe:
                 obj.created_by = request.user
 
             if action == 'send_to_plate_making':
+                # Find the draft PlanningJob first so we can block duplicate plate requests.
+                po_number = payload.get('po_number') or ''
+                job = PlanningJob.objects.filter(po_number=po_number, sku__iexact=sku, status='draft').first()
+                if not job:
+                    job = PlanningJob.objects.filter(sku__iexact=sku).order_by('-updated_at').first()
+
+                existing_plate_req, block_reason = get_plate_request_block_for_master_entry(job)
+                if existing_plate_req:
+                    from django.urls import reverse as _reverse
+                    plate_url = _reverse('printing_plates:request_detail', args=[existing_plate_req.pk])
+                    if block_reason == 'open':
+                        messages.error(
+                            request,
+                            f'Plate request already active for {job.jc_number if job else sku} '
+                            f'(status: {existing_plate_req.get_status_display()}). '
+                            f'Do not create another request. Open the existing request, or use '
+                            f'Send to QC Review when master data is complete. '
+                            f'Plate request: {plate_url}',
+                        )
+                    else:
+                        messages.error(
+                            request,
+                            f'Plates were already issued for {job.jc_number if job else sku}. '
+                            f'Use Released Jobs for plate replacement, or Send to QC Review when master data is complete. '
+                            f'Plate request: {plate_url}',
+                        )
+                    return redirect(
+                        f"{reverse('planning:pending_sku_master_entry')}?po_doc_id={po_doc_id}&sku={sku}"
+                        f"{'&return_q=' + return_q if return_q else ''}{'&return_po=' + return_po if return_po else ''}"
+                    )
+
                 obj.master_data_status = 'draft'
                 obj.reviewed_by = None
                 obj.reviewed_at = None
@@ -3943,9 +3987,6 @@ def pending_sku_master_entry(request):
                 po_doc.extracted_payload = payload
                 po_doc.save(update_fields=['extracted_payload'])
 
-                # Find the draft PlanningJob and copy planner fields
-                po_number = payload.get('po_number') or ''
-                job = PlanningJob.objects.filter(po_number=po_number, sku__iexact=sku, status='draft').first()
                 if job:
                     job.material = obj.material
                     job.application = obj.application
@@ -3965,10 +4006,17 @@ def pending_sku_master_entry(request):
                         job.planning_stage_changed_by = request.user
                         job.save(update_fields=['planning_stage', 'planning_stage_changed_at', 'planning_stage_changed_by', 'updated_at'])
                         
-                        # Trigger plate request
-                        trigger_plate_request_for_planning_job(job, request.user)
-                        
-                        messages.success(request, f'SKU {sku} saved, and Job Card {job.jc_number} sent to Plate Making.')
+                        plate_req = trigger_plate_request_for_planning_job(job, request.user)
+                        if plate_req:
+                            from django.urls import reverse as _reverse
+                            plate_url = _reverse('printing_plates:request_detail', args=[plate_req.pk])
+                            messages.success(
+                                request,
+                                f'SKU {sku} saved, and Job Card {job.jc_number} sent to Plate Making. '
+                                f'Open plate request: {plate_url}',
+                            )
+                        else:
+                            messages.success(request, f'SKU {sku} saved, and Job Card {job.jc_number} sent to Plate Making.')
                     else:
                         messages.warning(
                             request,
@@ -4027,17 +4075,11 @@ def pending_sku_master_entry(request):
         if job_obj:
             initial = build_sku_recipe_initial_from_planning_job(job_obj, recipe=recipe, po_defaults=po_defaults)
         else:
-            initial = {
-                'sku': sku,
-                'job_name': po_job_name,
-                'default_unit_cost': (recipe.default_unit_cost if recipe else None) or po_unit_cost,
-                'color_spec': (recipe.color_spec if recipe else '') or po_color_spec,
-                'application': (recipe.application if recipe else '') or po_application,
-                'machine_name': (recipe.machine_name if recipe else ''),
-                'plate_set_no': (recipe.plate_set_no if recipe else ''),
-                'notes': (recipe.notes if recipe else ''),
-                'remarks': (recipe.remarks if recipe else '') or po_remarks,
-            }
+            initial = build_sku_recipe_initial_from_recipe(recipe, po_defaults=po_defaults)
+            initial['sku'] = sku
+            initial['job_name'] = po_job_name
+            if not initial.get('remarks'):
+                initial['remarks'] = po_remarks
         form = SkuRecipeForm(instance=recipe, initial=initial)
         apply_sku_recipe_form_role_permissions(form, request.user, is_readonly=is_readonly, recipe=recipe)
 
@@ -4061,6 +4103,8 @@ def pending_sku_master_entry(request):
         is_new_job = False
     repeat_flag_display = 'New' if is_new_job else 'Repeat'
 
+    active_plate_request, plate_block_reason = get_plate_request_block_for_master_entry(job_obj)
+
     context = {
         'form': form,
         'recipe': current_recipe,
@@ -4080,6 +4124,9 @@ def pending_sku_master_entry(request):
         'repeat_flag_display': repeat_flag_display,
         'jc_number': (job_obj.jc_number if job_obj else '') or '',
         'user_can_approve_qc': user_can_approve_qc,
+        'active_plate_request': active_plate_request,
+        'plate_block_reason': plate_block_reason,
+        'plate_request_already_active': bool(active_plate_request),
     }
     context['can_admin_actions'] = is_admin_user
     context.update(get_sku_recipe_form_ui_context(request.user, is_readonly=is_readonly))

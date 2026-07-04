@@ -140,12 +140,31 @@
             </div>
 
             {% if not is_readonly %}
+            {% if plate_request_already_active and active_plate_request %}
+            <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">
+                {% if plate_block_reason == 'open' %}
+                <strong>Plate request already active</strong> for {{ jc_number|default:sku }}
+                ({{ active_plate_request.get_status_display }}).
+                Do not create another request.
+                {% else %}
+                <strong>Plates already issued</strong> for {{ jc_number|default:sku }}.
+                Use Released Jobs for replacement plates.
+                {% endif %}
+                <a href="{% url 'printing_plates:request_detail' active_plate_request.pk %}">Open plate request #{{ active_plate_request.pk }}</a>.
+                When master data is complete, use <strong>Send to QC Review</strong> only.
+            </div>
+            {% endif %}
             <div class="erp-form-actions">
                 <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="save_draft">Save Draft</button>
+                {% if plate_request_already_active %}
+                <button type="button" class="erp-btn erp-btn-primary" disabled
+                    title="Plate request already exists for this job.">Send to Plate Making</button>
+                {% else %}
                 <button type="submit" class="erp-btn erp-btn-primary" name="action" value="send_to_plate_making"
-                    title="Use this when new plates need to be made (new SKU or damaged/missing plates for a repeat job).">Send to Plate Making</button>
+                    title="Use this when new plates need to be made (new SKU or damaged/missing plates for a repeat job). Planner fields only are required; designer completes layout on the plate request.">Send to Plate Making</button>
+                {% endif %}
                 <button type="submit" class="erp-btn erp-btn-success" name="action" value="submit_review"
-                    title="Use this when plates already exist and all layout specs are confirmed.">Send to QC Review</button>
+                    title="Use this when all master fields are complete (planner + designer).">{% if plate_request_already_active %} Plate request already exists — use this after designer finishes layout.{% endif %}">Send to QC Review</button>
                 <button type="submit" class="erp-btn erp-btn-secondary" name="action" value="ignore" onclick="return confirm('Ignore this pending SKU and remove it from further processing?');">Ignore</button>
                 {% if recipe %}
                     {% if recipe.master_data_status != 'approved' or can_admin_actions %}

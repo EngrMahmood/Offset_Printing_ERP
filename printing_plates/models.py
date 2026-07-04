@@ -216,12 +216,16 @@ class PlateRequest(models.Model):
 
     @property
     def print_color_display(self):
-        if self.planning_job and (self.planning_job.color_spec or '').strip():
-            return self.planning_job.color_spec.strip()
-        if self.sku_recipe and (self.sku_recipe.color_spec or '').strip():
-            return self.sku_recipe.color_spec.strip()
-        if self.job_card and (self.job_card.colour or '').strip():
-            return self.job_card.colour.strip()
+        from printing_plates.constants import is_plate_ink_spec
+
+        for candidate in (
+            (self.planning_job.color_spec if self.planning_job else ''),
+            (self.sku_recipe.color_spec if self.sku_recipe else ''),
+            (self.job_card.colour if self.job_card else ''),
+        ):
+            value = (candidate or '').strip()
+            if value and not is_plate_ink_spec(value):
+                return value
         return ''
 
     @property

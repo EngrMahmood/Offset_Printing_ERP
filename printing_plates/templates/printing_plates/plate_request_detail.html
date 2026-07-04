@@ -181,6 +181,22 @@
                         </div>
                     </div>
                     <div class="erp-route-card">
+                        <div class="erp-route-card__key">Die Cutting</div>
+                        <div class="erp-route-card__value">
+                            {% if master_recipe and master_recipe.die_cutting %}
+                                {{ master_recipe.die_cutting }}
+                            {% elif plate_request.planning_job and plate_request.planning_job.die_cutting_display %}
+                                {{ plate_request.planning_job.die_cutting_display }}
+                            {% else %}—{% endif %}
+                        </div>
+                    </div>
+                    <div class="erp-route-card">
+                        <div class="erp-route-card__key">AWC #</div>
+                        <div class="erp-route-card__value">
+                            {{ plate_request.display_awc_no|default:'—' }}
+                        </div>
+                    </div>
+                    <div class="erp-route-card">
                         <div class="erp-route-card__key">Material / Paper</div>
                         <div class="erp-route-card__value">{{ plate_request.material_name|default:'—' }}</div>
                     </div>
@@ -282,8 +298,8 @@
                             </div>
 
                             <div class="erp-form-field">
-                                <label for="id_awc_no" class="erp-form-label">AWC #</label>
-                                <input type="text" id="id_awc_no" name="awc_no" value="{{ plate_request.awc_no|default:'' }}" class="erp-input">
+                                <label for="id_awc_no" class="erp-form-label">AWC # <span class="req">*</span></label>
+                                <input type="text" id="id_awc_no" name="awc_no" value="{{ plate_request.awc_no|default:'' }}" class="erp-input" required>
                                 <div class="erp-form-help">Artwork code unique to this SKU/design. Cannot be reused on another SKU.</div>
                             </div>
 
@@ -314,9 +330,8 @@
                                 <div class="erp-form-help">Ink separations for the plate vendor (not the production print-color pattern).</div>
                             </div>
 
-                            {% if plate_request.planning_job and plate_request.planning_job.repeat_flag == 'New' %}
-                            <div class="plate-action-callout is-warning">New Job Layout Specifications (Will save to Master SKU)</div>
-                            <p class="sku-recipe-viewer-note">Purple fields below are <strong>Designer</strong> layout specs — same fields as SKU master.</p>
+                            <div class="plate-action-callout is-warning">Designer Layout Specifications (required to send — saves to Master SKU)</div>
+                            <p class="sku-recipe-viewer-note">All designer fields below are required except Remarks. Send to Vendor is blocked until they are complete. Values like Die Cutting <strong>NO</strong> are valid and will be saved.</p>
                             <div class="erp-form-grid sku-recipe-form">
                                 <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
                                     <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
@@ -354,7 +369,6 @@
                                     <input type="text" id="id_die_cutting" name="die_cutting" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.sku_recipe and plate_request.planning_job.sku_recipe.die_cutting %}{{ plate_request.planning_job.sku_recipe.die_cutting }}{% elif master_recipe %}{{ master_recipe.die_cutting|default:'' }}{% endif %}">
                                 </div>
                             </div>
-                            {% endif %}
 
                             <div class="erp-form-grid">
                                 <div class="erp-form-field">
@@ -440,6 +454,77 @@
 
                     {% else %}
                         <p class="plate-detail-empty">No actions available for status: {{ plate_request.get_status_display }}</p>
+                    {% endif %}
+
+                    {% if can_correct_designer_layout %}
+                    <form method="POST" action="{% url 'printing_plates:request_action' plate_request.pk %}" class="plate-action-stack" style="margin-top:16px; padding-top:14px; border-top:1px solid #e2e8f0;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="update_designer_layout">
+                        <div class="plate-action-callout is-warning">
+                            <strong>Correct designer fields</strong> (SKU master not approved).
+                            Use this if layout was entered incorrectly. Values like Die Cutting <strong>NO</strong> are saved.
+                        </div>
+                        <div class="erp-form-field">
+                            <label for="id_corr_print_color" class="erp-form-label">Print Color <span class="req">*</span></label>
+                            <select id="id_corr_print_color" name="print_color" required class="erp-select">
+                                {% for value, label in print_color_choices %}
+                                <option value="{{ value }}" {% if value == print_color_resolved %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="erp-form-grid">
+                            <div class="erp-form-field">
+                                <label class="erp-form-label" for="id_corr_set_no">Set No</label>
+                                <input type="text" id="id_corr_set_no" name="set_no" class="erp-input" value="{{ plate_request.set_no|default:'' }}">
+                            </div>
+                            <div class="erp-form-field">
+                                <label class="erp-form-label" for="id_corr_new_set_no">New Set No</label>
+                                <input type="text" id="id_corr_new_set_no" name="new_set_no" class="erp-input" value="{{ plate_request.new_set_no|default:'' }}">
+                            </div>
+                        </div>
+                        <div class="erp-form-field">
+                            <label class="erp-form-label" for="id_corr_awc_no">AWC # <span class="req">*</span></label>
+                            <input type="text" id="id_corr_awc_no" name="awc_no" required class="erp-input" value="{{ plate_request.display_awc_no|default:'' }}">
+                        </div>
+                        <div class="erp-form-grid">
+                            <div class="erp-form-field">
+                                <label class="erp-form-label" for="id_corr_size_w">Size Width (mm) <span class="req">*</span></label>
+                                <input type="number" id="id_corr_size_w" name="size_w_mm" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.size_w_mm %}{{ plate_request.planning_job.size_w_mm }}{% elif master_recipe %}{{ master_recipe.size_w_mm|default:'' }}{% endif %}">
+                            </div>
+                            <div class="erp-form-field">
+                                <label class="erp-form-label" for="id_corr_size_h">Size Height (mm) <span class="req">*</span></label>
+                                <input type="number" id="id_corr_size_h" name="size_h_mm" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.size_h_mm %}{{ plate_request.planning_job.size_h_mm }}{% elif master_recipe %}{{ master_recipe.size_h_mm|default:'' }}{% endif %}">
+                            </div>
+                            <div class="erp-form-field">
+                                <label class="erp-form-label" for="id_corr_print_sheet">Print Sheet Size <span class="req">*</span></label>
+                                <input type="text" id="id_corr_print_sheet" name="print_sheet_size" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.print_sheet_size %}{{ plate_request.planning_job.print_sheet_size }}{% elif master_recipe %}{{ master_recipe.print_sheet_size|default:'' }}{% endif %}">
+                            </div>
+                            <div class="erp-form-field">
+                                <label class="erp-form-label" for="id_corr_ups">Ups <span class="req">*</span></label>
+                                <input type="number" id="id_corr_ups" name="ups" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.ups %}{{ plate_request.planning_job.ups }}{% elif master_recipe %}{{ master_recipe.ups|default:'' }}{% endif %}">
+                            </div>
+                            <div class="erp-form-field">
+                                <label class="erp-form-label" for="id_corr_purchase_sheet">Purchase Sheet Size <span class="req">*</span></label>
+                                <input type="text" id="id_corr_purchase_sheet" name="purchase_sheet_size" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_size %}{{ plate_request.planning_job.purchase_sheet_size }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_size|default:'' }}{% endif %}">
+                            </div>
+                            <div class="erp-form-field">
+                                <label class="erp-form-label" for="id_corr_purchase_ups">Purchase Sheet Ups <span class="req">*</span></label>
+                                <input type="number" id="id_corr_purchase_ups" name="purchase_sheet_ups" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_ups %}{{ plate_request.planning_job.purchase_sheet_ups }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_ups|default:'' }}{% endif %}">
+                            </div>
+                            <div class="erp-form-field erp-form-grid__full">
+                                <label class="erp-form-label" for="id_corr_die">Die Cutting <span class="req">*</span></label>
+                                <input type="text" id="id_corr_die" name="die_cutting" required class="erp-input" value="{% if master_recipe and master_recipe.die_cutting %}{{ master_recipe.die_cutting }}{% endif %}" placeholder="e.g. NO or die name">
+                            </div>
+                        </div>
+                        <button type="submit" class="erp-btn erp-btn-secondary" style="width:100%; justify-content:center;"
+                            onclick="return confirm('Update designer fields on SKU master?');">
+                            <i class="fas fa-edit"></i> Save Designer Corrections to SKU Master
+                        </button>
+                    </form>
+                    {% elif master_recipe and master_recipe.master_data_status == 'approved' %}
+                    <div class="plate-action-callout is-info" style="margin-top:16px;">
+                        SKU master is approved. To correct designer fields, planner/admin must <strong>Reopen SKU</strong> first.
+                    </div>
                     {% endif %}
 
                     {% if plate_request.status == 'draft' or plate_request.status == 'sent_to_vendor' or plate_request.status == 'received_from_vendor' %}

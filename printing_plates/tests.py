@@ -116,7 +116,14 @@ class PlateWorkflowTestCase(TestCase):
             'plate_color': 'Black, Special 1',
             'sets_required': '2',
             'plate_quantity': '4',
-            'remarks': 'First print plates'
+            'remarks': 'First print plates',
+            'size_w_mm': '100',
+            'size_h_mm': '200',
+            'print_sheet_size': '28x40',
+            'ups': '4',
+            'purchase_sheet_size': '30x42',
+            'purchase_sheet_ups': '2',
+            'die_cutting': 'NO',
         })
         self.assertEqual(response.status_code, 302)
         self.plate_request.refresh_from_db()
@@ -249,6 +256,7 @@ class PlateWorkflowTestCase(TestCase):
             'print_color': '2',
             'plate_color': 'Cyan, Yellow',
             'plate_quantity': '2',
+            'awc_no': 'AWC-777',
             'remarks': 'Layout standard prep',
             
             # Designer layout specifications
@@ -258,7 +266,7 @@ class PlateWorkflowTestCase(TestCase):
             'ups': '4',
             'purchase_sheet_size': '30x42',
             'purchase_sheet_ups': '2',
-            'die_cutting': 'Die-Standard'
+            'die_cutting': 'NO'
         })
         
         self.assertEqual(response.status_code, 302)
@@ -273,7 +281,7 @@ class PlateWorkflowTestCase(TestCase):
         self.assertEqual(recipe.purchase_sheet_ups, 2)
         self.assertEqual(recipe.plate_set_no, 'Set-A')
         self.assertEqual(recipe.awc_no, 'AWC-777')
-        self.assertEqual(recipe.die_cutting, 'Die-Standard')
+        self.assertEqual(recipe.die_cutting, 'NO')
         # Plate ink chips must not overwrite production print color master field.
         self.assertEqual(recipe.color_spec, '2')
         self.assertNotEqual(recipe.color_spec, 'Cyan, Yellow')
@@ -517,13 +525,43 @@ class PlateWorkflowTestCase(TestCase):
             'print_color': '4',
             'plate_color': 'Black',
             'awc_no': 'AWC-SAME-1',
+            'set_no': 'Set-1',
             'sets_required': '1',
             'plate_quantity': '1',
+            'size_w_mm': '100',
+            'size_h_mm': '200',
+            'print_sheet_size': '28x40',
+            'ups': '4',
+            'purchase_sheet_size': '30x42',
+            'purchase_sheet_ups': '2',
+            'die_cutting': 'NO',
         })
         self.assertEqual(response.status_code, 302)
         self.plate_request.refresh_from_db()
         self.assertEqual(self.plate_request.status, PlateRequest.STATUS_SENT)
         self.assertEqual(self.plate_request.awc_no, 'AWC-SAME-1')
+
+    def test_send_to_vendor_blocked_when_designer_fields_missing(self):
+        self.client.login(username='designer', password='password')
+        url = reverse('printing_plates:request_action', kwargs={'pk': self.plate_request.pk})
+        response = self.client.post(url, {
+            'action': 'send_to_vendor',
+            'vendor': 'Dot Max',
+            'print_color': '4',
+            'plate_color': 'Black',
+            'set_no': 'Set-1',
+            'awc_no': 'AWC-1',
+            'size_w_mm': '100',
+            'size_h_mm': '200',
+            'print_sheet_size': '28x40',
+            'ups': '4',
+            'purchase_sheet_size': '30x42',
+            'purchase_sheet_ups': '2',
+            # die_cutting intentionally missing
+        })
+        self.assertEqual(response.status_code, 302)
+        self.plate_request.refresh_from_db()
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_DRAFT)
 
     def test_multi_set_quantity_suggested_from_impressions_and_inks(self):
         from printing_plates.plate_set_helpers import build_plate_set_suggestion, suggest_sets_required
@@ -547,6 +585,15 @@ class PlateWorkflowTestCase(TestCase):
             'vendor': 'Dot Max',
             'print_color': '4',
             'plate_color': 'Cyan, Magenta, Yellow, Black',
+            'awc_no': 'AWC-MULTI-1',
+            'set_no': 'Set-M',
+            'size_w_mm': '100',
+            'size_h_mm': '200',
+            'print_sheet_size': '28x40',
+            'ups': '4',
+            'purchase_sheet_size': '30x42',
+            'purchase_sheet_ups': '2',
+            'die_cutting': 'NO',
             # omit sets/quantity — server should suggest 4 sets × 4 inks = 16
         })
         self.assertEqual(response.status_code, 302)

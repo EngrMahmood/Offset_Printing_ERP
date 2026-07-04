@@ -231,8 +231,19 @@ def merge_preserved_sku_recipe_fields(posted, recipe, user):
             if value is not None and str(value).strip():
                 posted[field_name] = str(value)
 
-    if _user_is_admin(user) or _user_is_graphics_designer(user):
+    if _user_is_admin(user):
         return posted
+
+    # Designer posts must keep planner values that were not editable.
+    if _user_is_graphics_designer(user):
+        for field_name in SKU_RECIPE_PLANNER_FIELDS:
+            if field_name not in posted or not str(posted.get(field_name) or '').strip():
+                value = getattr(recipe, field_name, None)
+                if value is not None and str(value).strip():
+                    posted[field_name] = str(value)
+        return posted
+
+    # Planner posts must keep designer values unless change-management unlock.
     if planner_can_edit_designer_fields(recipe):
         return posted
 
@@ -242,6 +253,119 @@ def merge_preserved_sku_recipe_fields(posted, recipe, user):
             if value is not None and str(value).strip():
                 posted[field_name] = str(value)
     return posted
+
+
+def _field_is_blank(value):
+    return value is None or (isinstance(value, str) and not str(value).strip())
+
+
+def _restore_fields_from_recipe(obj, recipe, field_names):
+    for field_name in field_names:
+        new_val = getattr(obj, field_name, None)
+        old_val = getattr(recipe, field_name, None)
+        if _field_is_blank(new_val) and not _field_is_blank(old_val):
+            setattr(obj, field_name, old_val)
+    return obj
+
+
+def restore_locked_designer_fields_on_recipe(obj, recipe, user):
+    """
+    After form.save(commit=False), put back values the current user cannot edit.
+
+    Disabled HTML inputs are not posted; Django may also ignore them. This keeps
+    bulk-uploaded AWC / die cutting / layout / planner fields from being wiped.
+    """
+    if not obj or not recipe:
+        return obj
+    if _user_is_admin(user):
+        return obj
+
+    # Designer must not wipe planner fields.
+    if _user_is_graphics_designer(user):
+        return _restore_fields_from_recipe(obj, recipe, SKU_RECIPE_PLANNER_FIELDS)
+
+    # Planner must not wipe designer fields (unless change-management unlock).
+    if planner_can_edit_designer_fields(recipe):
+        return obj
+    return _restore_fields_from_recipe(obj, recipe, SKU_RECIPE_DESIGNER_FIELDS)
+
+
+def _safe_color_spec(*candidates):
+    """First non-blank print color that is not plate-ink chip text."""
+    from printing_plates.constants import is_plate_ink_spec
+
+    for candidate in candidates:
+        value = str(candidate or '').strip()
+        if value and not is_plate_ink_spec(value):
+            return value
+    return ''
+
+
+def build_sku_recipe_initial_from_recipe(recipe=None, *, planning_job=None, po_defaults=None):
+    """Full SKU form initial: recipe first, then planning job, then PO defaults."""
+    po_defaults = po_defaults or {}
+    recipe = recipe
+    job = planning_job
+
+    def _r(name, default=''):
+        if recipe is not None:
+            value = getattr(recipe, name, None)
+            if not _field_is_blank(value):
+                return value
+        if job is not None and hasattr(job, name):
+            value = getattr(job, name, None)
+            if not _field_is_blank(value):
+                return value
+        if name in po_defaults and not _field_is_blank(po_defaults.get(name)):
+            return po_defaults.get(name)
+        return default
+
+    sku = _r('sku', '')
+    if not sku and job is not None:
+        sku = (job.sku or '').strip()
+
+    job_name = _r('job_name', '')
+    if not job_name and job is not None:
+        job_name = (job.job_name or '').strip() or sku
+
+    color_spec = _safe_color_spec(
+        getattr(recipe, 'color_spec', None) if recipe else None,
+        getattr(job, 'color_spec', None) if job else None,
+        po_defaults.get('color_spec'),
+    )
+
+    return {
+        'sku': sku,
+        'job_name': job_name,
+        'job_process_type': _r('job_process_type', 'print_and_pack') or 'print_and_pack',
+        'material': _r('material', ''),
+        'color_spec': color_spec,
+        'application': _r('application', ''),
+        'product_type': _r('product_type', ''),
+        'machine_name': _r('machine_name', ''),
+        'plate_set_no': _r('plate_set_no', ''),
+        'size_w_mm': _r('size_w_mm', None),
+        'size_h_mm': _r('size_h_mm', None),
+        'ups': _r('ups', None),
+        'print_sheet_size': _r('print_sheet_size', ''),
+        'purchase_sheet_size': _r('purchase_sheet_size', ''),
+        'purchase_sheet_ups': _r('purchase_sheet_ups', None),
+        'default_unit_cost': _r('default_unit_cost', None),
+        'daily_demand': _r('daily_demand', None),
+        'awc_no': _r('awc_no', ''),
+        'die_cutting': _r('die_cutting', ''),
+        'notes': _r('notes', ''),
+        'remarks': _r('remarks', ''),
+    }
+
+
+def build_sku_recipe_initial_from_planning_job(planning_job, *, recipe=None, po_defaults=None):
+    """Build form initial values, preferring recipe then planning job then PO defaults."""
+    return build_sku_recipe_initial_from_recipe(
+        recipe,
+        planning_job=planning_job,
+        po_defaults=po_defaults,
+    )
 
 
 # Fields that affect plate size / layout — warn about plate remake when these change.
@@ -407,13 +531,20 @@ def sync_planning_job_fields_to_sku_recipe(planning_job, recipe, *, submit_for_r
         return False
 
     from core.print_colors import apply_print_color_to_planning_job, apply_print_color_to_sku_recipe
+    from printing_plates.constants import is_plate_ink_spec
 
+    # Clear ink-chip pollution from planning print-color before syncing.
+    if is_plate_ink_spec(planning_job.color_spec):
+        planning_job.color_spec = ''
+        planning_job.save(update_fields=['color_spec', 'updated_at'])
     apply_print_color_to_planning_job(planning_job)
 
     update_fields = []
     for field_name in PLANNING_TO_SKU_RECIPE_FIELDS:
         source_value = getattr(planning_job, field_name, None)
         if source_value is None or (isinstance(source_value, str) and not source_value.strip()):
+            continue
+        if field_name == 'color_spec' and is_plate_ink_spec(source_value):
             continue
 
         current_value = getattr(recipe, field_name, None)
@@ -425,6 +556,10 @@ def sync_planning_job_fields_to_sku_recipe(planning_job, recipe, *, submit_for_r
 
         setattr(recipe, field_name, source_value)
         update_fields.append(field_name)
+
+    if is_plate_ink_spec(recipe.color_spec):
+        recipe.color_spec = ''
+        update_fields.append('color_spec')
 
     if apply_print_color_to_sku_recipe(recipe) and 'color_spec' not in update_fields:
         update_fields.append('color_spec')
@@ -443,9 +578,15 @@ def sync_planning_job_fields_to_sku_recipe(planning_job, recipe, *, submit_for_r
 
 
 def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, submit_for_review=True):
-    """Persist designer layout specs from plate making onto the SKU master."""
+    """Persist designer layout specs from plate making onto the SKU master.
+
+    Values like die cutting \"NO\" / \"No\" are valid and must be saved (never treated as blank).
+    Plate ink chips must never be written into color_spec.
+    """
     if not planning_job or not recipe:
         return False
+
+    from printing_plates.constants import is_plate_ink_spec
 
     simple_fields = {
         'size_w_mm': 'size_w_mm',
@@ -471,11 +612,14 @@ def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, 
 
     update_fields = []
     for recipe_field, posted_field in simple_fields.items():
+        if posted_field not in posted_values:
+            continue
         raw_value = posted_values.get(posted_field)
         if raw_value is None:
             continue
         value = str(raw_value).strip()
-        if not value:
+        # Only skip truly empty strings. \"NO\" / \"None\" / \"N/A\" are valid die-cutting answers.
+        if value == '':
             continue
 
         if recipe_field in {'size_w_mm', 'size_h_mm', 'ups', 'purchase_sheet_ups'}:
@@ -494,6 +638,11 @@ def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, 
         recipe.plate_set_no = plate_set_no
         update_fields.append('plate_set_no')
 
+    # Never keep plate-ink text in production print-color field.
+    if is_plate_ink_spec(recipe.color_spec):
+        recipe.color_spec = ''
+        update_fields.append('color_spec')
+
     # Only send to QC when all approval-required fields are present.
     # Incomplete recipes stay Draft so planner can finish material/application/etc.
     if submit_for_review and recipe.master_data_status in {'draft', ''}:
@@ -509,29 +658,95 @@ def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, 
     return False
 
 
-def build_sku_recipe_initial_from_planning_job(planning_job, *, recipe=None, po_defaults=None):
-    """Build form initial values, preferring recipe then planning job then PO defaults."""
-    po_defaults = po_defaults or {}
-    initial = {
-        'sku': (planning_job.sku or '').strip(),
-        'job_name': (recipe.job_name if recipe else '') or (planning_job.job_name or '').strip() or (planning_job.sku or '').strip(),
-        'default_unit_cost': (recipe.default_unit_cost if recipe else None) or po_defaults.get('default_unit_cost'),
-        'job_process_type': (recipe.job_process_type if recipe else '') or 'print_and_pack',
-        'color_spec': (recipe.color_spec if recipe else '') or (planning_job.color_spec or '') or po_defaults.get('color_spec', ''),
-        'application': (recipe.application if recipe else '') or (planning_job.application or '') or po_defaults.get('application', ''),
-        'machine_name': (recipe.machine_name if recipe else '') or (planning_job.machine_name or ''),
-        'material': (recipe.material if recipe else '') or (planning_job.material or ''),
-        'plate_set_no': (recipe.plate_set_no if recipe else '') or (planning_job.plate_set_no or ''),
-        'size_w_mm': (recipe.size_w_mm if recipe else None) or planning_job.size_w_mm,
-        'size_h_mm': (recipe.size_h_mm if recipe else None) or planning_job.size_h_mm,
-        'ups': (recipe.ups if recipe else None) or planning_job.ups,
-        'print_sheet_size': (recipe.print_sheet_size if recipe else '') or (planning_job.print_sheet_size or ''),
-        'purchase_sheet_size': (recipe.purchase_sheet_size if recipe else '') or (planning_job.purchase_sheet_size or ''),
-        'purchase_sheet_ups': (recipe.purchase_sheet_ups if recipe else None) or planning_job.purchase_sheet_ups,
-        'notes': (recipe.notes if recipe else '') or '',
-        'remarks': (recipe.remarks if recipe else '') or (planning_job.remarks or '') or po_defaults.get('remarks', ''),
+def designer_layout_missing_fields(posted_values):
+    """Return labels of required designer layout fields that are blank."""
+    required = [
+        ('size_w_mm', 'Size Width (mm)'),
+        ('size_h_mm', 'Size Height (mm)'),
+        ('print_sheet_size', 'Print Sheet Size'),
+        ('ups', 'Ups'),
+        ('purchase_sheet_size', 'Purchase Sheet Size'),
+        ('purchase_sheet_ups', 'Purchase Sheet Ups'),
+        ('die_cutting', 'Die Cutting'),
+        ('awc_no', 'AWC #'),
+    ]
+    missing = []
+    for field_name, label in required:
+        if str(posted_values.get(field_name) or '').strip() == '':
+            missing.append(label)
+    set_no = str(posted_values.get('set_no') or '').strip()
+    new_set_no = str(posted_values.get('new_set_no') or '').strip()
+    if not set_no and not new_set_no:
+        missing.append('Set No / New Set No')
+    return missing
+
+
+def resolve_designer_layout_values(posted_values, *, recipe=None, planning_job=None, plate_request=None):
+    """Merge posted designer values with existing recipe/job/request (POST wins)."""
+
+    def _pick(*candidates):
+        for candidate in candidates:
+            if candidate is None:
+                continue
+            text = str(candidate).strip()
+            if text != '':
+                return text
+        return ''
+
+    recipe = recipe
+    job = planning_job
+    req = plate_request
+    return {
+        'size_w_mm': _pick(
+            posted_values.get('size_w_mm'),
+            getattr(recipe, 'size_w_mm', None),
+            getattr(job, 'size_w_mm', None),
+        ),
+        'size_h_mm': _pick(
+            posted_values.get('size_h_mm'),
+            getattr(recipe, 'size_h_mm', None),
+            getattr(job, 'size_h_mm', None),
+        ),
+        'print_sheet_size': _pick(
+            posted_values.get('print_sheet_size'),
+            getattr(recipe, 'print_sheet_size', None),
+            getattr(job, 'print_sheet_size', None),
+        ),
+        'ups': _pick(
+            posted_values.get('ups'),
+            getattr(recipe, 'ups', None),
+            getattr(job, 'ups', None),
+        ),
+        'purchase_sheet_size': _pick(
+            posted_values.get('purchase_sheet_size'),
+            getattr(recipe, 'purchase_sheet_size', None),
+            getattr(job, 'purchase_sheet_size', None),
+        ),
+        'purchase_sheet_ups': _pick(
+            posted_values.get('purchase_sheet_ups'),
+            getattr(recipe, 'purchase_sheet_ups', None),
+            getattr(job, 'purchase_sheet_ups', None),
+        ),
+        'die_cutting': _pick(
+            posted_values.get('die_cutting'),
+            getattr(recipe, 'die_cutting', None),
+        ),
+        'awc_no': _pick(
+            posted_values.get('awc_no'),
+            getattr(req, 'awc_no', None),
+            getattr(recipe, 'awc_no', None),
+        ),
+        'set_no': _pick(
+            posted_values.get('set_no'),
+            getattr(req, 'set_no', None),
+            getattr(recipe, 'plate_set_no', None),
+            getattr(job, 'plate_set_no', None),
+        ),
+        'new_set_no': _pick(
+            posted_values.get('new_set_no'),
+            getattr(req, 'new_set_no', None),
+        ),
     }
-    return initial
 
 
 def prepare_sku_recipe_form_for_master_entry(form, *, action=''):
@@ -551,6 +766,25 @@ def trigger_plate_request_for_planning_job(planning_job, user):
     from printing_plates.services import create_or_get_plate_request_from_planning_job
 
     return create_or_get_plate_request_from_planning_job(planning_job, user)
+
+
+def get_plate_request_block_for_master_entry(planning_job):
+    """
+    If planner must not create another plate request from master entry, return
+    (plate_request, reason_code) where reason_code is 'open' or 'issued'.
+    """
+    from printing_plates.services import (
+        get_issued_plate_request_for_planning_job,
+        get_open_plate_request_for_planning_job,
+    )
+
+    open_req = get_open_plate_request_for_planning_job(planning_job)
+    if open_req:
+        return open_req, 'open'
+    issued_req = get_issued_plate_request_for_planning_job(planning_job)
+    if issued_req:
+        return issued_req, 'issued'
+    return None, ''
 
 
 def _planning_status_filter_values(status):

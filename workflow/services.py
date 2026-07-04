@@ -233,10 +233,15 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('color_spec', 'Print Color'),
     ('application', 'Application'),
     ('product_type', 'Product Type'),
+    ('size_w_mm', 'Size Width (mm)'),
+    ('size_h_mm', 'Size Height (mm)'),
     ('print_sheet_size', 'Print Sheet'),
     ('purchase_sheet_size', 'Purchase Sheet'),
     ('ups', 'UPS'),
+    ('purchase_sheet_ups', 'Purchase Sheet Ups'),
+    ('awc_no', 'AWC #'),
     ('die_cutting', 'Die Cutting'),
+    ('plate_set_no', 'Plate Set No.'),
 ]
 
 

@@ -372,7 +372,13 @@ class SkuRecipeForm(forms.ModelForm):
     def clean(self):
         cleaned = super().clean()
         process = (cleaned.get('job_process_type') or 'print_and_pack').strip()
-        if process != 'cut_and_pack' and not (cleaned.get('color_spec') or '').strip():
+        # Respect field.required (early plate-making saves relax designer fields).
+        if (
+            process != 'cut_and_pack'
+            and self.fields.get('color_spec')
+            and self.fields['color_spec'].required
+            and not (cleaned.get('color_spec') or '').strip()
+        ):
             self.add_error('color_spec', 'Print Color is required for Print + Pack jobs.')
         return cleaned
 
