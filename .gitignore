@@ -25,3 +25,13 @@ qc_status.txt
 tmp_inspect_excel.py
 sheet_export.csv
 temp_import_job13.py
+
+# Local master-data restore / audit artifacts (not for git)
+*_gaps.csv
+approved_master_job_gaps.csv
+approved_master_jobcard_gaps.csv
+job_master_layout_gaps.csv
+planning/docs/Master_Data_extracted.csv
+planning/docs/master_restore_verification.json
+planning/docs/*_extracted.csv
+planning/docs/*_verification.json
