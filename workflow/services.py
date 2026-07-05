@@ -273,16 +273,34 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
 
 
 def _build_recipe_map(items):
+    """Return a map of SKU-upper -> SkuRecipe for any existing recipe (any status).
+    Priority: approved > reviewed > pending_review > draft.
+    """
     sku_values = sorted({_sku_key(item.get('sku')) for item in items if item.get('sku')})
     if not sku_values:
         return {}
 
-    recipe_query = Q()
-    for sku in sku_values:
-        recipe_query |= Q(sku__iexact=sku)
+    from django.db.models.functions import Upper
+    STATUS_PRIORITY = {'approved': 0, 'reviewed': 1, 'pending_review': 2, 'draft': 3}
 
-    recipes = SkuRecipe.objects.filter(recipe_query, master_data_status='approved')
-    return {recipe.sku.upper(): recipe for recipe in recipes}
+    recipes = (
+        SkuRecipe.objects
+        .annotate(sku_upper=Upper('sku'))
+        .filter(sku_upper__in=sku_values)
+        .order_by('sku_upper')
+    )
+
+    result = {}
+    for recipe in recipes:
+        key = recipe.sku.upper()
+        if key not in result:
+            result[key] = recipe
+        else:
+            existing_priority = STATUS_PRIORITY.get(result[key].master_data_status, 99)
+            incoming_priority = STATUS_PRIORITY.get(recipe.master_data_status, 99)
+            if incoming_priority < existing_priority:
+                result[key] = recipe
+    return result
 
 
 def _to_optional_positive_int(raw_value):

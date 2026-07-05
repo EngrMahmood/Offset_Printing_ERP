@@ -317,11 +317,11 @@ class JobCard(models.Model):
     short_close_closed_at = models.DateTimeField(null=True, blank=True)
     short_close_close_reason = models.TextField(null=True, blank=True)
 
-    is_active = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     updated_at = models.DateTimeField(auto_now=True)
 
-    status = models.CharField(max_length=40, choices=JOB_CARD_STATUS_CHOICES, default='pending_data', blank=True)
+    status = models.CharField(max_length=40, choices=JOB_CARD_STATUS_CHOICES, default='pending_data', blank=True, db_index=True)
 
     def __str__(self):
         return self.job_card_no
@@ -678,7 +678,7 @@ class Production(models.Model):
 
     job_card = models.ForeignKey('JobCard', on_delete=models.CASCADE, related_name='productions')
 
-    date = models.DateField()
+    date = models.DateField(db_index=True)
     shift = models.CharField(max_length=1, choices=SHIFT_CHOICES)
 
     machine = models.ForeignKey('Machine', on_delete=models.PROTECT, null=True, blank=True)
@@ -791,7 +791,7 @@ class Production(models.Model):
         editable=False,
     )
 
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     #Calculated Fields
@@ -1140,7 +1140,7 @@ class Dispatch(models.Model):
         help_text="Dispatch Challan / DR number (required; can be shared across multiple Job Cards and SKUs)",
     )
 
-    dispatch_date = models.DateField()
+    dispatch_date = models.DateField(db_index=True)
 
     dispatch_qty = models.IntegerField(default=0)
 
@@ -1153,7 +1153,7 @@ class Dispatch(models.Model):
         editable=False,
     )
 
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True, db_index=True)
 
 
     # =========================
@@ -1334,6 +1334,9 @@ class UserProfile(models.Model):
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='operator')
+    department = models.ForeignKey(Department, on_delete=models.SET_NULL, null=True, blank=True, related_name='user_profiles')
+    manager = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='subordinates_as_manager')
+    supervisor = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='subordinates_as_supervisor')
     
     # Custom permissions for granular access control
     can_view_sku_master_review = models.BooleanField(
@@ -1569,3 +1572,138 @@ class MachineWorkSchedule(models.Model):
     def __str__(self):
         status = 'Working' if self.is_working else 'OFF'
         return f"{self.machine.name} — {self.get_day_of_week_display()} Shift {self.shift}: {status}"
+
+
+# =========================
+# RULE-BASED NOTIFICATIONS
+# =========================
+
+class NotificationEvent(models.Model):
+    code = models.CharField(max_length=80, unique=True, db_index=True)
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    module = models.CharField(max_length=100, blank=True)
+    is_active = models.BooleanField(default=True)
+    title_template = models.CharField(max_length=200, blank=True)
+    message_template = models.TextField(blank=True)
+    link_template = models.CharField(max_length=500, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
+class NotificationRule(models.Model):
+    PRIORITY_CHOICES = [
+        ('low', 'Low'),
+        ('medium', 'Medium'),
+        ('high', 'High'),
+    ]
+    RECIPIENT_TYPE_CHOICES = [
+        ('role', 'Role'),
+        ('user', 'Specific User'),
+        ('department', 'Department'),
+        ('creator', 'Creator'),
+        ('manager', 'Manager'),
+        ('supervisor', 'Supervisor'),
+        ('next_stage', 'Next Workflow Stage'),
+    ]
+
+    event = models.ForeignKey(NotificationEvent, on_delete=models.CASCADE, related_name='rules')
+    enabled = models.BooleanField(default=True)
+    recipient_type = models.CharField(
+        max_length=50,
+        choices=RECIPIENT_TYPE_CHOICES,
+        default='role'
+    )
+    role = models.CharField(
+        max_length=50,
+        blank=True,
+        null=True,
+        choices=UserProfile.ROLE_CHOICES
+    )
+    user = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='notification_rules'
+    )
+    department = models.ForeignKey(
+        Department,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='notification_rules'
+    )
+    send_to_creator = models.BooleanField(default=False)
+    send_to_manager = models.BooleanField(default=False)
+    send_to_supervisor = models.BooleanField(default=False)
+    send_to_next_stage = models.BooleanField(default=False)
+    exclude_actor = models.BooleanField(default=True)
+    priority = models.CharField(
+        max_length=20,
+        choices=PRIORITY_CHOICES,
+        default='medium'
+    )
+    email_enabled = models.BooleanField(default=False)
+    sms_enabled = models.BooleanField(default=False)
+    in_app_enabled = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"Rule for {self.event.code} ({self.get_recipient_type_display()})"
+
+
+class WorkflowTransition(models.Model):
+    module = models.CharField(max_length=100)
+    current_stage = models.CharField(max_length=100)
+    action = models.CharField(max_length=100)
+    next_stage = models.CharField(max_length=100)
+    notify_role = models.CharField(max_length=50, blank=True)
+
+    class Meta:
+        unique_together = ('module', 'current_stage', 'action', 'next_stage')
+
+    def __str__(self):
+        return f"{self.module}: {self.current_stage} -> {self.action} -> {self.next_stage} (Notify: {self.notify_role})"
+
+
+class NotificationRuleAuditLog(models.Model):
+    rule = models.ForeignKey(
+        NotificationRule,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='audit_logs'
+    )
+    changed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='notification_rule_audits'
+    )
+    action = models.CharField(max_length=50)  # 'create', 'update', 'delete'
+    old_values = models.JSONField(default=dict, blank=True)
+    new_values = models.JSONField(default=dict, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"Rule {self.rule_id or 'Deleted'} {self.action} by {self.changed_by} at {self.timestamp}"
+
+
+class PasswordResetRequest(models.Model):
+    username_or_email = models.CharField(max_length=254)
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved = models.BooleanField(default=False)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"Reset request for {self.username_or_email} at {self.created_at}"

@@ -1,0 +1,413 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Settings - Offset Printing ERP{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <!-- Page Header -->
+    <div class="mb-6">
+        <h1 class="text-2xl font-bold text-slate-800 tracking-tight">System Settings</h1>
+        <p class="text-sm text-slate-500 mt-1">Configure rule-based notifications, workflow stage transitions, and audit changes</p>
+    </div>
+    <!-- Tabs Header -->
+    <div class="border-b border-slate-200 bg-white px-6 py-4 rounded-xl shadow-sm">
+        <div class="flex space-x-6" id="settings-tabs">
+            <button onclick="switchTab('rules')" id="tab-rules" class="tab-btn pb-3 text-sm font-semibold text-brand-600 border-b-2 border-brand-600 transition-all focus:outline-none">
+                <i class="fas fa-bell mr-2"></i>Notification Rules
+            </button>
+            <button onclick="switchTab('transitions')" id="tab-transitions" class="tab-btn pb-3 text-sm font-medium text-slate-500 hover:text-slate-700 transition-all focus:outline-none">
+                <i class="fas fa-random mr-2"></i>Workflow Transitions
+            </button>
+            <button onclick="switchTab('audits')" id="tab-audits" class="tab-btn pb-3 text-sm font-medium text-slate-500 hover:text-slate-700 transition-all focus:outline-none">
+                <i class="fas fa-history mr-2"></i>Configuration Audit Logs
+            </button>
+        </div>
+    </div>
+
+    <!-- Tab 1: Notification Rules & Events -->
+    <div id="content-rules" class="tab-content grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Rules List -->
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h3 class="font-bold text-slate-800 text-lg">Active Notification Rules</h3>
+                    <span class="bg-brand-50 text-brand-700 text-xs px-2.5 py-1 rounded-full font-semibold">{{ rules|length }} Configured</span>
+                </div>
+                <div class="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
+                    {% if rules %}
+                        {% for rule in rules %}
+                        <div class="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-slate-50/40 transition-all">
+                            <div class="space-y-1.5">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded uppercase tracking-wider">{{ rule.event.module }}</span>
+                                    <h4 class="font-semibold text-slate-800 text-sm md:text-base">{{ rule.event.name }}</h4>
+                                </div>
+                                <div class="text-xs text-slate-500 flex flex-wrap items-center gap-x-3 gap-y-1">
+                                    <span><strong>Event Code:</strong> {{ rule.event.code }}</span>
+                                    <span>•</span>
+                                    <span><strong>Recipient:</strong> 
+                                        {% if rule.recipient_type == 'role' %}
+                                            Role: <span class="text-brand-600 font-semibold">{{ rule.role }}</span>
+                                        {% elif rule.recipient_type == 'user' %}
+                                            User: <span class="text-brand-600 font-semibold">{{ rule.user.username }}</span>
+                                        {% elif rule.recipient_type == 'department' %}
+                                            Department: <span class="text-brand-600 font-semibold">{{ rule.department.name }}</span>
+                                        {% else %}
+                                            {{ rule.get_recipient_type_display }}
+                                        {% endif %}
+                                    </span>
+                                </div>
+                                <div class="flex gap-2 flex-wrap pt-1">
+                                    {% if rule.enabled %}
+                                        <span class="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] px-2 py-0.5 rounded-full font-medium">Enabled</span>
+                                    {% else %}
+                                        <span class="bg-slate-100 text-slate-500 border border-slate-200 text-[10px] px-2 py-0.5 rounded-full font-medium">Disabled</span>
+                                    {% endif %}
+                                    
+                                    {% if rule.exclude_actor %}
+                                        <span class="bg-slate-50 text-slate-600 border border-slate-200 text-[10px] px-2 py-0.5 rounded-full font-medium">Exclude Actor</span>
+                                    {% endif %}
+                                    
+                                    <span class="bg-amber-50 text-amber-700 border border-amber-100 text-[10px] px-2 py-0.5 rounded-full font-medium uppercase">{{ rule.priority }} Priority</span>
+                                </div>
+                            </div>
+                            
+                            <form method="post" action="{% url 'notification_rule_delete' rule.id %}" onsubmit="return confirm('Are you sure you want to delete this notification rule?');">
+                                {% csrf_token %}
+                                <button type="submit" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100/70 p-2 rounded-lg transition-all text-xs flex items-center gap-1">
+                                    <i class="fas fa-trash-alt"></i>
+                                    <span>Delete</span>
+                                </button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="p-8 text-center text-slate-400">
+                            <i class="fas fa-bell-slash text-4xl mb-3 text-slate-200"></i>
+                            <p class="text-sm">No notification rules found. Configure one on the right.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Rule Form -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-6 h-fit">
+            <div>
+                <h3 class="font-bold text-slate-800 text-lg">Add Notification Rule</h3>
+                <p class="text-xs text-slate-500 mt-1">Direct notifications to specific roles, users, departments, or dynamic targets.</p>
+            </div>
+            
+            <form method="post" action="{% url 'notification_rule_add' %}" class="space-y-4">
+                {% csrf_token %}
+                
+                <div>
+                    <label for="event" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Event Type</label>
+                    <select name="event" id="event" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
+                        {% for event in events %}
+                            <option value="{{ event.id }}">{{ event.name }} ({{ event.code }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="recipient_type" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Recipient Target</label>
+                    <select name="recipient_type" id="recipient_type" onchange="toggleRecipientFields(this.value);" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
+                        <option value="role">Role Choice</option>
+                        <option value="user">Specific User</option>
+                        <option value="department">Department</option>
+                        <option value="creator">Creator of Record</option>
+                        <option value="manager">Manager of Creator</option>
+                        <option value="supervisor">Supervisor of Creator</option>
+                        <option value="next_stage">Next Workflow Stage</option>
+                    </select>
+                </div>
+
+                <!-- Role Selection -->
+                <div id="field-role" class="recipient-field">
+                    <label for="role" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Select Role</label>
+                    <select name="role" id="role" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
+                        {% for r_code, r_name in roles %}
+                            <option value="{{ r_code }}">{{ r_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- User Selection -->
+                <div id="field-user" class="recipient-field hidden">
+                    <label for="user" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Select User</label>
+                    <select name="user" id="user" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
+                        <option value="">-- Choose User --</option>
+                        {% for u in users %}
+                            <option value="{{ u.id }}">{{ u.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <!-- Department Selection -->
+                <div id="field-department" class="recipient-field hidden">
+                    <label for="department" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Select Department</label>
+                    <select name="department" id="department" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
+                        <option value="">-- Choose Department --</option>
+                        {% for dept in departments %}
+                            <option value="{{ dept.id }}">{{ dept.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="priority" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Rule Priority</label>
+                    <select name="priority" id="priority" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
+                        <option value="low">Low</option>
+                        <option value="medium" selected>Medium</option>
+                        <option value="high">High</option>
+                    </select>
+                </div>
+
+                <!-- Toggles -->
+                <div class="space-y-3 pt-2">
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="enabled" id="enabled" checked class="rounded text-brand-600 focus:ring-brand-500">
+                        <label for="enabled" class="text-sm font-medium text-slate-700">Rule Active (Enabled)</label>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="exclude_actor" id="exclude_actor" checked class="rounded text-brand-600 focus:ring-brand-500">
+                        <label for="exclude_actor" class="text-sm font-medium text-slate-700">Exclude Actor (Triggering User)</label>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <input type="checkbox" name="in_app_enabled" id="in_app_enabled" checked class="rounded text-brand-600 focus:ring-brand-500">
+                        <label for="in_app_enabled" class="text-sm font-medium text-slate-700">Send In-App Notification (Bell)</label>
+                    </div>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100">
+                    <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium py-2.5 rounded-lg shadow-sm flex items-center justify-center gap-2 text-sm transition-all">
+                        <i class="fas fa-plus"></i>
+                        <span>Create Rule</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tab 2: Workflow Transitions -->
+    <div id="content-transitions" class="tab-content hidden grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- Transitions List -->
+        <div class="lg:col-span-2 space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+                <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h3 class="font-bold text-slate-800 text-lg">Seeded Workflow Transitions</h3>
+                    <span class="bg-brand-50 text-brand-700 text-xs px-2.5 py-1 rounded-full font-semibold">{{ transitions|length }} Configured</span>
+                </div>
+                <div class="divide-y divide-slate-100 max-h-[70vh] overflow-y-auto">
+                    {% if transitions %}
+                        {% for transition in transitions %}
+                        <div class="p-5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 hover:bg-slate-50/40 transition-all">
+                            <div class="space-y-1">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-xs font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded uppercase tracking-wider">{{ transition.module }}</span>
+                                    <h4 class="font-semibold text-slate-800 text-sm md:text-base">
+                                        {{ transition.current_stage }} 
+                                        <i class="fas fa-arrow-right text-xs text-slate-400 mx-2"></i> 
+                                        {{ transition.next_stage }}
+                                    </h4>
+                                </div>
+                                <div class="text-xs text-slate-500">
+                                    <span><strong>Action:</strong> {{ transition.action }}</span>
+                                    <span class="mx-3">•</span>
+                                    <span><strong>Notify Role:</strong> <span class="text-brand-600 font-semibold">{{ transition.notify_role }}</span></span>
+                                </div>
+                            </div>
+                            
+                            <form method="post" action="{% url 'workflow_transition_delete' transition.id %}" onsubmit="return confirm('Are you sure you want to delete this transition?');">
+                                {% csrf_token %}
+                                <button type="submit" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100/70 p-2 rounded-lg transition-all text-xs flex items-center gap-1">
+                                    <i class="fas fa-trash-alt"></i>
+                                    <span>Delete</span>
+                                </button>
+                            </form>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="p-8 text-center text-slate-400">
+                            <i class="fas fa-project-diagram text-4xl mb-3 text-slate-200"></i>
+                            <p class="text-sm">No workflow transitions configured. Configure one on the right.</p>
+                        </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Add Transition Form -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-6 h-fit">
+            <div>
+                <h3 class="font-bold text-slate-800 text-lg">Add Transition</h3>
+                <p class="text-xs text-slate-500 mt-1">Register stage progression to softcode notifications to responsible roles.</p>
+            </div>
+            
+            <form method="post" action="{% url 'workflow_transition_add' %}" class="space-y-4">
+                {% csrf_token %}
+                
+                <div>
+                    <label for="module" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Module Name</label>
+                    <select name="module" id="module" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
+                        <option value="SKU">SKU Recipe</option>
+                        <option value="Plate">Plate Request</option>
+                        <option value="JobCard">Job Card</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label for="current_stage" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Current Stage</label>
+                    <input type="text" name="current_stage" id="current_stage" placeholder="e.g. draft, pending_review" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all">
+                </div>
+
+                <div>
+                    <label for="action" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Action / Trigger</label>
+                    <input type="text" name="action" id="action" placeholder="e.g. Submit, Approve" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all">
+                </div>
+
+                <div>
+                    <label for="next_stage" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Next Stage</label>
+                    <input type="text" name="next_stage" id="next_stage" placeholder="e.g. pending_review, approved" required class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all">
+                </div>
+
+                <div>
+                    <label for="notify_role" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Notify Role</label>
+                    <select name="notify_role" id="notify_role" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
+                        <option value="">-- None --</option>
+                        {% for r_code, r_name in roles %}
+                            <option value="{{ r_code }}">{{ r_name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="pt-4 border-t border-slate-100">
+                    <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium py-2.5 rounded-lg shadow-sm flex items-center justify-center gap-2 text-sm transition-all">
+                        <i class="fas fa-plus"></i>
+                        <span>Save Transition</span>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Tab 3: Configuration Audit Logs -->
+    <div id="content-audits" class="tab-content hidden space-y-6">
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h3 class="font-bold text-slate-800 text-lg">Notification Rules Audit Trail</h3>
+                <span class="bg-brand-50 text-brand-700 text-xs px-2.5 py-1 rounded-full font-semibold">Latest changes</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-600">
+                    <thead class="bg-slate-50 text-xs font-bold text-slate-500 uppercase border-b border-slate-200">
+                        <tr>
+                            <th class="p-4">Timestamp</th>
+                            <th class="p-4">User</th>
+                            <th class="p-4">Action</th>
+                            <th class="p-4">Event Code</th>
+                            <th class="p-4">Rule Target</th>
+                            <th class="p-4">Snapshot Changes</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% if audits %}
+                            {% for audit in audits %}
+                            <tr class="hover:bg-slate-50/40 transition-all">
+                                <td class="p-4 font-mono text-xs whitespace-nowrap">{{ audit.timestamp|date:"Y-m-d H:i:s" }}</td>
+                                <td class="p-4 font-semibold text-slate-800">{{ audit.changed_by.username }}</td>
+                                <td class="p-4">
+                                    {% if audit.action == 'create' %}
+                                        <span class="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] px-2 py-0.5 rounded font-semibold uppercase">Created</span>
+                                    {% elif audit.action == 'update' %}
+                                        <span class="bg-amber-50 text-amber-700 border border-amber-100 text-[10px] px-2 py-0.5 rounded font-semibold uppercase">Updated</span>
+                                    {% else %}
+                                        <span class="bg-red-50 text-red-700 border border-red-100 text-[10px] px-2 py-0.5 rounded font-semibold uppercase">Deleted</span>
+                                    {% endif %}
+                                </td>
+                                <td class="p-4 font-semibold text-slate-700">
+                                    {% if audit.rule %}
+                                        {{ audit.rule.event.code }}
+                                    {% else %}
+                                        {{ audit.old_values.event_code|default:'-' }}
+                                    {% endif %}
+                                </td>
+                                <td class="p-4 text-xs font-medium">
+                                    {% if audit.rule %}
+                                        {{ audit.rule.get_recipient_type_display }}: {{ audit.rule.role|default:audit.rule.user.username|default:audit.rule.department.name|default:'' }}
+                                    {% else %}
+                                        {{ audit.old_values.recipient_type }}: {{ audit.old_values.role|default:audit.old_values.user|default:audit.old_values.department|default:'' }}
+                                    {% endif %}
+                                </td>
+                                <td class="p-4 text-xs max-w-xs break-all">
+                                    {% if audit.action == 'update' %}
+                                        <div class="space-y-1">
+                                            {% for change in audit.changes_list %}
+                                                <div>
+                                                    <span class="font-mono text-slate-400">{{ change.field }}:</span> 
+                                                    <del class="text-red-500">{{ change.old }}</del> 
+                                                    <i class="fas fa-long-arrow-alt-right text-slate-400 mx-1"></i> 
+                                                    <ins class="text-emerald-600 no-underline font-semibold">{{ change.new }}</ins>
+                                                </div>
+                                            {% endfor %}
+                                        </div>
+                                    {% elif audit.action == 'create' %}
+                                        <span class="text-slate-400">Values:</span> {{ audit.new_values }}
+                                    {% else %}
+                                        <span class="text-slate-400">Values:</span> {{ audit.old_values }}
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="6" class="p-8 text-center text-slate-400">
+                                    <i class="fas fa-history text-4xl mb-3 text-slate-200"></i>
+                                    <p class="text-sm">No settings changes have been logged yet.</p>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function switchTab(tabId) {
+        // Toggle tab button states
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('text-brand-600', 'border-b-2', 'border-brand-600', 'font-semibold');
+            btn.classList.add('text-slate-500', 'font-medium');
+        });
+        
+        const activeBtn = document.getElementById('tab-' + tabId);
+        activeBtn.classList.remove('text-slate-500', 'font-medium');
+        activeBtn.classList.add('text-brand-600', 'border-b-2', 'border-brand-600', 'font-semibold');
+
+        // Toggle tab contents
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.add('hidden');
+        });
+        document.getElementById('content-' + tabId).classList.remove('hidden');
+    }
+
+    function toggleRecipientFields(recipientType) {
+        document.querySelectorAll('.recipient-field').forEach(field => {
+            field.classList.add('hidden');
+        });
+        
+        if (recipientType === 'role') {
+            document.getElementById('field-role').classList.remove('hidden');
+        } else if (recipientType === 'user') {
+            document.getElementById('field-user').classList.remove('hidden');
+        } else if (recipientType === 'department') {
+            document.getElementById('field-department').classList.remove('hidden');
+        }
+    }
+</script>
+{% endblock %}

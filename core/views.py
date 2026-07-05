@@ -132,7 +132,52 @@ def permission_required(permission_method):
 
 @login_required
 def home(request):
-    return render(request, 'home.html')
+    from django.db import models
+    from django.utils import timezone
+    from planning.models import PlanningJob, SkuRecipe
+    from printing_plates.models import PlateRequest
+    from core.models import Notification, Production, Dispatch, Machine, Operator
+    from supply_chain.models import SupplyChainItem
+
+    pending_qc_jobs = PlanningJob.objects.filter(status='pending_qc').count()
+    pending_sku_reviews = SkuRecipe.objects.filter(master_data_status='pending_review').count()
+    active_plate_requests = PlateRequest.objects.filter(status__in=PlateRequest.OPEN_STATUSES).count()
+    unread_notifications = Notification.objects.filter(user=request.user, is_read=False).count()
+
+    # Global Operations KPIs
+    total_in_production = PlanningJob.objects.filter(status='in_production').count()
+    total_released_jobs = PlanningJob.objects.filter(status='released').count()
+    total_produced_sheets = Production.objects.filter(is_active=True).aggregate(total=models.Sum('output_sheets'))['total'] or 0
+    total_dispatched_qty = Dispatch.objects.filter(is_active=True).aggregate(total=models.Sum('dispatch_qty'))['total'] or 0
+    total_inventory_items = SupplyChainItem.objects.count()
+
+    # Shop Floor Operations KPIs
+    today = timezone.now().date()
+    active_machines = Machine.objects.filter(is_active=True).count()
+    active_operators = Operator.objects.filter(is_active=True).count()
+    today_sorting_waste = Production.objects.filter(date=today, is_active=True).aggregate(total=models.Sum('sorting_waste_qty'))['total'] or 0
+    today_downtime = Production.objects.filter(date=today, is_active=True).aggregate(total=models.Sum('downtime_minutes'))['total'] or 0
+
+    context = {
+        'kpis': {
+            'pending_qc_jobs': pending_qc_jobs,
+            'pending_sku_reviews': pending_sku_reviews,
+            'active_plate_requests': active_plate_requests,
+            'unread_notifications': unread_notifications,
+            'total_in_production': total_in_production,
+            'total_released_jobs': total_released_jobs,
+            'total_produced_sheets': total_produced_sheets,
+            'total_dispatched_qty': total_dispatched_qty,
+            'total_inventory_items': total_inventory_items,
+            
+            # Shop Floor
+            'active_machines': active_machines,
+            'active_operators': active_operators,
+            'today_sorting_waste': today_sorting_waste,
+            'today_downtime': today_downtime,
+        }
+    }
+    return render(request, 'home.html', context)
 
 
 def erp_version(request):
@@ -1442,72 +1487,118 @@ def master_data(request):
         )
 
     machine_rows = []
+    from collections import Counter
+    from printing_plates.models import PlateRequest
+
+    # Fetch values for in-memory mapping in 6 single queries
+    jc_values = list(JobCard.objects.filter(is_active=True).values('machine_name_id', 'material_id', 'department_id', 'destination'))
+    jc_machine_counter = Counter(x['machine_name_id'] for x in jc_values if x['machine_name_id'])
+    jc_material_counter = Counter(x['material_id'] for x in jc_values if x['material_id'])
+    jc_department_counter = Counter(x['department_id'] for x in jc_values if x['department_id'])
+    jc_destination_counter = Counter((x['destination'] or '').strip().lower() for x in jc_values if x['destination'])
+
+    prod_values = list(Production.objects.filter(is_active=True).values('machine_id', 'operator_id', 'supervisor_id'))
+    prod_machine_counter = Counter(x['machine_id'] for x in prod_values if x['machine_id'])
+    prod_operator_counter = Counter(x['operator_id'] for x in prod_values if x['operator_id'])
+    prod_supervisor_counter = Counter(x['supervisor_id'] for x in prod_values if x['supervisor_id'])
+
+    pj_values = list(PlanningJob.objects.filter(is_active=True).values('department', 'destination', 'color_spec', 'sku'))
+    pj_department_counter = Counter((x['department'] or '').strip().lower() for x in pj_values if x['department'])
+    pj_destination_counter = Counter((x['destination'] or '').strip().lower() for x in pj_values if x['destination'])
+    pj_color_counter = Counter((x['color_spec'] or '').strip().lower() for x in pj_values if x['color_spec'])
+
+    recipe_values = list(SkuRecipe.objects.filter(is_active=True).values('product_type', 'color_spec', 'sku'))
+    recipe_product_type_counter = Counter((x['product_type'] or '').strip().lower() for x in recipe_values if x['product_type'])
+    recipe_color_counter = Counter((x['color_spec'] or '').strip().lower() for x in recipe_values if x['color_spec'])
+
+    plate_req_values = list(PlateRequest.objects.values_list('vendor', flat=True))
+    plate_req_vendor_counter = Counter(v.strip().lower() for v in plate_req_values if v)
+
+    # Pre-map SKU -> Product Type for planning job product type counts
+    sku_to_pt = {
+        x['sku'].strip().lower(): x['product_type'].strip().lower()
+        for x in recipe_values
+        if x['sku'] and x['product_type']
+    }
+    pj_pt_counter = Counter()
+    for pj in pj_values:
+        sku_key = (pj['sku'] or '').strip().lower()
+        pt = sku_to_pt.get(sku_key)
+        if pt:
+            pj_pt_counter[pt] += 1
+
+    # Build rows
+    machine_rows = []
     for item in Machine.objects.all().order_by('name', 'id'):
         machine_rows.append({
             'record': item,
-            'job_card_count': JobCard.objects.filter(machine_name=item, is_active=True).count(),
-            'production_count': Production.objects.filter(machine=item, is_active=True).count(),
+            'job_card_count': jc_machine_counter[item.id],
+            'production_count': prod_machine_counter[item.id],
         })
 
     operator_rows = []
     for item in Operator.objects.all().order_by('name', 'id'):
         operator_rows.append({
             'record': item,
-            'production_count': Production.objects.filter(operator=item, is_active=True).count(),
+            'production_count': prod_operator_counter[item.id],
         })
 
     material_rows = []
     for item in Material.objects.all().order_by('name', 'id'):
         material_rows.append({
             'record': item,
-            'job_card_count': JobCard.objects.filter(material=item, is_active=True).count(),
+            'job_card_count': jc_material_counter[item.id],
         })
 
     department_rows = []
     for item in Department.objects.all().order_by('name', 'id'):
+        name_key = (item.name or '').strip().lower()
         department_rows.append({
             'record': item,
-            'job_card_count': JobCard.objects.filter(department=item, is_active=True).count(),
-            'planning_job_count': PlanningJob.objects.filter(department__iexact=item.name, is_active=True).count(),
+            'job_card_count': jc_department_counter[item.id],
+            'planning_job_count': pj_department_counter[name_key],
         })
 
     delivery_location_rows = []
     for item in DeliveryLocation.objects.all().order_by('name', 'id'):
+        name_key = (item.name or '').strip().lower()
         delivery_location_rows.append({
             'record': item,
-            'job_card_count': JobCard.objects.filter(destination__iexact=item.name, is_active=True).count(),
-            'planning_job_count': PlanningJob.objects.filter(destination__iexact=item.name, is_active=True).count(),
+            'job_card_count': jc_destination_counter[name_key],
+            'planning_job_count': pj_destination_counter[name_key],
         })
 
     product_type_rows = []
     for item in ProductType.objects.all().order_by('name', 'id'):
+        name_key = (item.name or '').strip().lower()
         product_type_rows.append({
             'record': item,
-            'planning_job_count': count_active_planning_jobs_for_product_type(item.name),
-            'sku_recipe_count': SkuRecipe.objects.filter(is_active=True, product_type__iexact=item.name).count(),
+            'planning_job_count': pj_pt_counter[name_key],
+            'sku_recipe_count': recipe_product_type_counter[name_key],
         })
 
     supervisor_rows = []
     for item in Supervisor.objects.all().order_by('name', 'id'):
         supervisor_rows.append({
             'record': item,
-            'production_count': Production.objects.filter(supervisor=item, is_active=True).count(),
+            'production_count': prod_supervisor_counter[item.id],
         })
 
     vendor_rows = []
     for item in Vendor.objects.all().order_by('name', 'id'):
-        from printing_plates.models import PlateRequest
+        name_key = (item.name or '').strip().lower()
         vendor_rows.append({
             'record': item,
-            'plate_request_count': PlateRequest.objects.filter(vendor=item.name).count(),
+            'plate_request_count': plate_req_vendor_counter[name_key],
         })
 
     print_color_rows = []
     for item in PrintColor.objects.all().order_by('sort_order', 'name', 'id'):
+        name_key = (item.name or '').strip().lower()
         print_color_rows.append({
             'record': item,
-            'sku_recipe_count': SkuRecipe.objects.filter(is_active=True, color_spec__iexact=item.name).count(),
-            'planning_job_count': PlanningJob.objects.filter(is_active=True, color_spec__iexact=item.name).count(),
+            'sku_recipe_count': recipe_color_counter[name_key],
+            'planning_job_count': pj_color_counter[name_key],
         })
 
     context = {
@@ -1759,3 +1850,225 @@ def shift_config(request):
         'active_effective_to': '',
     }
     return render(request, 'shift_config.html', context)
+
+
+# ==========================================
+# RULE-BASED NOTIFICATION & SETTINGS VIEWS
+# ==========================================
+
+from django.contrib.auth.decorators import login_required
+from django.views.decorators.http import require_POST
+from django.http import Http404, HttpResponseRedirect
+from django.shortcuts import get_object_or_404, render, redirect
+from django.contrib import messages
+
+def forgot_password(request):
+    """
+    Locally mocked forgot password view appropriate for a local-server setup.
+    """
+    if request.method == 'POST':
+        username_or_email = request.POST.get('username_or_email', '').strip()
+        if username_or_email:
+            from core.models import PasswordResetRequest
+            PasswordResetRequest.objects.create(username_or_email=username_or_email)
+            messages.success(
+                request,
+                f"Password reset request logged for '{username_or_email}'. "
+                "Since this ERP runs on a local server, please contact your local IT Administrator "
+                "or HR Manager to approve this reset and retrieve a temporary password."
+            )
+        else:
+            messages.error(request, "Please enter your username or email address.")
+        return render(request, 'forgot_password.html', {'username_or_email': username_or_email, 'success': True})
+    return render(request, 'forgot_password.html')
+
+
+@login_required
+def notification_settings_home(request):
+    """
+    Main workspace settings dashboard for rules, events, transitions, and audits.
+    """
+    if request.user.profile.role not in ('admin', 'manager'):
+        messages.error(request, "You are not authorized to view settings.")
+        return redirect('home')
+
+    from core.models import NotificationEvent, NotificationRule, WorkflowTransition, NotificationRuleAuditLog, Department
+    from django.contrib.auth import get_user_model
+    User = get_user_model()
+
+    events = NotificationEvent.objects.all().order_by('name')
+    rules = NotificationRule.objects.all().select_related('event', 'user', 'department').order_by('event__name', 'id')
+    transitions = WorkflowTransition.objects.all().order_by('module', 'current_stage')
+    audits_raw = NotificationRuleAuditLog.objects.all().select_related('changed_by', 'rule').order_by('-timestamp')[:50]
+    audits = []
+    for audit in audits_raw:
+        changes = []
+        if audit.action == 'update':
+            for k, v in audit.new_values.items():
+                old_val = audit.old_values.get(k, '')
+                changes.append({
+                    'field': k,
+                    'old': old_val,
+                    'new': v
+                })
+        audit.changes_list = changes
+        audits.append(audit)
+    
+    departments = Department.objects.all().order_by('name')
+    users = User.objects.filter(is_active=True).order_by('username')
+    roles = UserProfile.ROLE_CHOICES
+
+    context = {
+        'events': events,
+        'rules': rules,
+        'transitions': transitions,
+        'audits': audits,
+        'departments': departments,
+        'users': users,
+        'roles': roles,
+    }
+    return render(request, 'notification_settings.html', context)
+
+
+@login_required
+@require_POST
+def notification_rule_add(request):
+    """
+    Add a new rule dynamically from the settings page.
+    """
+    if request.user.profile.role not in ('admin', 'manager'):
+        messages.error(request, "Not authorized.")
+        return redirect('home')
+
+    from core.models import NotificationEvent, NotificationRule, Department
+    from django.contrib.auth import get_user_model
+    from core.notifications import log_rule_change
+    User = get_user_model()
+
+    event_id = request.POST.get('event')
+    recipient_type = request.POST.get('recipient_type')
+    enabled = request.POST.get('enabled') == 'on'
+    exclude_actor = request.POST.get('exclude_actor') == 'on'
+    priority = request.POST.get('priority', 'medium')
+    in_app_enabled = request.POST.get('in_app_enabled') == 'on'
+
+    role = request.POST.get('role')
+    user_id = request.POST.get('user')
+    department_id = request.POST.get('department')
+
+    send_to_creator = request.POST.get('send_to_creator') == 'on'
+    send_to_manager = request.POST.get('send_to_manager') == 'on'
+    send_to_supervisor = request.POST.get('send_to_supervisor') == 'on'
+    send_to_next_stage = request.POST.get('send_to_next_stage') == 'on'
+
+    try:
+        event = NotificationEvent.objects.get(id=int(event_id))
+    except (TypeError, ValueError, NotificationEvent.DoesNotExist):
+        messages.error(request, "Invalid event selected.")
+        return redirect('notification_settings_home')
+
+    rule = NotificationRule(
+        event=event,
+        enabled=enabled,
+        recipient_type=recipient_type,
+        exclude_actor=exclude_actor,
+        priority=priority,
+        in_app_enabled=in_app_enabled,
+        send_to_creator=send_to_creator,
+        send_to_manager=send_to_manager,
+        send_to_supervisor=send_to_supervisor,
+        send_to_next_stage=send_to_next_stage,
+    )
+
+    if recipient_type == 'role':
+        rule.role = role
+    elif recipient_type == 'user' and user_id:
+        try:
+            rule.user = User.objects.get(id=int(user_id))
+        except (ValueError, User.DoesNotExist):
+            pass
+    elif recipient_type == 'department' and department_id:
+        try:
+            rule.department = Department.objects.get(id=int(department_id))
+        except (ValueError, Department.DoesNotExist):
+            pass
+
+    rule.save()
+    log_rule_change(request.user, rule, 'create')
+    messages.success(request, f"New notification rule created for event: {event.name}.")
+    return redirect('notification_settings_home')
+
+
+@login_required
+@require_POST
+def notification_rule_delete(request, rule_id):
+    """
+    Remove a notification rule and log the change.
+    """
+    if request.user.profile.role not in ('admin', 'manager'):
+        messages.error(request, "Not authorized.")
+        return redirect('home')
+
+    from core.models import NotificationRule
+    from core.notifications import log_rule_change
+
+    rule = get_object_or_404(NotificationRule, id=rule_id)
+    log_rule_change(request.user, rule, 'delete')
+    rule.delete()
+    messages.success(request, "Notification rule deleted successfully.")
+    return redirect('notification_settings_home')
+
+
+@login_required
+@require_POST
+def workflow_transition_add(request):
+    """
+    Add a workflow transition rule from settings.
+    """
+    if request.user.profile.role not in ('admin', 'manager'):
+        messages.error(request, "Not authorized.")
+        return redirect('home')
+
+    from core.models import WorkflowTransition
+
+    module = request.POST.get('module', '').strip()
+    current_stage = request.POST.get('current_stage', '').strip()
+    action = request.POST.get('action', '').strip()
+    next_stage = request.POST.get('next_stage', '').strip()
+    notify_role = request.POST.get('notify_role', '').strip()
+
+    if not (module and current_stage and action and next_stage):
+        messages.error(request, "Please fill all workflow transition fields.")
+        return redirect('notification_settings_home')
+
+    try:
+        WorkflowTransition.objects.update_or_create(
+            module=module,
+            current_stage=current_stage,
+            action=action,
+            next_stage=next_stage,
+            defaults={'notify_role': notify_role}
+        )
+        messages.success(request, f"Workflow transition for {module} added successfully.")
+    except Exception as e:
+        messages.error(request, f"Error creating workflow transition: {e}")
+
+    return redirect('notification_settings_home')
+
+
+@login_required
+@require_POST
+def workflow_transition_delete(request, transition_id):
+    """
+    Delete a workflow transition rule.
+    """
+    if request.user.profile.role not in ('admin', 'manager'):
+        messages.error(request, "Not authorized.")
+        return redirect('home')
+
+    from core.models import WorkflowTransition
+
+    transition = get_object_or_404(WorkflowTransition, id=transition_id)
+    transition.delete()
+    messages.success(request, "Workflow transition configuration deleted.")
+    return redirect('notification_settings_home')

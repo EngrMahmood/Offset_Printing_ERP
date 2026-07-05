@@ -35,6 +35,9 @@
             <a href="{% url 'master_data' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'master_data' or request.resolver_match.url_name == 'machine_master_tools' %}active{% endif %}"><i class="fas fa-cogs"></i><span>Master Data</span></a>
             <a href="{% url 'production_records' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'production_records' %}active{% endif %}"><i class="fas fa-history"></i><span>Production Records</span></a>
             <a href="{% url 'erp_readme' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'erp_readme' %}active{% endif %}"><i class="fas fa-book"></i><span>Guides</span></a>
+            {% if request.user.profile.role == 'admin' or request.user.profile.role == 'manager' %}
+            <a href="{% url 'notification_settings_home' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'notification_settings_home' %}active{% endif %}"><i class="fas fa-sliders-h"></i><span>Settings</span></a>
+            {% endif %}
 
             <div style="padding:14px; border-top:1px solid rgba(255,255,255,0.08); margin-top:14px;">
                 <div style="font-size:12px; color:#b8c9de; margin-bottom:8px;">Signed in as</div>

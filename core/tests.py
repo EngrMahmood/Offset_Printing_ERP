@@ -158,6 +158,17 @@ class DispatchFeatureTests(TestCase):
             planned_time=60,
             run_time=60,
         )
+        from core.models import Sorter
+        sorter, _ = Sorter.objects.get_or_create(name='Test Sorter')
+        Production.objects.create(
+            job_card=self.job_card,
+            entry_type='packing',
+            date='2026-01-01',
+            shift='A',
+            packing_qty=100,
+            sorting_waste_qty=0,
+            sorter=sorter,
+        )
 
     def test_dispatch_job_card_search_returns_matching_job_card(self):
         self.client.login(username='dispatch_user', password='testpass')

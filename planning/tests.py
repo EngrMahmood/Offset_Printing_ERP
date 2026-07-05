@@ -144,26 +144,31 @@ class PlanningWorkflowSyncTests(TestCase):
 			uploaded_by=self.user,
 		)
 
-	def _create_approved_recipe(self, sku):
-		return SkuRecipe.objects.create(
-			sku=sku,
-			job_name=f'{sku} Approved',
-			material='Paper',
-			color_spec='4+0',
-			application='UV',
-			product_type='Label',
-			ups=2,
-			print_sheet_size='25x36',
-			purchase_sheet_size='25x36',
-			purchase_sheet_ups=2,
-			default_unit_cost='1.40',
-			daily_demand='100',
-			awc_no='AWC-1',
-			die_cutting='NO',
-			master_data_status='approved',
-			approved_by=self.user,
-			created_by=self.user,
-		)
+	def _create_approved_recipe(self, sku, **kwargs):
+		defaults = {
+			'sku': sku,
+			'job_name': f'{sku} Approved',
+			'material': 'Paper',
+			'color_spec': '4+0',
+			'application': 'UV',
+			'product_type': 'Label',
+			'size_w_mm': Decimal('100'),
+			'size_h_mm': Decimal('100'),
+			'plate_set_no': 'SET-1',
+			'ups': 2,
+			'print_sheet_size': '25x36',
+			'purchase_sheet_size': '25x36',
+			'purchase_sheet_ups': 2,
+			'default_unit_cost': '1.40',
+			'daily_demand': '100',
+			'awc_no': 'AWC-1',
+			'die_cutting': 'NO',
+			'master_data_status': 'approved',
+			'approved_by': self.user,
+			'created_by': self.user,
+		}
+		defaults.update(kwargs)
+		return SkuRecipe.objects.create(**defaults)
 
 	def test_po_sync_creates_draft_job_for_missing_recipe(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-001', po_number='PO-NEW-1')
@@ -181,7 +186,7 @@ class PlanningWorkflowSyncTests(TestCase):
 		po_doc = self._create_po_document(sku='NEW-SKU-002', po_number='PO-NEW-2')
 		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
 		original_job = PlanningJob.objects.get(po_number='PO-NEW-2', sku='NEW-SKU-002')
-		self._create_approved_recipe('NEW-SKU-002')
+		self._create_approved_recipe('NEW-SKU-002', plate_set_no='')
 
 		result = _sync_new_jobs_for_approved_sku('NEW-SKU-002', actor=self.user)
 

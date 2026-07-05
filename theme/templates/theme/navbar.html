@@ -85,6 +85,12 @@
                 Guides
             </a>
             {% endif %}
+            {% if request.user.is_authenticated and request.user.profile.role == 'admin' or request.user.profile.role == 'manager' %}
+            <a href="{% url 'notification_settings_home' %}"
+               class="erp-topnav-module {% if url == 'notification_settings_home' %}is-active{% endif %}">
+                Settings
+            </a>
+            {% endif %}
         </div>
 
         <div class="erp-topnav-actions">

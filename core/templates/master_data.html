@@ -60,11 +60,6 @@
     <div class="card">
         <p class="muted">Use this screen to correct or maintain master values used across planning, production, and job cards. Department and delivery location names are auto-synced from planning jobs and PO intake; product types are auto-synced from SKU master recipes when you open this page.</p>
 
-        {% if messages %}
-            {% for message in messages %}
-                <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ message }}</div>
-            {% endfor %}
-        {% endif %}
 
         <h2 class="section-header">Machines</h2>
         <div class="table-shell">
