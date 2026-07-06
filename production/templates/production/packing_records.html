@@ -5,7 +5,11 @@
 {% block title %}Packing Records - Offset ERP{% endblock %}
 {% block extra_head %}
 <style>
-    .production-records-table { min-width: 1200px; }
+    .erp-records-table-wrap .production-records-table {
+        min-width: 1200px !important;
+        width: 1200px !important;
+        table-layout: auto !important;
+    }
     .production-records-kpis { margin-bottom: 14px; }
     .production-records-kpis .erp-kpi-pill {
         min-width: 0;

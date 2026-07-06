@@ -1,5 +1,5 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+{% load static humanize %}
 
 {% block title %}{% if is_view_mode %}View Production Data{% elif edit_record %}Edit Production Data{% else %}Production Data Entry{% endif %} - Offset ERP{% endblock %}
 {% block extra_head %}
