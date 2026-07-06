@@ -223,6 +223,10 @@ def _extract_best_sku_token(raw_value):
     return best
 
 
+def _normalize_token(t):
+    return re.sub(r'[^A-Z0-9]', '', str(t).upper())
+
+
 def _split_job_name_and_remarks(raw_name):
     if not raw_name:
         return '', ''
@@ -230,17 +234,33 @@ def _split_job_name_and_remarks(raw_name):
     
     parts = []
     if ' / ' in cleaned:
-        parts = cleaned.split(' / ', 1)
+        parts = [p.strip() for p in cleaned.split(' / ')]
     elif '/' in cleaned:
-        parts = cleaned.split('/', 1)
+        parts = [p.strip() for p in cleaned.split('/')]
     elif ' \\ ' in cleaned:
-        parts = cleaned.split(' \\ ', 1)
+        parts = [p.strip() for p in cleaned.split(' \\ ')]
     elif '\\' in cleaned:
-        parts = cleaned.split('\\', 1)
+        parts = [p.strip() for p in cleaned.split('\\')]
         
-    if len(parts) == 2:
-        return parts[0].strip(), parts[1].strip()
-    return cleaned, ''
+    if not parts:
+        return cleaned, ''
+        
+    job_name = parts[0]
+    remaining = parts[1:]
+    
+    filtered_remarks_parts = []
+    job_norm = _normalize_token(job_name)
+    
+    for part in remaining:
+        part_clean = part.strip()
+        part_norm = _normalize_token(part_clean)
+        # If this part is a copy/version of the job name, skip it
+        if part_norm == job_norm:
+            continue
+        filtered_remarks_parts.append(part_clean)
+        
+    remarks = ' / '.join(filtered_remarks_parts) if filtered_remarks_parts else ''
+    return job_name, remarks
 
 
 def _build_sku_jobname_map(text, table_blobs=None):

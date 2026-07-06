@@ -14,7 +14,7 @@ def seed_extended_erp_notifications(apps, schema_editor):
             'module': 'Planning',
             'title_template': 'Job Card pending QC: {{ instance.jc_number }}',
             'message_template': 'Job {{ instance.job_name }} (Qty: {{ instance.qty }}) is ready for QC approval.',
-            'link_template': '/planning/jobs/{{ instance.id }}/',
+            'link_template': '/planning/job/{{ instance.id }}/',
         },
         {
             'code': 'job.qc_approved',
@@ -23,7 +23,7 @@ def seed_extended_erp_notifications(apps, schema_editor):
             'module': 'QC',
             'title_template': 'Job Card approved: {{ instance.jc_number }}',
             'message_template': 'Job {{ instance.job_name }} approved by QC.',
-            'link_template': '/planning/jobs/{{ instance.id }}/',
+            'link_template': '/planning/job/{{ instance.id }}/',
         },
         {
             'code': 'job.released',
@@ -32,7 +32,7 @@ def seed_extended_erp_notifications(apps, schema_editor):
             'module': 'Planning',
             'title_template': 'Job Card released: {{ instance.jc_number }}',
             'message_template': 'Job {{ instance.job_name }} is released for production.',
-            'link_template': '/planning/jobs/{{ instance.id }}/',
+            'link_template': '/planning/job/{{ instance.id }}/',
         },
         {
             'code': 'dispatch.created',

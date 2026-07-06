@@ -4494,9 +4494,12 @@ def po_review(request, doc_id):
         sku_any_query = Q()
         for sku_key in item_sku_keys:
             sku_any_query |= Q(sku__iexact=sku_key)
+        query_qs = PlanningJob.objects.filter(sku_any_query)
+        if po_number:
+            query_qs = query_qs.exclude(po_number=po_number)
         existing_any_jobs_skus = {
             _sku_key(sku)
-            for sku in PlanningJob.objects.filter(sku_any_query).values_list('sku', flat=True)
+            for sku in query_qs.values_list('sku', flat=True)
             if sku
         }
 
