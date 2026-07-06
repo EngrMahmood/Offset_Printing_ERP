@@ -14,5 +14,17 @@
         Packing Entry
     </a>
 </div>
+{% elif url == 'production_records' or url == 'packing_records' %}
+<div class="erp-subnav erp-subnav-context" aria-label="Production records navigation">
+    <span class="erp-subnav-context-label">Ledger Type</span>
+    <a href="{% url 'production_records' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'production_records' %}is-active{% endif %}">
+        Printing Records
+    </a>
+    <a href="{% url 'packing_records' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'packing_records' %}is-active{% endif %}">
+        Packing Records
+    </a>
+</div>
 {% endif %}
 {% endwith %}

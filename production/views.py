@@ -595,7 +595,7 @@ def production_records(request):
     if per_page not in (50, 100):
         per_page = 50
 
-    records = Production.objects.filter(is_active=True, job_card__is_active=True).select_related(
+    records = Production.objects.filter(is_active=True, job_card__is_active=True, entry_type='printing').select_related(
         'job_card', 'machine', 'operator', 'supervisor', 'sorter', 'created_by'
     ).order_by('-date', '-id')
 

@@ -1576,6 +1576,14 @@ def planning_job_detail(request, job_id):
     plate_requests = list(job.plate_requests.select_related('requested_by').order_by('-requested_at', '-created_at')[:12])
     latest_cancelled_plate = next((req for req in plate_requests if req.is_cancelled), None)
 
+    printing_entries = []
+    packing_entries = []
+    dispatch_entries = []
+    if job_card:
+        printing_entries = job_card.productions.filter(is_active=True, entry_type='printing').select_related('machine', 'operator', 'supervisor').order_by('date', 'id')
+        packing_entries = job_card.productions.filter(is_active=True, entry_type='packing').select_related('sorter', 'created_by').order_by('date', 'id')
+        dispatch_entries = job_card.dispatch_set.filter(is_active=True).select_related('created_by').order_by('dispatch_date', 'id')
+
     return render(
         request,
         'planning/planning_job_detail.html',
@@ -1609,6 +1617,9 @@ def planning_job_detail(request, job_id):
             'active_machines': active_machines,
             'plate_requests': plate_requests,
             'latest_cancelled_plate': latest_cancelled_plate,
+            'printing_entries': printing_entries,
+            'packing_entries': packing_entries,
+            'dispatch_entries': dispatch_entries,
         },
     )
 

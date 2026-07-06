@@ -94,6 +94,36 @@ def sync_product_types_from_sku_recipes():
     return created
 
 
+def collect_planning_material_names():
+    """Return distinct non-empty material names used in planning jobs and SKU recipes."""
+    from planning.models import PlanningJob, SkuRecipe
+
+    names = set()
+    for material in PlanningJob.objects.exclude(material='').values_list('material', flat=True).distinct():
+        cleaned = (material or '').strip()
+        if cleaned:
+            names.add(cleaned)
+
+    for material in SkuRecipe.objects.exclude(material='').values_list('material', flat=True).distinct():
+        cleaned = (material or '').strip()
+        if cleaned:
+            names.add(cleaned)
+
+    return names
+
+
+def sync_materials_from_planning():
+    """Create Material master records for planning material names not yet in master data."""
+    from .models import Material
+    created = 0
+    for name in sorted(collect_planning_material_names()):
+        if Material.objects.filter(name__iexact=name).exists():
+            continue
+        Material.objects.create(name=name)
+        created += 1
+    return created
+
+
 def count_active_planning_jobs_for_product_type(product_type_name):
     """Count active planning jobs whose SKU master recipe uses the given product type."""
     from django.db.models import Exists, OuterRef

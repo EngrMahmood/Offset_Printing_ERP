@@ -1,0 +1,317 @@
+{% extends 'theme/base.html' %}
+
+{% load humanize theme_tags %}
+
+{% block title %}Packing Records - Offset ERP{% endblock %}
+{% block extra_head %}
+<style>
+    .production-records-kpis { margin-bottom: 14px; }
+    .production-records-kpis .erp-kpi-pill {
+        min-width: 0;
+        align-items: flex-start;
+        padding: 12px 14px;
+    }
+    .production-records-kpis .erp-kpi-pill__value { font-size: 22px; }
+    .production-records-kpis .erp-kpi-pill.is-warn .erp-kpi-pill__value { color: #b45309; }
+    .production-records-kpis .erp-kpi-pill.is-danger .erp-kpi-pill__value { color: #b91c1c; }
+    .production-records-toolbar {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+    }
+    .production-filter-chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 12px;
+    }
+    .production-filter-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 10px;
+        border-radius: 999px;
+        background: #eef6ff;
+        border: 1px solid #bfdcff;
+        color: #1e3a5f;
+        font-size: 12px;
+        font-weight: 600;
+        text-decoration: none;
+    }
+    a.production-filter-chip:hover { background: #dbeafe; color: #1e3a5f; }
+    .production-date-presets { display: flex; flex-wrap: wrap; gap: 8px; }
+    .production-filter-compact-grid,
+    .production-filter-date-row {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 8px;
+    }
+    .production-filter-compact-grid .erp-filter-group,
+    .production-filter-date-row .erp-filter-group {
+        margin: 0;
+        min-width: 0;
+    }
+    .production-shift-pill {
+        display: inline-flex;
+        align-items: center;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+    }
+    .production-shift-pill.is-a { background: #dbeafe; color: #1d4ed8; }
+    .production-shift-pill.is-b { background: #fef3c7; color: #b45309; }
+    .production-metric-good { color: #047857; font-weight: 600; }
+    .production-metric-warn { color: #b45309; font-weight: 600; }
+    .production-metric-bad { color: #b91c1c; font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block header_title %}Packing Records{% endblock %}
+{% block header_subtitle %}High-density packing and sorting ledger with waste tracking.{% endblock %}
+{% block header_actions %}{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack erp-records-shell">
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Packing Ledger</div>
+                    <h1 class="erp-section-title">Packing Records</h1>
+                    <p class="erp-card-subtitle">Filter by shift, sorter, or date — then drill into any entry.</p>
+                </div>
+            </div>
+
+            {% if messages %}
+                {% for message in messages %}
+                    <div class="erp-alert {% if message.tags == 'success' %}erp-alert-success{% else %}erp-alert-danger{% endif %}">{{ message }}</div>
+                {% endfor %}
+            {% endif %}
+
+            {% if edit_lock_days > 0 %}
+            <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">
+                Packing records dated before {{ edit_lock_cutoff }}
+                {% if can_bypass_edit_lock %}
+                are locked for operational roles. Manager and admin can still edit them.
+                {% else %}
+                are locked. Contact manager or admin for override.
+                {% endif %}
+            </div>
+            {% endif %}
+
+            <div class="erp-route-grid erp-route-grid--3 production-records-kpis">
+                <div class="erp-kpi-pill">
+                    <div class="erp-kpi-pill__value">{{ total_count|intcomma }}</div>
+                    <div class="erp-kpi-pill__label">Matching Records</div>
+                </div>
+                <div class="erp-kpi-pill">
+                    <div class="erp-kpi-pill__value">{{ filtered_packed_total|intcomma }}</div>
+                    <div class="erp-kpi-pill__label">Total Packed Pcs</div>
+                </div>
+                <div class="erp-kpi-pill is-warn">
+                    <div class="erp-kpi-pill__value">{{ filtered_waste_total|intcomma }}</div>
+                    <div class="erp-kpi-pill__label">Total Sorting Waste</div>
+                </div>
+            </div>
+
+            <div class="erp-records-layout">
+                <aside class="erp-filter-sidebar erp-records-filter-sidebar is-collapsible" data-collapse-key="packingRecordsFilterCollapsed">
+                    <div class="erp-records-filter-head">
+                        <h3 class="erp-filter-sidebar-title">Refine Search</h3>
+                        <button type="button" class="erp-records-filter-toggle" aria-expanded="true">Collapse</button>
+                    </div>
+                    <div class="erp-records-filter-body">
+                    <form method="GET" class="erp-filter-group">
+                        <div class="erp-filter-group">
+                            <label for="q" class="erp-field-label">Search</label>
+                            <input id="q" name="q" value="{{ q }}" placeholder="Job Card, SKU, sorter" class="erp-input">
+                        </div>
+                        <div class="production-filter-compact-grid">
+                            <div class="erp-filter-group">
+                                <label for="shift" class="erp-field-label">Shift</label>
+                                <select id="shift" name="shift" class="erp-select">
+                                    <option value="">All shifts</option>
+                                    <option value="A" {% if shift == 'A' %}selected{% endif %}>Shift A</option>
+                                    <option value="B" {% if shift == 'B' %}selected{% endif %}>Shift B</option>
+                                </select>
+                            </div>
+                            <div class="erp-filter-group">
+                                <label for="sorter" class="erp-field-label">Sorter</label>
+                                <select id="sorter" name="sorter" class="erp-select">
+                                    <option value="">All sorters</option>
+                                    {% for s in sorters %}
+                                    <option value="{{ s.id }}" {% if sorter == s.id|stringformat:'s' %}selected{% endif %}>{{ s.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="erp-filter-group">
+                                <label for="per_page" class="erp-field-label">Rows / Page</label>
+                                <select id="per_page" name="per_page" class="erp-select">
+                                    <option value="50" {% if per_page == 50 %}selected{% endif %}>50</option>
+                                    <option value="100" {% if per_page == 100 %}selected{% endif %}>100</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="production-filter-date-row">
+                            <div class="erp-filter-group">
+                                <label for="date_from" class="erp-field-label">Date From</label>
+                                <input id="date_from" type="date" name="date_from" value="{{ date_from }}" class="erp-input">
+                            </div>
+                            <div class="erp-filter-group">
+                                <label for="date_to" class="erp-field-label">Date To</label>
+                                <input id="date_to" type="date" name="date_to" value="{{ date_to }}" class="erp-input">
+                            </div>
+                        </div>
+                        <div class="erp-filter-group">
+                            <span class="erp-field-label">Quick Dates</span>
+                            <div class="production-date-presets">
+                                <a href="{% url 'packing_records' %}?date_from={{ today }}&date_to={{ today }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if shift %}&shift={{ shift }}{% endif %}{% if sorter %}&sorter={{ sorter }}{% endif %}&per_page={{ per_page }}" class="production-filter-chip">Today</a>
+                                <a href="{% url 'packing_records' %}?date_from={{ week_start }}&date_to={{ today }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if shift %}&shift={{ shift }}{% endif %}{% if sorter %}&sorter={{ sorter }}{% endif %}&per_page={{ per_page }}" class="production-filter-chip">This week</a>
+                                <a href="{% url 'packing_records' %}?date_from={{ month_start }}&date_to={{ today }}{% if q %}&q={{ q|urlencode }}{% endif %}{% if shift %}&shift={{ shift }}{% endif %}{% if sorter %}&sorter={{ sorter }}{% endif %}&per_page={{ per_page }}" class="production-filter-chip">This month</a>
+                            </div>
+                        </div>
+                        <div class="erp-filter-actions">
+                            <button type="submit" class="erp-btn erp-btn-primary">Apply Filters</button>
+                            <a href="{% url 'packing_records' %}" class="erp-btn erp-btn-secondary">Clear</a>
+                        </div>
+                    </form>
+                    </div>
+                </aside>
+
+                <div class="erp-records-data-pane">
+                    <div class="erp-records-pane-head">
+                    {% if has_active_filters %}
+                    <div class="production-filter-chips">
+                        {% if q %}<span class="production-filter-chip"><i class="fas fa-search"></i> {{ q }}</span>{% endif %}
+                        {% if shift %}<span class="production-filter-chip"><i class="fas fa-clock"></i> Shift {{ shift }}</span>{% endif %}
+                        {% if sorter %}<span class="production-filter-chip"><i class="fas fa-user"></i> Sorter filter</span>{% endif %}
+                        {% if date_from %}<span class="production-filter-chip"><i class="fas fa-calendar"></i> From {{ date_from }}</span>{% endif %}
+                        {% if date_to %}<span class="production-filter-chip"><i class="fas fa-calendar"></i> To {{ date_to }}</span>{% endif %}
+                    </div>
+                    {% endif %}
+
+                    <div class="production-records-toolbar">
+                        <div class="erp-table-meta" style="margin:0;">
+                            <p class="erp-table-meta-text" style="margin:0;">
+                                Showing page {{ page_obj.number|default:1 }} of {{ page_obj.paginator.num_pages|default:1 }}
+                                · {{ records|length }} row(s)
+                                · {{ page_packed_total|intcomma }} packed
+                                · {{ page_waste_total|intcomma }} waste
+                            </p>
+                        </div>
+                    </div>
+
+                    {% if user.profile.role == 'admin' %}
+                    <form id="bulk_archive_form_packing" method="POST" class="erp-actions" style="margin-bottom:10px;">
+                        {% csrf_token %}
+                        <input type="hidden" name="action" value="bulk_delete">
+                        <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Permanently delete selected packing records? This cannot be undone.');">Bulk Delete Selected</button>
+                        <span class="erp-table-meta-text">Admin only</span>
+                    </form>
+                    {% endif %}
+
+                    </div>
+
+                    <div class="erp-table-scroll erp-records-table-wrap">
+                        <table class="erp-table erp-table-dense production-records-table">
+                            <thead>
+                                <tr>
+                                    {% if user.profile.role == 'admin' %}<th><input type="checkbox" id="select_all_packing"></th>{% endif %}
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Date</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Job Card</a></th>
+                                    <th>SKU</th>
+                                    <th>Product (Job Name)</th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=sorter&dir={% if sort == 'sorter' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Sorter</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=shift&dir={% if sort == 'shift' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Shift</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=packed_qty&dir={% if sort == 'packed_qty' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Packed Qty</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=waste_qty&dir={% if sort == 'waste_qty' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Sorting Waste</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Added By</a></th>
+                                    <th>Remarks</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for row in records %}
+                                <tr>
+                                    {% if user.profile.role == 'admin' %}
+                                    <td><input type="checkbox" class="bulk-check-packing" name="selected_ids" value="{{ row.id }}" form="bulk_archive_form_packing"></td>
+                                    {% endif %}
+                                    <td>{{ row.date }}</td>
+                                    <td title="{{ row.job_card.job_card_no }}">
+                                        {% if row.job_card.planning_job %}
+                                        <a href="{% url 'planning:job_detail' row.job_card.planning_job.id %}">{{ row.job_card.job_card_no }}</a>
+                                        {% else %}
+                                        {{ row.job_card.job_card_no }}
+                                        {% endif %}
+                                    </td>
+                                    <td title="{{ row.job_card.SKU|default:'—' }}">{{ row.job_card.SKU|default:'—' }}</td>
+                                    <td title="{{ row.job_card.planning_job.job_name|default:'—' }}">{{ row.job_card.planning_job.job_name|default:'—' }}</td>
+                                    <td title="{{ row.sorter.name|default:'—' }}">{{ row.sorter.name|default:'—' }}</td>
+                                    <td>
+                                        <span class="production-shift-pill {% if row.shift == 'A' %}is-a{% else %}is-b{% endif %}">
+                                            Shift {{ row.shift }}
+                                        </span>
+                                    </td>
+                                    <td class="production-metric-good">{{ row.packing_qty|intcomma }}</td>
+                                    <td class="{% if row.sorting_waste_qty > 0 %}production-metric-warn{% else %}erp-text-soft{% endif %}">{{ row.sorting_waste_qty|intcomma }}</td>
+                                    <td>{{ row.created_by.username|default:'—' }}</td>
+                                    <td title="{{ row.remark_notes|default:'' }}">{{ row.remark_notes|truncatechars:35|default:'—' }}</td>
+                                    <td class="records-actions-cell">
+                                        <div class="erp-actions">
+                                            <a href="{% url 'packing_production_entry' %}?view={{ row.id }}" class="erp-btn erp-btn-secondary">View</a>
+                                            {% if edit_lock_cutoff and row.date < edit_lock_cutoff and not can_bypass_edit_lock %}
+                                                {% if row.id in approved_override_ids %}
+                                                <a href="{% url 'packing_production_entry' %}?edit={{ row.id }}" class="erp-btn erp-btn-warning">Edit</a>
+                                                {% elif row.id in pending_override_ids %}
+                                                <span class="erp-table-meta-text">Pending</span>
+                                                {% else %}
+                                                <a href="{% url 'request_edit_override' 'production' row.id %}" class="erp-btn erp-btn-warning">Override</a>
+                                                {% endif %}
+                                            {% else %}
+                                            <a href="{% url 'packing_production_entry' %}?edit={{ row.id }}" class="erp-btn erp-btn-secondary">Edit</a>
+                                            {% endif %}
+                                            <a href="{% url 'change_history' 'production' row.id %}" class="erp-btn erp-btn-success">Log</a>
+                                            {% if user.profile.can_archive_records %}
+                                            <a href="{% url 'delete_record' 'production' row.id %}" class="erp-btn erp-btn-secondary">Archive</a>
+                                            {% endif %}
+                                        </div>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr><td colspan="12" class="erp-table-meta-text">No packing records found.</td></tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+
+                    {% if page_obj and page_obj.paginator.num_pages > 1 %}
+                    <div class="erp-pagination">
+                        <span class="erp-table-meta-text">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+                        {% if page_obj.has_previous %}
+                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
+                        {% endif %}
+                        {% if page_obj.has_next %}
+                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        const selectAllPacking = document.getElementById('select_all_packing');
+        if (selectAllPacking) {
+            selectAllPacking.addEventListener('change', function () {
+                document.querySelectorAll('.bulk-check-packing').forEach((el) => {
+                    el.checked = selectAllPacking.checked;
+                });
+            });
+        }
+    </script>
+{% endblock %}

@@ -54,6 +54,7 @@ from .services import (
     sync_departments_from_planning,
     sync_delivery_locations_from_planning,
     sync_product_types_from_sku_recipes,
+    sync_materials_from_planning,
     count_active_planning_jobs_for_product_type,
     build_change_summary, log_change, user_has_entity_permission,
     user_can_archive_records, user_can_bypass_edit_lock, get_record_edit_lock_days,
@@ -1484,6 +1485,13 @@ def master_data(request):
         messages.success(
             request,
             f'Added {product_types_created} product type{"s" if product_types_created != 1 else ""} from SKU master recipes.',
+        )
+
+    materials_created = sync_materials_from_planning()
+    if materials_created:
+        messages.success(
+            request,
+            f'Added {materials_created} material{"s" if materials_created != 1 else ""} from planning data.',
         )
 
     machine_rows = []

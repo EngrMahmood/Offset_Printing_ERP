@@ -259,3 +259,175 @@ def packing_production_entry(request):
         'current_user_display': request.user.get_full_name() or request.user.username,
     }
     return render(request, 'production/packing_entry.html', context)
+
+
+@login_required
+@permission_required('can_edit_production')
+def packing_records(request):
+    """Packing production records ledger."""
+    from datetime import datetime, timedelta
+    from django.db.models import Sum, F
+    from django.core.paginator import Paginator
+    from core.models import EditOverrideRequest, Sorter
+    from core.services import (
+        get_record_edit_lock_days,
+        get_record_edit_lock_cutoff,
+        user_can_bypass_edit_lock,
+        run_bulk_permanent_delete,
+        user_can_archive_records,
+    )
+    from core.views import add_unique_message
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        if action == 'bulk_delete':
+            if request.user.profile.role != 'admin':
+                add_unique_message(request, messages.ERROR, '❌ Only admin can run bulk delete.')
+                return redirect('packing_records')
+            if not user_can_archive_records(request.user):
+                add_unique_message(request, messages.ERROR, '❌ You do not have permission to delete records.')
+                return redirect('packing_records')
+
+            selected_ids = request.POST.getlist('selected_ids')
+            deleted_count, failures = run_bulk_permanent_delete(request, 'production', selected_ids)
+            if deleted_count:
+                add_unique_message(request, messages.SUCCESS, f'Deleted {deleted_count} packing record(s) permanently.')
+            if failures:
+                add_unique_message(request, messages.ERROR, f'Bulk delete completed with issues: {"; ".join(failures[:5])}')
+            return redirect('packing_records')
+
+    query = (request.GET.get('q') or '').strip()
+    shift = (request.GET.get('shift') or '').strip()
+    sorter_filter = (request.GET.get('sorter') or '').strip()
+    date_from_raw = (request.GET.get('date_from') or '').strip()
+    date_to_raw = (request.GET.get('date_to') or '').strip()
+    sort = (request.GET.get('sort') or 'date').strip()
+    direction = (request.GET.get('dir') or 'desc').strip().lower()
+    per_page = request.GET.get('per_page') or '50'
+
+    try:
+        per_page = int(per_page)
+    except (TypeError, ValueError):
+        per_page = 50
+    if per_page not in (50, 100):
+        per_page = 50
+
+    records = Production.objects.filter(
+        is_active=True,
+        job_card__is_active=True,
+        entry_type='packing'
+    ).select_related(
+        'job_card', 'sorter', 'created_by'
+    ).order_by('-date', '-id')
+
+    if query:
+        records = records.filter(
+            Q(job_card__job_card_no__icontains=query) |
+            Q(job_card__SKU__icontains=query) |
+            Q(job_card__destination__icontains=query) |
+            Q(sorter__name__icontains=query)
+        )
+
+    if shift:
+        records = records.filter(shift=shift)
+
+    if sorter_filter:
+        try:
+            records = records.filter(sorter_id=int(sorter_filter))
+        except (TypeError, ValueError):
+            sorter_filter = ''
+
+    date_from = None
+    date_to = None
+    if date_from_raw:
+        try:
+            date_from = datetime.strptime(date_from_raw, '%Y-%m-%d').date()
+            records = records.filter(date__gte=date_from)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid From date format. Use YYYY-MM-DD.')
+            date_from_raw = ''
+    if date_to_raw:
+        try:
+            date_to = datetime.strptime(date_to_raw, '%Y-%m-%d').date()
+            records = records.filter(date__lte=date_to)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid To date format. Use YYYY-MM-DD.')
+            date_to_raw = ''
+
+    if date_from and date_to and date_from > date_to:
+        add_unique_message(request, messages.ERROR, 'From date cannot be later than To date.')
+        records = records.none()
+
+    sortable_fields = {
+        'date': 'date',
+        'job_card': 'job_card__job_card_no',
+        'sorter': 'sorter__name',
+        'shift': 'shift',
+        'packed_qty': 'packing_qty',
+        'waste_qty': 'sorting_waste_qty',
+        'added_by': 'created_by__username',
+    }
+    order_field = sortable_fields.get(sort, 'date')
+    if direction not in ('asc', 'desc'):
+        direction = 'desc'
+    ordering = order_field if direction == 'asc' else f'-{order_field}'
+    records = records.order_by(ordering)
+
+    total_count = records.count()
+    filtered_totals = records.aggregate(
+        packed_total=Sum('packing_qty'),
+        waste_total=Sum('sorting_waste_qty'),
+    )
+
+    paginator = Paginator(records, per_page)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+
+    records_list = list(page_obj.object_list)
+    page_packed_total = sum(row.packing_qty or 0 for row in records_list)
+    page_waste_total = sum(row.sorting_waste_qty or 0 for row in records_list)
+
+    cutoff = get_record_edit_lock_cutoff()
+    pending_ids = set()
+    approved_ids = set()
+    if cutoff and not user_can_bypass_edit_lock(request.user):
+        user_overrides = EditOverrideRequest.objects.filter(
+            entity_type='production',
+            requested_by=request.user,
+        ).values('record_id', 'status', 'expires_at')
+        for ov in user_overrides:
+            if ov['status'] == 'pending':
+                pending_ids.add(ov['record_id'])
+            elif ov['status'] == 'approved' and ov['expires_at'] and ov['expires_at'] > timezone.now():
+                approved_ids.add(ov['record_id'])
+
+    context = {
+        'edit_lock_days': get_record_edit_lock_days(),
+        'edit_lock_cutoff': cutoff,
+        'can_bypass_edit_lock': user_can_bypass_edit_lock(request.user),
+        'pending_override_ids': pending_ids,
+        'approved_override_ids': approved_ids,
+        'records': records_list,
+        'page_obj': page_obj,
+        'total_count': total_count,
+        'filtered_packed_total': filtered_totals['packed_total'] or 0,
+        'filtered_waste_total': filtered_totals['waste_total'] or 0,
+        'page_packed_total': page_packed_total,
+        'page_waste_total': page_waste_total,
+        'has_active_filters': bool(
+            query or shift or sorter_filter or date_from_raw or date_to_raw
+        ),
+        'sorters': Sorter.objects.filter(is_active=True).order_by('name'),
+        'q': query,
+        'shift': shift,
+        'sorter': sorter_filter,
+        'today': timezone.now().date().isoformat(),
+        'week_start': (timezone.now().date() - timedelta(days=timezone.now().weekday())).isoformat(),
+        'month_start': timezone.now().date().replace(day=1).isoformat(),
+        'date_from': date_from_raw,
+        'date_to': date_to_raw,
+        'sort': sort,
+        'dir': direction,
+        'per_page': per_page,
+    }
+    return render(request, 'production/packing_records.html', context)

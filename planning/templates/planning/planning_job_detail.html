@@ -1,5 +1,5 @@
 {% extends 'theme/base.html' %}
-{% load static %}
+{% load static humanize %}
 
 {% block title %}Job {{ job.jc_number }} - Offset Printing ERP{% endblock %}
 {% block header_title %}Job Detail - {{ job.jc_number }}{% endblock %}
@@ -385,8 +385,9 @@
                 </div>
             </div>
             <div class="erp-info-grid">
-                <div class="erp-info-item"><div class="erp-info-item__label">Print Logs</div><div class="erp-info-item__value">{{ job.print_runs.count }}</div></div>
-                <div class="erp-info-item"><div class="erp-info-item__label">Dispatch Logs</div><div class="erp-info-item__value">{{ job.dispatch_runs.count }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Print Entries</div><div class="erp-info-item__value">{{ printing_entries|length }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Packing Entries</div><div class="erp-info-item__value">{{ packing_entries|length }}</div></div>
+                <div class="erp-info-item"><div class="erp-info-item__label">Dispatch Entries</div><div class="erp-info-item__value">{{ dispatch_entries|length }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Remaining Sheet</div><div class="erp-info-item__value">{{ job.remaining_sheet|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Rejected Qty</div><div class="erp-info-item__value">{{ job.rejected_qty|default:'-' }}</div></div>
                 <div class="erp-info-item"><div class="erp-info-item__label">Issued To Production</div><div class="erp-info-item__value">{{ job.issued_to_production|yesno:'Yes,No' }}</div></div>
@@ -415,21 +416,83 @@
         </section>
     </div>
 
-    <div class="erp-route-grid">
-        <section class="erp-section-shell">
+    <div class="erp-route-grid erp-route-grid--2">
+        <section class="erp-section-shell" style="grid-column: span 2;">
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
-                    <h3 class="erp-section-title">Printing Events</h3>
+                    <h3 class="erp-section-title">Printing Entries</h3>
                 </div>
             </div>
             <div class="erp-table-wrap">
                 <table class="erp-table">
-                    <thead><tr><th>#</th><th>Date</th><th>Print Qty</th><th>Wastage</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Pass No</th>
+                            <th>Machine</th>
+                            <th>Operator</th>
+                            <th>Shift</th>
+                            <th>Impressions</th>
+                            <th>Good Sheets</th>
+                            <th>Waste Sheets</th>
+                            <th>Downtime</th>
+                            <th>Remarks</th>
+                        </tr>
+                    </thead>
                     <tbody>
-                        {% for row in job.print_runs.all %}
-                        <tr><td>{{ row.run_index }}</td><td>{{ row.print_date|default:'-' }}</td><td>{{ row.print_qty|default:'-' }}</td><td>{{ row.wastage_qty|default:'-' }}</td></tr>
+                        {% for row in printing_entries %}
+                        <tr>
+                            <td>{{ row.date }}</td>
+                            <td>{{ row.print_pass_number|default:'1' }}</td>
+                            <td>{{ row.machine.name|default:'-' }}</td>
+                            <td>{{ row.operator.name|default:'-' }}</td>
+                            <td>Shift {{ row.shift }}</td>
+                            <td>{{ row.impressions|intcomma }}</td>
+                            <td>{{ row.output_sheets|intcomma }}</td>
+                            <td>{{ row.waste_sheets|intcomma }}</td>
+                            <td>{{ row.downtime_minutes|floatformat:0 }}m</td>
+                            <td>{{ row.remark_notes|default:'-' }}</td>
+                        </tr>
                         {% empty %}
-                        <tr><td colspan="4" class="erp-empty">No print events tracked yet.</td></tr>
+                        <tr><td colspan="10" class="erp-empty">No printing entries logged yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div class="erp-route-grid erp-route-grid--2">
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Packing Entries</h3>
+                </div>
+            </div>
+            <div class="erp-table-wrap">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Sorter</th>
+                            <th>Shift</th>
+                            <th>Packed Qty</th>
+                            <th>Sorting Waste</th>
+                            <th>Remarks</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in packing_entries %}
+                        <tr>
+                            <td>{{ row.date }}</td>
+                            <td>{{ row.sorter.name|default:'-' }}</td>
+                            <td>Shift {{ row.shift }}</td>
+                            <td>{{ row.packing_qty|intcomma }}</td>
+                            <td>{{ row.sorting_waste_qty|intcomma }}</td>
+                            <td>{{ row.remark_notes|default:'-' }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6" class="erp-empty">No packing entries logged yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -439,17 +502,29 @@
         <section class="erp-section-shell">
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
-                    <h3 class="erp-section-title">Dispatch Events</h3>
+                    <h3 class="erp-section-title">Dispatch Entries</h3>
                 </div>
             </div>
             <div class="erp-table-wrap">
                 <table class="erp-table">
-                    <thead><tr><th>#</th><th>Date</th><th>DC No</th><th>Delivered Qty</th></tr></thead>
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>DC No</th>
+                            <th>Dispatch Qty</th>
+                            <th>Logged By</th>
+                        </tr>
+                    </thead>
                     <tbody>
-                        {% for row in job.dispatch_runs.all %}
-                        <tr><td>{{ row.dispatch_index }}</td><td>{{ row.delivery_date|default:'-' }}</td><td>{{ row.dc_no|default:'-' }}</td><td>{{ row.delivered_qty|default:'-' }}</td></tr>
+                        {% for row in dispatch_entries %}
+                        <tr>
+                            <td>{{ row.dispatch_date }}</td>
+                            <td>{{ row.dc_no }}</td>
+                            <td>{{ row.dispatch_qty|intcomma }}</td>
+                            <td>{{ row.created_by.username|default:'-' }}</td>
+                        </tr>
                         {% empty %}
-                        <tr><td colspan="4" class="erp-empty">No dispatch events logged yet.</td></tr>
+                        <tr><td colspan="4" class="erp-empty">No dispatch entries logged yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
