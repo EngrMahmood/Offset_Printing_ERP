@@ -32,6 +32,44 @@
 {% endblock %}
 
 {% block content %}
+    {% if is_view_mode %}
+    <div class="erp-page-stack">
+        <div class="erp-card-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Packing Record #{{ edit_record.id }}</div>
+                    <h2 class="erp-section-title">Packing Record Details</h2>
+                    <p class="erp-card-subtitle">Logged by {{ edit_record.created_by.get_full_name|default:edit_record.created_by.username }}</p>
+                </div>
+                <a href="{% url 'packing_records' %}" class="erp-btn erp-btn-secondary">Back to Records</a>
+            </div>
+            <div class="job-info-grid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:1rem 1.5rem;margin-top:12px;">
+                <div><strong>Date</strong><div class="job-info-value">{{ edit_record.date }}</div></div>
+                <div><strong>Shift</strong><div class="job-info-value">Shift {{ edit_record.shift }}</div></div>
+                <div><strong>Job Card</strong><div class="job-info-value">
+                    {% if edit_record.job_card.planning_job %}
+                    <a href="{% url 'planning:job_detail' edit_record.job_card.planning_job.id %}">{{ edit_record.job_card.job_card_no }}</a>
+                    {% else %}
+                    {{ edit_record.job_card.job_card_no }}
+                    {% endif %}
+                </div></div>
+                <div><strong>SKU</strong><div class="job-info-value">{{ edit_record.job_card.SKU|default:'-' }}</div></div>
+                
+                <div><strong>Product (Job Name)</strong><div class="job-info-value">{{ edit_record.job_card.planning_job.job_name|default:'-' }}</div></div>
+                <div><strong>Sorter</strong><div class="job-info-value">{{ edit_record.sorter.name|default:'-' }}</div></div>
+                <div><strong>Packed Qty</strong><div class="job-info-badge produced">{{ edit_record.packing_qty|intcomma }}</div></div>
+                <div><strong>Sorting Waste</strong><div class="job-info-badge balance">{{ edit_record.sorting_waste_qty|intcomma }}</div></div>
+
+                <div><strong>Status</strong><div class="job-info-value"><span class="erp-badge">{{ edit_record.get_status_display }}</span></div></div>
+                <div><strong>Added By</strong><div class="job-info-value">{{ edit_record.created_by.username|default:'-' }}</div></div>
+                <div><strong>Material</strong><div class="job-info-value">{{ edit_record.job_card.material.name|default:'-' }}</div></div>
+                <div><strong>Destination</strong><div class="job-info-value">{{ edit_record.job_card.destination|default:'-' }}</div></div>
+
+                <div style="grid-column: span 4;"><strong>Remarks</strong><div class="job-info-value" style="background:#f8fafc;padding:8px;border-radius:6px;border:1px solid #e2e8f0;margin-top:4px;">{{ edit_record.remark_notes|default:'No remarks.' }}</div></div>
+            </div>
+        </div>
+    </div>
+    {% else %}
     <div class="erp-page-stack production-entry packing-entry">
 
         {% if messages %}
@@ -188,6 +226,7 @@
             {% endif %}
         </div>
     </div>
+    {% endif %}
 
     <div id="sorter_modal" class="modal is-hidden" style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:2000;">
         <div class="modal-backdrop" style="position:absolute;inset:0;background:rgba(0,0,0,0.4);" onclick="closeSorterModal()"></div>

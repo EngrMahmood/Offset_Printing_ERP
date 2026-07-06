@@ -1,4 +1,8 @@
 document.addEventListener('DOMContentLoaded', function () {
+    const isViewMode = new URLSearchParams(window.location.search).has('view');
+    if (isViewMode) {
+        return;
+    }
     const jobSelect = document.getElementById('job_card');
     const jobSearchInput = document.getElementById('job_card_search');
     const jobCardResults = document.getElementById('job_card_results');
