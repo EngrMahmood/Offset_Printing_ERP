@@ -395,4 +395,16 @@ class PlateRequest(models.Model):
     def replacement_reason_display(self):
         return self.get_replacement_reason_display() if self.replacement_reason else ''
 
+    def get_next_notification_roles(self):
+        status = (self.status or '').strip().lower()
+        if status == self.STATUS_DRAFT:
+            return ['graphics_designer']
+        elif status == self.STATUS_SENT:
+            return ['admin', 'manager']
+        elif status == self.STATUS_RECEIVED:
+            return ['graphics_designer']
+        elif status == self.STATUS_AVAILABLE:
+            return ['production']
+        return []
+
 

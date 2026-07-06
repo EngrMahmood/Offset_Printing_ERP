@@ -7,7 +7,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 
-from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, DeliveryLocation, PrintColor, ProductType, Material, Operator, Supervisor, Sorter, UserProfile, ChangeLog, EditOverrideRequest, Vendor, Notification
+from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, DeliveryLocation, PrintColor, ProductType, Material, Operator, Supervisor, Sorter, UserProfile, ChangeLog, EditOverrideRequest, Vendor, Notification, NotificationEvent, NotificationRule, WorkflowTransition, NotificationRuleAuditLog, PasswordResetRequest
 
 User = get_user_model()
 
@@ -345,13 +345,13 @@ class ProductTypeAdmin(admin.ModelAdmin):
 @admin.register(UserProfile)
 class UserProfileAdmin(admin.ModelAdmin):
     """Manage user roles and permissions"""
-    list_display = ['username', 'email', 'role_display', 'sku_review_status', 'created_at']
-    list_filter = ['role', 'can_view_sku_master_review', 'can_approve_sku_master', 'created_at']
+    list_display = ['username', 'email', 'role_display', 'department', 'manager', 'supervisor', 'sku_review_status', 'created_at']
+    list_filter = ['role', 'department', 'manager', 'supervisor', 'can_view_sku_master_review', 'can_approve_sku_master', 'created_at']
     search_fields = ['user__username', 'user__email']
     readonly_fields = ['user', 'created_at', 'updated_at']
     fieldsets = (
         ('User Info', {
-            'fields': ('user', 'role')
+            'fields': ('user', 'role', 'department', 'manager', 'supervisor')
         }),
         ('SKU Master Review Permissions', {
             'fields': ('can_view_sku_master_review', 'can_approve_sku_master'),
@@ -472,3 +472,122 @@ class DispatchAdmin(admin.ModelAdmin):
 admin.site.site_header = "Offset ERP System"
 admin.site.site_title = "Offset ERP"
 admin.site.index_title = "Production Dashboard"
+
+
+# =========================
+# RULE-BASED NOTIFICATION ADMIN
+# =========================
+
+@admin.register(NotificationEvent)
+class NotificationEventAdmin(admin.ModelAdmin):
+    list_display = ('code', 'name', 'module', 'is_active', 'created_at')
+    list_filter = ('module', 'is_active', 'created_at')
+    search_fields = ('code', 'name', 'description')
+    fieldsets = (
+        ('Event Info', {
+            'fields': ('code', 'name', 'description', 'module', 'is_active')
+        }),
+        ('Templates', {
+            'fields': ('title_template', 'message_template', 'link_template'),
+            'description': 'Dynamic template strings using Django template language. Context has `instance` and `actor`.'
+        }),
+    )
+
+
+@admin.register(NotificationRule)
+class NotificationRuleAdmin(admin.ModelAdmin):
+    list_display = ('event', 'enabled', 'recipient_type', 'role', 'user', 'department', 'priority', 'in_app_enabled')
+    list_filter = ('event', 'enabled', 'recipient_type', 'priority')
+    search_fields = ('event__code', 'event__name', 'role', 'user__username', 'department__name')
+    fieldsets = (
+        ('Rule Setting', {
+            'fields': ('event', 'enabled', 'priority')
+        }),
+        ('Recipient Definition', {
+            'fields': (
+                'recipient_type', 'role', 'user', 'department',
+                'send_to_creator', 'send_to_manager', 'send_to_supervisor', 'send_to_next_stage'
+            )
+        }),
+        ('Constraints & Channels', {
+            'fields': ('exclude_actor', 'email_enabled', 'sms_enabled', 'in_app_enabled')
+        }),
+    )
+
+    def save_model(self, request, obj, form, change):
+        old_obj = None
+        if change:
+            try:
+                old_obj = NotificationRule.objects.get(pk=obj.pk)
+            except NotificationRule.DoesNotExist:
+                pass
+        super().save_model(request, obj, form, change)
+        
+        # log change
+        from core.notifications import log_rule_change
+        action = 'update' if change else 'create'
+        log_rule_change(request.user, obj, action, old_obj)
+
+    def delete_model(self, request, obj):
+        # log deletion
+        from core.notifications import log_rule_change
+        log_rule_change(request.user, obj, 'delete')
+        super().delete_model(request, obj)
+
+
+@admin.register(WorkflowTransition)
+class WorkflowTransitionAdmin(admin.ModelAdmin):
+    list_display = ('module', 'current_stage', 'action', 'next_stage', 'notify_role')
+    list_filter = ('module', 'notify_role')
+    search_fields = ('module', 'current_stage', 'action', 'next_stage', 'notify_role')
+
+
+@admin.register(NotificationRuleAuditLog)
+class NotificationRuleAuditLogAdmin(admin.ModelAdmin):
+    list_display = ('timestamp', 'changed_by', 'action', 'rule_event', 'rule_recipient')
+    list_filter = ('action', 'timestamp', 'changed_by')
+    search_fields = ('changed_by__username', 'action')
+    readonly_fields = ('rule', 'changed_by', 'action', 'old_values', 'new_values', 'timestamp')
+
+    def has_add_permission(self, request):
+        return False
+
+    def has_change_permission(self, request, obj=None):
+        return False
+
+    def rule_event(self, obj):
+        if obj.rule and obj.rule.event:
+            return obj.rule.event.name
+        # Fallback to old_values or new_values
+        event_id = obj.old_values.get('event') or obj.new_values.get('event')
+        if event_id:
+            try:
+                return NotificationEvent.objects.get(pk=int(event_id)).name
+            except Exception:
+                return f"Event ID: {event_id}"
+        return '-'
+    rule_event.short_description = 'Event'
+
+    def rule_recipient(self, obj):
+        if obj.rule:
+            return f"{obj.rule.get_recipient_type_display()}: {obj.rule.role or obj.rule.user or obj.rule.department or ''}"
+        # Fallback to old_values
+        rec_type = obj.old_values.get('recipient_type')
+        if rec_type:
+            target = obj.old_values.get('role') or obj.old_values.get('user') or obj.old_values.get('department') or ''
+            return f"{rec_type}: {target}"
+        return '-'
+    rule_recipient.short_description = 'Recipient'
+
+
+@admin.register(PasswordResetRequest)
+class PasswordResetRequestAdmin(admin.ModelAdmin):
+    list_display = ('username_or_email', 'created_at', 'resolved', 'resolved_at')
+    list_filter = ('resolved', 'created_at')
+    search_fields = ('username_or_email',)
+    actions = ['mark_resolved']
+
+    def mark_resolved(self, request, queryset):
+        from django.utils import timezone
+        queryset.update(resolved=True, resolved_at=timezone.now())
+    mark_resolved.short_description = "Mark selected requests as resolved"

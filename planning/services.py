@@ -1858,6 +1858,8 @@ def _master_sync_field_values_equal(left, right, field_name=''):
         return _normalize_sheet_size(left) == _normalize_sheet_size(right)
     if left is None and right is None:
         return True
+    if field_name in {'machine_name', 'plate_set_no'} and not str(right or '').strip():
+        return True
     if isinstance(left, Decimal) or isinstance(right, Decimal):
         try:
             return Decimal(str(left or 0)) == Decimal(str(right or 0))

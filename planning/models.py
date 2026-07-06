@@ -849,6 +849,16 @@ class SkuRecipe(models.Model):
     def __str__(self):
         return self.sku
 
+    def get_next_notification_roles(self):
+        status = (self.master_data_status or '').strip().lower()
+        if status == 'draft':
+            return ['qc']
+        elif status == 'pending_review':
+            return ['qc']
+        elif status == 'reviewed':
+            return ['admin', 'manager']
+        return []
+
 
 class JobCardChangeRequest(models.Model):
     STATUS_CHOICES = [

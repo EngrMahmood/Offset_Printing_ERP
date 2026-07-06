@@ -51,4 +51,12 @@ urlpatterns = [
     path('notifications/', notification_views.notification_list, name='notification_list'),
     path('notifications/mark-all-read/', notification_views.notification_mark_all_read, name='notification_mark_all_read'),
     path('notifications/<int:pk>/read/', notification_views.notification_mark_read, name='notification_mark_read'),
+    
+    # Settings & Forgot Password Paths
+    path('settings/', views.notification_settings_home, name='notification_settings_home'),
+    path('settings/rules/add/', views.notification_rule_add, name='notification_rule_add'),
+    path('settings/rules/<int:rule_id>/delete/', views.notification_rule_delete, name='notification_rule_delete'),
+    path('settings/transitions/add/', views.workflow_transition_add, name='workflow_transition_add'),
+    path('settings/transitions/<int:transition_id>/delete/', views.workflow_transition_delete, name='workflow_transition_delete'),
+    path('forgot-password/', views.forgot_password, name='forgot_password'),
 ]

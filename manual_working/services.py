@@ -57,11 +57,11 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
     queryset = queryset.order_by('-plan_date', '-jc_number')
     jobs = list(queryset)
     recipe_map = _build_recipe_map(jobs)
-    approval_map = _build_job_card_approval_date_map(jobs)
-    release_map = _build_job_card_release_datetime_map(jobs)
+    approval_map, release_map = _build_job_card_log_maps(jobs)
+    po_approval_map = _build_po_approval_date_map(jobs)
     wip_status_map = _build_wip_status_map(jobs)
 
-    rows = [_build_row(item, recipe_map, approval_map, release_map, wip_status_map) for item in jobs]
+    rows = [_build_row(item, recipe_map, approval_map, release_map, po_approval_map, wip_status_map) for item in jobs]
 
     date_from = filters.get('date_from')
     if date_from:
@@ -98,49 +98,63 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
     return rows
 
 
-def _build_job_card_approval_date_map(jobs):
+def _build_po_approval_date_map(jobs):
+    po_numbers = {job.po_number.strip().lower() for job in jobs if job.po_number}
+    if not po_numbers:
+        return {}
+
+    po_approval_map = {}
+    po_docs = PoDocument.objects.filter(
+        extraction_status='processed'
+    ).values_list('extracted_payload', flat=True)
+
+    for payload in po_docs:
+        if not isinstance(payload, dict):
+            continue
+        for key in ('po_number', 'PO_No', 'po_no', 'PO_Number'):
+            po_val = str(payload.get(key) or '').strip().lower()
+            if po_val and po_val in po_numbers:
+                app_date = parse_date(payload.get('approval_date'))
+                if app_date:
+                    po_approval_map[po_val] = app_date
+                    
+    return po_approval_map
+
+
+def _build_job_card_log_maps(jobs):
     job_card_ids = [job.job_card.id for job in jobs if getattr(job, 'job_card', None)]
     if not job_card_ids:
-        return {}
+        return {}, {}
 
     approval_map = {}
-    logs = ChangeLog.objects.filter(entity_type='job_card', record_id__in=job_card_ids).order_by('record_id', '-created_at')
-    for log in logs:
-        if log.record_id in approval_map:
-            continue
-        field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
-        status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
-        if not isinstance(status_change, dict):
-            continue
-        to_status = str(status_change.get('to') or '').strip().lower()
-        if to_status in {'production_approved', 'qc_approved'} and log.created_at:
-            approval_map[log.record_id] = log.created_at.date()
-    return approval_map
-
-
-def _build_job_card_release_datetime_map(jobs):
-    job_card_ids = [job.job_card.id for job in jobs if getattr(job, 'job_card', None)]
-    if not job_card_ids:
-        return {}
-
     release_map = {}
+
     logs = ChangeLog.objects.filter(
         entity_type='job_card',
-        record_id__in=job_card_ids,
+        record_id__in=job_card_ids
     ).order_by('record_id', 'created_at')
+
     for log in logs:
-        if log.record_id in release_map:
-            continue
+        # Release map
+        if log.record_id not in release_map:
+            field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
+            status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
+            if isinstance(status_change, dict):
+                to_status = str(status_change.get('to') or '').strip().lower()
+                if to_status == 'released' and log.created_at:
+                    release_map[log.record_id] = log.created_at
+            elif log.action == 'release' and log.created_at:
+                release_map[log.record_id] = log.created_at
+
+        # Approval map
         field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
         status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
         if isinstance(status_change, dict):
             to_status = str(status_change.get('to') or '').strip().lower()
-            if to_status == 'released' and log.created_at:
-                release_map[log.record_id] = log.created_at
-                continue
-        if log.action == 'release' and log.created_at:
-            release_map[log.record_id] = log.created_at
-    return release_map
+            if to_status in {'production_approved', 'qc_approved'} and log.created_at:
+                approval_map[log.record_id] = log.created_at.date()
+
+    return approval_map, release_map
 
 
 def _build_recipe_map(items):
@@ -252,20 +266,13 @@ def _resolve_repeat_flag(job_value, recipe):
     return ''
 
 
-def _po_approval_date(job: PlanningJob, approval_map: dict[int, object]):
+def _po_approval_date(job: PlanningJob, approval_map: dict[int, object], po_approval_map: dict[str, object]):
     if getattr(job, 'po_approval_date', None):
         return job.po_approval_date
 
-    if job.po_number:
-        po_doc = PoDocument.objects.filter(
-            extracted_payload__po_number__iexact=job.po_number,
-            extraction_status='processed',
-        ).order_by('-created_at').first()
-        if po_doc:
-            payload = po_doc.extracted_payload or {}
-            approval_date = parse_date(payload.get('approval_date'))
-            if approval_date:
-                return approval_date
+    po_val = str(job.po_number or '').strip().lower()
+    if po_val and po_val in po_approval_map:
+        return po_approval_map[po_val]
 
     job_card = getattr(job, 'job_card', None)
     if not job_card:
@@ -310,14 +317,14 @@ def _build_dispatch_values(job: PlanningJob) -> list[dict[str, str]]:
     return results
 
 
-def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map: dict[int, object], release_map: dict[int, object], wip_status_map: dict[str, str]) -> dict[str, str]:
+def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map: dict[int, object], release_map: dict[int, object], po_approval_map: dict[str, object], wip_status_map: dict[str, str]) -> dict[str, str]:
     recipe = recipe_map.get((job.sku or '').strip().upper())
     print_runs = _build_print_run_values(job)
     dispatch_values = _build_dispatch_values(job)
     total_delivered_qty = sum((getattr(run, 'delivered_qty') or 0) for run in job.dispatch_runs.all())
     job_card = getattr(job, 'job_card', None)
 
-    po_approval_date = _po_approval_date(job, approval_map)
+    po_approval_date = _po_approval_date(job, approval_map, po_approval_map)
     try:
         job_card_month = job_card.month if job_card else None
     except ObjectDoesNotExist:
