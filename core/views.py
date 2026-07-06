@@ -226,6 +226,15 @@ def quick_add_master(request):
     if not name:
         return JsonResponse({'ok': False, 'error': 'Name is required.'}, status=400)
 
+    if master_type == 'material':
+        profile = getattr(request.user, 'profile', None)
+        role = getattr(profile, 'normalized_role', '') if profile else ''
+        if not (
+            request.user.is_superuser
+            or role in {'admin', 'planner'}
+        ):
+            return JsonResponse({'ok': False, 'error': 'Only planner or admin can add materials.'}, status=403)
+
     if master_type == 'print_color':
         profile = getattr(request.user, 'profile', None)
         if not (request.user.is_superuser or (profile and profile.role == 'admin')):

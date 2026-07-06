@@ -13,4 +13,5 @@ urlpatterns = [
     path('request/add/', views.PlateRequestCreateView.as_view(), name='request_add'),
     path('request/<int:pk>/', views.PlateRequestDetailView.as_view(), name='request_detail'),
     path('request/<int:pk>/action/', views.PlateRequestActionView.as_view(), name='request_action'),
+    path('admin/cancel-stale/', views.BulkCancelStalePlateRequestsView.as_view(), name='bulk_cancel_stale'),
 ]

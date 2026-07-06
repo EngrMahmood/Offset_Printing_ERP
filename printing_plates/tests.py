@@ -602,3 +602,166 @@ class PlateWorkflowTestCase(TestCase):
         self.assertEqual(self.plate_request.plate_quantity, 16)
         self.assertEqual(self.plate_request.plate_quantity_display, '16 (4 sets)')
 
+
+class StalePlateRequestVisibilityTests(TestCase):
+    def test_open_request_visible_after_job_moves_to_planning_done(self):
+        from printing_plates.services import plate_request_active_queryset, plate_request_is_stale_open
+
+        job = PlanningJob.objects.create(
+            jc_number='JC-STALE-1',
+            sku='SKU-STALE',
+            status='released',
+            planning_stage='planning_done',
+            repeat_flag='New',
+        )
+        plate_request = PlateRequest.objects.create(
+            planning_job=job,
+            status=PlateRequest.STATUS_DRAFT,
+        )
+        self.assertTrue(plate_request_is_stale_open(plate_request))
+        self.assertTrue(plate_request_active_queryset().filter(pk=plate_request.pk).exists())
+
+
+class PlanningPlateRequestCancelTests(TestCase):
+    def setUp(self):
+        self.planner = User.objects.create_user(username='planner', password='password')
+        self.planner.profile.role = 'planner'
+        self.planner.profile.save()
+
+        self.job = PlanningJob.objects.create(
+            jc_number='JC-CANCEL-1',
+            sku='SKU-CANCEL',
+            status='released',
+            planning_stage='planning_done',
+            repeat_flag='New',
+        )
+        self.plate_request = PlateRequest.objects.create(
+            planning_job=self.job,
+            status=PlateRequest.STATUS_DRAFT,
+        )
+
+    def test_planner_can_cancel_open_plate_request_from_planning(self):
+        self.client.login(username='planner', password='password')
+        url = reverse('planning:job_plate_request_cancel', args=[self.job.id])
+        response = self.client.post(url, {
+            'plate_request_id': self.plate_request.pk,
+            'cancel_reason': 'Plates already issued outside workflow',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.plate_request.refresh_from_db()
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_ARCHIVED)
+        self.assertTrue(self.plate_request.is_cancelled)
+
+    def test_stale_open_plate_requests_queryset_matches_helper(self):
+        from printing_plates.services import plate_request_is_stale_open, stale_open_plate_requests_queryset
+
+        qs_ids = set(stale_open_plate_requests_queryset().values_list('pk', flat=True))
+        self.assertIn(self.plate_request.pk, qs_ids)
+        self.assertTrue(plate_request_is_stale_open(self.plate_request))
+
+
+class PlateMakingPreventionTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username='admin', password='password')
+        self.admin.profile.role = 'admin'
+        self.admin.profile.save()
+
+        self.job = PlanningJob.objects.create(
+            jc_number='JC-BLOCK-1',
+            sku='SKU-BLOCK',
+            status='released',
+            planning_stage='planning_done',
+            repeat_flag='New',
+            material='Paper',
+            application='Label',
+            machine_name='KBA',
+            plate_set_no='SET-999',
+        )
+
+    def test_planning_stage_update_blocked_for_released_job(self):
+        self.client.login(username='admin', password='password')
+        response = self.client.post(reverse('planning:jobs'), {
+            'action': 'update_planning_stage',
+            'job_id': self.job.id,
+            'planning_stage': 'plate_making',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.job.refresh_from_db()
+        self.assertEqual(self.job.planning_stage, 'planning_done')
+
+    def test_bulk_cancel_stale_archives_open_requests(self):
+        plate_request = PlateRequest.objects.create(
+            planning_job=self.job,
+            status=PlateRequest.STATUS_DRAFT,
+        )
+        from printing_plates.services import bulk_cancel_stale_open_plate_requests
+
+        result = bulk_cancel_stale_open_plate_requests(actor=self.admin, dry_run=False)
+        self.assertGreaterEqual(result['cancelled'], 1)
+        plate_request.refresh_from_db()
+        self.assertEqual(plate_request.status, PlateRequest.STATUS_ARCHIVED)
+        self.assertTrue(plate_request.is_cancelled)
+
+
+class ReleaseBlockedByOpenPlateRequestTests(TestCase):
+    def setUp(self):
+        self.admin = User.objects.create_user(username='adminrel', password='password')
+        self.admin.profile.role = 'admin'
+        self.admin.profile.save()
+
+        self.planning_job = PlanningJob.objects.create(
+            jc_number='JC-REL-BLOCK',
+            sku='SKU-REL-BLOCK',
+            status='qc_approved',
+            planning_stage='new_plate_making',
+            repeat_flag='New',
+        )
+        self.machine = Machine.objects.create(name='KBA Block Test')
+        self.department = Department.objects.create(name='Offset Block Test')
+        self.material = Material.objects.create(name='Art Paper Block')
+        self.job_card = JobCard.objects.create(
+            job_card_no='JC-REL-BLOCK',
+            planning_job=self.planning_job,
+            SKU='SKU-REL-BLOCK',
+            order_qty=5000,
+            total_impressions_required=5000,
+            total_sheet_quantity=500,
+            total_colors=4,
+            plate_set_no='SET-BLOCK',
+            po_date=timezone.now().date(),
+            machine_name=self.machine,
+            department=self.department,
+            material=self.material,
+            status='production_approved',
+        )
+        self.plate_request = PlateRequest.objects.create(
+            planning_job=self.planning_job,
+            job_card=self.job_card,
+            status=PlateRequest.STATUS_DRAFT,
+            source=PlateRequest.SOURCE_PLANNING,
+        )
+
+    def test_release_blocked_while_open_plate_request_exists(self):
+        from django.core.exceptions import ValidationError
+        from core.jobcard_service import release_to_production
+
+        with self.assertRaises(ValidationError):
+            release_to_production(self.job_card, actor=self.admin)
+
+        self.job_card.refresh_from_db()
+        self.assertEqual(self.job_card.workflow_status, 'production_approved')
+        self.plate_request.refresh_from_db()
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_DRAFT)
+
+    def test_release_allowed_after_plate_request_cancelled(self):
+        from core.jobcard_service import release_to_production
+        from printing_plates.services import cancel_plate_request
+
+        cancel_plate_request(
+            self.plate_request,
+            actor=self.admin,
+            reason='Plates issued outside workflow',
+        )
+        release_to_production(self.job_card, actor=self.admin)
+        self.job_card.refresh_from_db()
+        self.assertEqual(self.job_card.workflow_status, 'released')

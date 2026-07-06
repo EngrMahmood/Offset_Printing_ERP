@@ -362,7 +362,7 @@ def restore_sku_recipes_from_rows(rows, *, fill_blanks_only=True, create_missing
                         sku, origin, fill_blanks_only=fill_blanks_only,
                     )
                 continue
-            recipe = SkuRecipe(sku=sku, created_by=user, master_data_status='draft')
+            recipe = SkuRecipe(sku=sku, created_by=user, master_data_status='draft', legacy_produced=True)
             if job_name:
                 recipe.job_name = job_name
             recipe_changed = apply_sheet_values_to_recipe(recipe, values, fill_blanks_only=False)
@@ -376,6 +376,9 @@ def restore_sku_recipes_from_rows(rows, *, fill_blanks_only=True, create_missing
             recipe_changed = apply_sheet_values_to_recipe(
                 recipe, values, fill_blanks_only=fill_blanks_only,
             )
+            if not recipe.legacy_produced:
+                recipe.legacy_produced = True
+                recipe_changed = list(recipe_changed) + ['legacy_produced']
             if recipe_changed:
                 recipe.save(update_fields=list(dict.fromkeys(recipe_changed + ['updated_at'])))
                 updated += 1

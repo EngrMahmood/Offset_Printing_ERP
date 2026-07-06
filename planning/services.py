@@ -753,13 +753,11 @@ def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, 
         recipe.color_spec = ''
         update_fields.append('color_spec')
 
-    # Only send to QC when all approval-required fields are present.
-    # Incomplete recipes stay Draft so planner can finish material/application/etc.
+    # Always transition to pending_review when submit_for_review is enabled,
+    # so that it shows up in the QC review queue immediately.
     if submit_for_review and recipe.master_data_status in {'draft', ''}:
-        missing = _missing_required_master_fields(recipe, recipe.job_name or planning_job.job_name)
-        if not missing:
-            recipe.master_data_status = 'pending_review'
-            update_fields.append('master_data_status')
+        recipe.master_data_status = 'pending_review'
+        update_fields.append('master_data_status')
 
     if update_fields:
         update_fields.append('updated_at')
@@ -1300,29 +1298,16 @@ def _po_payload_items(payload, exclude_ignored=True):
 
 
 
-def _annotate_items_with_recipe(items, recipe_map):
-    annotated = []
-    repeat_count = 0
-    new_count = 0
-    missing_skus = []
+def _annotate_items_with_recipe(items, recipe_map, current_po_number=None, po_doc_created_at=None, po_doc_id=None):
+    from .sku_classification import annotate_items_repeat_new
 
-    for item in items:
-        sku = (item.get('sku') or '').strip()
-        key = _sku_key(sku)
-        has_recipe = bool(key and key in recipe_map)
-        item_copy = dict(item)
-        item_copy['is_repeat'] = has_recipe
-        item_copy['recipe_status'] = 'Repeat' if has_recipe else 'New'
-        annotated.append(item_copy)
-
-        if has_recipe:
-            repeat_count += 1
-        else:
-            new_count += 1
-            if sku:
-                missing_skus.append(sku)
-
-    return annotated, repeat_count, new_count, sorted(set(missing_skus))
+    return annotate_items_repeat_new(
+        items,
+        recipe_map,
+        po_number=current_po_number,
+        po_doc_created_at=po_doc_created_at,
+        po_doc_id=po_doc_id,
+    )
 
 
 
@@ -1379,34 +1364,133 @@ def _deduplicate_po_items_by_sku(items):
 
 
 
-def _history_repeat_new_counts(items, recipe_map=None):
+def _history_repeat_new_counts(items, recipe_map=None, current_po_number=None):
     """Classify Repeat/New from approved SKU recipes, not historical PlanningJobs."""
     if recipe_map is None:
         recipe_map = _build_recipe_map(items)
-
-    repeat_count = 0
-    new_count = 0
-    for item in items:
-        sku = item.get('sku')
-        sku_key = _sku_key(sku)
-        if not sku_key:
-            continue
-        if sku_key in recipe_map:
-            repeat_count += 1
-        else:
-            new_count += 1
-
+    _, repeat_count, new_count, _ = _annotate_items_with_recipe(items, recipe_map, current_po_number)
     return repeat_count, new_count
 
 
+def _po_dates_from_payload(payload):
+    """Return (approval_date, po_date) parsed from a PO document payload."""
+    if not isinstance(payload, dict):
+        return None, None
+    approval_date = _parse_iso_date(payload.get('approval_date'))
+    po_date = _parse_iso_date(payload.get('po_date'))
+    return approval_date, po_date
 
-def _sync_repeat_jobs_from_po(po_doc, actor=None):
+
+def get_po_approval_date_for_job(job):
+    """Resolve PO approval date for display/sync; falls back to PO dated when approval is missing."""
+    if getattr(job, 'po_approval_date', None):
+        return job.po_approval_date
+
+    if hasattr(job, 'po_documents'):
+        for po_document in job.po_documents.order_by('-created_at'):
+            approval_date, po_date = _po_dates_from_payload(po_document.extracted_payload or {})
+            if approval_date:
+                return approval_date
+            if po_date:
+                return po_date
+
+    if job.po_number:
+        po_document = (
+            PoDocument.objects.filter(
+                extracted_payload__po_number__iexact=job.po_number,
+                extraction_status='processed',
+            )
+            .order_by('-created_at')
+            .first()
+        )
+        if po_document:
+            approval_date, po_date = _po_dates_from_payload(po_document.extracted_payload or {})
+            if approval_date:
+                return approval_date
+            if po_date:
+                return po_date
+
+    from core.models import ChangeLog
+
+    job_card = getattr(job, 'job_card', None)
+    if not job_card:
+        return None
+
+    logs = ChangeLog.objects.filter(
+        entity_type='job_card',
+        record_id=job_card.pk,
+    ).order_by('-created_at')
+    for log in logs:
+        field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
+        status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
+        if not isinstance(status_change, dict):
+            continue
+        to_status = str(status_change.get('to') or '').strip().lower()
+        if to_status in {'production_approved', 'qc_approved'} and log.created_at:
+            return log.created_at.date()
+    return None
+
+
+def _plan_month_label_from_date(value):
+    if not value:
+        return ''
+    if isinstance(value, datetime):
+        value = value.date()
+    if isinstance(value, date):
+        return value.strftime('%B')
+    return ''
+
+
+def get_planning_intake_date_for_job(job):
+    """When the job entered planning (PO upload / create), not customer delivery."""
+    if job.po_number:
+        doc = (
+            PoDocument.objects.filter(
+                extracted_payload__po_number__iexact=job.po_number,
+                extraction_status='processed',
+            )
+            .order_by('created_at')
+            .first()
+        )
+        if doc and doc.created_at:
+            return doc.created_at.date()
+
+    if hasattr(job, 'po_documents'):
+        doc = job.po_documents.order_by('created_at').first()
+        if doc and doc.created_at:
+            return doc.created_at.date()
+
+    if job.created_at:
+        return job.created_at.date()
+
+    return None
+
+
+def get_planning_month_label_for_job(job):
+    """Month for manual working: PO planning intake month, not delivery month."""
+    month_text = (job.plan_month or '').strip()
+    if month_text:
+        return month_text
+
+    intake_date = get_planning_intake_date_for_job(job)
+    if intake_date:
+        return _plan_month_label_from_date(intake_date)
+
+    if job.plan_date and (not job.delivery_date or job.plan_date != job.delivery_date):
+        return _plan_month_label_from_date(job.plan_date)
+
+    return _plan_month_label_from_date(job.plan_date)
+
+
+def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
     """Create or update draft planning jobs for all PO lines from one PO document."""
     payload = po_doc.extracted_payload or {}
     items, _ = _deduplicate_po_items_by_sku(payload.get('items', []))
     po_number = (payload.get('po_number') or '').strip()
     pr_number = (payload.get('pr_number') or '').strip()
     po_date = _parse_iso_date(payload.get('po_date'))
+    approval_date = _parse_iso_date(payload.get('approval_date'))
+    po_approval_date = approval_date or po_date
     delivery_location = payload.get('delivery_location', '')
     department = payload.get('department', '')
 
@@ -1449,17 +1533,24 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
         if not sku_key:
             continue
 
-        recipe = recipe_map.get(sku_key)
-        if not recipe:
-            missing_recipe_count += 1
-
         existing_job = existing_jobs_by_sku.get(sku_key)
-        if existing_job and _normalize_status(existing_job.status) != 'draft':
-            locked_count += 1
-            continue
+        recipe = recipe_map.get(sku_key)
+        is_approved = bool(recipe and recipe.master_data_status == 'approved')
+        if not bypass_recipe_check and not is_approved:
+            if not existing_job:
+                missing_recipe_count += 1
+                continue
+            if _normalize_status(existing_job.status) != 'draft':
+                locked_count += 1
+                continue
 
         delivery_date = _parse_iso_date(item.get('delivery_date'))
-        plan_date = po_doc.created_at.date() if po_doc and getattr(po_doc, 'created_at', None) else (delivery_date or po_date)
+        intake_plan_date = (
+            po_doc.created_at.date()
+            if po_doc and getattr(po_doc, 'created_at', None)
+            else (po_date or delivery_date)
+        )
+        jc_plan_date = intake_plan_date if not existing_job else existing_job.plan_date
         qty = item.get('quantity')
         order_qty = int(qty) if qty is not None else None
         unit_cost_val = item.get('unit_cost')
@@ -1467,7 +1558,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
         jc_number = (
             (item.get('jc_number') or item.get('jc') or item.get('job_card_no') or item.get('jobcardno'))
             or (existing_job.jc_number if existing_job else None)
-            or allocate_next_jc_number(plan_date)
+            or allocate_next_jc_number(jc_plan_date or intake_plan_date)
         )
         is_first_production = bool(
             sku_key
@@ -1475,21 +1566,17 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             and sku_key not in seen_skus_in_payload
         )
 
-        explicit_repeat_flag = (item.get('repeat_flag') or item.get('repeat') or '').strip()
-        if explicit_repeat_flag.lower() in {'new', 'repeat'}:
-            forward_as_new = explicit_repeat_flag.lower() == 'new'
-        elif existing_job:
-            existing_repeat_flag = (existing_job.repeat_flag or '').strip().lower()
-            if existing_repeat_flag in {'new', 'repeat'}:
-                forward_as_new = existing_repeat_flag == 'new'
-            else:
-                prior_jobs_exist = PlanningJob.objects.filter(sku__iexact=sku).exclude(id=existing_job.id).exists()
-                forward_as_new = not prior_jobs_exist
-        else:
-            # Even if there is no prior planning job, a bulk-uploaded recipe
-            # (any status) signals that this SKU has been produced before.
-            any_recipe_exists = sku_key and SkuRecipe.objects.filter(sku__iexact=sku_key).exists()
-            forward_as_new = is_first_production and not any_recipe_exists
+        from .sku_classification import repeat_flag_value_for_po_line
+
+        repeat_flag_value = repeat_flag_value_for_po_line(
+            item,
+            po_number=po_number,
+            po_doc_created_at=getattr(po_doc, 'created_at', None),
+            po_doc_id=getattr(po_doc, 'id', None),
+            recipe=recipe,
+            existing_job=existing_job,
+        )
+        forward_as_new = repeat_flag_value == 'New'
 
         current_requirement = existing_job.requirement if existing_job else ''
 
@@ -1539,6 +1626,12 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
                 _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
             )
 
+        item_remarks = (item.get('remarks') or '').strip()
+        if item_remarks:
+            remarks_value = item_remarks
+        else:
+            remarks_value = (existing_job.remarks if existing_job else '') or (recipe.notes if recipe else '')
+
         defaults = {
             'po_number': po_number,
             'pr_reference': pr_number,
@@ -1550,7 +1643,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'delivery_date': delivery_date,
             'unit_cost': unit_cost_value,
             'status': status_value,
-            'repeat_flag': 'New' if forward_as_new else 'Repeat',
+            'repeat_flag': repeat_flag_value,
             'requirement': requirement_value,
             'material': material_value,
             'job_process_type': job_process_type_value,
@@ -1569,15 +1662,20 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             'wastage_sheets': wastage_sheets_value,
             'purchase_sheet_required': purchase_sheet_required_value,
             'pkt_value': pkt_value,
-            'remarks': (item.get('remarks') or '').strip() or (existing_job.remarks if existing_job else '') or (recipe.notes if recipe else ''),
+            'remarks': remarks_value,
             'purchase_material_origin': purchase_material_origin_value,
             'stock_qty': stock_qty_value,
             'balance_qty': balance_qty_value,
         }
-        if plan_date:
-            defaults['plan_date'] = plan_date
-        if payload.get('plan_month'):
-            defaults['plan_month'] = payload.get('plan_month')
+        if po_approval_date:
+            defaults['po_approval_date'] = po_approval_date
+        if not existing_job:
+            if intake_plan_date:
+                defaults['plan_date'] = intake_plan_date
+            if payload.get('plan_month'):
+                defaults['plan_month'] = payload.get('plan_month')
+            elif intake_plan_date:
+                defaults['plan_month'] = _plan_month_label_from_date(intake_plan_date)
         if actor and not existing_job:
             defaults['created_by'] = actor
 
@@ -1585,6 +1683,9 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None):
             jc_number=jc_number,
             defaults=defaults,
         )
+        from .sku_classification import sync_plate_making_stage_with_repeat_flag
+
+        sync_plate_making_stage_with_repeat_flag(job_obj, save=True)
         if created:
             created_count += 1
         else:
@@ -1650,10 +1751,6 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             continue
 
         existing_job = PlanningJob.objects.filter(po_number=po_number, sku__iexact=sku).order_by('-updated_at', '-id').first()
-        if not existing_job:
-            missing_job_count += 1
-            continue
-
         if existing_job and _normalize_status(existing_job.status) != 'draft':
             locked_count += 1
             continue
@@ -1665,15 +1762,25 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
         order_qty = int(qty) if qty is not None else None
         unit_cost_val = target_item.get('unit_cost')
         unit_cost_dec = Decimal(str(unit_cost_val)) if unit_cost_val is not None else None
-        jc_number = existing_job.jc_number
-        current_requirement = existing_job.requirement
 
-        existing_repeat_flag = (existing_job.repeat_flag or '').strip().lower()
-        if existing_repeat_flag in {'new', 'repeat'}:
-            forward_as_new = existing_repeat_flag == 'new'
+        if existing_job:
+            jc_number = existing_job.jc_number
+            current_requirement = existing_job.requirement
         else:
-            prior_jobs_exist = PlanningJob.objects.filter(sku__iexact=sku).exclude(id=existing_job.id).exists()
-            forward_as_new = not prior_jobs_exist
+            jc_number = allocate_next_jc_number(plan_date)
+            current_requirement = ''
+
+        from .sku_classification import repeat_flag_value_for_po_line
+
+        repeat_flag_value = repeat_flag_value_for_po_line(
+            target_item,
+            po_number=po_number,
+            po_doc_created_at=getattr(po_doc, 'created_at', None),
+            po_doc_id=getattr(po_doc, 'id', None),
+            recipe=recipe,
+            existing_job=existing_job,
+        )
+        forward_as_new = repeat_flag_value == 'New'
 
         defaults = {
             'po_number': po_number,
@@ -1685,7 +1792,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'delivery_date': delivery_date,
             'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
             'status': 'draft',
-            'repeat_flag': 'New' if forward_as_new else 'Repeat',
+            'repeat_flag': repeat_flag_value,
             'requirement': _sync_new_sku_requirement(current_requirement, forward_as_new),
             'material': recipe.material,
             'job_process_type': recipe.job_process_type or 'print_and_pack',
@@ -1698,8 +1805,8 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'purchase_sheet_size': recipe.purchase_sheet_size,
             'purchase_sheet_ups': recipe.purchase_sheet_ups,
             'daily_demand': recipe.daily_demand,
-            'plate_set_no': existing_job.plate_set_no,
-            'remarks': existing_job.remarks or recipe.notes,
+            'plate_set_no': existing_job.plate_set_no if existing_job else (recipe.plate_set_no or ''),
+            'remarks': (existing_job.remarks if existing_job else '') or recipe.notes or '',
         }
 
         if not forward_as_new:
@@ -1714,6 +1821,9 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             jc_number=jc_number,
             defaults=defaults,
         )
+        from .sku_classification import sync_plate_making_stage_with_repeat_flag
+
+        sync_plate_making_stage_with_repeat_flag(job_obj, save=True)
         if created:
             created_count += 1
         else:
@@ -1772,15 +1882,38 @@ def _merge_po_items_for_existing_po(existing_items, incoming_items):
             added_skus.append(sku)
             continue
 
-        existing_qty = _to_int(existing_item.get('quantity'))
-        if existing_qty == incoming_qty:
+        # Check if any incoming field differs from existing
+        has_changes = False
+        for field, incoming_value in item.items():
+            if field in {'line_no'}:
+                continue
+            existing_value = existing_item.get(field)
+            
+            # Normalize to string to compare
+            existing_str = str(existing_value or '').strip()
+            incoming_str = str(incoming_value or '').strip()
+            
+            if field in {'quantity'}:
+                if _to_int(existing_value) != _to_int(incoming_value):
+                    has_changes = True
+                    break
+            elif field in {'unit_cost', 'net_total', 'subtotal'}:
+                if _to_decimal(existing_value) != _to_decimal(incoming_value):
+                    has_changes = True
+                    break
+            elif existing_str != incoming_str:
+                has_changes = True
+                break
+
+        if not has_changes:
             ignored_lines.append({'sku': sku, 'qty': incoming_qty})
             continue
 
         # Same SKU but changed qty/fields: treat as correction, not duplicate row.
         for field, value in item.items():
-            if value not in (None, ''):
-                existing_item[field] = value
+            if field in {'line_no'}:
+                continue
+            existing_item[field] = value
         updated_skus.append(sku)
 
     for idx, item in enumerate(merged_items, start=1):
@@ -1791,7 +1924,7 @@ def _merge_po_items_for_existing_po(existing_items, incoming_items):
 
 
 def _collect_pending_sku_rows(po_docs):
-    """Build pending SKU rows from PO documents where SKU recipe is missing."""
+    """Build pending SKU rows from PO documents where SKU master is not yet approved."""
     rows = []
     for po_doc in po_docs:
         payload = po_doc.extracted_payload or {}
@@ -1800,10 +1933,6 @@ def _collect_pending_sku_rows(po_docs):
             continue
 
         recipe_map = _build_recipe_map(items)
-        _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map)
-        if not missing_skus:
-            continue
-
         item_map = {}
         for item in items:
             key = _sku_key(item.get('sku'))
@@ -1816,10 +1945,20 @@ def _collect_pending_sku_rows(po_docs):
             for s in (payload.get('new_skus_ignored') or [])
             if s
         }
-        for sku in missing_skus:
-            if _sku_key(sku) in ignored_skus:
+        seen_skus = set()
+        for item in items:
+            sku = (item.get('sku') or '').strip()
+            key = _sku_key(sku)
+            if not key or key in ignored_skus or key in seen_skus:
                 continue
-            item = item_map.get(_sku_key(sku), {})
+            seen_skus.add(key)
+
+            recipe = recipe_map.get(key)
+            is_approved = bool(recipe and recipe.master_data_status == 'approved')
+            if is_approved:
+                continue
+
+            item = item_map.get(key, {})
             rows.append(
                 {
                     'po_doc_id': po_doc.id,

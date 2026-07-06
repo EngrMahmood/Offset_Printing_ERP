@@ -255,6 +255,11 @@
                                     {% endif %}
                                 {% endif %}
                                 {% if user_can_release and job.has_job_card and job.job_card_workflow_status == 'qc_approved' %}
+                                    {% if job.release_blocked_open_plate %}
+                                    <span class="erp-badge erp-badge-warning" title="Complete or cancel plate request #{{ job.release_blocked_open_plate.pk }} before release.">
+                                        Plate #{{ job.release_blocked_open_plate.pk }} open
+                                    </span>
+                                    {% else %}
                                     <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="release_for_production">
@@ -262,6 +267,7 @@
                                         <input type="hidden" name="plate_set_no" value="{{ job.plate_set_no|default:'' }}">
                                         <button type="submit" class="erp-btn erp-btn-success sm">Release</button>
                                     </form>
+                                    {% endif %}
                                 {% endif %}
                                 {% if can_admin_actions %}
                                     <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form" onsubmit="return confirm('Delete planning job {{ job.jc_number }} and all related plate requests? This cannot be undone.');">

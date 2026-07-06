@@ -241,6 +241,40 @@ function quickAddPrintColor() {
     .catch(() => alert('An error occurred while adding print color.'));
 }
 
+function quickAddMaterial() {
+    const name = prompt('Enter new material type name:');
+    if (!name || !name.trim()) return;
+
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const formData = new FormData();
+    formData.append('type', 'material');
+    formData.append('name', name.trim());
+
+    fetch('{% url "quick_add_master" %}', {
+        method: 'POST',
+        headers: { 'X-CSRFToken': csrfToken },
+        body: formData
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (!data.ok) {
+            alert('Error: ' + (data.error || data.message || 'Failed to add material type.'));
+            return;
+        }
+        const select = document.getElementById('{{ form.material.id_for_label }}');
+        if (!select) return;
+        let option = Array.from(select.options).find(opt => opt.value === data.name);
+        if (!option) {
+            option = document.createElement('option');
+            option.value = data.name;
+            option.textContent = data.name;
+            select.appendChild(option);
+        }
+        select.value = data.name;
+    })
+    .catch(() => alert('An error occurred while adding material type.'));
+}
+
 function quickAddProductType() {
     const name = prompt('Enter new product type name:');
     if (!name || !name.trim()) return;

@@ -307,19 +307,15 @@ class PlateRequest(models.Model):
 
     @property
     def plate_request_type(self):
-        if self.is_replacement:
-            return 'Replacement'
-        flag = ''
-        if self.planning_job:
-            flag = self.planning_job.repeat_flag
-        elif self.job_card and self.job_card.planning_job:
-            flag = self.job_card.planning_job.repeat_flag
+        from .services import plate_request_type_label, resolve_plate_request_type_key
 
-        if flag == 'New':
+        type_key = resolve_plate_request_type_key(self)
+        if type_key == 'replacement':
+            return 'Replacement'
+        label = plate_request_type_label(type_key)
+        if label == 'New':
             return 'New Artwork'
-        elif flag == 'Repeat':
-            return 'Repeat'
-        return ''
+        return label
 
     @property
     def is_replacement(self):

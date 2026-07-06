@@ -101,7 +101,7 @@
                                 <tr>
                                     <td><strong><a href="{% url 'printing_plates:request_detail' req.pk %}">{{ req.jc_number|default:'—' }}</a></strong></td>
                                     <td class="erp-plate-type-cell">
-                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type repeat_flag=req.planning_job.repeat_flag|default:'' %}
+                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type %}
                                     </td>
                                     <td>{{ req.set_no|default:'—' }}</td>
                                     <td>{{ req.new_set_no|default:'—' }}</td>

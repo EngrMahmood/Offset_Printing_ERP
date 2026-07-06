@@ -24,6 +24,7 @@ urlpatterns = [
     path('report/', views.planning_report, name='report'),
     path('import-sheet/', views.import_planning_sheet, name='import_sheet'),
     path('job/<int:job_id>/', views.planning_job_detail, name='job_detail'),
+    path('job/<int:job_id>/plate-request/cancel/', views.planning_job_plate_request_cancel, name='job_plate_request_cancel'),
     path('job/<int:job_id>/master-sync/', views.planning_job_master_sync, name='job_master_sync'),
     path('job/<int:job_id>/edit/', views.planning_job_edit, name='job_edit'),
     path('job/<int:job_id>/status/', views.planning_job_status_update, name='job_status_update'),

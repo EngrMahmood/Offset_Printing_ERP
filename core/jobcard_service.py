@@ -251,6 +251,11 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         _sync_linked_planning_job(target_status, transition_actor=actor)
         return job_card
 
+    if target_status == 'released':
+        from printing_plates.services import validate_job_card_release_allowed
+
+        validate_job_card_release_allowed(job_card)
+
     allowed_transitions = {
         ('draft', 'planning_approved'),
         ('pending_data', 'planning_approved'),

@@ -20,30 +20,14 @@
                 </div>
                 <div class="erp-records-filter-body">
                     <ul class="plates-filter-list">
+                        {% for filter in type_filters %}
                         <li>
-                            <a href="?type=&status=&q={{ q|urlencode }}" class="plates-filter-link{% if not request_type and not status_filter %} is-active{% endif %}">
-                                <span>All open</span>
-                                <span class="plates-filter-count">{{ all_count }}</span>
+                            <a href="?type={{ filter.key|urlencode }}&status={{ status_filter|urlencode }}&q={{ q|urlencode }}" class="plates-filter-link{% if request_type == filter.key %} is-active{% endif %}">
+                                <span>{% if filter.key %}{{ filter.label }}{% else %}All open{% endif %}</span>
+                                <span class="plates-filter-count">{{ filter.count }}</span>
                             </a>
                         </li>
-                        <li>
-                            <a href="?type=replacement&status={{ status_filter|urlencode }}&q={{ q|urlencode }}" class="plates-filter-link{% if request_type == 'replacement' %} is-active{% endif %}">
-                                <span>Replacement</span>
-                                <span class="plates-filter-count">{{ replacement_count }}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="?type=new_artwork&status={{ status_filter|urlencode }}&q={{ q|urlencode }}" class="plates-filter-link{% if request_type == 'new_artwork' %} is-active{% endif %}">
-                                <span>New Artwork</span>
-                                <span class="plates-filter-count">{{ new_artwork_count }}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="?type=repeat&status={{ status_filter|urlencode }}&q={{ q|urlencode }}" class="plates-filter-link{% if request_type == 'repeat' %} is-active{% endif %}">
-                                <span>Repeat</span>
-                                <span class="plates-filter-count">{{ repeat_count }}</span>
-                            </a>
-                        </li>
+                        {% endfor %}
                     </ul>
 
                     <hr style="border:0; border-top:1px solid rgba(0,0,0,0.06); margin:12px 0;">
@@ -123,7 +107,7 @@
                                         </strong>
                                     </td>
                                     <td class="erp-plate-type-cell">
-                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type repeat_flag=req.planning_job.repeat_flag|default:'' planning_stage=req.planning_job.planning_stage|default:'' %}
+                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type %}
                                     </td>
                                     <td title="{{ req.sku|default:'' }}">{{ req.sku|default:'—' }}</td>
                                     <td title="{{ req.job_name|default:'' }}">{{ req.job_name|default:'—' }}</td>

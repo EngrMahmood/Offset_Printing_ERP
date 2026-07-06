@@ -296,7 +296,7 @@ class SkuRecipeForm(forms.ModelForm):
         app_field.required = True
         app_field.widget.attrs.setdefault('required', 'required')
 
-        from core.models import Machine, ProductType
+        from core.models import Machine, Material, ProductType
         from core.print_colors import get_print_color_choices
 
         def _current_field_value(field_name):
@@ -319,6 +319,16 @@ class SkuRecipeForm(forms.ModelForm):
         )
         self.fields['product_type'].required = True
         self.fields['product_type'].widget.attrs.setdefault('required', 'required')
+
+        materials = Material.objects.all().order_by('name')
+        material_choices = [('', 'Select Material Type')] + [(item.name, item.name) for item in materials]
+        current_material = _current_field_value('material')
+        if current_material and current_material not in [item.name for item in materials]:
+            material_choices.append((current_material, current_material))
+        self.fields['material'].widget = forms.Select(
+            choices=material_choices,
+            attrs={'class': 'erp-select', 'style': 'flex: 1;'},
+        )
 
         machines = Machine.objects.filter(is_active=True).order_by('name')
         machine_choices = [('', 'Select Machine')] + [(m.name, m.name) for m in machines]

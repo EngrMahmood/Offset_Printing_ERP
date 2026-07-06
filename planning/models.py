@@ -758,6 +758,10 @@ class SkuRecipe(models.Model):
     ]
 
     sku = models.CharField(max_length=255, unique=True)
+    legacy_produced = models.BooleanField(
+        default=False,
+        help_text='True when SKU master came from Google Sheet / bulk upload and was produced before ERP go-live.',
+    )
     job_name = models.CharField(max_length=255, blank=True)
 
     material = models.CharField(max_length=120, blank=True)

@@ -12,6 +12,30 @@
             <p>List of all printing plate requests and their progress.</p>
         </div>
 
+        {% if can_admin_stale_cleanup and stale_cleanup_count %}
+        <div class="erp-alert erp-alert-warning" style="margin-bottom:16px;">
+            <strong>{{ stale_cleanup_count }} stale open plate request(s)</strong> on jobs already released or in production.
+            These are legacy records from before release cleanup. Cancel them here; use
+            <a href="{% url 'released_jobs' %}">Released Jobs</a> for replacement plates on the floor.
+            <div style="margin-top:10px; display:flex; gap:8px; flex-wrap:wrap;">
+                <form method="post" action="{% url 'printing_plates:bulk_cancel_stale' %}" class="erp-inline-form">
+                    {% csrf_token %}
+                    <input type="hidden" name="dry_run" value="1">
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="erp-btn erp-btn-secondary erp-btn-sm">Preview count</button>
+                </form>
+                <form method="post" action="{% url 'printing_plates:bulk_cancel_stale' %}" class="erp-inline-form"
+                    onsubmit="return confirm('Cancel and archive {{ stale_cleanup_count }} stale open plate request(s)? This cannot be undone.');">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ request.get_full_path }}">
+                    <button type="submit" class="erp-btn erp-btn-danger erp-btn-sm">
+                        <i class="fas fa-archive"></i> Bulk cancel &amp; archive (admin)
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="erp-records-layout">
             <aside class="erp-filter-sidebar erp-records-filter-sidebar is-collapsible" data-collapse-key="plateRequestsFilterCollapsed">
                 <div class="erp-records-filter-head">
@@ -20,42 +44,14 @@
                 </div>
                 <div class="erp-records-filter-body">
                     <ul class="plates-filter-list">
+                        {% for filter in type_filters %}
                         <li>
-                            <a href="?type=" class="plates-filter-link{% if not request_type %} is-active{% endif %}">
-                                <span>All</span>
-                                <span class="plates-filter-count">{{ all_count }}</span>
+                            <a href="?type={{ filter.key }}" class="plates-filter-link{% if request_type == filter.key %} is-active{% endif %}">
+                                <span>{{ filter.label }}</span>
+                                <span class="plates-filter-count">{{ filter.count }}</span>
                             </a>
                         </li>
-                        <li>
-                            <a href="?type=repeat" class="plates-filter-link{% if request_type == 'repeat' %} is-active{% endif %}">
-                                <span>Repeat</span>
-                                <span class="plates-filter-count">{{ repeat_count }}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="?type=new_artwork" class="plates-filter-link{% if request_type == 'new_artwork' %} is-active{% endif %}">
-                                <span>New Artwork</span>
-                                <span class="plates-filter-count">{{ new_artwork_count }}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="?type=replacement" class="plates-filter-link{% if request_type == 'replacement' %} is-active{% endif %}">
-                                <span>Replacement</span>
-                                <span class="plates-filter-count">{{ replacement_count }}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="?type=cancelled" class="plates-filter-link{% if request_type == 'cancelled' %} is-active{% endif %}">
-                                <span>Cancelled / Archived</span>
-                                <span class="plates-filter-count">{{ cancelled_count }}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="?type=empty" class="plates-filter-link{% if request_type == 'empty' %} is-active{% endif %}">
-                                <span>(empty)</span>
-                                <span class="plates-filter-count">{{ empty_count }}</span>
-                            </a>
-                        </li>
+                        {% endfor %}
                     </ul>
 
                     <form method="GET" class="erp-filter-group plates-filter-search">
@@ -128,7 +124,7 @@
                                         <a href="{% url 'printing_plates:request_detail' req.pk %}" class="plates-jc-link" title="{{ req.jc_number|default:'' }}">{{ req.jc_number|default:'—' }}</a>
                                     </td>
                                     <td class="erp-plate-type-cell">
-                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type repeat_flag=req.planning_job.repeat_flag|default:'' planning_stage=req.planning_job.planning_stage|default:'' %}
+                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type %}
                                     </td>
                                     <td title="{{ req.sku|default:'' }}">{{ req.sku|default:'—' }}</td>
                                     <td title="{{ req.job_name|default:'' }}">{{ req.job_name|default:'—' }}</td>

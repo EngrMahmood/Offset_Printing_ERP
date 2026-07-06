@@ -1,6 +1,7 @@
 from datetime import date
 from decimal import Decimal
 
+from django import forms
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, TestCase
@@ -170,23 +171,20 @@ class PlanningWorkflowSyncTests(TestCase):
 		defaults.update(kwargs)
 		return SkuRecipe.objects.create(**defaults)
 
-	def test_po_sync_creates_draft_job_for_missing_recipe(self):
+	def test_po_sync_skips_draft_job_for_missing_recipe(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-001', po_number='PO-NEW-1')
 
 		result = _sync_repeat_jobs_from_po(po_doc, actor=self.user)
 
-		job = PlanningJob.objects.get(po_number='PO-NEW-1', sku='NEW-SKU-001')
-		self.assertEqual(result['created'], 1)
+		self.assertEqual(result['created'], 0)
 		self.assertEqual(result['missing_recipe'], 1)
-		self.assertEqual(job.status, 'draft')
-		self.assertEqual(job.repeat_flag, 'New')
-		self.assertIn('NEW SKU:', job.requirement)
+		self.assertFalse(PlanningJob.objects.filter(po_number='PO-NEW-1', sku='NEW-SKU-001').exists())
 
 	def test_approved_sku_sync_updates_existing_job_without_creating_duplicate(self):
+		self._create_approved_recipe('NEW-SKU-002', plate_set_no='')
 		po_doc = self._create_po_document(sku='NEW-SKU-002', po_number='PO-NEW-2')
 		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
 		original_job = PlanningJob.objects.get(po_number='PO-NEW-2', sku='NEW-SKU-002')
-		self._create_approved_recipe('NEW-SKU-002', plate_set_no='')
 
 		result = _sync_new_jobs_for_approved_sku('NEW-SKU-002', actor=self.user)
 
@@ -231,21 +229,35 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(job.calculated_purchase_sheet_required, 4)
 		self.assertEqual(result['updated'], 1)
 
-	def test_approved_sku_sync_does_not_create_missing_planning_job(self):
+	def test_approved_sku_sync_creates_missing_planning_job(self):
 		self._create_po_document(sku='NEW-SKU-003', po_number='PO-NEW-3')
 		self._create_approved_recipe('NEW-SKU-003')
 
 		result = _sync_new_jobs_for_approved_sku('NEW-SKU-003', actor=self.user)
 
-		self.assertEqual(result['created'], 0)
+		self.assertEqual(result['created'], 1)
 		self.assertEqual(result['updated'], 0)
-		self.assertEqual(result.get('missing_jobs', 0), 1)
-		self.assertFalse(PlanningJob.objects.filter(po_number='PO-NEW-3', sku='NEW-SKU-003').exists())
+		self.assertEqual(result.get('missing_jobs', 0), 0)
+		self.assertTrue(PlanningJob.objects.filter(po_number='PO-NEW-3', sku='NEW-SKU-003').exists())
 
 	def test_submit_to_qc_blocks_when_recipe_not_approved(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-004', po_number='PO-NEW-4')
-		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
-		job = PlanningJob.objects.get(po_number='PO-NEW-4', sku='NEW-SKU-004')
+		# Create the recipe in draft status
+		recipe = SkuRecipe.objects.create(
+			sku='NEW-SKU-004',
+			job_name='NEW-SKU-004 Job',
+			master_data_status='draft',
+			created_by=self.user,
+		)
+		# Manually create the draft job
+		job = PlanningJob.objects.create(
+			jc_number='JC-NEW-4',
+			po_number='PO-NEW-4',
+			sku='NEW-SKU-004',
+			job_name='NEW-SKU-004 Job',
+			order_qty=1000,
+			status='draft',
+		)
 		self.client.force_login(self.user)
 
 		response = self.client.post(
@@ -260,11 +272,13 @@ class PlanningWorkflowSyncTests(TestCase):
 
 	def test_submit_to_qc_syncs_machine_plate_from_locked_sku_master(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-SYNC', po_number='PO-NEW-SYNC')
-		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
 		recipe = self._create_approved_recipe('NEW-SKU-SYNC')
 		recipe.machine_name = 'Komori 6'
 		recipe.plate_set_no = 'SET-99'
 		recipe.save(update_fields=['machine_name', 'plate_set_no', 'updated_at'])
+		
+		# Sync creates the job because recipe is approved
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
 		_sync_new_jobs_for_approved_sku('NEW-SKU-SYNC', actor=self.user)
 
 		job = PlanningJob.objects.get(po_number='PO-NEW-SYNC', sku='NEW-SKU-SYNC')
@@ -292,10 +306,11 @@ class PlanningWorkflowSyncTests(TestCase):
 
 	def test_submit_to_qc_blocks_when_product_type_missing_on_approved_sku(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-PT', po_number='PO-NEW-PT')
-		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
 		recipe = self._create_approved_recipe('NEW-SKU-PT')
 		recipe.product_type = ''
 		recipe.save(update_fields=['product_type', 'updated_at'])
+		
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
 		_sync_new_jobs_for_approved_sku('NEW-SKU-PT', actor=self.user)
 
 		job = PlanningJob.objects.get(po_number='PO-NEW-PT', sku='NEW-SKU-PT')
@@ -322,12 +337,13 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertContains(follow_up, 'Product Type')
 
 	def test_repeat_flag_preserved_after_approved_sku_refresh(self):
+		self._create_approved_recipe('REP-SKU-001')
 		po_doc = self._create_po_document(sku='REP-SKU-001', po_number='PO-REP-1')
 		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		
 		job = PlanningJob.objects.get(po_number='PO-REP-1', sku='REP-SKU-001')
 		job.repeat_flag = 'Repeat'
 		job.save(update_fields=['repeat_flag', 'updated_at'])
-		self._create_approved_recipe('REP-SKU-001')
 
 		result = _sync_new_jobs_for_approved_sku('REP-SKU-001', actor=self.user)
 
@@ -338,9 +354,15 @@ class PlanningWorkflowSyncTests(TestCase):
 
 	def test_po_review_counts_use_master_data_not_existing_planning_jobs(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-006', po_number='PO-NEW-6')
-		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
-		job = PlanningJob.objects.filter(po_number='PO-NEW-6', sku='NEW-SKU-006').first()
-		self.assertIsNotNone(job)
+		# Manually create the draft job
+		job = PlanningJob.objects.create(
+			jc_number='JC-NEW-6',
+			po_number='PO-NEW-6',
+			sku='NEW-SKU-006',
+			job_name='NEW-SKU-006 Job',
+			order_qty=1000,
+			status='draft',
+		)
 		self.client.force_login(self.user)
 
 		response = self.client.get(reverse('qc:po_review', args=[po_doc.id]))
@@ -351,6 +373,14 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertContains(response, 'New SKUs: 1')
 
 	def test_po_inbox_counts_use_master_data_not_existing_planning_jobs(self):
+		PlanningJob.objects.create(
+			jc_number='JC-INBOX-PREV',
+			po_number='PO-PREV-100',
+			sku='INBOX-SKU-001',
+			job_name='Prev Job',
+			order_qty=1000,
+			status='draft',
+		)
 		po_doc = self._create_po_document(sku='INBOX-SKU-001', po_number='PO-INBOX-1')
 		self._create_approved_recipe('INBOX-SKU-001')
 		self.client.force_login(self.user)
@@ -463,10 +493,14 @@ class PlanningWorkflowSyncTests(TestCase):
 
 	def test_approved_sku_refresh_skips_non_draft_jobs(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-006', po_number='PO-NEW-6')
-		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
-		job = PlanningJob.objects.get(po_number='PO-NEW-6', sku='NEW-SKU-006')
-		job.status = 'pending_qc'
-		job.save(update_fields=['status', 'updated_at'])
+		job = PlanningJob.objects.create(
+			jc_number='JC-NEW-6-M',
+			po_number='PO-NEW-6',
+			sku='NEW-SKU-006',
+			job_name='NEW-SKU-006 Job',
+			order_qty=1000,
+			status='pending_qc',
+		)
 		self._create_approved_recipe('NEW-SKU-006')
 
 		result = _sync_new_jobs_for_approved_sku('NEW-SKU-006', actor=self.user)
@@ -475,6 +509,304 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(result['updated'], 0)
 		self.assertEqual(result['locked'], 1)
 		self.assertEqual(job.status, 'pending_qc')
+
+	def test_po_reupload_updates_remarks_and_fields(self):
+		self._create_approved_recipe('REP-REUPLOAD-1')
+		po_doc = self._create_po_document(sku='REP-REUPLOAD-1', po_number='PO-REP-REUPLOAD-1', quantity=1000, unit_cost='1.25')
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		
+		job = PlanningJob.objects.get(po_number='PO-REP-REUPLOAD-1', sku='REP-REUPLOAD-1')
+		self.assertEqual(job.remarks, '')
+		
+		payload = po_doc.extracted_payload or {}
+		items = list(payload.get('items', []))
+		items[0]['remarks'] = 'Updated Remarks via Reupload'
+		items[0]['unit_cost'] = '1.35'
+		payload['items'] = items
+		po_doc.extracted_payload = payload
+		po_doc.save(update_fields=['extracted_payload'])
+		
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		
+		job.refresh_from_db()
+		self.assertEqual(job.remarks, 'Updated Remarks via Reupload')
+		self.assertEqual(job.unit_cost, Decimal('1.35'))
+
+	def test_po_approval_date_falls_back_to_po_date(self):
+		from planning.services import get_po_approval_date_for_job
+
+		po_doc = PoDocument.objects.create(
+			extracted_payload={
+				'po_number': 'PO-DATE-FALLBACK-1',
+				'po_date': '2026-07-03',
+				'approval_date': None,
+				'items': [{'sku': 'SKU-DATE-1', 'quantity': 100}],
+			},
+			extraction_status='processed',
+		)
+		job = PlanningJob.objects.create(
+			jc_number='JC-DATE-FALLBACK-1',
+			po_number='PO-DATE-FALLBACK-1',
+			sku='SKU-DATE-1',
+			job_name='SKU-DATE-1',
+			order_qty=100,
+			status='draft',
+		)
+		job.po_documents.add(po_doc)
+		self.assertEqual(get_po_approval_date_for_job(job), date(2026, 7, 3))
+
+	def test_sync_repeat_jobs_sets_po_approval_date_from_payload(self):
+		self._create_approved_recipe('SYNC-DATE-1')
+		po_doc = self._create_po_document(sku='SYNC-DATE-1', po_number='PO-SYNC-DATE-1')
+		payload = po_doc.extracted_payload or {}
+		payload['approval_date'] = '2026-07-04'
+		payload['po_date'] = '2026-07-03'
+		po_doc.extracted_payload = payload
+		po_doc.save(update_fields=['extracted_payload'])
+
+		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		job = PlanningJob.objects.get(po_number='PO-SYNC-DATE-1', sku='SYNC-DATE-1')
+		self.assertEqual(job.po_approval_date, date(2026, 7, 4))
+		self.assertEqual(job.plan_month, job.plan_date.strftime('%B'))
+
+	def test_sync_updates_draft_job_without_approved_recipe_on_reupload(self):
+		po_doc = self._create_po_document(sku='DRAFT-REUP-1', po_number='PO-DRAFT-REUP-1')
+		PlanningJob.objects.create(
+			jc_number='JC-DRAFT-REUP-1',
+			po_number='PO-DRAFT-REUP-1',
+			sku='DRAFT-REUP-1',
+			job_name='DRAFT-REUP-1',
+			order_qty=500,
+			status='draft',
+			remarks='',
+		)
+		payload = po_doc.extracted_payload or {}
+		payload['approval_date'] = '2026-07-05'
+		items = list(payload.get('items', []))
+		items[0]['remarks'] = 'Remarks after reupload'
+		payload['items'] = items
+		po_doc.extracted_payload = payload
+		po_doc.save(update_fields=['extracted_payload'])
+
+		result = _sync_repeat_jobs_from_po(po_doc, actor=self.user)
+		job = PlanningJob.objects.get(jc_number='JC-DRAFT-REUP-1')
+		self.assertEqual(result['updated'], 1)
+		self.assertEqual(job.remarks, 'Remarks after reupload')
+		self.assertEqual(job.po_approval_date, date(2026, 7, 5))
+
+	def test_planning_month_uses_po_intake_not_delivery_date(self):
+		from planning.services import get_planning_month_label_for_job
+
+		po_doc = self._create_po_document(sku='MONTH-SKU-1', po_number='PO-MONTH-1')
+		job = PlanningJob.objects.create(
+			jc_number='JC-MONTH-1',
+			po_number='PO-MONTH-1',
+			sku='MONTH-SKU-1',
+			job_name='Month SKU',
+			order_qty=100,
+			status='draft',
+			plan_date=date(2026, 9, 30),
+			delivery_date=date(2026, 9, 30),
+		)
+		job.po_documents.add(po_doc)
+		expected = po_doc.created_at.date().strftime('%B')
+		self.assertEqual(get_planning_month_label_for_job(job), expected)
+		self.assertNotEqual(get_planning_month_label_for_job(job), 'September')
+
+	def test_same_po_shares_planning_month(self):
+		from planning.services import get_planning_month_label_for_job
+
+		po_doc = self._create_po_document(sku='MONTH-SKU-A', po_number='PO-MONTH-SHARED')
+		payload = po_doc.extracted_payload or {}
+		payload['items'].append({
+			'line_no': 2,
+			'sku': 'MONTH-SKU-B',
+			'job_name': 'Month SKU B',
+			'quantity': 200,
+			'unit_cost': '1.00',
+			'delivery_date': '2026-08-31',
+		})
+		po_doc.extracted_payload = payload
+		po_doc.save(update_fields=['extracted_payload'])
+
+		job_a = PlanningJob.objects.create(
+			jc_number='JC-MONTH-A',
+			po_number='PO-MONTH-SHARED',
+			sku='MONTH-SKU-A',
+			plan_date=date(2026, 8, 31),
+			delivery_date=date(2026, 5, 10),
+			status='draft',
+		)
+		job_b = PlanningJob.objects.create(
+			jc_number='JC-MONTH-B',
+			po_number='PO-MONTH-SHARED',
+			sku='MONTH-SKU-B',
+			plan_date=date(2026, 8, 31),
+			delivery_date=date(2026, 8, 31),
+			status='draft',
+		)
+		job_a.po_documents.add(po_doc)
+		job_b.po_documents.add(po_doc)
+		self.assertEqual(
+			get_planning_month_label_for_job(job_a),
+			get_planning_month_label_for_job(job_b),
+		)
+
+	def test_same_po_reupload_does_not_change_new_status_to_repeat(self):
+		po_doc = self._create_po_document(sku='NEW-SKU-SAME-PO', po_number='PO-SAME-PO-1')
+		
+		from workflow.services import _annotate_items_with_recipe, _build_recipe_map
+		recipe_map = _build_recipe_map(po_doc.extracted_payload['items'])
+		annotated, repeat_count, new_count, missing_skus = _annotate_items_with_recipe(
+			po_doc.extracted_payload['items'], recipe_map, current_po_number='PO-SAME-PO-1'
+		)
+		self.assertEqual(repeat_count, 0)
+		self.assertEqual(new_count, 1)
+		
+		PlanningJob.objects.create(
+			jc_number='JC-SAME-PO-1',
+			po_number='PO-SAME-PO-1',
+			sku='NEW-SKU-SAME-PO',
+			job_name='NEW-SKU-SAME-PO Job',
+			order_qty=1000,
+			status='draft',
+		)
+		
+		recipe_map = _build_recipe_map(po_doc.extracted_payload['items'])
+		annotated, repeat_count, new_count, missing_skus = _annotate_items_with_recipe(
+			po_doc.extracted_payload['items'], recipe_map, current_po_number='PO-SAME-PO-1'
+		)
+		self.assertEqual(repeat_count, 0)
+		self.assertEqual(new_count, 1)
+		
+		annotated, repeat_count, new_count, missing_skus = _annotate_items_with_recipe(
+			po_doc.extracted_payload['items'], recipe_map, current_po_number='PO-DIFFERENT-PO'
+		)
+		self.assertEqual(repeat_count, 1)
+		self.assertEqual(new_count, 0)
+
+	def test_pending_skus_shows_draft_jobs_with_unapproved_master(self):
+		po_doc = self._create_po_document(sku='PENDING-SKU-001', po_number='PO-PENDING-1')
+		PlanningJob.objects.create(
+			jc_number='JC-PENDING-1',
+			po_number='PO-PENDING-1',
+			sku='PENDING-SKU-001',
+			job_name='Pending SKU Job',
+			order_qty=1000,
+			status='draft',
+		)
+		SkuRecipe.objects.create(
+			sku='PENDING-SKU-001',
+			job_name='Pending SKU Job',
+			material='Paper',
+			master_data_status='draft',
+			created_by=self.user,
+		)
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('planning:pending_skus'))
+		self.assertEqual(response.status_code, 200)
+		pending_skus = [row['sku'] for row in response.context['pending_rows']]
+		self.assertIn('PENDING-SKU-001', pending_skus)
+
+	def test_pending_skus_hides_approved_master_data(self):
+		po_doc = self._create_po_document(sku='APPROVED-SKU-001', po_number='PO-APPROVED-1')
+		self._create_approved_recipe('APPROVED-SKU-001')
+		self.client.force_login(self.user)
+
+		response = self.client.get(reverse('planning:pending_skus'))
+		self.assertEqual(response.status_code, 200)
+		pending_skus = [row['sku'] for row in response.context['pending_rows']]
+		self.assertNotIn('APPROVED-SKU-001', pending_skus)
+
+	def test_legacy_bulk_sku_classifies_as_repeat(self):
+		from planning.sku_classification import classify_po_line
+
+		recipe = SkuRecipe.objects.create(
+			sku='LEGACY-SKU-1',
+			job_name='Legacy Job',
+			material='Paper',
+			color_spec='4C',
+			ups=4,
+			print_sheet_size='20*30',
+			legacy_produced=True,
+			master_data_status='draft',
+		)
+		label, reason = classify_po_line('LEGACY-SKU-1', 'PO-NEW-1', recipe=recipe)
+		self.assertEqual(label, 'Repeat')
+		self.assertEqual(reason, 'legacy')
+
+	def test_concurrent_po_second_is_repeat(self):
+		from planning.sku_classification import classify_po_line
+
+		po1 = self._create_po_document(sku='CONCURRENT-SKU', po_number='PO-FIRST')
+		po2 = self._create_po_document(sku='CONCURRENT-SKU', po_number='PO-SECOND')
+
+		label1, _ = classify_po_line(
+			'CONCURRENT-SKU',
+			'PO-FIRST',
+			po_doc_created_at=po1.created_at,
+			po_doc_id=po1.id,
+		)
+		label2, reason2 = classify_po_line(
+			'CONCURRENT-SKU',
+			'PO-SECOND',
+			po_doc_created_at=po2.created_at,
+			po_doc_id=po2.id,
+		)
+		self.assertEqual(label1, 'New')
+		self.assertEqual(label2, 'Repeat')
+		self.assertEqual(reason2, 'concurrent_po')
+
+	def test_locked_job_preserves_repeat_flag_on_resync(self):
+		from planning.sku_classification import repeat_flag_value_for_po_line
+
+		po_doc = self._create_po_document(sku='LOCKED-SKU', po_number='PO-LOCKED')
+		recipe = self._create_approved_recipe('LOCKED-SKU')
+		job = PlanningJob.objects.create(
+			jc_number='JC-LOCKED-1',
+			po_number='PO-LOCKED',
+			sku='LOCKED-SKU',
+			job_name='Locked Job',
+			order_qty=1000,
+			status='released',
+			repeat_flag='New',
+		)
+		item = {'sku': 'LOCKED-SKU'}
+		flag = repeat_flag_value_for_po_line(
+			item,
+			po_number='PO-LOCKED',
+			po_doc_created_at=po_doc.created_at,
+			po_doc_id=po_doc.id,
+			recipe=recipe,
+			existing_job=job,
+		)
+		self.assertEqual(flag, 'New')
+
+	def test_plate_making_stage_syncs_with_repeat_flag(self):
+		from planning.sku_classification import (
+			plate_making_stage_for_repeat_flag,
+			repair_inconsistent_plate_making_stages,
+			sync_plate_making_stage_with_repeat_flag,
+		)
+
+		self.assertEqual(plate_making_stage_for_repeat_flag('New'), 'new_plate_making')
+		self.assertEqual(plate_making_stage_for_repeat_flag('Repeat'), 'repeat_plate_making')
+
+		job = PlanningJob.objects.create(
+			jc_number='JC-STAGE-SYNC-1',
+			po_number='PO-STAGE',
+			sku='STAGE-SYNC-SKU',
+			job_name='Stage Sync',
+			order_qty=100,
+			status='draft',
+			repeat_flag='Repeat',
+			planning_stage='new_plate_making',
+		)
+		self.assertTrue(sync_plate_making_stage_with_repeat_flag(job, save=True))
+		job.refresh_from_db()
+		self.assertEqual(job.planning_stage, 'repeat_plate_making')
+		self.assertEqual(repair_inconsistent_plate_making_stages(), 0)
 
 	def test_migration_import_uses_po_received_date_and_order_qty(self):
 		from unittest.mock import patch
@@ -803,16 +1135,29 @@ class PendingSkuMasterEntryPlannerTests(TestCase):
 
 	def test_pending_sku_master_entry_send_to_plate_making(self):
 		from core.models import Machine
+		from planning.models import PlanningJob, SkuRecipe
 
 		Machine.objects.create(name='Machine A')
 		po_doc = self._create_po_document()
-		from planning.services import _sync_repeat_jobs_from_po
-		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
 		
-		from planning.models import PlanningJob, SkuRecipe
-		job = PlanningJob.objects.get(po_number='PO-100', sku='TEST-SKU-100')
-		job.machine_name = 'Machine A'
-		job.save(update_fields=['machine_name'])
+		# Manually create the draft recipe
+		obj = SkuRecipe.objects.create(
+			sku='TEST-SKU-100',
+			job_name='TEST-SKU-100 Job',
+			master_data_status='draft',
+			created_by=self.user,
+		)
+		# Manually create the draft job
+		job = PlanningJob.objects.create(
+			jc_number='JC-TEST-100',
+			po_number='PO-100',
+			sku='TEST-SKU-100',
+			job_name='TEST-SKU-100 Job',
+			order_qty=1000,
+			status='draft',
+			machine_name='Machine A',
+			repeat_flag='New',
+		)
 
 		from django.urls import reverse
 		url = reverse('planning:pending_sku_master_entry')
@@ -920,6 +1265,39 @@ class SkuRecipeFormRolePermissionTests(TestCase):
 
 		ui = get_sku_recipe_form_ui_context(designer_user)
 		self.assertEqual(ui['sku_recipe_viewer_role'], 'designer')
+
+	def test_material_field_uses_master_data_dropdown(self):
+		from core.models import Material
+		from planning.forms import SkuRecipeForm
+
+		Material.objects.create(name='Art Card 300gsm')
+		form = SkuRecipeForm()
+		widget = form.fields['material'].widget
+		self.assertIsInstance(widget, forms.Select)
+		choice_values = [value for value, _label in widget.choices if value]
+		self.assertIn('Art Card 300gsm', choice_values)
+
+	def test_quick_add_material_requires_planner_or_admin(self):
+		from django.test import Client
+		from django.urls import reverse
+
+		client = Client()
+		operator = get_user_model().objects.create_user(username='mat_op', password='testpass123')
+		op_profile, _ = UserProfile.objects.get_or_create(user=operator)
+		op_profile.role = 'operator'
+		op_profile.save(update_fields=['role'])
+		client.login(username='mat_op', password='testpass123')
+		response = client.post(reverse('quick_add_master'), {'type': 'material', 'name': 'New Board'})
+		self.assertEqual(response.status_code, 403)
+
+		planner = get_user_model().objects.create_user(username='mat_planner', password='testpass123')
+		pl_profile, _ = UserProfile.objects.get_or_create(user=planner)
+		pl_profile.role = 'planner'
+		pl_profile.save(update_fields=['role'])
+		client.login(username='mat_planner', password='testpass123')
+		response = client.post(reverse('quick_add_master'), {'type': 'material', 'name': 'New Board'})
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(response.json()['ok'])
 
 	def test_planner_cannot_edit_designer_fields_on_first_draft(self):
 		from planning.forms import SkuRecipeForm

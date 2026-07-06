@@ -64,6 +64,315 @@ REPLACEMENT_SOURCES = {
 
 VALID_REPLACEMENT_REASONS = {choice[0] for choice in PlateRequest.REPLACEMENT_REASON_CHOICES}
 
+PLATE_REQUEST_STAGE_SCOPE = ['new_plate_making', 'repeat_plate_making']
+STALE_PLATE_REQUEST_JOB_STAGES = frozenset({
+    'plate_received',
+    'planning_done',
+    'jc_ready',
+    '',
+})
+
+
+STALE_PLATE_REQUEST_JOB_STATUSES = frozenset({
+    'released',
+    'in_production',
+    'completed',
+    'planning_approved',
+})
+
+
+def plate_request_is_stale_open(plate_request):
+    """Open plate request left behind after the job moved past plate making."""
+    if not plate_request or plate_request.status not in PLATE_REQUEST_OPEN_STATUSES:
+        return False
+    job = plate_request.planning_job
+    if not job:
+        return False
+    stage = (job.planning_stage or '').strip()
+    if stage in PLATE_REQUEST_STAGE_SCOPE:
+        return False
+    if stage in STALE_PLATE_REQUEST_JOB_STAGES:
+        return True
+    from workflow.services import _normalize_status
+
+    return _normalize_status(job.status) in STALE_PLATE_REQUEST_JOB_STATUSES
+
+
+def stale_open_plate_requests_queryset():
+    """Open plate requests on jobs that have already moved past plate making."""
+    return PlateRequest.objects.filter(
+        planning_job__isnull=False,
+        status__in=PLATE_REQUEST_OPEN_STATUSES,
+    ).exclude(
+        planning_job__planning_stage__in=PLATE_REQUEST_STAGE_SCOPE,
+    ).filter(
+        Q(planning_job__planning_stage__in=STALE_PLATE_REQUEST_JOB_STAGES)
+        | Q(planning_job__status__in=STALE_PLATE_REQUEST_JOB_STATUSES)
+    )
+
+
+def stale_open_plate_requests_for_cleanup_queryset():
+    """Stale open planning requests safe to bulk-cancel (not active replacements)."""
+    return stale_open_plate_requests_queryset().exclude(
+        Q(source__in=REPLACEMENT_SOURCES) | ~Q(replacement_reason='')
+    )
+
+
+PLANNING_SKIP_PLATE_MAKING_STATUSES = frozenset({
+    'released',
+    'in_production',
+    'completed',
+    'planning_approved',
+})
+
+
+def planning_job_should_skip_plate_making(planning_job):
+    """True when a new planning plate request must not be opened."""
+    if not planning_job:
+        return False
+    from workflow.services import _normalize_status
+
+    if _normalize_status(planning_job.status) in PLANNING_SKIP_PLATE_MAKING_STATUSES:
+        return True
+
+    job_card = None
+    try:
+        job_card = planning_job.job_card
+    except Exception:
+        job_card = None
+    if job_card and plates_were_issued_to_production(job_card):
+        return True
+
+    stage = (planning_job.planning_stage or '').strip()
+    if stage in STALE_PLATE_REQUEST_JOB_STAGES and (planning_job.plate_set_no or '').strip():
+        return True
+    return False
+
+
+def get_planning_plate_making_block_message(planning_job):
+    if not planning_job_should_skip_plate_making(planning_job):
+        return ''
+    jc = planning_job.jc_number or 'this job'
+    return (
+        f'Cannot start plate making for {jc}: job is already released or in production. '
+        f'Use Production → Released Jobs to request replacement plates.'
+    )
+
+
+def cancel_open_planning_plate_requests_on_release(planning_job, actor=None):
+    """Archive open planning plate requests when the job card is released."""
+    if not planning_job:
+        return 0
+    reason = (
+        'Auto-cancelled on release: job moved to production. '
+        'Use Released Jobs for plate replacement.'
+    )
+    cancelled = 0
+    for plate_request in _open_planning_plate_requests_for_release_guard(planning_job):
+        cancel_plate_request(plate_request, actor=actor, reason=reason)
+        cancelled += 1
+    return cancelled
+
+
+def _open_planning_plate_requests_for_release_guard(planning_job):
+    if not planning_job:
+        return PlateRequest.objects.none()
+    return PlateRequest.objects.filter(
+        planning_job=planning_job,
+        status__in=PLATE_REQUEST_OPEN_STATUSES,
+    ).exclude(
+        Q(source__in=REPLACEMENT_SOURCES) | ~Q(replacement_reason='')
+    ).order_by('-requested_at', '-created_at')
+
+
+def get_open_planning_plate_request_blocking_release(planning_job):
+    """Latest open planning plate request that must be resolved before release."""
+    return _open_planning_plate_requests_for_release_guard(planning_job).first()
+
+
+def validate_job_card_release_allowed(job_card):
+    """Block release while an open planning plate request is still in progress."""
+    planning_job = getattr(job_card, 'planning_job', None)
+    open_request = get_open_planning_plate_request_blocking_release(planning_job)
+    if not open_request:
+        return
+    jc = job_card.job_card_no or (planning_job.jc_number if planning_job else 'Job')
+    raise ValidationError({
+        'status': (
+            f'Cannot release {jc}: plate request #{open_request.pk} is still '
+            f'{open_request.get_status_display()}. Complete it in Printing Plates '
+            f'(issue plates to production) or cancel it from the planning job first.'
+        ),
+    })
+
+
+def bulk_cancel_stale_open_plate_requests(*, actor, dry_run=False):
+    """Cancel/archive stale open plate requests (admin cleanup)."""
+    queryset = stale_open_plate_requests_for_cleanup_queryset().select_related('planning_job')
+    total = queryset.count()
+    if dry_run:
+        return {
+            'total': total,
+            'cancelled': 0,
+            'errors': [],
+            'sample_jc_numbers': list(
+                queryset.values_list('planning_job__jc_number', flat=True)[:20]
+            ),
+        }
+
+    cancelled = 0
+    errors = []
+    reason = (
+        'Bulk cleanup: job already released/in production. '
+        'Use Released Jobs for plate replacement.'
+    )
+    for plate_request in queryset.iterator(chunk_size=100):
+        try:
+            cancel_plate_request(plate_request, actor=actor, reason=reason)
+            cancelled += 1
+        except ValidationError as exc:
+            message = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+            errors.append({'id': plate_request.pk, 'message': message})
+    return {'total': total, 'cancelled': cancelled, 'errors': errors}
+
+
+REPLACEMENT_FILTER_Q = (
+    Q(source__in=['replacement', 'production_plate_damage'])
+    | ~Q(replacement_reason='')
+)
+
+CANCELLED_FILTER_Q = (
+    Q(progress__istartswith='Cancelled')
+    | Q(remarks__icontains='Cancelled — plates not required')
+    | Q(remarks__icontains='Cancelled - plates not required')
+    | Q(status=PlateRequest.STATUS_ARCHIVED, progress__icontains='Cancel')
+)
+
+REPEAT_FLAG_Q = (
+    Q(planning_job__repeat_flag='Repeat')
+    | Q(job_card__planning_job__repeat_flag='Repeat')
+)
+
+NEW_FLAG_Q = (
+    Q(planning_job__repeat_flag='New')
+    | Q(job_card__planning_job__repeat_flag='New')
+)
+
+REPEAT_STAGE_FALLBACK_Q = (
+    (Q(planning_job__repeat_flag='') | Q(planning_job__repeat_flag__isnull=True))
+    & Q(planning_job__planning_stage='repeat_plate_making')
+)
+
+NEW_STAGE_FALLBACK_Q = (
+    (Q(planning_job__repeat_flag='') | Q(planning_job__repeat_flag__isnull=True))
+    & Q(planning_job__planning_stage='new_plate_making')
+)
+
+PLATE_REQUEST_TYPE_FILTERS = [
+    {'key': '', 'label': 'All', 'count_attr': 'all_count'},
+    {'key': 'repeat', 'label': 'Repeat', 'count_attr': 'repeat_count'},
+    {'key': 'new_artwork', 'label': 'New Artwork', 'count_attr': 'new_artwork_count'},
+    {'key': 'replacement', 'label': 'Replacement', 'count_attr': 'replacement_count'},
+    {'key': 'cancelled', 'label': 'Cancelled / Archived', 'count_attr': 'cancelled_count'},
+    {'key': 'empty', 'label': '(empty)', 'count_attr': 'empty_count'},
+]
+
+
+def plate_request_active_queryset():
+    """Plate requests shown in Printing Plates lists."""
+    in_plate_making_stage = Q(planning_job__planning_stage__in=PLATE_REQUEST_STAGE_SCOPE)
+    open_any_stage = Q(status__in=PLATE_REQUEST_OPEN_STATUSES)
+    return PlateRequest.objects.filter(
+        planning_job__isnull=False,
+    ).filter(in_plate_making_stage | open_any_stage)
+
+
+def filter_plate_requests_by_type(queryset, type_key):
+    type_key = (type_key or '').strip().lower()
+    if not type_key:
+        return queryset
+    if type_key == 'repeat':
+        return queryset.filter(REPEAT_FLAG_Q | REPEAT_STAGE_FALLBACK_Q).exclude(REPLACEMENT_FILTER_Q)
+    if type_key == 'new_artwork':
+        return queryset.filter(NEW_FLAG_Q | NEW_STAGE_FALLBACK_Q).exclude(REPLACEMENT_FILTER_Q)
+    if type_key == 'replacement':
+        return queryset.filter(REPLACEMENT_FILTER_Q)
+    if type_key == 'cancelled':
+        return queryset.filter(CANCELLED_FILTER_Q)
+    if type_key == 'empty':
+        return queryset.exclude(REPEAT_FLAG_Q | NEW_FLAG_Q | REPEAT_STAGE_FALLBACK_Q | NEW_STAGE_FALLBACK_Q).exclude(
+            REPLACEMENT_FILTER_Q
+        )
+    return queryset
+
+
+def build_plate_request_type_counts(queryset):
+    return {
+        'all_count': queryset.count(),
+        'repeat_count': filter_plate_requests_by_type(queryset, 'repeat').count(),
+        'new_artwork_count': filter_plate_requests_by_type(queryset, 'new_artwork').count(),
+        'replacement_count': filter_plate_requests_by_type(queryset, 'replacement').count(),
+        'cancelled_count': filter_plate_requests_by_type(queryset, 'cancelled').count(),
+        'empty_count': filter_plate_requests_by_type(queryset, 'empty').count(),
+    }
+
+
+def build_type_filter_sidebar(counts, filters=None):
+    filters = filters or PLATE_REQUEST_TYPE_FILTERS
+    return [
+        {
+            'key': item['key'],
+            'label': item['label'],
+            'count': counts.get(item['count_attr'], 0),
+        }
+        for item in filters
+    ]
+
+
+def resolve_plate_request_type_key(plate_request):
+    """Return filter key: repeat, new_artwork, replacement, cancelled, or empty."""
+    if plate_request.is_replacement:
+        return 'replacement'
+
+    progress = (plate_request.progress or '').strip()
+    remarks = (plate_request.remarks or '').strip()
+    if progress.lower().startswith('cancelled'):
+        return 'cancelled'
+    if 'Cancelled — plates not required' in remarks or 'Cancelled - plates not required' in remarks:
+        return 'cancelled'
+    if plate_request.status == PlateRequest.STATUS_ARCHIVED and 'cancel' in progress.lower():
+        return 'cancelled'
+
+    flag = ''
+    stage = ''
+    if plate_request.planning_job:
+        flag = (plate_request.planning_job.repeat_flag or '').strip()
+        stage = (plate_request.planning_job.planning_stage or '').strip()
+    elif plate_request.job_card and plate_request.job_card.planning_job:
+        flag = (plate_request.job_card.planning_job.repeat_flag or '').strip()
+        stage = (plate_request.job_card.planning_job.planning_stage or '').strip()
+
+    if flag == 'Repeat':
+        return 'repeat'
+    if flag == 'New':
+        return 'new_artwork'
+    if stage == 'repeat_plate_making':
+        return 'repeat'
+    if stage == 'new_plate_making':
+        return 'new_artwork'
+    return 'empty'
+
+
+def plate_request_type_label(type_key):
+    labels = {
+        'repeat': 'Repeat',
+        'new_artwork': 'New',
+        'replacement': 'Replacement',
+        'cancelled': 'Cancelled',
+        'empty': '',
+    }
+    return labels.get(type_key, '')
+
 
 def get_open_plate_request_for_planning_job(planning_job):
     """Return the latest open plate request (draft/sent/received), if any."""
@@ -95,6 +404,9 @@ def get_issued_plate_request_for_planning_job(planning_job):
 
 def create_or_get_plate_request_from_planning_job(planning_job, user):
     if planning_job.planning_stage not in PLANNING_TRIGGER_STAGES:
+        return None
+
+    if planning_job_should_skip_plate_making(planning_job):
         return None
 
     existing_request = get_open_plate_request_for_planning_job(planning_job)

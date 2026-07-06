@@ -428,6 +428,11 @@
                                 <a href="{% url 'planning:job_card_print' job.planning_job.id %}" class="erp-btn erp-btn-secondary" target="_blank" rel="noopener">A4 Print</a>
                             {% endif %}
                             {% if user_can_release %}
+                            {% if job.release_blocked_open_plate %}
+                            <span class="erp-badge erp-badge-warning" title="Complete or cancel plate request #{{ job.release_blocked_open_plate.pk }} in Printing Plates / Planning before release.">
+                                Plate #{{ job.release_blocked_open_plate.pk }} open
+                            </span>
+                            {% else %}
                             <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">
                                 {% csrf_token %}
                                 <input type="hidden" name="action" value="release_for_production">
@@ -435,6 +440,7 @@
                                 <input type="hidden" name="plate_set_no" value="{{ job.planning_job.plate_set_no|default:'' }}">
                                 <button type="submit" class="erp-btn erp-btn-success" onclick="return promptReleasePlateSetNo(this.form, this.form.plate_set_no.value, '{{ job.job_card_no|escapejs }}')">Release</button>
                             </form>
+                            {% endif %}
                             {% endif %}
                             {% if can_admin_actions %}
                             <form method="post" action="{% url 'planning:approval_queue' %}" class="m-0">

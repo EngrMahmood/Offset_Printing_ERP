@@ -156,7 +156,7 @@ def _import_planning_row(row, actor):
         uploaded_by=actor,
     )
 
-    result = _sync_repeat_jobs_from_po(po_doc, actor=actor)
+    result = _sync_repeat_jobs_from_po(po_doc, actor=actor, bypass_recipe_check=True)
     imported = (result.get('created', 0) + result.get('updated', 0)) > 0
     linked_job = None
 
@@ -169,7 +169,7 @@ def _import_planning_row(row, actor):
             po_doc.extracted_payload = forced_payload
             po_doc.save(update_fields=['extracted_payload'])
 
-            result = _sync_repeat_jobs_from_po(po_doc, actor=actor)
+            result = _sync_repeat_jobs_from_po(po_doc, actor=actor, bypass_recipe_check=True)
             imported = (result.get('created', 0) + result.get('updated', 0)) > 0
 
             if not imported:

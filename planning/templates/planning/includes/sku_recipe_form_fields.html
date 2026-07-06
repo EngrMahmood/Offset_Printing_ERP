@@ -24,7 +24,23 @@
 </div>
 
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.job_process_type label='Job Process' required=True help_text='Print + Pack needs print color and plates. Cut & Pack has no printing. After approval, change only via Reopen SKU.' %}
-{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.material label='Material Type' required=True %}
+
+{% with field=form.material.field %}
+<div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">
+    <span class="sku-recipe-field__badge{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">{{ field.sku_role_label }}</span>
+    <label for="{{ form.material.id_for_label }}">Material Type <span>*</span></label>
+    <div style="display:flex; gap:8px; align-items:center;">
+        {{ form.material }}
+        {% if not is_readonly %}
+            {% if can_admin_actions or sku_recipe_viewer_role == 'planner' %}
+            <button type="button" class="erp-btn erp-btn-secondary sm" onclick="quickAddMaterial()" title="Add material type">+</button>
+            {% endif %}
+        {% endif %}
+    </div>
+    {% if form.material.errors %}<div class="erp-form-error">{{ form.material.errors.0 }}</div>{% endif %}
+</div>
+{% endwith %}
+
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.application label='Application (UV / Lamination Gloss / Lamination Matt / NO)' required=True %}
 
 {% with field=form.product_type.field %}

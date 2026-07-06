@@ -147,6 +147,17 @@
                 <h3 class="erp-section-title">Plate Requests</h3>
             </div>
         </div>
+        {% if stale_plate_requests %}
+        <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">
+            <strong>Open plate request(s) left in Draft while this job has moved past plate making.</strong>
+            {% for req in stale_plate_requests %}
+            <span style="display:block; margin-top:6px;">
+                <a href="{% url 'printing_plates:request_detail' req.pk %}">#{{ req.pk }}</a>
+                ({{ req.get_status_display }}) — cancel below if plates were already issued outside this request, or complete in Printing Plates.
+            </span>
+            {% endfor %}
+        </div>
+        {% endif %}
         {% if latest_cancelled_plate %}
         <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">
             <strong>Plate request cancelled by graphics.</strong>
@@ -168,6 +179,7 @@
                         <th>Requested</th>
                         <th>By</th>
                         <th>Notes</th>
+                        {% if user_can_plan %}<th>Actions</th>{% endif %}
                     </tr>
                 </thead>
                 <tbody>
@@ -186,6 +198,23 @@
                         <td>{% if req.requested_at %}{{ req.requested_at|date:"d-M-Y H:i" }}{% else %}{{ req.created_at|date:"d-M-Y H:i" }}{% endif %}</td>
                         <td>{% if req.requested_by %}{{ req.requested_by.username }}{% else %}-{% endif %}</td>
                         <td>{% if req.is_cancelled and req.cancel_reason_display %}{{ req.cancel_reason_display }}{% else %}{{ req.remarks|default:'-'|truncatechars:60 }}{% endif %}</td>
+                        {% if user_can_plan %}
+                        <td>
+                            {% if req.is_open %}
+                            <form method="post" action="{% url 'planning:job_plate_request_cancel' job.id %}" style="min-width:220px;">
+                                {% csrf_token %}
+                                <input type="hidden" name="plate_request_id" value="{{ req.pk }}">
+                                <textarea name="cancel_reason" rows="2" class="erp-input" required placeholder="Reason (e.g. plates already issued)" style="width:100%; margin-bottom:6px; font-size:12px;"></textarea>
+                                <button type="submit" class="erp-btn erp-btn-danger erp-btn-sm" style="width:100%;"
+                                    onclick="return confirm('Cancel plate request #{{ req.pk }}? Plates will be marked as not required.');">
+                                    <i class="fas fa-ban"></i> Cancel
+                                </button>
+                            </form>
+                            {% else %}
+                            <span class="erp-muted">—</span>
+                            {% endif %}
+                        </td>
+                        {% endif %}
                     </tr>
                     {% endfor %}
                 </tbody>

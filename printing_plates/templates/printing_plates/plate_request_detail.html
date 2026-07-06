@@ -37,7 +37,7 @@
             <div class="erp-info-item">
                 <div class="erp-info-item__label">Type</div>
                 <div class="erp-info-item__value erp-plate-type-cell">
-                    {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=plate_request.plate_request_type repeat_flag=plate_request.planning_job.repeat_flag|default:'' planning_stage=plate_request.planning_job.planning_stage|default:'' %}
+                    {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=plate_request.plate_request_type %}
                 </div>
             </div>
             <div class="erp-info-item">

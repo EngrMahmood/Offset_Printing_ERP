@@ -62,6 +62,7 @@ from .services import (
     _annotate_items_with_recipe, _deduplicate_po_items_by_sku,
     _history_repeat_new_counts, _sync_repeat_jobs_from_po,
     _sync_new_jobs_for_approved_sku, _merge_po_items_for_existing_po,
+    get_po_approval_date_for_job,
     _collect_pending_sku_rows, _normalize_po_number,
     trigger_plate_request_for_planning_job,
     get_plate_request_block_for_master_entry,
@@ -207,46 +208,7 @@ def _update_po_split_request(po_doc, request_id, status, actor=None):
 
 
 def _get_po_approval_date_for_job(job):
-    if getattr(job, 'po_approval_date', None):
-        return job.po_approval_date
-
-    approval_date = None
-    if hasattr(job, 'po_documents'):
-        po_document = job.po_documents.order_by('-created_at').first()
-        if po_document:
-            payload = po_document.extracted_payload or {}
-            approval_date = _parse_iso_date(payload.get('approval_date'))
-            if approval_date:
-                return approval_date
-
-    if not approval_date and job.po_number:
-        po_document = PoDocument.objects.filter(
-            extracted_payload__po_number__iexact=job.po_number,
-            extraction_status='processed',
-        ).order_by('-created_at').first()
-        if po_document:
-            payload = po_document.extracted_payload or {}
-            approval_date = _parse_iso_date(payload.get('approval_date'))
-            if approval_date:
-                return approval_date
-
-    job_card = getattr(job, 'job_card', None)
-    if not job_card:
-        return None
-
-    logs = ChangeLog.objects.filter(
-        entity_type='job_card',
-        record_id=job_card.pk,
-    ).order_by('-created_at')
-    for log in logs:
-        field_changes = log.field_changes if isinstance(log.field_changes, dict) else {}
-        status_change = field_changes.get('status') if isinstance(field_changes, dict) else None
-        if not isinstance(status_change, dict):
-            continue
-        to_status = str(status_change.get('to') or '').strip().lower()
-        if to_status in {'production_approved', 'qc_approved'} and log.created_at:
-            return log.created_at.date()
-    return None
+    return get_po_approval_date_for_job(job)
 
 
 def _get_po_upload_date_for_job(job):
@@ -958,17 +920,22 @@ def planning_home(request):
                         messages.error(request, f'Cannot change stage. Plate making is currently in progress for {job.jc_number}.')
                         return redirect('planning:jobs')
 
-                # Resolve virtual 'plate_making' stage based on repeat flag
+                # Resolve plate-making stage from repeat_flag (never trust raw new/repeat stage POST).
                 if planning_stage in ['plate_making', 'new_plate_making', 'repeat_plate_making']:
                     if not (job.material or '').strip() or not (job.application or '').strip() or not (job.machine_name or '').strip():
                         messages.error(request, 'Material Type, Application, and Machine Name are required on the Job Card before starting Plate Making.')
                         return redirect('planning:jobs')
 
-                    if planning_stage == 'plate_making':
-                        if job.repeat_flag == 'New':
-                            planning_stage = 'new_plate_making'
-                        else:
-                            planning_stage = 'repeat_plate_making'
+                    from printing_plates.services import get_planning_plate_making_block_message
+
+                    block_message = get_planning_plate_making_block_message(job)
+                    if block_message:
+                        messages.error(request, block_message)
+                        return redirect('planning:jobs')
+
+                    from planning.sku_classification import plate_making_stage_for_repeat_flag
+
+                    planning_stage = plate_making_stage_for_repeat_flag(job.repeat_flag)
 
                 valid_stages = [choice[0] for choice in PLANNING_STAGE_CHOICES]
                 if planning_stage not in valid_stages:
@@ -1186,6 +1153,9 @@ def planning_home(request):
         job.has_job_card = bool(job_card)
         job.planning_stage_changed_by_display = _display_user_identity(getattr(job, 'planning_stage_changed_by', None))
         job.latest_cancelled_plate = job.latest_cancelled_plate_request
+        from printing_plates.services import get_open_planning_plate_request_blocking_release
+
+        job.release_blocked_open_plate = get_open_planning_plate_request_blocking_release(job)
         if job_card:
             job.job_card_status_label = job_card.workflow_status_label
             log = status_logs.get(job_card.id)
@@ -1575,6 +1545,9 @@ def planning_job_detail(request, job_id):
 
     plate_requests = list(job.plate_requests.select_related('requested_by').order_by('-requested_at', '-created_at')[:12])
     latest_cancelled_plate = next((req for req in plate_requests if req.is_cancelled), None)
+    from printing_plates.services import plate_request_is_stale_open
+
+    stale_plate_requests = [req for req in plate_requests if plate_request_is_stale_open(req)]
 
     printing_entries = []
     packing_entries = []
@@ -1616,12 +1589,47 @@ def planning_job_detail(request, job_id):
             'pending_change_request': pending_change_request,
             'active_machines': active_machines,
             'plate_requests': plate_requests,
+            'stale_plate_requests': stale_plate_requests,
             'latest_cancelled_plate': latest_cancelled_plate,
             'printing_entries': printing_entries,
             'packing_entries': packing_entries,
             'dispatch_entries': dispatch_entries,
         },
     )
+
+
+@login_required
+@permission_required('can_plan')
+def planning_job_plate_request_cancel(request, job_id):
+    if request.method != 'POST':
+        return redirect('planning:job_detail', job_id=job_id)
+
+    from django.core.exceptions import ValidationError
+    from printing_plates.models import PlateRequest
+    from printing_plates.services import cancel_plate_request
+
+    job = get_object_or_404(PlanningJob, id=job_id)
+    plate_request_id = (request.POST.get('plate_request_id') or '').strip()
+    reason = (request.POST.get('cancel_reason') or '').strip()
+
+    if not plate_request_id:
+        messages.error(request, 'Plate request is required.')
+        return redirect('planning:job_detail', job_id=job_id)
+
+    plate_request = get_object_or_404(PlateRequest, pk=plate_request_id, planning_job=job)
+
+    try:
+        cancel_plate_request(plate_request, actor=request.user, reason=reason)
+    except ValidationError as exc:
+        message = exc.messages[0] if getattr(exc, 'messages', None) else str(exc)
+        messages.error(request, message)
+        return redirect('planning:job_detail', job_id=job_id)
+
+    messages.success(
+        request,
+        f'Plate request #{plate_request.pk} cancelled for {job.jc_number} (plates not required).',
+    )
+    return redirect('planning:job_detail', job_id=job_id)
 
 
 @login_required
@@ -2352,6 +2360,12 @@ def approval_queue(request):
     _attach_status_audit(qc_jobs)
     _attach_status_audit(pm_jobs)
     _attach_status_audit(release_jobs)
+
+    from printing_plates.services import get_open_planning_plate_request_blocking_release
+
+    for job_card in release_jobs:
+        planning_job = getattr(job_card, 'planning_job', None)
+        job_card.release_blocked_open_plate = get_open_planning_plate_request_blocking_release(planning_job)
 
     pending_qc_jobs_count = qc_jobs.count()
     approved_qc_jobs_count = JobCard.objects.filter(is_active=True, status='qc_approved').count()
@@ -3197,6 +3211,9 @@ def sku_recipe_bulk_upload(request):
             existing = SkuRecipe.objects.filter(sku__iexact=sku).first()
             if existing:
                 changed = apply_sheet_values_to_recipe(existing, values, fill_blanks_only=True)
+                if not existing.legacy_produced:
+                    existing.legacy_produced = True
+                    changed = list(changed) + ['legacy_produced']
                 if not changed:
                     unchanged += 1
                     continue
@@ -3208,7 +3225,12 @@ def sku_recipe_bulk_upload(request):
                 updated += 1
                 continue
 
-            recipe = SkuRecipe(sku=sku, created_by=request.user, master_data_status='draft')
+            recipe = SkuRecipe(
+                sku=sku,
+                created_by=request.user,
+                master_data_status='draft',
+                legacy_produced=True,
+            )
             if job_name:
                 recipe.job_name = job_name
             changed = apply_sheet_values_to_recipe(recipe, values, fill_blanks_only=False)
@@ -3883,8 +3905,6 @@ def pending_sku_master_entry(request):
                 # Find the draft PlanningJob first so we can block duplicate plate requests.
                 po_number = payload.get('po_number') or ''
                 job = PlanningJob.objects.filter(po_number=po_number, sku__iexact=sku, status='draft').first()
-                if not job:
-                    job = PlanningJob.objects.filter(sku__iexact=sku).order_by('-updated_at').first()
 
                 existing_plate_req, block_reason = get_plate_request_block_for_master_entry(job)
                 if existing_plate_req:
@@ -3925,40 +3945,43 @@ def pending_sku_master_entry(request):
                 po_doc.save(update_fields=['extracted_payload'])
 
                 if job:
+                    if (job.repeat_flag or '').strip() != 'New' and not job.approved_sku_recipe:
+                        messages.error(
+                            request,
+                            f'Repeat SKU {sku} on {job.jc_number} needs an approved master recipe before plate making. '
+                            f'Complete and approve master data on the New PO for this SKU first.',
+                        )
+                        return redirect(
+                            f"{reverse('planning:pending_sku_master_entry')}?po_doc_id={po_doc_id}&sku={sku}"
+                            f"{'&return_q=' + return_q if return_q else ''}{'&return_po=' + return_po if return_po else ''}"
+                        )
+
                     job.material = obj.material
                     job.application = obj.application
                     job.machine_name = obj.machine_name
                     job.plate_set_no = obj.plate_set_no
                     job.save(update_fields=['material', 'application', 'machine_name', 'plate_set_no', 'updated_at'])
 
-                    # Check if machine_name is also set to transition to plate making stage
-                    if (job.machine_name or '').strip():
-                        if job.repeat_flag == 'New':
-                            planning_stage = 'new_plate_making'
-                        else:
-                            planning_stage = 'repeat_plate_making'
+                    from planning.sku_classification import plate_making_stage_for_repeat_flag
 
-                        job.planning_stage = planning_stage
-                        job.planning_stage_changed_at = timezone.now()
-                        job.planning_stage_changed_by = request.user
-                        job.save(update_fields=['planning_stage', 'planning_stage_changed_at', 'planning_stage_changed_by', 'updated_at'])
-                        
-                        plate_req = trigger_plate_request_for_planning_job(job, request.user)
-                        if plate_req:
-                            from django.urls import reverse as _reverse
-                            plate_url = _reverse('printing_plates:request_detail', args=[plate_req.pk])
-                            messages.success(
-                                request,
-                                f'SKU {sku} saved, and Job Card {job.jc_number} sent to Plate Making. '
-                                f'Open plate request: {plate_url}',
-                            )
-                        else:
-                            messages.success(request, f'SKU {sku} saved, and Job Card {job.jc_number} sent to Plate Making.')
-                    else:
-                        messages.warning(
+                    planning_stage = plate_making_stage_for_repeat_flag(job.repeat_flag)
+
+                    job.planning_stage = planning_stage
+                    job.planning_stage_changed_at = timezone.now()
+                    job.planning_stage_changed_by = request.user
+                    job.save(update_fields=['planning_stage', 'planning_stage_changed_at', 'planning_stage_changed_by', 'updated_at'])
+                    
+                    plate_req = trigger_plate_request_for_planning_job(job, request.user)
+                    if plate_req:
+                        from django.urls import reverse as _reverse
+                        plate_url = _reverse('printing_plates:request_detail', args=[plate_req.pk])
+                        messages.success(
                             request,
-                            f'SKU {sku} saved as Draft. Job Card {job.jc_number} was updated, but could not be sent to Plate Making because Machine Name is missing. Please set the Machine Name on the Planning Jobs page.'
+                            f'SKU {sku} saved, and Job Card {job.jc_number} sent to Plate Making. '
+                            f'Open plate request: {plate_url}',
                         )
+                    else:
+                        messages.success(request, f'SKU {sku} saved, and Job Card {job.jc_number} sent to Plate Making.')
                 else:
                     messages.success(request, f'SKU {sku} saved as Draft. No draft Planning Job was found for this PO.')
 
@@ -4032,13 +4055,20 @@ def pending_sku_master_entry(request):
         if cost_alert:
             mismatch_alerts.append(cost_alert)
 
+    from planning.sku_classification import classify_po_line, is_job_repeat_classification_locked
+
     if not job_obj:
         job_obj = PlanningJob.objects.filter(sku__iexact=sku).order_by('-updated_at').first()
-    is_new_job = (job_obj.repeat_flag == 'New') if job_obj else True
-    # Also treat as Repeat if there is any bulk-uploaded recipe in the database
-    if is_new_job and recipe:
-        is_new_job = False
-    repeat_flag_display = 'New' if is_new_job else 'Repeat'
+    if job_obj and (is_job_repeat_classification_locked(job_obj) or (job_obj.repeat_flag or '').strip()):
+        repeat_flag_display = (job_obj.repeat_flag or '').strip() or 'New'
+    else:
+        repeat_flag_display, _reason = classify_po_line(
+            sku,
+            po_number,
+            po_doc_created_at=po_doc.created_at,
+            po_doc_id=po_doc.id,
+            recipe=current_recipe,
+        )
 
     active_plate_request, plate_block_reason = get_plate_request_block_for_master_entry(job_obj)
 
@@ -4057,7 +4087,7 @@ def pending_sku_master_entry(request):
         'missing_required_fields': _missing_required_master_fields(current_recipe, po_job_name),
         'mismatch_alerts': mismatch_alerts,
         'is_readonly': is_readonly,
-        'is_new_job': is_new_job,
+        'is_new_job': repeat_flag_display == 'New',
         'repeat_flag_display': repeat_flag_display,
         'jc_number': (job_obj.jc_number if job_obj else '') or '',
         'user_can_approve_qc': user_can_approve_qc,
@@ -4191,8 +4221,14 @@ def po_inbox(request):
             for key in item_sku_keys
             if key in recipe_map_all
         }
-        _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map=recipe_map)
-        repeat_count, new_count = _history_repeat_new_counts(items, recipe_map=recipe_map)
+        po_number_val = payload.get('po_number') or ''
+        _, repeat_count, new_count, missing_skus = _annotate_items_with_recipe(
+            items,
+            recipe_map=recipe_map,
+            current_po_number=po_number_val,
+            po_doc_created_at=doc['created_at'],
+            po_doc_id=doc['id'],
+        )
 
         uploaded_at = doc['created_at']
         if uploaded_at and getattr(uploaded_at, 'tzinfo', None) is not None:
@@ -4489,7 +4525,13 @@ def po_review(request, doc_id):
     po_number = payload.get('po_number', '')
     configured_new_skus = {_sku_key(sku) for sku in (payload.get('new_skus_configured') or []) if sku}
     recipe_map = _build_recipe_map(items)
-    annotated_items, repeat_count, new_count, missing_skus = _annotate_items_with_recipe(items, recipe_map)
+    annotated_items, repeat_count, new_count, missing_skus = _annotate_items_with_recipe(
+        items,
+        recipe_map,
+        current_po_number=po_number,
+        po_doc_created_at=po_doc.created_at,
+        po_doc_id=po_doc.id,
+    )
 
     item_sku_keys = {_sku_key(item.get('sku')) for item in annotated_items if item.get('sku')}
     existing_jobs_by_sku = {}
@@ -4517,14 +4559,18 @@ def po_review(request, doc_id):
     seen_skus_in_payload = set()
     for item in annotated_items:
         sku_key = _sku_key(item.get('sku'))
-        is_first_production = bool(
-            sku_key
-            and sku_key not in existing_any_jobs_skus
-            and sku_key not in seen_skus_in_payload
+        from planning.sku_classification import classify_po_line
+
+        line_label, _reason = classify_po_line(
+            item.get('sku'),
+            po_number,
+            po_doc_created_at=po_doc.created_at,
+            po_doc_id=po_doc.id,
+            recipe=recipe_map.get(sku_key),
+            explicit_repeat_flag=(item.get('repeat_flag') or item.get('repeat')),
         )
-        # Keep existing planning-job forward flags for internal create/update logic.
-        item['forward_flag'] = 'New' if is_first_production else 'Repeat'
-        item['is_first_production'] = is_first_production
+        item['forward_flag'] = line_label
+        item['is_first_production'] = line_label == 'New'
         existing_job = existing_jobs_by_sku.get(sku_key)
         item['existing_job_id'] = existing_job.id if existing_job else None
         item['existing_jc_number'] = existing_job.jc_number if existing_job else ''
@@ -4660,16 +4706,12 @@ def po_review(request, doc_id):
                         continue
 
                     recipe = recipe_map.get(_sku_key(sku))
-                    if not recipe:
+                    is_approved = bool(recipe and recipe.master_data_status == 'approved')
+                    if not is_approved:
                         missing_recipe_count += 1
                         continue
 
                     sku_key = _sku_key(sku)
-                    is_first_production = bool(
-                        sku_key
-                        and sku_key not in existing_any_jobs_skus
-                    )
-
                     delivery_date = _parse_iso_date(item.get('delivery_date'))
                     plan_date = po_doc.created_at.date() if po_doc and getattr(po_doc, 'created_at', None) else (delivery_date or po_date)
 
@@ -4678,18 +4720,23 @@ def po_review(request, doc_id):
                         if _normalize_status(existing_job.status) != 'draft':
                             locked_count += 1
                             continue
-                        existing_repeat_flag = (existing_job.repeat_flag or '').strip().lower()
-                        if existing_repeat_flag in {'new', 'repeat'}:
-                            forward_as_new = existing_repeat_flag == 'new'
-                        else:
-                            prior_jobs_exist = PlanningJob.objects.filter(sku__iexact=sku).exclude(id=existing_job.id).exists()
-                            forward_as_new = not prior_jobs_exist
                         jc_number = existing_job.jc_number
                     else:
-                        forward_as_new = is_first_production
                         jc_number = allocate_next_jc_number(plan_date)
 
                     current_requirement = existing_job.requirement if existing_job else ''
+
+                    from planning.sku_classification import repeat_flag_value_for_po_line
+
+                    repeat_flag_value = repeat_flag_value_for_po_line(
+                        item,
+                        po_number=po_number,
+                        po_doc_created_at=po_doc.created_at,
+                        po_doc_id=po_doc.id,
+                        recipe=recipe,
+                        existing_job=existing_job,
+                    )
+                    forward_as_new = repeat_flag_value == 'New'
 
                     qty = item.get('quantity')
                     order_qty = int(qty) if qty is not None else None
@@ -4708,7 +4755,7 @@ def po_review(request, doc_id):
                         'delivery_date': delivery_date,
                         'unit_cost': unit_cost_dec if unit_cost_dec is not None else recipe.default_unit_cost,
                         'status': 'draft',
-                        'repeat_flag': 'New' if forward_as_new else 'Repeat',
+                        'repeat_flag': repeat_flag_value,
                         'requirement': _sync_new_sku_requirement(current_requirement, forward_as_new),
                         'material': recipe.material,
                         'color_spec': recipe.color_spec,

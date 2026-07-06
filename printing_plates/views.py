@@ -6,10 +6,19 @@ from django.contrib import messages
 from django.views.generic import ListView, DetailView, CreateView, TemplateView
 
 from planning.models import PlanningJob
-from planning.services import normalize_awc_no, normalize_die_cutting
+from planning.services import normalize_awc_no, normalize_die_cutting, _user_is_admin
 from .forms import PlateRequestForm
 from .models import PlateRequest
-from .services import build_vendor_filter_options
+from .services import (
+    PLATE_REQUEST_TYPE_FILTERS,
+    build_plate_request_type_counts,
+    build_type_filter_sidebar,
+    build_vendor_filter_options,
+    bulk_cancel_stale_open_plate_requests,
+    filter_plate_requests_by_type,
+    plate_request_active_queryset,
+    stale_open_plate_requests_for_cleanup_queryset,
+)
 from core.models import Vendor
 
 
@@ -24,29 +33,30 @@ class PlateDashboardView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Templa
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        replacement_filter = (
-            Q(source__in=['replacement', 'production_plate_damage'])
-            | ~Q(replacement_reason='')
-        )
 
         # 1. Plate Request Counts
-        req_qs = PlateRequest.objects.all()
-        context['req_all_count'] = req_qs.count()
-        context['req_repeat_count'] = req_qs.filter(
-            Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
-        ).exclude(replacement_filter).count()
-        context['req_new_artwork_count'] = req_qs.filter(
-            Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
-        ).exclude(replacement_filter).count()
-        context['req_replacement_count'] = req_qs.filter(replacement_filter).count()
+        req_qs = plate_request_active_queryset()
+        context.update(build_plate_request_type_counts(req_qs))
+        context['req_all_count'] = context['all_count']
+        context['req_repeat_count'] = context['repeat_count']
+        context['req_new_artwork_count'] = context['new_artwork_count']
+        context['req_replacement_count'] = context['replacement_count']
 
         # 2. Plate Sent Counts (vendors from master + used values)
-        sent_qs = PlateRequest.objects.filter(status=PlateRequest.STATUS_SENT)
+        sent_qs = PlateRequest.objects.filter(
+            status=PlateRequest.STATUS_SENT,
+            planning_job__isnull=False,
+            planning_job__planning_stage__in=['new_plate_making', 'repeat_plate_making']
+        )
         context['sent_all_count'] = sent_qs.count()
         context['sent_vendor_options'] = build_vendor_filter_options(sent_qs)
 
         # 3. Plate Received Counts
-        rec_qs = PlateRequest.objects.filter(status=PlateRequest.STATUS_RECEIVED)
+        rec_qs = PlateRequest.objects.filter(
+            status=PlateRequest.STATUS_RECEIVED,
+            planning_job__isnull=False,
+            planning_job__planning_stage__in=['new_plate_making', 'repeat_plate_making']
+        )
         context['rec_all_count'] = rec_qs.count()
         context['rec_empty_count'] = rec_qs.filter(vendor='').count()
         context['rec_vendor_options'] = build_vendor_filter_options(rec_qs)
@@ -61,38 +71,12 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
     paginate_by = 50
 
     def get_queryset(self):
-        queryset = PlateRequest.objects.select_related(
+        queryset = plate_request_active_queryset().select_related(
             'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by'
         ).order_by('-requested_at', '-created_at')
 
-        # Type filter from AppSheet sidebar
         self.request_type = self.request.GET.get('type', '').strip().lower()
-        replacement_filter = (
-            Q(source__in=['replacement', 'production_plate_damage'])
-            | ~Q(replacement_reason='')
-        )
-        if self.request_type == 'repeat':
-            queryset = queryset.filter(
-                Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
-            ).exclude(replacement_filter)
-        elif self.request_type == 'new_artwork':
-            queryset = queryset.filter(
-                Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
-            ).exclude(replacement_filter)
-        elif self.request_type == 'replacement':
-            queryset = queryset.filter(replacement_filter)
-        elif self.request_type == 'cancelled':
-            queryset = queryset.filter(
-                Q(progress__istartswith='Cancelled')
-                | Q(remarks__icontains='Cancelled — plates not required')
-                | Q(remarks__icontains='Cancelled - plates not required')
-                | Q(status=PlateRequest.STATUS_ARCHIVED, progress__icontains='Cancel')
-            )
-        elif self.request_type == 'empty':
-            queryset = queryset.exclude(
-                Q(planning_job__repeat_flag='New') | Q(planning_job__repeat_flag='Repeat') |
-                Q(job_card__planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='Repeat')
-            ).exclude(replacement_filter)
+        queryset = filter_plate_requests_by_type(queryset, self.request_type)
 
         # General search filter
         q = self.request.GET.get('q', '').strip()
@@ -110,39 +94,18 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        
-        # Calculate dynamic counts for sidebar
-        base_qs = PlateRequest.objects.all()
-        replacement_filter = (
-            Q(source__in=['replacement', 'production_plate_damage'])
-            | ~Q(replacement_reason='')
-        )
 
-        context['repeat_count'] = base_qs.filter(
-            Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
-        ).exclude(replacement_filter).count()
+        base_qs = plate_request_active_queryset()
+        counts = build_plate_request_type_counts(base_qs)
+        context.update(counts)
+        context['type_filters'] = build_type_filter_sidebar(counts)
 
-        context['new_artwork_count'] = base_qs.filter(
-            Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
-        ).exclude(replacement_filter).count()
-
-        context['replacement_count'] = base_qs.filter(replacement_filter).count()
-        context['cancelled_count'] = base_qs.filter(
-            Q(progress__istartswith='Cancelled')
-            | Q(remarks__icontains='Cancelled — plates not required')
-            | Q(remarks__icontains='Cancelled - plates not required')
-            | Q(status=PlateRequest.STATUS_ARCHIVED, progress__icontains='Cancel')
-        ).count()
-
-        context['empty_count'] = base_qs.exclude(
-            Q(planning_job__repeat_flag='New') | Q(planning_job__repeat_flag='Repeat') |
-            Q(job_card__planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='Repeat')
-        ).exclude(replacement_filter).count()
-
-        context['all_count'] = base_qs.count()
+        context['all_count'] = counts['all_count']
         context['request_type'] = self.request_type
         context['q'] = self.request.GET.get('q', '')
         context['list_count'] = self.get_queryset().count()
+        context['stale_cleanup_count'] = stale_open_plate_requests_for_cleanup_queryset().count()
+        context['can_admin_stale_cleanup'] = _user_is_admin(self.request.user)
         return context
 
 
@@ -155,12 +118,12 @@ class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
     paginate_by = 50
 
     def get_queryset(self):
-        queryset = PlateRequest.objects.filter(
+        queryset = plate_request_active_queryset().filter(
             status__in=[
                 PlateRequest.STATUS_DRAFT,
                 PlateRequest.STATUS_SENT,
                 PlateRequest.STATUS_RECEIVED,
-            ]
+            ],
         ).select_related(
             'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by'
         ).order_by('-requested_at', '-created_at')
@@ -179,20 +142,7 @@ class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
             )
 
         self.request_type = self.request.GET.get('type', '').strip().lower()
-        replacement_filter = (
-            Q(source__in=['replacement', 'production_plate_damage'])
-            | ~Q(replacement_reason='')
-        )
-        if self.request_type == 'replacement':
-            queryset = queryset.filter(replacement_filter)
-        elif self.request_type == 'repeat':
-            queryset = queryset.filter(
-                Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
-            ).exclude(replacement_filter)
-        elif self.request_type == 'new_artwork':
-            queryset = queryset.filter(
-                Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
-            ).exclude(replacement_filter)
+        queryset = filter_plate_requests_by_type(queryset, self.request_type)
 
         self.status_filter = self.request.GET.get('status', '').strip()
         if self.status_filter in {
@@ -206,29 +156,23 @@ class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        base_qs = PlateRequest.objects.filter(
+        base_qs = plate_request_active_queryset().filter(
             status__in=[
                 PlateRequest.STATUS_DRAFT,
                 PlateRequest.STATUS_SENT,
                 PlateRequest.STATUS_RECEIVED,
-            ]
-        )
-        replacement_filter = (
-            Q(source__in=['replacement', 'production_plate_damage'])
-            | ~Q(replacement_reason='')
+            ],
         )
         context['q'] = self.request.GET.get('q', '')
         context['request_type'] = getattr(self, 'request_type', '')
         context['status_filter'] = getattr(self, 'status_filter', '')
         context['queue_count'] = self.get_queryset().count()
-        context['all_count'] = base_qs.count()
-        context['replacement_count'] = base_qs.filter(replacement_filter).count()
-        context['repeat_count'] = base_qs.filter(
-            Q(planning_job__repeat_flag='Repeat') | Q(job_card__planning_job__repeat_flag='Repeat')
-        ).exclude(replacement_filter).count()
-        context['new_artwork_count'] = base_qs.filter(
-            Q(planning_job__repeat_flag='New') | Q(job_card__planning_job__repeat_flag='New')
-        ).exclude(replacement_filter).count()
+        counts = build_plate_request_type_counts(base_qs)
+        context.update(counts)
+        context['type_filters'] = build_type_filter_sidebar(
+            counts,
+            filters=[item for item in PLATE_REQUEST_TYPE_FILTERS if item['key'] in {'', 'repeat', 'new_artwork', 'replacement'}],
+        )
         context['draft_count'] = base_qs.filter(status=PlateRequest.STATUS_DRAFT).count()
         context['sent_count'] = base_qs.filter(status=PlateRequest.STATUS_SENT).count()
         context['received_count'] = base_qs.filter(status=PlateRequest.STATUS_RECEIVED).count()
@@ -245,7 +189,11 @@ class PlateSentListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListVie
     paginate_by = 50
 
     def get_queryset(self):
-        queryset = PlateRequest.objects.filter(status=PlateRequest.STATUS_SENT).select_related(
+        queryset = PlateRequest.objects.filter(
+            status=PlateRequest.STATUS_SENT,
+            planning_job__isnull=False,
+            planning_job__planning_stage__in=['new_plate_making', 'repeat_plate_making']
+        ).select_related(
             'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by', 'sent_by'
         ).order_by('-sent_at', '-requested_at')
 
@@ -270,7 +218,11 @@ class PlateSentListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListVie
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        base_qs = PlateRequest.objects.filter(status=PlateRequest.STATUS_SENT)
+        base_qs = PlateRequest.objects.filter(
+            status=PlateRequest.STATUS_SENT,
+            planning_job__isnull=False,
+            planning_job__planning_stage__in=['new_plate_making', 'repeat_plate_making']
+        )
         context['vendor_options'] = build_vendor_filter_options(base_qs)
         context['all_count'] = base_qs.count()
         context['vendor_filter'] = self.vendor_filter
@@ -285,7 +237,11 @@ class PlateReceivedListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Lis
     paginate_by = 50
 
     def get_queryset(self):
-        queryset = PlateRequest.objects.filter(status=PlateRequest.STATUS_RECEIVED).select_related(
+        queryset = PlateRequest.objects.filter(
+            status=PlateRequest.STATUS_RECEIVED,
+            planning_job__isnull=False,
+            planning_job__planning_stage__in=['new_plate_making', 'repeat_plate_making']
+        ).select_related(
             'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by', 'received_by'
         ).order_by('-received_at', '-requested_at')
 
@@ -312,7 +268,11 @@ class PlateReceivedListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Lis
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        base_qs = PlateRequest.objects.filter(status=PlateRequest.STATUS_RECEIVED)
+        base_qs = PlateRequest.objects.filter(
+            status=PlateRequest.STATUS_RECEIVED,
+            planning_job__isnull=False,
+            planning_job__planning_stage__in=['new_plate_making', 'repeat_plate_making']
+        )
         context['vendor_options'] = build_vendor_filter_options(base_qs)
         context['empty_count'] = base_qs.filter(vendor='').count()
         context['all_count'] = base_qs.count()
@@ -822,3 +782,34 @@ class PlateRequestCreateView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Cr
         form.instance.requested_by = self.request.user
         form.instance.requested_at = form.instance.requested_at or timezone.now()
         return super().form_valid(form)
+
+
+class AdminAccessMixin(UserPassesTestMixin):
+    def test_func(self):
+        return _user_is_admin(self.request.user)
+
+
+class BulkCancelStalePlateRequestsView(LoginRequiredMixin, AdminAccessMixin, View):
+    def post(self, request):
+        dry_run = (request.POST.get('dry_run') or '').strip() == '1'
+        result = bulk_cancel_stale_open_plate_requests(actor=request.user, dry_run=dry_run)
+        if dry_run:
+            messages.info(
+                request,
+                f'Dry run: {result["total"]} stale open plate request(s) would be cancelled/archived.',
+            )
+        else:
+            messages.success(
+                request,
+                f'Cancelled and archived {result["cancelled"]} of {result["total"]} stale open plate request(s). '
+                f'Use Released Jobs for replacement plates on production jobs.',
+            )
+            if result.get('errors'):
+                messages.warning(
+                    request,
+                    f'{len(result["errors"])} request(s) could not be cancelled. Check logs for details.',
+                )
+        next_url = (request.POST.get('next') or '').strip()
+        if next_url:
+            return redirect(next_url)
+        return redirect(reverse('printing_plates:request_list') + '?type=cancelled')

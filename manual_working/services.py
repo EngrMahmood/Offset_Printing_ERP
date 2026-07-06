@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, date
 
 from django.core.exceptions import ObjectDoesNotExist
 from django.db.models import Q
@@ -7,6 +7,7 @@ from django.utils.dateparse import parse_date
 
 from core.models import ChangeLog, JobCard
 from planning.models import PLANNING_STAGE_CHOICES, PLANNING_STAGE_DONE, PlanningJob, PoDocument, SkuRecipe
+from planning.services import get_po_approval_date_for_job, get_planning_month_label_for_job
 
 
 def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
@@ -58,10 +59,9 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
     jobs = list(queryset)
     recipe_map = _build_recipe_map(jobs)
     approval_map, release_map = _build_job_card_log_maps(jobs)
-    po_approval_map = _build_po_approval_date_map(jobs)
     wip_status_map = _build_wip_status_map(jobs)
 
-    rows = [_build_row(item, recipe_map, approval_map, release_map, po_approval_map, wip_status_map) for item in jobs]
+    rows = [_build_row(item, recipe_map, approval_map, release_map, wip_status_map) for item in jobs]
 
     date_from = filters.get('date_from')
     if date_from:
@@ -96,29 +96,6 @@ def get_manual_working_rows(filters: dict[str, str]) -> list[dict[str, str]]:
             ]
 
     return rows
-
-
-def _build_po_approval_date_map(jobs):
-    po_numbers = {job.po_number.strip().lower() for job in jobs if job.po_number}
-    if not po_numbers:
-        return {}
-
-    po_approval_map = {}
-    po_docs = PoDocument.objects.filter(
-        extraction_status='processed'
-    ).values_list('extracted_payload', flat=True)
-
-    for payload in po_docs:
-        if not isinstance(payload, dict):
-            continue
-        for key in ('po_number', 'PO_No', 'po_no', 'PO_Number'):
-            po_val = str(payload.get(key) or '').strip().lower()
-            if po_val and po_val in po_numbers:
-                app_date = parse_date(payload.get('approval_date'))
-                if app_date:
-                    po_approval_map[po_val] = app_date
-                    
-    return po_approval_map
 
 
 def _build_job_card_log_maps(jobs):
@@ -229,6 +206,9 @@ def _released_to_production_datetime(job: PlanningJob, release_map: dict[int, ob
 
 
 def _format_month(value, fallback_date=None):
+    if isinstance(value, (datetime, date)):
+        return value.strftime('%B')
+
     month_text = _format_text(value).strip()
     if month_text:
         month_text_lower = month_text.lower()
@@ -258,21 +238,13 @@ def _resolve_job_or_recipe(job_value, recipe_value=None):
 
 
 def _resolve_repeat_flag(job_value, recipe):
-    job_text = _format_text(job_value).strip()
-    if job_text:
-        return job_text
-    if recipe:
-        return 'Repeat'
-    return ''
+    return _format_text(job_value).strip()
 
 
-def _po_approval_date(job: PlanningJob, approval_map: dict[int, object], po_approval_map: dict[str, object]):
-    if getattr(job, 'po_approval_date', None):
-        return job.po_approval_date
-
-    po_val = str(job.po_number or '').strip().lower()
-    if po_val and po_val in po_approval_map:
-        return po_approval_map[po_val]
+def _po_approval_date(job: PlanningJob, approval_map: dict[int, object]):
+    resolved = get_po_approval_date_for_job(job)
+    if resolved:
+        return resolved
 
     job_card = getattr(job, 'job_card', None)
     if not job_card:
@@ -317,25 +289,19 @@ def _build_dispatch_values(job: PlanningJob) -> list[dict[str, str]]:
     return results
 
 
-def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map: dict[int, object], release_map: dict[int, object], po_approval_map: dict[str, object], wip_status_map: dict[str, str]) -> dict[str, str]:
+def _build_row(job: PlanningJob, recipe_map: dict[str, SkuRecipe], approval_map: dict[int, object], release_map: dict[int, object], wip_status_map: dict[str, str]) -> dict[str, str]:
     recipe = recipe_map.get((job.sku or '').strip().upper())
     print_runs = _build_print_run_values(job)
     dispatch_values = _build_dispatch_values(job)
     total_delivered_qty = sum((getattr(run, 'delivered_qty') or 0) for run in job.dispatch_runs.all())
     job_card = getattr(job, 'job_card', None)
 
-    po_approval_date = _po_approval_date(job, approval_map, po_approval_map)
-    try:
-        job_card_month = job_card.month if job_card else None
-    except ObjectDoesNotExist:
-        job_card_month = None
-
-    display_month_source = None if po_approval_date else (job_card_month or job.plan_month)
+    po_approval_date = _po_approval_date(job, approval_map)
     released_at = _released_to_production_datetime(job, release_map)
 
     return {
         'jc_number': _format_text(job.jc_number),
-        'month': _format_month(display_month_source, po_approval_date),
+        'month': _format_month(get_planning_month_label_for_job(job)),
         'date': _format_date(po_approval_date),
         'po_approval_date_obj': po_approval_date,
         'po_number': _format_text(job.po_number),
