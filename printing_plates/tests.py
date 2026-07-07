@@ -702,6 +702,22 @@ class PlateMakingPreventionTests(TestCase):
         self.assertEqual(plate_request.status, PlateRequest.STATUS_ARCHIVED)
         self.assertTrue(plate_request.is_cancelled)
 
+    def test_draft_repeat_job_with_plate_set_no_allows_plate_making(self):
+        from printing_plates.services import planning_job_should_skip_plate_making
+
+        job = PlanningJob.objects.create(
+            jc_number='JC-REPEAT-DRAFT',
+            sku='SKU-REPEAT-DRAFT',
+            status='draft',
+            planning_stage='',
+            repeat_flag='Repeat',
+            material='Paper',
+            application='Label',
+            machine_name='KBA',
+            plate_set_no='10638',
+        )
+        self.assertFalse(planning_job_should_skip_plate_making(job))
+
 
 class ReleaseBlockedByOpenPlateRequestTests(TestCase):
     def setUp(self):

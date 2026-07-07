@@ -1,5 +1,7 @@
 document.addEventListener('DOMContentLoaded', function(){
-    const isViewMode = new URLSearchParams(window.location.search).has('view');
+    const isViewMode = Boolean(
+        window.IS_VIEW_MODE || new URLSearchParams(window.location.search).has('view')
+    );
     if (isViewMode) {
         return;
     }
@@ -30,7 +32,6 @@ document.addEventListener('DOMContentLoaded', function(){
         return isNaN(n)?0:n;
     }
 
-    const isViewMode = new URLSearchParams(window.location.search).has('view');
     const initialImpressions = parseNumber(ji('impressions')?.value);
 
     function applyViewModeRestrictions(){

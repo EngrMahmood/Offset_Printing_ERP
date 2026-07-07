@@ -896,6 +896,99 @@ def get_plate_request_block_for_master_entry(planning_job):
     return None, ''
 
 
+def ensure_draft_planning_job_for_po_sku(po_doc, sku, *, actor=None, recipe=None):
+    """Return a draft PlanningJob for a PO line, creating one when PO sync skipped it."""
+    payload = po_doc.extracted_payload or {}
+    po_number = (payload.get('po_number') or '').strip()
+    sku_key = _sku_key(sku)
+    if not po_number or not sku_key:
+        return None
+
+    existing_job = (
+        PlanningJob.objects.filter(po_number=po_number, sku__iexact=sku)
+        .order_by('-updated_at', '-id')
+        .first()
+    )
+    if existing_job:
+        if _normalize_status(existing_job.status) != 'draft':
+            return None
+        return existing_job
+
+    items, _ = _deduplicate_po_items_by_sku(payload.get('items', []))
+    item = next((row for row in items if _sku_key(row.get('sku')) == sku_key), None)
+    if not item:
+        return None
+
+    po_date = _parse_iso_date(payload.get('po_date'))
+    approval_date = _parse_iso_date(payload.get('approval_date'))
+    po_approval_date = approval_date or po_date
+    delivery_date = _parse_iso_date(item.get('delivery_date'))
+    intake_plan_date = (
+        po_doc.created_at.date()
+        if po_doc and getattr(po_doc, 'created_at', None)
+        else (po_date or delivery_date)
+    )
+    recipe_map = _build_recipe_map(items)
+    recipe = recipe or recipe_map.get(sku_key)
+
+    from .sku_classification import repeat_flag_value_for_po_line
+
+    repeat_flag_value = repeat_flag_value_for_po_line(
+        item,
+        po_number=po_number,
+        po_doc_created_at=getattr(po_doc, 'created_at', None),
+        po_doc_id=getattr(po_doc, 'id', None),
+        recipe=recipe,
+        existing_job=None,
+    )
+
+    qty = item.get('quantity')
+    order_qty = int(qty) if qty is not None else None
+    unit_cost_val = item.get('unit_cost')
+    unit_cost_dec = Decimal(str(unit_cost_val)) if unit_cost_val is not None else None
+    sku_value = (item.get('sku') or '').strip()
+    fallback_job_name = (item.get('job_name') or '').strip() or sku_value
+    if (item.get('job_name') or '').strip():
+        job_name_value = item.get('job_name').strip()
+    elif recipe and (recipe.job_name or '').strip():
+        job_name_value = recipe.job_name
+    else:
+        job_name_value = fallback_job_name
+
+    defaults = {
+        'po_number': po_number,
+        'pr_reference': (payload.get('pr_number') or '').strip(),
+        'sku': sku_value,
+        'job_name': job_name_value,
+        'order_qty': order_qty,
+        'department': payload.get('department', ''),
+        'destination': payload.get('delivery_location', ''),
+        'delivery_date': delivery_date,
+        'unit_cost': unit_cost_dec if unit_cost_dec is not None else (recipe.default_unit_cost if recipe else None),
+        'status': 'draft',
+        'repeat_flag': repeat_flag_value,
+        'material': (recipe.material if recipe else '') or (item.get('material') or '').strip(),
+        'application': (recipe.application if recipe else '') or (item.get('application') or '').strip(),
+        'machine_name': (recipe.machine_name if recipe else '') or (item.get('machine_name') or item.get('machine') or '').strip(),
+        'plate_set_no': (recipe.plate_set_no if recipe else '') or (item.get('plate_set_no') or item.get('p_set_no') or '').strip(),
+        'color_spec': (recipe.color_spec if recipe else '') or (item.get('color_spec') or item.get('color') or '').strip(),
+        'plan_date': intake_plan_date,
+        'plan_month': payload.get('plan_month') or _plan_month_label_from_date(intake_plan_date),
+    }
+    if po_approval_date:
+        defaults['po_approval_date'] = po_approval_date
+    if actor:
+        defaults['created_by'] = actor
+
+    job = PlanningJob.objects.create(
+        jc_number=allocate_next_jc_number(intake_plan_date),
+        **defaults,
+    )
+    if recipe:
+        sync_planning_job_fields_to_sku_recipe(job, recipe)
+    return job
+
+
 def _planning_status_filter_values(status):
     normalized_status = _normalize_status(status, default='')
     if not normalized_status:
@@ -1539,8 +1632,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
         if not bypass_recipe_check and not is_approved:
             if not existing_job:
                 missing_recipe_count += 1
-                continue
-            if _normalize_status(existing_job.status) != 'draft':
+            elif _normalize_status(existing_job.status) != 'draft':
                 locked_count += 1
                 continue
 
@@ -1672,6 +1764,12 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
         if not existing_job:
             if intake_plan_date:
                 defaults['plan_date'] = intake_plan_date
+            if payload.get('plan_month'):
+                defaults['plan_month'] = payload.get('plan_month')
+            elif intake_plan_date:
+                defaults['plan_month'] = _plan_month_label_from_date(intake_plan_date)
+        elif existing_job and not existing_job.plan_date and intake_plan_date:
+            defaults['plan_date'] = intake_plan_date
             if payload.get('plan_month'):
                 defaults['plan_month'] = payload.get('plan_month')
             elif intake_plan_date:

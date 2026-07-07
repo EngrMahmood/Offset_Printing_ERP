@@ -143,9 +143,6 @@ def planning_job_should_skip_plate_making(planning_job):
     if job_card and plates_were_issued_to_production(job_card):
         return True
 
-    stage = (planning_job.planning_stage or '').strip()
-    if stage in STALE_PLATE_REQUEST_JOB_STAGES and (planning_job.plate_set_no or '').strip():
-        return True
     return False
 
 

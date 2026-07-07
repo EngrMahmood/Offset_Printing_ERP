@@ -66,6 +66,7 @@ from .services import (
     _collect_pending_sku_rows, _normalize_po_number,
     trigger_plate_request_for_planning_job,
     get_plate_request_block_for_master_entry,
+    ensure_draft_planning_job_for_po_sku,
     apply_master_data_sync,
     apply_sku_recipe_form_role_permissions,
     merge_preserved_sku_recipe_fields,
@@ -3904,7 +3905,21 @@ def pending_sku_master_entry(request):
             if action == 'send_to_plate_making':
                 # Find the draft PlanningJob first so we can block duplicate plate requests.
                 po_number = payload.get('po_number') or ''
-                job = PlanningJob.objects.filter(po_number=po_number, sku__iexact=sku, status='draft').first()
+                job = (
+                    PlanningJob.objects.filter(po_number=po_number, sku__iexact=sku)
+                    .order_by('-updated_at', '-id')
+                    .first()
+                )
+                if job and _normalize_status(job.status) != 'draft':
+                    messages.error(
+                        request,
+                        f'Planning job {job.jc_number} for SKU {sku} is no longer in draft '
+                        f'({job.get_status_display()}). Open the job detail page instead of sending from pending master entry.',
+                    )
+                    return redirect(
+                        f"{reverse('planning:pending_sku_master_entry')}?po_doc_id={po_doc_id}&sku={sku}"
+                        f"{'&return_q=' + return_q if return_q else ''}{'&return_po=' + return_po if return_po else ''}"
+                    )
 
                 existing_plate_req, block_reason = get_plate_request_block_for_master_entry(job)
                 if existing_plate_req:
@@ -3944,6 +3959,24 @@ def pending_sku_master_entry(request):
                 po_doc.extracted_payload = payload
                 po_doc.save(update_fields=['extracted_payload'])
 
+                if not job:
+                    job = ensure_draft_planning_job_for_po_sku(
+                        po_doc,
+                        sku,
+                        actor=request.user,
+                        recipe=obj,
+                    )
+                    if not job:
+                        messages.error(
+                            request,
+                            f'Could not create a draft planning job for SKU {sku} on PO {po_number}. '
+                            f'Check that this SKU exists on the PO document.',
+                        )
+                        return redirect(
+                            f"{reverse('planning:pending_sku_master_entry')}?po_doc_id={po_doc_id}&sku={sku}"
+                            f"{'&return_q=' + return_q if return_q else ''}{'&return_po=' + return_po if return_po else ''}"
+                        )
+
                 if job:
                     if (job.repeat_flag or '').strip() != 'New' and not job.approved_sku_recipe:
                         messages.error(
@@ -3981,9 +4014,17 @@ def pending_sku_master_entry(request):
                             f'Open plate request: {plate_url}',
                         )
                     else:
-                        messages.success(request, f'SKU {sku} saved, and Job Card {job.jc_number} sent to Plate Making.')
-                else:
-                    messages.success(request, f'SKU {sku} saved as Draft. No draft Planning Job was found for this PO.')
+                        from printing_plates.services import get_planning_plate_making_block_message
+
+                        block_message = get_planning_plate_making_block_message(job)
+                        if block_message:
+                            messages.error(request, block_message)
+                        else:
+                            messages.warning(
+                                request,
+                                f'SKU {sku} saved and {job.jc_number} moved to plate making, '
+                                f'but no plate request was created. Check Printing Plates or contact admin.',
+                            )
 
                 return _redirect_pending()
             elif action == 'submit_review':

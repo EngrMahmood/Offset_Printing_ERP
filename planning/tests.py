@@ -171,17 +171,25 @@ class PlanningWorkflowSyncTests(TestCase):
 		defaults.update(kwargs)
 		return SkuRecipe.objects.create(**defaults)
 
-	def test_po_sync_skips_draft_job_for_missing_recipe(self):
+	def test_po_sync_creates_draft_job_for_missing_recipe(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-001', po_number='PO-NEW-1')
 
 		result = _sync_repeat_jobs_from_po(po_doc, actor=self.user)
 
-		self.assertEqual(result['created'], 0)
+		self.assertEqual(result['created'], 1)
 		self.assertEqual(result['missing_recipe'], 1)
-		self.assertFalse(PlanningJob.objects.filter(po_number='PO-NEW-1', sku='NEW-SKU-001').exists())
+		job = PlanningJob.objects.get(po_number='PO-NEW-1', sku='NEW-SKU-001')
+		self.assertEqual(job.status, 'draft')
 
 	def test_approved_sku_sync_updates_existing_job_without_creating_duplicate(self):
-		self._create_approved_recipe('NEW-SKU-002', plate_set_no='')
+		SkuRecipe.objects.create(
+			sku='NEW-SKU-002',
+			material='Paper',
+			master_data_status='approved',
+			plate_set_no='',
+			approved_by=self.user,
+			created_by=self.user,
+		)
 		po_doc = self._create_po_document(sku='NEW-SKU-002', po_number='PO-NEW-2')
 		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
 		original_job = PlanningJob.objects.get(po_number='PO-NEW-2', sku='NEW-SKU-002')
@@ -1185,6 +1193,41 @@ class PendingSkuMasterEntryPlannerTests(TestCase):
 		self.assertEqual(job.material, 'Paper')
 		self.assertEqual(job.application, 'UV')
 		self.assertEqual(job.planning_stage, 'new_plate_making')
+
+	def test_send_to_plate_making_creates_job_and_plate_request_when_po_has_no_jc(self):
+		from core.models import Machine, Material
+		from planning.models import PlanningJob, SkuRecipe
+		from printing_plates.models import PlateRequest
+
+		Machine.objects.create(name='Machine B')
+		Material.objects.create(name='Paper')
+		po_doc = self._create_po_document()
+		SkuRecipe.objects.create(
+			sku='TEST-SKU-100',
+			job_name='TEST-SKU-100 Job',
+			master_data_status='draft',
+			created_by=self.user,
+		)
+		self.assertFalse(PlanningJob.objects.filter(po_number='PO-100', sku__iexact='TEST-SKU-100').exists())
+
+		from django.urls import reverse
+		url = reverse('planning:pending_sku_master_entry')
+		response = self.client.post(url, {
+			'po_doc_id': po_doc.id,
+			'sku': 'TEST-SKU-100',
+			'material': 'Paper',
+			'application': 'UV',
+			'machine_name': 'Machine B',
+			'action': 'send_to_plate_making',
+		})
+		self.assertEqual(response.status_code, 302)
+
+		job = PlanningJob.objects.get(po_number='PO-100', sku__iexact='TEST-SKU-100')
+		self.assertTrue(job.jc_number)
+		self.assertEqual(job.planning_stage, 'new_plate_making')
+		self.assertTrue(
+			PlateRequest.objects.filter(planning_job=job, status=PlateRequest.STATUS_DRAFT).exists()
+		)
 
 	def test_pending_sku_master_entry_admin_fields_enabled(self):
 		# Create an admin user
