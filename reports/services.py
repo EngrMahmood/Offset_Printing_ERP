@@ -1,12 +1,24 @@
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import datetime, timedelta
 
-from django.db.models import Avg, Count, Q, Sum
+from django.db.models import Avg, Count, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from core.models import ChangeLog, Dispatch, JobCard, Machine, Production, ProductionDowntime
+from core.models import (
+    JOB_CARD_DISPATCHABLE_STATUSES,
+    ChangeLog,
+    Dispatch,
+    JobCard,
+    Machine,
+    Production,
+    ProductionDowntime,
+)
 from planning.models import PlanningJob, PoDocument, SkuRecipe
+
+PLANNING_NOT_RELEASED_STATUSES = ('draft', 'pending_qc', 'qc_approved')
+PRODUCTION_WIP_STATUSES = ('released', 'in_production')
 
 
 REPORT_CATALOG = [
@@ -85,6 +97,251 @@ def _date_window(request, default_days=30):
     return start, end, days
 
 
+def _parse_period_filter(request, default_period='month'):
+    """Resolve dashboard period presets or explicit date range."""
+    today = timezone.localdate()
+    period = (request.GET.get('period') or default_period).strip().lower()
+    date_from_raw = (request.GET.get('date_from') or '').strip()
+    date_to_raw = (request.GET.get('date_to') or '').strip()
+
+    if date_from_raw and date_to_raw:
+        try:
+            start = datetime.strptime(date_from_raw, '%Y-%m-%d').date()
+            end = datetime.strptime(date_to_raw, '%Y-%m-%d').date()
+            if start > end:
+                start, end = end, start
+            label = f'{start.strftime("%d %b")} – {end.strftime("%d %b %Y")}'
+            return start, end, 'custom', label, start.isoformat(), end.isoformat()
+        except ValueError:
+            pass
+
+    if period == 'today':
+        start = end = today
+        label = 'Today'
+    elif period == 'week':
+        start = today - timedelta(days=today.weekday())
+        end = today
+        label = 'This Week'
+    elif period == 'month':
+        start = today.replace(day=1)
+        end = today
+        label = 'This Month'
+    elif period == 'days':
+        days = _parse_days(request, default_days=30)
+        end = today
+        start = end - timedelta(days=days - 1)
+        label = f'Last {days} days'
+    else:
+        start = today.replace(day=1)
+        end = today
+        period = 'month'
+        label = 'This Month'
+
+    return start, end, period, label, start.isoformat(), end.isoformat()
+
+
+def _filter_planning_jobs_by_period(queryset, start, end):
+    return queryset.filter(
+        Q(plan_date__range=(start, end))
+        | (Q(plan_date__isnull=True) & Q(created_at__date__range=(start, end)))
+    )
+
+
+def _filter_job_cards_by_period(queryset, start, end):
+    return queryset.filter(
+        Q(planning_job__plan_date__range=(start, end))
+        | (
+            Q(planning_job__plan_date__isnull=True)
+            & Q(created_at__date__range=(start, end))
+        )
+        | Q(planning_job__isnull=True, created_at__date__range=(start, end))
+    )
+
+
+def _annotate_dispatch_balance(queryset):
+    dispatched_subquery = (
+        Dispatch.objects.filter(job_card_id=OuterRef('pk'), is_active=True)
+        .values('job_card_id')
+        .annotate(total=Sum('dispatch_qty'))
+        .values('total')
+    )
+    return queryset.annotate(
+        dispatched_total=Coalesce(Subquery(dispatched_subquery), Value(0)),
+        balance_dispatch_qty=F('order_qty') - F('dispatched_total'),
+    )
+
+
+def _active_productions(job_card):
+    cached = getattr(job_card, '_prefetched_objects_cache', {}).get('productions')
+    if cached is not None:
+        return [production for production in cached if production.is_active]
+    return list(job_card.productions.filter(is_active=True))
+
+
+def _sum_balance_impressions(job_cards):
+    total = 0
+    for job_card in job_cards:
+        used = sum(
+            production.impressions or 0
+            for production in _active_productions(job_card)
+            if production.entry_type == 'printing'
+        )
+        allowed = job_card.total_impressions_allowed_with_tolerance or 0
+        total += max(0, allowed - used)
+    return total
+
+
+def _sum_make_ready_colors(job_cards):
+    total = 0
+    for job_card in job_cards:
+        colors = job_card.total_colors
+        if colors:
+            total += int(colors)
+    return total
+
+
+def _sum_balance_packing(job_cards):
+    total = 0
+    for job_card in job_cards:
+        packing_entries = [
+            production
+            for production in _active_productions(job_card)
+            if production.entry_type == 'packing'
+        ]
+        packed = sum(production.packing_qty or 0 for production in packing_entries)
+        waste = sum(production.sorting_waste_qty or 0 for production in packing_entries)
+        used = int(packed) + int(waste)
+        if job_card.is_print_job:
+            printed = sum(
+                production.pcs_produced
+                for production in _active_productions(job_card)
+                if production.entry_type == 'printing'
+            )
+            limit = int(printed or 0)
+        else:
+            limit = int(job_card.order_qty or 0)
+        total += max(0, limit - used)
+    return total
+
+
+def build_dashboard_context(request):
+    start, end, period, period_label, date_from, date_to = _parse_period_filter(request)
+    year = _get_year(request)
+
+    pending_planning_jobs = _filter_planning_jobs_by_period(
+        PlanningJob.objects.filter(
+            is_active=True,
+            is_on_hold=False,
+            issued_to_production=False,
+            status__in=PLANNING_NOT_RELEASED_STATUSES,
+        ),
+        start,
+        end,
+    )
+    planning_summary = pending_planning_jobs.aggregate(
+        pending_jobs=Count('id'),
+        pending_order_qty=Sum('order_qty'),
+    )
+    planning_pending_skus = (
+        pending_planning_jobs.exclude(sku='')
+        .values('sku')
+        .distinct()
+        .count()
+    )
+
+    production_job_cards = list(
+        _filter_job_cards_by_period(
+            JobCard.objects.filter(
+                is_active=True,
+                status__in=PRODUCTION_WIP_STATUSES,
+            ).select_related('planning_job'),
+            start,
+            end,
+        ).prefetch_related(
+            Prefetch(
+                'productions',
+                queryset=Production.objects.filter(is_active=True),
+            ),
+        )
+    )
+    production_jobs_count = len(production_job_cards)
+    production_balance_impressions = _sum_balance_impressions(production_job_cards)
+    production_make_ready_colors = _sum_make_ready_colors(production_job_cards)
+    production_balance_packing = _sum_balance_packing(production_job_cards)
+
+    period_production_activity = Production.objects.filter(
+        is_active=True,
+        job_card__is_active=True,
+        date__range=(start, end),
+    )
+    period_printing_impressions = (
+        period_production_activity.filter(entry_type='printing').aggregate(total=Sum('impressions'))['total'] or 0
+    )
+    period_packed_qty = (
+        period_production_activity.filter(entry_type='packing').aggregate(total=Sum('packing_qty'))['total'] or 0
+    )
+
+    dispatch_jobs = _annotate_dispatch_balance(
+        _filter_job_cards_by_period(
+            JobCard.objects.filter(
+                is_active=True,
+                status__in=JOB_CARD_DISPATCHABLE_STATUSES,
+            ).select_related('planning_job'),
+            start,
+            end,
+        )
+    )
+    dispatch_open_jobs = dispatch_jobs.filter(balance_dispatch_qty__gt=0)
+    dispatch_summary = dispatch_open_jobs.aggregate(
+        open_jobs=Count('id'),
+        balance_dispatch_qty=Sum('balance_dispatch_qty'),
+    )
+    period_dispatches = Dispatch.objects.filter(
+        is_active=True,
+        job_card__is_active=True,
+        dispatch_date__range=(start, end),
+    )
+    period_dispatch_summary = period_dispatches.aggregate(
+        dispatch_rows=Count('id'),
+        total_dispatch_qty=Sum('dispatch_qty'),
+    )
+    period_dispatch_jobs = period_dispatches.values('job_card_id').distinct().count()
+
+    return {
+        'dashboard': {
+            'planning': {
+                'pending_jobs': planning_summary['pending_jobs'] or 0,
+                'pending_skus': planning_pending_skus,
+                'pending_order_qty': planning_summary['pending_order_qty'] or 0,
+            },
+            'production': {
+                'jobs': production_jobs_count,
+                'balance_impressions': production_balance_impressions,
+                'make_ready_colors': production_make_ready_colors,
+                'balance_packing': production_balance_packing,
+                'period_impressions': period_printing_impressions,
+                'period_packed_qty': period_packed_qty,
+            },
+            'dispatch': {
+                'open_jobs': dispatch_summary['open_jobs'] or 0,
+                'balance_dispatch_qty': dispatch_summary['balance_dispatch_qty'] or 0,
+                'period_dispatch_qty': period_dispatch_summary['total_dispatch_qty'] or 0,
+                'period_dispatch_jobs': period_dispatch_jobs,
+                'period_dispatch_rows': period_dispatch_summary['dispatch_rows'] or 0,
+            },
+        },
+        'filters': {
+            'period': period,
+            'period_label': period_label,
+            'start': start,
+            'end': end,
+            'date_from': date_from,
+            'date_to': date_to,
+            'year': year,
+        },
+    }
+
+
 def _search_jobs(queryset, search_value):
     if not search_value:
         return queryset
@@ -103,7 +360,8 @@ def _status_count_map(rows, key='status'):
 
 
 def build_overview_context(request):
-    year = _get_year(request)
+    dashboard_context = build_dashboard_context(request)
+    year = dashboard_context['filters']['year']
     
     planning_jobs = PlanningJob.objects.filter(is_active=True, plan_date__year=year)
     job_cards = JobCard.objects.filter(is_active=True, created_at__year=year)
@@ -181,6 +439,7 @@ def build_overview_context(request):
     recent_changes = ChangeLog.objects.filter(created_at__year=year).select_related('changed_by').order_by('-created_at')[:10]
 
     return {
+        **dashboard_context,
         'report_cards': REPORT_CATALOG,
         'module_cards': module_cards,
         'attention_cards': attention_cards,

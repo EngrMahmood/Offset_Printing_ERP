@@ -6,8 +6,26 @@ class ReportsAppTests(TestCase):
     def test_reports_home_loads(self):
         response = self.client.get(reverse('reports:home'))
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Reports')
+        self.assertContains(response, 'Pending Jobs')
+        self.assertContains(response, 'Balance Impressions')
+        self.assertContains(response, 'Balance Dispatch')
         self.assertContains(response, 'Machine Planning')
+
+    def test_reports_dashboard_period_filters(self):
+        response = self.client.get(reverse('reports:home'), {'period': 'today'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Today')
+
+        response = self.client.get(reverse('reports:home'), {'period': 'week'})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'This Week')
+
+        response = self.client.get(
+            reverse('reports:home'),
+            {'date_from': '2026-01-01', 'date_to': '2026-01-31'},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Jan')
 
     def test_machine_planning_report_loads(self):
         response = self.client.get(reverse('reports:detail', args=['machine-planning']))

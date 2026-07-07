@@ -1,32 +1,213 @@
 {% extends 'theme/base.html' %}
+{% load static %}
 
 {% block title %}Reports — Offset Printing ERP{% endblock %}
-{% block header_title %}Reports Center{% endblock %}
-{% block header_subtitle %}Operational reporting for planning, execution, QC readiness, production efficiency, and master data health.{% endblock %}
+{% block header_title %}Reports Dashboard{% endblock %}
+{% block header_subtitle %}Planning backlog, production WIP, and dispatch fulfillment — {{ filters.period_label }}{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="{% static 'theme/css/production.css' %}">
+<style>
+.reports-dashboard .rd-section-label {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.65rem;
+}
+.reports-dashboard .rd-section-label h3 {
+    margin: 0;
+    font-size: 1rem;
+    color: #174674;
+}
+.reports-dashboard .rd-section-icon {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 0.5rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+}
+.reports-dashboard .rd-section-icon.planning { background: #eef6ff; color: #2563eb; }
+.reports-dashboard .rd-section-icon.production { background: #f0fdf4; color: #16a34a; }
+.reports-dashboard .rd-section-icon.dispatch { background: #fff7ed; color: #ea580c; }
+.reports-dashboard .pd-period-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+}
+.reports-dashboard .pd-period-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.7rem;
+    border-radius: 999px;
+    border: 1px solid rgba(221, 229, 239, 1);
+    background: #fff;
+    color: #475569;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+}
+.reports-dashboard .pd-period-pill.active {
+    background: #174674;
+    border-color: #174674;
+    color: #fff;
+}
+.reports-dashboard .rd-metric-hint {
+    font-size: 0.75rem;
+    color: #64748b;
+    margin-top: 0.2rem;
+}
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="erp-page-stack">
+<div class="erp-page-stack production-dashboard reports-dashboard">
+    <section class="erp-section-shell">
+        <form class="pd-filters" method="get">
+            <div style="width:100%; margin-bottom:0.25rem;">
+                <label>Quick period</label>
+                <div class="pd-period-pills">
+                    <a href="?period=today" class="pd-period-pill {% if filters.period == 'today' %}active{% endif %}">Today</a>
+                    <a href="?period=week" class="pd-period-pill {% if filters.period == 'week' %}active{% endif %}">This Week</a>
+                    <a href="?period=month" class="pd-period-pill {% if filters.period == 'month' %}active{% endif %}">This Month</a>
+                    <a href="?period=days&days=7" class="pd-period-pill {% if filters.period == 'days' and request.GET.days == '7' %}active{% endif %}">Last 7 Days</a>
+                    <a href="?period=days&days=30" class="pd-period-pill {% if filters.period == 'days' and request.GET.days == '30' %}active{% endif %}">Last 30 Days</a>
+                </div>
+            </div>
+            <div>
+                <label for="date_from">From</label>
+                <input type="date" id="date_from" name="date_from" value="{{ filters.date_from }}">
+            </div>
+            <div>
+                <label for="date_to">To</label>
+                <input type="date" id="date_to" name="date_to" value="{{ filters.date_to }}">
+            </div>
+            <div>
+                <label for="year">Year</label>
+                <select id="year" name="year">
+                    <option value="2024" {% if year == 2024 %}selected{% endif %}>2024</option>
+                    <option value="2025" {% if year == 2025 %}selected{% endif %}>2025</option>
+                    <option value="2026" {% if year == 2026 %}selected{% endif %}>2026</option>
+                </select>
+            </div>
+            <div class="pd-filter-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'reports:home' %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="rd-section-label">
+            <span class="rd-section-icon planning"><i class="fas fa-clipboard-list"></i></span>
+            <div>
+                <div class="erp-eyebrow">Planning</div>
+                <h3>Jobs not released to production</h3>
+            </div>
+        </div>
+        <div class="pd-metrics-grid">
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Pending Jobs</div>
+                <div class="pd-metric-value">{{ dashboard.planning.pending_jobs|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Active jobs awaiting release</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Pending SKUs</div>
+                <div class="pd-metric-value">{{ dashboard.planning.pending_skus|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Distinct SKUs in planning queue</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Order Qty</div>
+                <div class="pd-metric-value">{{ dashboard.planning.pending_order_qty|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Total order quantity not released</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="rd-section-label">
+            <span class="rd-section-icon production"><i class="fas fa-industry"></i></span>
+            <div>
+                <div class="erp-eyebrow">Production</div>
+                <h3>Released &amp; in-production WIP</h3>
+            </div>
+        </div>
+        <div class="pd-metrics-grid">
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Balance Impressions</div>
+                <div class="pd-metric-value">{{ dashboard.production.balance_impressions|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Remaining print impressions across open jobs</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Open Jobs</div>
+                <div class="pd-metric-value">{{ dashboard.production.jobs|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Released or in-production job cards</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Make Ready (Colors)</div>
+                <div class="pd-metric-value">{{ dashboard.production.make_ready_colors|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Total colors across open production jobs</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Balance Packing</div>
+                <div class="pd-metric-value">{{ dashboard.production.balance_packing|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Pieces still available to pack</div>
+            </div>
+        </div>
+        <div class="pd-metrics-grid" style="margin-top:0.65rem;">
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">{{ filters.period_label }} Impressions</div>
+                <div class="pd-metric-value">{{ dashboard.production.period_impressions|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Printing impressions logged in period</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">{{ filters.period_label }} Packed Qty</div>
+                <div class="pd-metric-value">{{ dashboard.production.period_packed_qty|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Packing quantity logged in period</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="rd-section-label">
+            <span class="rd-section-icon dispatch"><i class="fas fa-truck"></i></span>
+            <div>
+                <div class="erp-eyebrow">Dispatch</div>
+                <h3>Fulfillment &amp; backlog</h3>
+            </div>
+        </div>
+        <div class="pd-metrics-grid">
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Balance Dispatch</div>
+                <div class="pd-metric-value">{{ dashboard.dispatch.balance_dispatch_qty|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Order qty still to dispatch</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">Jobs with Balance</div>
+                <div class="pd-metric-value">{{ dashboard.dispatch.open_jobs|floatformat:0 }}</div>
+                <div class="rd-metric-hint">Job cards with pending dispatch qty</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">{{ filters.period_label }} Dispatch Qty</div>
+                <div class="pd-metric-value">{{ dashboard.dispatch.period_dispatch_qty|floatformat:0 }}</div>
+                <div class="rd-metric-hint">{{ dashboard.dispatch.period_dispatch_rows }} dispatch rows · {{ dashboard.dispatch.period_dispatch_jobs }} jobs</div>
+            </div>
+        </div>
+    </section>
+
     <section class="erp-section-shell">
         <div class="erp-card-header">
             <div class="erp-card-title-stack">
-                <div class="erp-eyebrow">Reports</div>
-                <h3 class="erp-section-title">High-value operational views</h3>
-                <p class="erp-section-desc">These are the report areas that can improve planning accuracy and efficiency fastest.</p>
-            </div>
-            <div>
-                <form method="get" style="display:inline;">
-                    <select name="year" onchange="this.form.submit()">
-                        <option value="">Select year</option>
-                        <option value="2024" {% if year == 2024 %}selected{% endif %}>2024</option>
-                        <option value="2025" {% if year == 2025 %}selected{% endif %}>2025</option>
-                        <option value="2026" {% if year == 2026 %}selected{% endif %}>2026</option>
-                    </select>
-                </form>
+                <div class="erp-eyebrow">Detailed reports</div>
+                <h3 class="erp-section-title">Operational drill-down views</h3>
+                <p class="erp-section-desc">Open a focused report for machine load, QC queue, dispatch tracking, and more.</p>
             </div>
         </div>
         <div class="erp-grid erp-grid-2cols" style="gap:16px;">
             {% for report in report_cards %}
-            <a href="{% url 'reports:detail' report.key %}?year={{ year }}" class="erp-card erp-card-hover" style="display:block; text-decoration:none; color:inherit;">
+            <a href="{% url 'reports:detail' report.key %}?year={{ year }}&date_from={{ filters.date_from }}&date_to={{ filters.date_to }}" class="erp-card erp-card-hover" style="display:block; text-decoration:none; color:inherit;">
                 <div class="erp-card-content">
                     <div class="erp-eyebrow">{{ report.focus }}</div>
                     <h4>{{ report.title }}</h4>
@@ -34,28 +215,6 @@
                 </div>
                 <div class="erp-card-footer">Open report</div>
             </a>
-            {% endfor %}
-        </div>
-    </section>
-
-    <section class="erp-section-shell">
-        <div class="erp-card-header">
-            <div class="erp-card-title-stack">
-                <div class="erp-eyebrow">Health snapshot ({{ year }})</div>
-                <h3 class="erp-section-title">Module health and workload</h3>
-                <p class="erp-section-desc">A quick read on where work is piling up across the ERP.</p>
-            </div>
-        </div>
-        <div class="erp-grid erp-grid-3cols" style="gap:12px;">
-            {% for item in module_cards %}
-            <div class="erp-card">
-                <div class="erp-card-content">
-                    <div class="erp-eyebrow">{{ item.title }}</div>
-                    <h4 style="font-size:30px; margin:6px 0 2px;">{{ item.value }}</h4>
-                    <p style="margin:0;">{{ item.subtitle }}</p>
-                </div>
-                <div class="erp-card-footer">{{ item.hint }}</div>
-            </div>
             {% endfor %}
         </div>
     </section>
@@ -77,35 +236,6 @@
                 <div class="erp-card-footer">{{ item.hint }}</div>
             </div>
             {% endfor %}
-        </div>
-    </section>
-
-    <section class="erp-section-shell">
-        <div class="erp-card-header">
-            <div class="erp-card-title-stack">
-                <div class="erp-eyebrow">Recent activity</div>
-                <h3 class="erp-section-title">Change log trail</h3>
-            </div>
-        </div>
-        <div class="erp-table-wrap">
-            <table class="erp-table erp-table-dense">
-                <thead>
-                    <tr><th>Type</th><th>Record</th><th>Action</th><th>By</th><th>Date</th></tr>
-                </thead>
-                <tbody>
-                    {% for item in recent_changes %}
-                    <tr>
-                        <td>{{ item.get_entity_type_display }}</td>
-                        <td>{{ item.record_label }}</td>
-                        <td>{{ item.get_action_display }}</td>
-                        <td>{{ item.changed_by|default:'-' }}</td>
-                        <td>{{ item.created_at|date:'Y-m-d H:i' }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="5"><div class="erp-empty">No recent changes found.</div></td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
         </div>
     </section>
 </div>
