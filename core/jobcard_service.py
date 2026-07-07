@@ -140,7 +140,7 @@ def ensure_job_card_from_planning_job(planning_job, actor=None):
             'total_sheet_quantity': planning_job.calculated_sheets_required,
             'purchase_sheet_size': planning_job.purchase_sheet_size or '',
             'purchase_sheet_ups': planning_job.purchase_sheet_ups or None,
-            'remarks': planning_job.remarks or '',
+            'remarks': planning_job.remarks_display or '',
             'destination': planning_job.destination or '',
             'machine_name': machine,
             'department': department,

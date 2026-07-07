@@ -605,7 +605,7 @@ def _sync_new_jobs_for_approved_sku(sku, actor=None):
             'daily_demand': recipe.daily_demand,
             'plate_set_no': existing_job.plate_set_no if existing_job else (recipe.plate_set_no or ''),
             'machine_name': recipe.machine_name,
-            'remarks': recipe.remarks or (target_item.get('remarks') or '').strip() or (existing_job.remarks if existing_job else '') or recipe.notes or '',
+            'remarks': (target_item.get('remarks') or '').strip() or (existing_job.remarks if existing_job else '') or recipe.notes or '',
         }
 
         if not forward_as_new:

@@ -1651,6 +1651,25 @@ class PlanningJobImpressionCalculationTests(TestCase):
 		job.refresh_from_db()
 		self.assertEqual(job.planned_total_impressions, 1024)
 
+	def test_remarks_display_prefers_sku_notes_for_job_card(self):
+		recipe = SkuRecipe.objects.create(
+			sku='SKU-NOTES-1',
+			job_name='Notes Test',
+			notes='Sheet remarks live in notes',
+			remarks='Separate planner remarks field',
+			master_data_status='approved',
+			created_by=self.user,
+		)
+		job = PlanningJob.objects.create(
+			jc_number='JC-NOTES-1',
+			sku='SKU-NOTES-1',
+			job_name='Notes Test',
+			remarks='Separate planner remarks field',
+			status='draft',
+			created_by=self.user,
+		)
+		self.assertEqual(job.remarks_display, 'Sheet remarks live in notes')
+
 	def test_finalization_form_does_not_collect_print_passes(self):
 		from planning.forms import PlanningJobFinalizationForm
 

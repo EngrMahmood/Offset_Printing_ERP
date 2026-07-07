@@ -486,13 +486,14 @@ class PlanningJob(models.Model):
 
     @property
     def remarks_display(self):
-        remarks_text = (self.remarks or '').strip()
-        if remarks_text and remarks_text != '-':
-            return remarks_text
-        recipe = self.sku_recipe
+        """JC Remarks column shows SKU master notes (sheet Remarks), not SKU remarks field."""
+        recipe = self.approved_sku_recipe or self.sku_recipe
         recipe_notes = (recipe.notes or '').strip() if recipe else ''
         if recipe_notes and recipe_notes != '-':
             return recipe_notes
+        remarks_text = (self.remarks or '').strip()
+        if remarks_text and remarks_text != '-':
+            return remarks_text
         return ''
 
     @property
