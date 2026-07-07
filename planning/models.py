@@ -496,10 +496,22 @@ class PlanningJob(models.Model):
         return ''
 
     @property
+    def effective_print_passes(self):
+        """Passes owned by SKU master; job field is a synced snapshot for production."""
+        if self.is_cut_and_pack():
+            return None
+        if self.print_passes:
+            return int(self.print_passes)
+        recipe = self.approved_sku_recipe or self.sku_recipe
+        if recipe and recipe.print_passes:
+            return int(recipe.print_passes)
+        return None
+
+    @property
     def calculated_planned_total_impressions(self):
         """Auto impressions = total print sheets × no. of passes."""
         sheets = self.calculated_sheets_required
-        passes = self.print_passes
+        passes = self.effective_print_passes
         if sheets is None or not passes:
             return None
         return int(sheets) * int(passes)
@@ -577,6 +589,39 @@ class PlanningJob(models.Model):
         self.job_process_type = process
         return True
 
+    def _print_passes_frozen(self):
+        return (self.workflow_status or '').strip().lower() in {
+            'qc_approved',
+            'released',
+            'in_production',
+            'completed',
+            'closed',
+        }
+
+    def sync_print_passes_from_sku_master(self):
+        """Copy print passes from SKU master onto open jobs; freeze after QC approval."""
+        if self._print_passes_frozen():
+            return False
+
+        if self.is_cut_and_pack():
+            if self.print_passes is not None:
+                self.print_passes = None
+                return True
+            return False
+
+        recipe = self.approved_sku_recipe or self.sku_recipe
+        if not recipe and (self.sku or '').strip():
+            from planning.services import get_best_sku_recipe_for_sku
+            recipe = get_best_sku_recipe_for_sku(self.sku)
+        master_passes = getattr(recipe, 'print_passes', None) if recipe else None
+        if master_passes is None:
+            return False
+        master_passes = int(master_passes)
+        if self.print_passes == master_passes:
+            return False
+        self.print_passes = master_passes
+        return True
+
     def pre_submit_qc_validation_errors(self):
         errors = {}
         if self.is_cut_and_pack:
@@ -593,9 +638,10 @@ class PlanningJob(models.Model):
             errors['machine_name'] = 'Machine Name is required before QC approval.'
         if not str(self.purchase_material_origin or '').strip():
             errors['purchase_material_origin'] = 'Purchase Material Origin is required before QC approval.'
-        if not self.print_passes:
-            errors['print_passes'] = 'No. of Passes is required before QC approval.'
-        if self.print_passes and self.calculated_sheets_required is None:
+        passes = self.effective_print_passes
+        if not passes:
+            errors['print_passes'] = 'No. of Passes is required on SKU master before QC approval.'
+        elif self.calculated_sheets_required is None:
             errors['print_passes'] = 'Cannot calculate impressions until print sheets are available (order qty, UPS, wastage).'
         return errors
 
@@ -631,6 +677,10 @@ class PlanningJob(models.Model):
             if update_fields is not None:
                 update_fields.add('job_process_type')
 
+        if self.sync_print_passes_from_sku_master():
+            if update_fields is not None:
+                update_fields.add('print_passes')
+
         calculated_total_sheet_quantity = self.calculated_sheets_required
         if calculated_total_sheet_quantity is not None:
             self.actual_sheet_required = calculated_total_sheet_quantity
@@ -661,8 +711,9 @@ class PlanningJob(models.Model):
             if update_fields is not None:
                 update_fields.add('total_colors')
 
-        if self.print_passes and self.calculated_sheets_required is not None:
-            self.planned_total_impressions = int(self.calculated_sheets_required) * int(self.print_passes)
+        passes = self.effective_print_passes
+        if passes and self.calculated_sheets_required is not None:
+            self.planned_total_impressions = int(self.calculated_sheets_required) * int(passes)
             if update_fields is not None:
                 update_fields.add('planned_total_impressions')
 
@@ -778,6 +829,11 @@ class SkuRecipe(models.Model):
         choices=JOB_PROCESS_TYPE_CHOICES,
         default='print_and_pack',
         help_text='Default process for jobs using this SKU. Cut & Pack skips printing/plates.',
+    )
+    print_passes = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text='Number of press passes (1, 2, or 3) for Print + Pack SKUs.',
     )
     plate_set_no = models.CharField(max_length=120, blank=True)
 

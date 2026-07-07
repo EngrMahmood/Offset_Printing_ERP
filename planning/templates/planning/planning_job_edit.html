@@ -52,6 +52,7 @@
             <div class="erp-info-item"><div class="erp-info-item__label">Application</div><div class="erp-info-item__value">{{ job.application_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Product Type</div><div class="erp-info-item__value">{{ recipe.product_type|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Machine Name</div><div class="erp-info-item__value">{{ job.effective_machine_name|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">No. of Passes</div><div class="erp-info-item__value">{{ recipe.print_passes|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Plate Set No.</div><div class="erp-info-item__value">{{ job.effective_plate_set_no|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Size W mm</div><div class="erp-info-item__value">{{ job.size_w_mm_display|floatformat:"-2"|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Size H mm</div><div class="erp-info-item__value">{{ job.size_h_mm_display|floatformat:"-2"|default:'-' }}</div></div>
@@ -84,7 +85,7 @@
         <div class="erp-info-grid" id="planning-calculations-grid">
             <div class="erp-info-item"><div class="erp-info-item__label">Net Print Qty (pcs)</div><div class="erp-info-item__value" id="calc-net-print-qty">{{ job.net_print_qty|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Total Print Sheets Required</div><div class="erp-info-item__value" id="calc-print-sheets">{{ job.calculated_sheets_required|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">No. of Passes</div><div class="erp-info-item__value" id="calc-print-passes">{% if job.print_passes %}{{ job.print_passes }}{% else %}-{% endif %}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">No. of Passes</div><div class="erp-info-item__value" id="calc-print-passes">{% if job.effective_print_passes %}{{ job.effective_print_passes }}{% else %}-{% endif %}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Total Impressions</div><div class="erp-info-item__value" id="calc-total-impressions">{{ job.calculated_planned_total_impressions|default:job.planned_total_impressions|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Required</div><div class="erp-info-item__value" id="calc-purchase-sheets">{{ job.purchase_sheet_required_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value" id="calc-pkt-value">{{ job.calculated_pkt_value|floatformat:"-2"|default:'-' }}</div></div>
@@ -160,17 +161,17 @@
         netPrintQty: {{ job.net_print_qty|default:'null' }},
         ups: {{ job.ups_display|default:'null' }},
         purchaseSheetUps: {{ job.purchase_sheet_ups_display|default:'null' }},
+        printPasses: {{ job.effective_print_passes|default:'null' }},
     };
 
     const wastageInput = document.getElementById('id_wastage_sheets');
-    const passesSelect = document.getElementById('id_print_passes');
     const sheetsEl = document.getElementById('calc-print-sheets');
     const passesEl = document.getElementById('calc-print-passes');
     const impressionsEl = document.getElementById('calc-total-impressions');
     const purchaseSheetsEl = document.getElementById('calc-purchase-sheets');
     const pktValueEl = document.getElementById('calc-pkt-value');
 
-    if (!wastageInput || !passesSelect || !sheetsEl) {
+    if (!wastageInput || !sheetsEl) {
         return;
     }
 
@@ -199,7 +200,7 @@
         const purchaseSheetUps = Number(config.purchaseSheetUps);
         const netPrintQty = config.netPrintQty === null ? null : Number(config.netPrintQty);
         const wastage = parseNonNegativeInt(wastageInput.value);
-        const passes = parsePositiveInt(passesSelect.value);
+        const passes = parsePositiveInt(config.printPasses);
 
         if (wastage === null) {
             sheetsEl.textContent = '-';
@@ -237,7 +238,6 @@
 
     wastageInput.addEventListener('input', recalculatePlanningValues);
     wastageInput.addEventListener('change', recalculatePlanningValues);
-    passesSelect.addEventListener('change', recalculatePlanningValues);
     recalculatePlanningValues();
 })();
 </script>

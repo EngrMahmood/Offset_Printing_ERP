@@ -58,6 +58,7 @@
 {% endwith %}
 
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.machine_name label='Machine Name' required=True %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.print_passes label='No. of Passes' required=True help_text='Press passes for this SKU (1, 2, or 3). Not used for Cut & Pack.' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.default_unit_cost label='Default Unit Cost' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.daily_demand label='Daily Demand' %}
 

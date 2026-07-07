@@ -164,6 +164,7 @@ class PlanningWorkflowSyncTests(TestCase):
 			'daily_demand': '100',
 			'awc_no': 'AWC-1',
 			'die_cutting': 'NO',
+			'print_passes': 2,
 			'master_data_status': 'approved',
 			'approved_by': self.user,
 			'created_by': self.user,
@@ -283,7 +284,8 @@ class PlanningWorkflowSyncTests(TestCase):
 		recipe = self._create_approved_recipe('NEW-SKU-SYNC')
 		recipe.machine_name = 'Komori 6'
 		recipe.plate_set_no = 'SET-99'
-		recipe.save(update_fields=['machine_name', 'plate_set_no', 'updated_at'])
+		recipe.print_passes = 2
+		recipe.save(update_fields=['machine_name', 'plate_set_no', 'print_passes', 'updated_at'])
 		
 		# Sync creates the job because recipe is approved
 		_sync_repeat_jobs_from_po(po_doc, actor=self.user)
@@ -292,12 +294,12 @@ class PlanningWorkflowSyncTests(TestCase):
 		job = PlanningJob.objects.get(po_number='PO-NEW-SYNC', sku='NEW-SKU-SYNC')
 		job.wastage_sheets = 10
 		job.purchase_material_origin = 'local'
-		job.print_passes = 1
 		job.machine_name = ''
 		job.plate_set_no = ''
+		job.print_passes = None
 		job.save(update_fields=[
-			'wastage_sheets', 'purchase_material_origin', 'print_passes',
-			'machine_name', 'plate_set_no', 'updated_at',
+			'wastage_sheets', 'purchase_material_origin',
+			'machine_name', 'plate_set_no', 'print_passes', 'updated_at',
 		])
 		self.client.force_login(self.user)
 
@@ -311,6 +313,7 @@ class PlanningWorkflowSyncTests(TestCase):
 		self.assertEqual(job.status, 'pending_qc')
 		self.assertEqual(job.machine_name, 'Komori 6')
 		self.assertEqual(job.plate_set_no, 'SET-99')
+		self.assertEqual(job.print_passes, 2)
 
 	def test_submit_to_qc_blocks_when_product_type_missing_on_approved_sku(self):
 		po_doc = self._create_po_document(sku='NEW-SKU-PT', po_number='PO-NEW-PT')
@@ -326,10 +329,9 @@ class PlanningWorkflowSyncTests(TestCase):
 		job.wastage_sheets = 12
 		job.plate_set_no = 'PLATE-1'
 		job.purchase_material_origin = 'local'
-		job.print_passes = 2
 		job.save(update_fields=[
 			'machine_name', 'wastage_sheets', 'plate_set_no',
-			'purchase_material_origin', 'print_passes', 'updated_at',
+			'purchase_material_origin', 'updated_at',
 		])
 		self.client.force_login(self.user)
 
@@ -484,8 +486,7 @@ class PlanningWorkflowSyncTests(TestCase):
 		job.wastage_sheets = 12
 		job.plate_set_no = 'PLATE-1'
 		job.purchase_material_origin = 'local'
-		job.print_passes = 2
-		job.save(update_fields=['machine_name', 'wastage_sheets', 'plate_set_no', 'purchase_material_origin', 'print_passes', 'updated_at'])
+		job.save(update_fields=['machine_name', 'wastage_sheets', 'plate_set_no', 'purchase_material_origin', 'updated_at'])
 		self.assertFalse(JobCard.objects.filter(planning_job=job).exists())
 
 		self.client.force_login(self.user)
@@ -997,6 +998,8 @@ class MasterDataSyncTests(TestCase):
 			daily_demand='100',
 			awc_no='AWC-1',
 			die_cutting='NO',
+			plate_set_no='SET-1',
+			print_passes=2,
 			master_data_status='approved',
 			approved_by=self.user,
 			created_by=self.user,
@@ -1177,6 +1180,7 @@ class PendingSkuMasterEntryPlannerTests(TestCase):
 			'material': 'Paper',
 			'application': 'UV',
 			'machine_name': 'Machine A',
+			'print_passes': '2',
 			'action': 'send_to_plate_making',
 		})
 		
@@ -1193,6 +1197,43 @@ class PendingSkuMasterEntryPlannerTests(TestCase):
 		self.assertEqual(job.material, 'Paper')
 		self.assertEqual(job.application, 'UV')
 		self.assertEqual(job.planning_stage, 'new_plate_making')
+
+	def test_send_to_plate_making_requires_print_passes(self):
+		from core.models import Machine
+		from planning.models import PlanningJob, SkuRecipe
+
+		Machine.objects.create(name='Machine A')
+		po_doc = self._create_po_document()
+		SkuRecipe.objects.create(
+			sku='TEST-SKU-100',
+			job_name='TEST-SKU-100 Job',
+			master_data_status='draft',
+			created_by=self.user,
+		)
+		PlanningJob.objects.create(
+			jc_number='JC-TEST-100',
+			po_number='PO-100',
+			sku='TEST-SKU-100',
+			job_name='TEST-SKU-100 Job',
+			order_qty=1000,
+			status='draft',
+			machine_name='Machine A',
+			repeat_flag='New',
+		)
+
+		from django.urls import reverse
+		url = reverse('planning:pending_sku_master_entry')
+		response = self.client.post(url, {
+			'po_doc_id': po_doc.id,
+			'sku': 'TEST-SKU-100',
+			'material': 'Paper',
+			'application': 'UV',
+			'machine_name': 'Machine A',
+			'action': 'send_to_plate_making',
+		})
+		self.assertEqual(response.status_code, 200)
+		job = PlanningJob.objects.get(po_number='PO-100', sku__iexact='TEST-SKU-100')
+		self.assertNotEqual(job.planning_stage, 'new_plate_making')
 
 	def test_send_to_plate_making_creates_job_and_plate_request_when_po_has_no_jc(self):
 		from core.models import Machine, Material
@@ -1218,6 +1259,7 @@ class PendingSkuMasterEntryPlannerTests(TestCase):
 			'material': 'Paper',
 			'application': 'UV',
 			'machine_name': 'Machine B',
+			'print_passes': '2',
 			'action': 'send_to_plate_making',
 		})
 		self.assertEqual(response.status_code, 302)
@@ -1609,22 +1651,74 @@ class PlanningJobImpressionCalculationTests(TestCase):
 		job.refresh_from_db()
 		self.assertEqual(job.planned_total_impressions, 1024)
 
-	def test_finalization_form_rejects_missing_passes(self):
+	def test_finalization_form_does_not_collect_print_passes(self):
 		from planning.forms import PlanningJobFinalizationForm
 
 		job = self._create_job()
-		form = PlanningJobFinalizationForm(
-			data={
-				'delivery_date': '2026-05-10',
-				'wastage_sheets': 12,
-				'purchase_material_origin': 'local',
-				'destination': 'Main Warehouse',
-				'requirement': 'Standard run',
-			},
-			instance=job,
+		form = PlanningJobFinalizationForm(instance=job)
+		self.assertNotIn('print_passes', form.fields)
+
+	def test_sku_master_print_passes_required_for_approval(self):
+		from planning.models import SkuRecipe
+		from workflow.services import _missing_required_master_fields
+
+		recipe = SkuRecipe(
+			sku='SKU-PASS-1',
+			job_name='Test Job',
+			material='Paper',
+			color_spec='4',
+			application='UV',
+			product_type='Label',
+			print_sheet_size='720x1020',
+			purchase_sheet_size='720x1020',
+			ups=4,
+			purchase_sheet_ups=2,
+			awc_no='AWC-1',
+			die_cutting='YES',
+			plate_set_no='SET-1',
+			job_process_type='print_and_pack',
+			print_passes=None,
 		)
-		self.assertFalse(form.is_valid())
-		self.assertIn('print_passes', form.errors)
+		missing = _missing_required_master_fields(recipe)
+		self.assertIn('No. of Passes', missing)
+
+	def test_released_job_keeps_print_passes_when_master_changes(self):
+		recipe = SkuRecipe.objects.create(
+			sku='SKU-FREEZE-PASS',
+			job_name='Freeze Pass SKU',
+			material='Paper',
+			color_spec='4',
+			application='UV',
+			product_type='Label',
+			print_sheet_size='25x36',
+			purchase_sheet_size='25x36',
+			ups=2,
+			purchase_sheet_ups=2,
+			awc_no='AWC-1',
+			die_cutting='NO',
+			plate_set_no='SET-1',
+			print_passes=2,
+			master_data_status='approved',
+			approved_by=self.user,
+			created_by=self.user,
+		)
+		job = PlanningJob.objects.create(
+			jc_number='JC-FREEZE-PASS',
+			sku='SKU-FREEZE-PASS',
+			job_name='Freeze Pass Job',
+			order_qty=1000,
+			ups=2,
+			wastage_sheets=12,
+			status='released',
+			print_passes=2,
+			created_by=self.user,
+		)
+
+		recipe.print_passes = 3
+		recipe.save(update_fields=['print_passes', 'updated_at'])
+		job.sync_print_passes_from_sku_master()
+
+		self.assertEqual(job.print_passes, 2)
 
 	def test_job_card_uses_planned_impressions_not_raw_sheets(self):
 		from core.jobcard_service import ensure_job_card_from_planning_job

@@ -149,6 +149,7 @@ SKU_RECIPE_DESIGNER_FIELDS = [
 
 SKU_RECIPE_PLANNER_FIELDS = [
     'job_process_type',
+    'print_passes',
     'material',
     'application',
     'machine_name',
@@ -408,6 +409,7 @@ def build_sku_recipe_initial_from_recipe(recipe=None, *, planning_job=None, po_d
         'sku': sku,
         'job_name': job_name,
         'job_process_type': _r('job_process_type', 'print_and_pack') or 'print_and_pack',
+        'print_passes': _r('print_passes', None),
         'material': _r('material', ''),
         'color_spec': color_spec,
         'application': _r('application', ''),
@@ -866,8 +868,25 @@ def prepare_sku_recipe_form_for_master_entry(form, *, action=''):
     for field_name in SKU_RECIPE_DESIGNER_FIELDS:
         if field_name in form.fields:
             form.fields[field_name].required = False
+    if action == 'save_draft' and 'print_passes' in form.fields:
+        form.fields['print_passes'].required = False
+        form.fields['print_passes'].widget.attrs.pop('required', None)
     if action == 'send_to_plate_making' and 'product_type' in form.fields:
         form.fields['product_type'].required = False
+
+
+def get_plate_making_prerequisite_errors(planning_job):
+    """Return human-readable blockers before opening plate making."""
+    errors = []
+    if not (planning_job.material or '').strip():
+        errors.append('Material Type is required before Plate Making.')
+    if not (planning_job.application or '').strip():
+        errors.append('Application is required before Plate Making.')
+    if not planning_job.effective_machine_name:
+        errors.append('Machine Name is required before Plate Making.')
+    if not planning_job.is_cut_and_pack() and not planning_job.effective_print_passes:
+        errors.append('No. of Passes is required on SKU master before Plate Making.')
+    return errors
 
 
 def trigger_plate_request_for_planning_job(planning_job, user):
@@ -1182,7 +1201,7 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
     cut_and_pack = bool(
         recipe and (getattr(recipe, 'job_process_type', '') or 'print_and_pack') == 'cut_and_pack'
     )
-    skip_for_cut_and_pack = {'color_spec'}
+    skip_for_cut_and_pack = {'color_spec', 'print_passes'}
 
     if not recipe:
         fallback = (fallback_job_name or '').strip()
@@ -1223,6 +1242,19 @@ def sync_recipe_operational_fields_to_job(job, recipe=None):
         job.job_process_type = recipe_process
         update_fields.append('job_process_type')
 
+    frozen_statuses = {'qc_approved', 'released', 'in_production', 'completed', 'closed'}
+    job_status = (job.workflow_status or '').strip().lower()
+    if job_status not in frozen_statuses:
+        if (recipe.job_process_type or 'print_and_pack') == 'cut_and_pack':
+            if job.print_passes is not None:
+                job.print_passes = None
+                update_fields.append('print_passes')
+        elif recipe.print_passes:
+            master_passes = int(recipe.print_passes)
+            if job.print_passes != master_passes:
+                job.print_passes = master_passes
+                update_fields.append('print_passes')
+
     if update_fields:
         update_fields.append('updated_at')
         job.save(update_fields=update_fields)
@@ -1258,7 +1290,7 @@ def get_job_qc_submission_blockers(job, *, apply_recipe_sync=True):
     for field_name, error_message in job.pre_submit_qc_validation_errors().items():
         if error_message in blockers:
             continue
-        if field_name in {'machine_name', 'plate_set_no'}:
+        if field_name in {'machine_name', 'plate_set_no', 'print_passes'}:
             blockers.append(
                 f'{error_message} Update these on the locked SKU master (Reopen SKU), then re-approve.'
             )

@@ -109,7 +109,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
         fields = [
             'delivery_date',
             'wastage_sheets',
-            'print_passes',
             'purchase_material_origin',
             'destination',
             'remarks',
@@ -121,7 +120,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             'requirement': forms.Textarea(attrs={'rows': 3}),
         }
         labels = {
-            'print_passes': 'No. of Passes',
             'requirement': 'Special Instructions',
             'purchase_material_origin': 'Purchase Material Origin',
         }
@@ -131,7 +129,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
         required_fields = [
             'delivery_date',
             'wastage_sheets',
-            'print_passes',
             'purchase_material_origin',
             'destination',
             'requirement',
@@ -141,40 +138,17 @@ class PlanningJobFinalizationForm(forms.ModelForm):
                 self.fields[field_name].required = True
                 self.fields[field_name].widget.attrs.setdefault('required', 'required')
 
-        if 'print_passes' in self.fields:
-            self.fields['print_passes'].widget = forms.Select(
-                choices=PRINT_PASS_CHOICES,
-                attrs={'class': 'erp-select'},
-            )
-
         if 'purchase_material_origin' in self.fields:
             self.fields['purchase_material_origin'].widget = forms.Select(
                 choices=PURCHASE_MATERIAL_ORIGIN_CHOICES,
                 attrs={'class': 'erp-select'},
             )
 
-        # Cut & Pack jobs (from SKU master) do not use print passes.
-        if self.instance and self.instance.pk and self.instance.is_cut_and_pack():
-            if 'print_passes' in self.fields:
-                self.fields['print_passes'].required = False
-                self.fields['print_passes'].widget = forms.HiddenInput()
-                self.fields['print_passes'].widget.attrs.pop('required', None)
-
     def _is_cut_and_pack(self):
         return self.instance.is_cut_and_pack() if self.instance and self.instance.pk else False
 
-    def clean_print_passes(self):
-        value = self.cleaned_data.get('print_passes')
-        if value in (None, ''):
-            return None
-        passes = int(value)
-        if passes not in {1, 2, 3}:
-            raise forms.ValidationError('Select 1, 2, or 3 passes.')
-        return passes
-
     def clean(self):
         cleaned = super().clean()
-        # Job process comes from SKU master only (no planning override).
         cut_and_pack = self._is_cut_and_pack()
 
         required_messages = {
@@ -184,36 +158,30 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             'destination': 'Destination is required.',
             'requirement': 'Special Instructions is required.',
         }
-        if not cut_and_pack:
-            required_messages['print_passes'] = 'No. of Passes is required.'
 
         for field_name, message in required_messages.items():
             value = cleaned.get(field_name)
             if field_name == 'wastage_sheets':
                 if value is None:
                     self.add_error(field_name, message)
-            elif field_name == 'print_passes':
-                if not cut_and_pack and value is None:
-                    self.add_error(field_name, message)
             else:
                 if not str(value or '').strip():
                     self.add_error(field_name, message)
 
         if cut_and_pack:
-            cleaned['print_passes'] = None
             cleaned['planned_total_impressions'] = None
             return cleaned
 
-        print_passes = cleaned.get('print_passes')
-        if print_passes and not self.errors.get('print_passes') and not self.errors.get('wastage_sheets'):
-            preview_job = self.instance
-            preview_wastage = cleaned.get('wastage_sheets')
-            if preview_wastage is not None:
-                preview_job.wastage_sheets = preview_wastage
-            preview_job.print_passes = print_passes
+        preview_job = self.instance
+        preview_wastage = cleaned.get('wastage_sheets')
+        if preview_wastage is not None:
+            preview_job.wastage_sheets = preview_wastage
+        preview_job.sync_print_passes_from_sku_master()
+        passes = preview_job.effective_print_passes
+        if passes and not self.errors.get('wastage_sheets'):
             if preview_job.calculated_sheets_required is None:
                 self.add_error(
-                    'print_passes',
+                    None,
                     'Cannot calculate impressions until print sheets are available (order qty, UPS, and wastage).',
                 )
             else:
@@ -227,26 +195,28 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             qc_required_messages = {
                 'wastage_sheets': 'Wastage is required before QC approval.',
                 'purchase_material_origin': 'Purchase Material Origin is required before QC approval.',
-                'print_passes': 'No. of Passes is required before QC approval.',
             }
             for field_name, message in qc_required_messages.items():
                 value = cleaned.get(field_name)
                 if field_name == 'wastage_sheets':
                     if value is None:
                         self.add_error(field_name, message)
-                elif field_name == 'print_passes':
-                    if value is None:
-                        self.add_error(field_name, message)
                 else:
                     if not str(value or '').strip():
                         self.add_error(field_name, message)
+
+            if not passes:
+                self.add_error(
+                    None,
+                    'No. of Passes is required on SKU master before QC approval.',
+                )
 
         return cleaned
 
     def save(self, commit=True):
         job = super().save(commit=False)
-        # Keep job process aligned with SKU master (not editable on planning).
         job.sync_job_process_type_from_sku_master()
+        job.sync_print_passes_from_sku_master()
         job.sync_planned_total_impressions()
         if commit:
             job.save()
@@ -264,6 +234,7 @@ class SkuRecipeForm(forms.ModelForm):
             'sku',
             'job_name',
             'job_process_type',
+            'print_passes',
             'material',
             'color_spec',
             'application',
@@ -379,18 +350,36 @@ class SkuRecipeForm(forms.ModelForm):
         )
         self.fields['job_process_type'].required = True
 
+        if 'print_passes' in self.fields:
+            self.fields['print_passes'].widget = forms.Select(
+                choices=PRINT_PASS_CHOICES,
+                attrs={'class': 'erp-select', 'id': 'id_print_passes'},
+            )
+            self.fields['print_passes'].label = 'No. of Passes'
+            self.fields['print_passes'].help_text = (
+                'Press passes for this SKU (1, 2, or 3). Not used for Cut & Pack.'
+            )
+
         # Print Color required only for Print + Pack (validated in clean()).
         process_value = ''
         if self.data:
             process_value = (self.data.get('job_process_type') or '').strip()
         elif self.instance and self.instance.pk:
             process_value = (self.instance.job_process_type or '').strip()
-        if process_value != 'cut_and_pack':
+        cut_and_pack = process_value == 'cut_and_pack'
+        if not cut_and_pack:
             self.fields['color_spec'].required = True
             self.fields['color_spec'].widget.attrs.setdefault('required', 'required')
+            if 'print_passes' in self.fields:
+                self.fields['print_passes'].required = True
+                self.fields['print_passes'].widget.attrs.setdefault('required', 'required')
         else:
             self.fields['color_spec'].required = False
             self.fields['color_spec'].widget.attrs.pop('required', None)
+            if 'print_passes' in self.fields:
+                self.fields['print_passes'].required = False
+                self.fields['print_passes'].widget = forms.HiddenInput()
+                self.fields['print_passes'].widget.attrs.pop('required', None)
 
         if 'die_cutting' in self.fields:
             self.fields['die_cutting'].widget.attrs.setdefault('required', 'required')
@@ -406,7 +395,21 @@ class SkuRecipeForm(forms.ModelForm):
             and not (cleaned.get('color_spec') or '').strip()
         ):
             self.add_error('color_spec', 'Print Color is required for Print + Pack jobs.')
+        if process == 'cut_and_pack':
+            cleaned['print_passes'] = None
+        elif self.fields.get('print_passes') and self.fields['print_passes'].required:
+            if cleaned.get('print_passes') in (None, ''):
+                self.add_error('print_passes', 'No. of Passes is required for Print + Pack jobs.')
         return cleaned
+
+    def clean_print_passes(self):
+        value = self.cleaned_data.get('print_passes')
+        if value in (None, ''):
+            return None
+        passes = int(value)
+        if passes not in {1, 2, 3}:
+            raise forms.ValidationError('Select 1, 2, or 3 passes.')
+        return passes
 
     def clean_color_spec(self):
         from core.print_colors import resolve_print_color_name

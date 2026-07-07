@@ -204,10 +204,22 @@ class PlateWorkflowTestCase(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.planning_stage, 'jc_ready')
         
-        # 2. Fill in planner details and transition (should succeed)
+        # 2. Fill in planner details but omit passes (should fail)
         job.material = 'Cardboard 300gsm'
         job.application = 'Packaging'
         job.machine_name = 'KBA'
+        job.save()
+        response = self.client.post(url, {
+            'action': 'update_planning_stage',
+            'job_id': job.id,
+            'planning_stage': 'plate_making'
+        })
+        self.assertEqual(response.status_code, 302)
+        job.refresh_from_db()
+        self.assertEqual(job.planning_stage, 'jc_ready')
+
+        # 3. Add passes and transition (should succeed)
+        job.print_passes = 2
         job.save()
         
         response = self.client.post(url, {

@@ -242,6 +242,7 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('awc_no', 'AWC #'),
     ('die_cutting', 'Die Cutting'),
     ('plate_set_no', 'Plate Set No.'),
+    ('print_passes', 'No. of Passes'),
 ]
 
 
@@ -250,7 +251,7 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
     cut_and_pack = bool(
         recipe and (getattr(recipe, 'job_process_type', '') or 'print_and_pack') == 'cut_and_pack'
     )
-    skip_for_cut_and_pack = {'color_spec'}
+    skip_for_cut_and_pack = {'color_spec', 'print_passes'}
 
     if not recipe:
         fallback = (fallback_job_name or '').strip()

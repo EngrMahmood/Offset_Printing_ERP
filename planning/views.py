@@ -72,6 +72,7 @@ from .services import (
     merge_preserved_sku_recipe_fields,
     restore_locked_designer_fields_on_recipe,
     prepare_sku_recipe_form_for_master_entry,
+    get_plate_making_prerequisite_errors,
     get_sku_recipe_form_ui_context,
     get_best_sku_recipe_for_sku,
     ensure_sku_recipe_for_planning_job,
@@ -259,6 +260,7 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
     ('awc_no', 'AWC #'),
     ('die_cutting', 'Die Cutting'),
     ('plate_set_no', 'Plate Set No.'),
+    ('print_passes', 'No. of Passes'),
 ]
 
 _COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
@@ -923,8 +925,9 @@ def planning_home(request):
 
                 # Resolve plate-making stage from repeat_flag (never trust raw new/repeat stage POST).
                 if planning_stage in ['plate_making', 'new_plate_making', 'repeat_plate_making']:
-                    if not (job.material or '').strip() or not (job.application or '').strip() or not (job.machine_name or '').strip():
-                        messages.error(request, 'Material Type, Application, and Machine Name are required on the Job Card before starting Plate Making.')
+                    plate_errors = get_plate_making_prerequisite_errors(job)
+                    if plate_errors:
+                        messages.error(request, ' '.join(plate_errors))
                         return redirect('planning:jobs')
 
                     from printing_plates.services import get_planning_plate_making_block_message
@@ -1758,7 +1761,7 @@ def planning_job_edit(request, job_id):
             if (job.repeat_flag or '').lower() == 'repeat':
                 changed_fields = []
                 edit_fields = [
-                    'delivery_date', 'wastage_sheets', 'print_passes', 'plate_set_no', 'machine_name',
+                    'delivery_date', 'wastage_sheets', 'plate_set_no', 'machine_name',
                     'planned_total_impressions', 'purchase_material_origin', 'destination',
                     'remarks', 'requirement', 'status',
                 ]
@@ -3993,7 +3996,22 @@ def pending_sku_master_entry(request):
                     job.application = obj.application
                     job.machine_name = obj.machine_name
                     job.plate_set_no = obj.plate_set_no
-                    job.save(update_fields=['material', 'application', 'machine_name', 'plate_set_no', 'updated_at'])
+                    if (obj.job_process_type or 'print_and_pack') == 'cut_and_pack':
+                        job.print_passes = None
+                    elif obj.print_passes:
+                        job.print_passes = int(obj.print_passes)
+                    job.save(update_fields=[
+                        'material', 'application', 'machine_name', 'plate_set_no',
+                        'print_passes', 'updated_at',
+                    ])
+
+                    plate_errors = get_plate_making_prerequisite_errors(job)
+                    if plate_errors:
+                        messages.error(request, ' '.join(plate_errors))
+                        return redirect(
+                            f"{reverse('planning:pending_sku_master_entry')}?po_doc_id={po_doc_id}&sku={sku}"
+                            f"{'&return_q=' + return_q if return_q else ''}{'&return_po=' + return_po if return_po else ''}"
+                        )
 
                     from planning.sku_classification import plate_making_stage_for_repeat_flag
 
