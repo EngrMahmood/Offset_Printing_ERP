@@ -53,6 +53,7 @@ from core.jc_numbering import allocate_next_jc_number
 from core.models import ChangeLog, JobCard, Machine
 from core.jobcard_service import job_card_queue_queryset, execute_job_card_action
 from core.views import permission_required
+from reports.export.services import export_as_pdf, export_as_xlsx
 from .forms import JobCardLayoutForm, PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeForm
 from .services import (
     _user_is_admin, _planning_status_filter_values, _parse_date_filter,
@@ -745,6 +746,135 @@ def planning_jobs_drafts(request):
 @permission_required('can_edit_jobcard')
 def planning_jobs_locked(request):
     return redirect(f"{reverse('planning:jobs')}?status=qc_approved")
+
+
+SUMMARY_COLUMN_OPTIONS = [
+    ('jc_number', 'Job Card No'),
+    ('po_number', 'PO Number'),
+    ('sku', 'SKU'),
+    ('job_name', 'Job Name'),
+    ('status', 'Status'),
+    ('planning_stage', 'Planning Stage'),
+    ('machine_name', 'Machine'),
+    ('department', 'Department'),
+    ('order_qty', 'Order Qty'),
+    ('delivery_date', 'Delivery Date'),
+    ('po_approval_date', 'PO Approval Date'),
+    ('plan_date', 'Plan Date'),
+]
+
+DEFAULT_SUMMARY_COLUMNS = [
+    'jc_number', 'po_number', 'sku', 'job_name', 'status',
+    'planning_stage', 'machine_name', 'department', 'order_qty',
+    'delivery_date',
+]
+
+
+def _summary_column_value(job, column):
+    if column == 'po_approval_date':
+        return job.po_approval_date.strftime('%Y-%m-%d') if job.po_approval_date else ''
+    if column == 'plan_date':
+        return job.plan_date.strftime('%Y-%m-%d') if job.plan_date else ''
+    if column == 'delivery_date':
+        return job.delivery_date.strftime('%Y-%m-%d') if job.delivery_date else ''
+    if column == 'order_qty':
+        return job.order_qty or ''
+    if column == 'machine_name':
+        return job.machine_name or ''
+    if column == 'department':
+        return job.department or ''
+    if column == 'planning_stage':
+        return job.planning_stage or ''
+    if column == 'status':
+        return job.status or ''
+    return getattr(job, column, '') or ''
+
+
+@login_required
+@permission_required('can_view_planning_queue')
+def planning_jobs_summary(request):
+    column_keys = [key for key, _ in SUMMARY_COLUMN_OPTIONS]
+    selected_columns = request.GET.getlist('columns')
+    if not selected_columns:
+        raw_columns = (request.GET.get('columns') or '').strip()
+        if raw_columns:
+            selected_columns = [item.strip() for item in raw_columns.split(',') if item.strip()]
+    selected_columns = [col for col in selected_columns if col in column_keys]
+    if not selected_columns:
+        selected_columns = DEFAULT_SUMMARY_COLUMNS.copy()
+
+    q = (request.GET.get('q') or '').strip()
+    status_filter = (request.GET.get('status') or '').strip()
+    department_filter = (request.GET.get('department') or '').strip()
+    machine_filter = (request.GET.get('machine') or '').strip()
+    from_date = _parse_date_filter(request.GET.get('from_date'))
+    to_date = _parse_date_filter(request.GET.get('to_date'))
+
+    queryset = PlanningJob.objects.filter(is_active=True)
+    if q:
+        queryset = queryset.filter(
+            Q(jc_number__icontains=q)
+            | Q(po_number__icontains=q)
+            | Q(sku__icontains=q)
+            | Q(job_name__icontains=q)
+        )
+    if status_filter:
+        queryset = queryset.filter(status__in=_planning_status_filter_values(status_filter))
+    if department_filter:
+        queryset = queryset.filter(department__icontains=department_filter)
+    if machine_filter:
+        queryset = queryset.filter(machine_name__icontains=machine_filter)
+    if from_date:
+        queryset = queryset.filter(po_approval_date__gte=from_date)
+    if to_date:
+        queryset = queryset.filter(po_approval_date__lte=to_date)
+
+    jobs = queryset.order_by('-plan_date', '-id').select_related('job_card')[:1000]
+    rows = []
+    for job in jobs:
+        row = {'id': job.id}
+        row.update({col: _summary_column_value(job, col) for col in selected_columns})
+        rows.append(row)
+
+    export_type = (request.GET.get('export') or '').strip().lower()
+    if export_type in {'xlsx', 'pdf'}:
+        payload = {
+            'report': {'title': 'Job Summary'},
+            'generated_at': timezone.localtime().strftime('%Y-%m-%d %H:%M:%S'),
+            'data': rows,
+        }
+        if export_type == 'xlsx':
+            content = export_as_xlsx(payload)
+            response = HttpResponse(
+                content,
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+            response['Content-Disposition'] = 'attachment; filename="job-summary.xlsx"'
+            return response
+        content = export_as_pdf(payload)
+        response = HttpResponse(content, content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="job-summary.pdf"'
+        return response
+
+    return render(
+        request,
+        'planning/planning_jobs_summary.html',
+        {
+            'rows': rows,
+            'selected_columns': selected_columns,
+            'column_options': SUMMARY_COLUMN_OPTIONS,
+            'status_choices': PLANNING_STATUSES,
+            'filters': {
+                'q': q,
+                'status': status_filter,
+                'department': department_filter,
+                'machine': machine_filter,
+                'from_date': request.GET.get('from_date', ''),
+                'to_date': request.GET.get('to_date', ''),
+            },
+            'export_query': request.GET.urlencode(),
+        },
+    )
 
 
 @login_required

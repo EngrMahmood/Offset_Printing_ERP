@@ -39,6 +39,12 @@
                 Reports
             </a>
             {% endif %}
+            {% if nav.can_access_job_summary %}
+            <a href="{% url 'job_summary:home' %}"
+               class="erp-topnav-module {% if app == 'job_summary' %}is-active{% endif %}">
+                Jobs Summary
+            </a>
+            {% endif %}
             {% if nav.can_access_qc %}
             <a href="{% url 'qc:qc_home' %}"
                class="erp-topnav-module {% if app == 'qc' %}is-active{% endif %}">

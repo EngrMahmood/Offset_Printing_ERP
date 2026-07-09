@@ -11,6 +11,7 @@ urlpatterns = [
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     path('', home, name='home'),
     path('planning/', include('planning.urls', namespace='planning')),
+    path('job-summary/', include('job_summary.urls', namespace='job_summary')),
     path('printing-plates/', include('printing_plates.urls', namespace='printing_plates')),
     path('reports/', include('reports.urls', namespace='reports')),
     path('migration/', include('migration.urls', namespace='migration')),

@@ -1451,6 +1451,13 @@ class UserProfile(models.Model):
         """Can archive and restore operational records"""
         return self.normalized_role in ('admin', 'manager', 'production_manager')
     
+    def can_view_job_summary(self):
+        """Can view the Jobs Summary dashboard."""
+        return self.normalized_role in (
+            'admin', 'manager', 'planner', 'production_manager',
+            'production', 'qc', 'dispatch'
+        )
+
     def can_view_reports(self):
         """Can view financial/operational reports"""
         return self.normalized_role in ('admin', 'manager', 'finance')

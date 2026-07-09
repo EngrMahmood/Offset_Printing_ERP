@@ -12,6 +12,7 @@ urlpatterns = [
     path('po/manual/', views.manual_po_entry, name='po_manual'),
     path('actions/pending/', views.planning_pending_actions, name='pending_actions'),
     path('jobs/', views.planning_home, name='jobs'),
+    path('jobs/summary/', views.planning_jobs_summary, name='jobs_summary'),
     path('jobs/drafts/', views.planning_jobs_drafts, name='jobs_drafts'),
     path('jobs/locked/', views.planning_jobs_locked, name='jobs_locked'),
     path('jobs/archived/', views.planning_jobs_archived, name='jobs_archived'),
