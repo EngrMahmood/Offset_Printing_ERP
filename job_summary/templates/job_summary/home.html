@@ -1,0 +1,275 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+{% load job_summary_tags %}
+
+{% block title %}Jobs Summary{% endblock %}
+{% block header_title %}Jobs Summary{% endblock %}
+{% block header_subtitle %}View job details across the system, select columns, and export to Excel or PDF.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'job_summary:home' %}" class="erp-btn erp-btn-primary">Refresh</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+.erp-form-grid {
+    display: grid;
+    grid-template-columns: minmax(240px, 1.8fr) minmax(220px, 1.2fr) auto;
+    gap: 14px;
+    align-items: end;
+}
+.erp-table {
+    width: 100%;
+    min-width: 900px;
+}
+.erp-table-wrap {
+    overflow-x: auto;
+}
+.erp-tiny {
+    font-size: 0.82rem;
+}
+.erp-column-checkboxes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+.filters-dropdown {
+    position: relative;
+}
+.filters-dropdown summary {
+    list-style: none;
+    margin: 0;
+    padding: 8px 10px;
+    cursor: pointer;
+    border: 1px solid #d8dee6;
+    border-radius: 6px;
+    background: #fff;
+    min-width: 110px;
+}
+.filters-dropdown summary::-webkit-details-marker {
+    display: none;
+}
+.filters-dropdown[open] summary {
+    background: #f5f8fc;
+}
+.filters-dropdown .erp-dropdown-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    z-index: 30;
+    width: max-content;
+    min-width: 200px;
+    max-width: 320px;
+    max-height: 240px;
+    overflow: auto;
+    padding: 10px;
+    background: #fff;
+    border: 1px solid #d8dee6;
+    border-radius: 8px;
+    box-shadow: 0 12px 28px rgba(17, 30, 46, 0.12);
+}
+.filters-dropdown label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+    white-space: nowrap;
+}
+.filters-dropdown label:last-child {
+    margin-bottom: 0;
+}
+.filters-dropdown-actions {
+    display: flex;
+    justify-content: space-between;
+    gap: 6px;
+    margin-bottom: 8px;
+}
+.filters-dropdown-actions button {
+    border: 1px solid #d8dee6;
+    background: #f7f9fb;
+    color: #102a43;
+    border-radius: 6px;
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.82rem;
+}
+.filters-dropdown-actions button:hover {
+    background: #edf2f7;
+}
+@media (max-width: 900px) {
+    .erp-form-grid { grid-template-columns: 1fr; }
+    .erp-column-checkboxes { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Summary</div>
+                <h3 class="erp-section-title">Jobs Summary</h3>
+                <p class="erp-section-desc">Search across all jobs, choose visible columns, and export the current view.</p>
+            </div>
+        </div>
+
+        <form method="get" class="erp-form-grid">
+            <div class="erp-card" style="padding:16px;">
+                <div class="erp-card-header" style="margin-bottom:10px;">
+                    <h3 class="erp-card-title">Columns</h3>
+                </div>
+                <div class="erp-column-checkboxes">
+                    {% for key,label in column_options %}
+                    <label class="erp-checkbox-label" style="display:flex;align-items:center;gap:8px;">
+                        <input type="checkbox" name="columns" value="{{ key }}" {% if key in selected_columns %}checked{% endif %}>
+                        {{ label }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="erp-actions" style="display:grid; gap:10px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'job_summary:home' %}" class="erp-btn erp-btn-secondary">Reset</a>
+                <a href="?{{ export_query }}&export=xlsx" class="erp-btn erp-btn-success">Download Excel</a>
+                <a href="?{{ export_query }}&export=pdf" class="erp-btn erp-btn-warning">Download PDF</a>
+            </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        {% for col in selected_columns %}
+                        {% for key,label in column_options %}
+                        {% if key == col %}
+                        <th>{{ label }}</th>
+                        {% endif %}
+                        {% endfor %}
+                        {% endfor %}
+                        <th>View</th>
+                    </tr>
+                    <tr class="erp-table-filters">
+                        <td></td>
+                        {% for col in selected_columns %}
+                        {% if col == 'job_card_no' %}
+                        <td><input type="text" name="job_card_no" value="{{ filters.job_card_no }}" placeholder="Filter"></td>
+                        {% elif col == 'planning_jc_number' %}
+                        <td><input type="text" name="planning_jc_number" value="{{ filters.planning_jc_number }}" placeholder="Filter"></td>
+                        {% elif col == 'po_number' %}
+                        <td><input type="text" name="po_number" value="{{ filters.po_number }}" placeholder="Filter"></td>
+                        {% elif col == 'sku' %}
+                        <td><input type="text" name="sku" value="{{ filters.sku }}" placeholder="Filter"></td>
+                        {% elif col == 'job_name' %}
+                        <td><input type="text" name="job_name" value="{{ filters.job_name }}" placeholder="Filter"></td>
+                        {% elif col == 'status' %}
+                        <td>
+                            <details class="erp-dropdown filters-dropdown">
+                                <summary>{% if filters.status %}{{ filters.status|join:", " }}{% else %}Filter{% endif %}</summary>
+                                <div class="erp-dropdown-menu">
+                                <div class="filters-dropdown-actions">
+                                    <button type="button" class="filters-action" data-action="select-all">Select All</button>
+                                    <button type="button" class="filters-action" data-action="clear-all">Clear</button>
+                                </div>
+                                    {% for value, label in status_choices %}
+                                    <label>
+                                        <input type="checkbox" name="status" value="{{ value }}" {% if value in filters.status %}checked{% endif %}>
+                                        {{ label }}
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </details>
+                        </td>
+                        {% elif col == 'machine_name' %}
+                        <td><input type="text" name="machine" value="{{ filters.machine }}" placeholder="Filter"></td>
+                        {% elif col == 'department' %}
+                        <td><input type="text" name="department" value="{{ filters.department }}" placeholder="Filter"></td>
+                        {% elif col == 'wip_status' %}
+                        <td>
+                            <details class="erp-dropdown filters-dropdown">
+                                <summary>{% if filters.wip_status %}{{ filters.wip_status|length }} selected{% else %}Filter{% endif %}</summary>
+                                <div class="erp-dropdown-menu">
+                                <div class="filters-dropdown-actions">
+                                    <button type="button" class="filters-action" data-action="select-all">Select All</button>
+                                    <button type="button" class="filters-action" data-action="clear-all">Clear</button>
+                                </div>
+                                    {% for value, label in wip_status_choices %}
+                                    <label>
+                                        <input type="checkbox" name="wip_status" value="{{ value }}" {% if value in filters.wip_status %}checked{% endif %}>
+                                        {{ label }}
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </details>
+                        </td>
+                        {% elif col == 'planning_stage' %}
+                        <td>
+                            <details class="erp-dropdown filters-dropdown">
+                                <summary>{% if filters.planning_stage %}{{ filters.planning_stage|length }} selected{% else %}Filter{% endif %}</summary>
+                                <div class="erp-dropdown-menu">
+                                <div class="filters-dropdown-actions">
+                                    <button type="button" class="filters-action" data-action="select-all">Select All</button>
+                                    <button type="button" class="filters-action" data-action="clear-all">Clear</button>
+                                </div>
+                                    {% for value, label in planning_stage_choices %}
+                                    <label>
+                                        <input type="checkbox" name="planning_stage" value="{{ value }}" {% if value in filters.planning_stage %}checked{% endif %}>
+                                        {{ label }}
+                                    </label>
+                                    {% endfor %}
+                                </div>
+                            </details>
+                        </td>
+                        {% else %}
+                        <td></td>
+                        {% endif %}
+                        {% endfor %}
+                        <td></td>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if rows %}
+                        {% for row in rows %}
+                        <tr>
+                            <td>{{ forloop.counter }}</td>
+                            {% for col in selected_columns %}
+                            <td>{{ row|get_item:col }}</td>
+                            {% endfor %}
+                        <td><a href="{{ row.detail_url }}" class="erp-btn erp-btn-secondary sm">View</a></td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="{{ selected_columns|length|add:2 }}">
+                                <div class="erp-empty">No jobs matched the selected filters.</div>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+        </form>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    document.addEventListener('click', function (event) {
+        const action = event.target.closest('.filters-action');
+        if (!action) return;
+
+        const menu = event.target.closest('.erp-dropdown-menu');
+        if (!menu) return;
+
+        const checkboxes = Array.from(menu.querySelectorAll('input[type="checkbox"]'));
+        if (action.dataset.action === 'select-all') {
+            checkboxes.forEach(cb => cb.checked = true);
+        } else if (action.dataset.action === 'clear-all') {
+            checkboxes.forEach(cb => cb.checked = false);
+        }
+    });
+</script>
+{% endblock %}

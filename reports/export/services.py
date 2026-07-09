@@ -63,8 +63,11 @@ def export_as_csv(payload: dict) -> bytes:
         writer.writerow(['message', 'No tabular rows available for export'])
         return output.getvalue().encode('utf-8-sig')
 
-    headers = sorted({key for row in rows for key in row.keys()})
-    writer.writerow(headers)
+    headers = payload.get('headers')
+    if not headers:
+        headers = sorted({key for row in rows for key in row.keys()})
+    labels = payload.get('header_labels') or {}
+    writer.writerow([labels.get(header, header) for header in headers])
     for row in rows:
         writer.writerow([_json_primitive(row.get(header)) for header in headers])
     return output.getvalue().encode('utf-8-sig')
@@ -89,8 +92,11 @@ def export_as_xlsx(payload: dict) -> bytes:
     if not rows:
         sheet.append(['message', 'No tabular rows available for export'])
     else:
-        headers = sorted({key for row in rows for key in row.keys()})
-        sheet.append(headers)
+        headers = payload.get('headers')
+        if not headers:
+            headers = sorted({key for row in rows for key in row.keys()})
+        labels = payload.get('header_labels') or {}
+        sheet.append([labels.get(header, header) for header in headers])
         for row in rows:
             sheet.append([_json_primitive(row.get(header)) for header in headers])
 
@@ -103,7 +109,9 @@ def export_as_pdf(payload: dict) -> bytes:
     try:
         from reportlab.lib.pagesizes import A4, landscape
         from reportlab.lib.units import mm
-        from reportlab.pdfgen import canvas
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.platypus import Paragraph, SimpleDocTemplate, Table, TableStyle, PageBreak
+        from reportlab.lib import colors
     except Exception as exc:
         raise RuntimeError('PDF export requires reportlab package.') from exc
 
@@ -111,55 +119,93 @@ def export_as_pdf(payload: dict) -> bytes:
     report = payload.get('report') or {}
     report_title = report.get('title') or 'Report'
     generated_at = payload.get('generated_at', '')
+    row_count = len(rows)
 
-    stream = io.BytesIO()
-    c = canvas.Canvas(stream, pagesize=landscape(A4))
+    buffer = io.BytesIO()
     page_w, page_h = landscape(A4)
+    left_margin = right_margin = top_margin = bottom_margin = 12 * mm
+    usable_width = page_w - left_margin - right_margin
 
-    y = page_h - 12 * mm
-    c.setFont('Helvetica-Bold', 14)
-    c.drawString(12 * mm, y, f'Offset Printing ERP - {report_title}')
-    y -= 6 * mm
-    c.setFont('Helvetica', 9)
-    c.drawString(12 * mm, y, f'Generated at: {generated_at}')
-    y -= 8 * mm
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        leftMargin=left_margin,
+        rightMargin=right_margin,
+        topMargin=top_margin,
+        bottomMargin=bottom_margin,
+    )
 
     if not rows:
-        c.drawString(12 * mm, y, 'No tabular rows available for export')
-        c.showPage()
-        c.save()
-        return stream.getvalue()
+        stylesheet = getSampleStyleSheet()
+        story = [
+            Paragraph(f'<b>Offset Printing ERP - {report_title}</b>', stylesheet['Heading3']),
+            Paragraph(f'Generated at: {generated_at} — Rows: {row_count}', stylesheet['Normal']),
+            Paragraph('No tabular rows available for export', stylesheet['Normal']),
+        ]
+        doc.build(story)
+        return buffer.getvalue()
 
-    headers = sorted({key for row in rows for key in row.keys()})
-    headers = headers[:10]
-    col_width = (page_w - 24 * mm) / max(len(headers), 1)
+    headers = payload.get('headers')
+    if not headers:
+        headers = sorted({key for row in rows for key in row.keys()})
+    labels = payload.get('header_labels') or {}
 
-    def _draw_header(current_y):
-        c.setFont('Helvetica-Bold', 8)
-        x = 12 * mm
-        for header in headers:
-            c.drawString(x, current_y, str(header)[:24])
-            x += col_width
+    header_style = ParagraphStyle(
+        'header',
+        fontName='Helvetica-Bold',
+        fontSize=7,
+        leading=8,
+        alignment=0,
+    )
+    cell_style = ParagraphStyle(
+        'cell',
+        fontName='Helvetica',
+        fontSize=6,
+        leading=7,
+        alignment=0,
+    )
 
-    _draw_header(y)
-    y -= 5 * mm
-    c.setFont('Helvetica', 8)
+    min_col_width = 16 * mm
+    max_columns = max(1, min(len(headers), int(usable_width // min_col_width)))
+    header_chunks = [headers] if len(headers) <= max_columns else [headers[i:i + max_columns] for i in range(0, len(headers), max_columns)]
+    stylesheet = getSampleStyleSheet()
+    story = [
+        Paragraph(f'<b>Offset Printing ERP - {report_title}</b>', stylesheet['Heading3']),
+        Paragraph(f'Generated at: {generated_at} — Rows: {row_count}', stylesheet['Normal']),
+        Paragraph('<br/>', stylesheet['Normal']),
+    ]
 
-    for row in rows:
-        if y < 12 * mm:
-            c.showPage()
-            y = page_h - 12 * mm
-            _draw_header(y)
-            y -= 5 * mm
-            c.setFont('Helvetica', 8)
+    for chunk_index, chunk_headers in enumerate(header_chunks):
+        table_data = [
+            [Paragraph(str(labels.get(header, header)), header_style) for header in chunk_headers]
+        ]
+        for row in rows:
+            table_data.append([
+                Paragraph(_json_primitive(row.get(header)), cell_style)
+                for header in chunk_headers
+            ])
 
-        x = 12 * mm
-        for header in headers:
-            text = _json_primitive(row.get(header))
-            c.drawString(x, y, text[:28])
-            x += col_width
-        y -= 4.5 * mm
+        column_count = len(chunk_headers)
+        column_width = usable_width / max(column_count, 1)
+        col_widths = [column_width] * column_count
 
-    c.showPage()
-    c.save()
-    return stream.getvalue()
+        table = Table(table_data, colWidths=col_widths, repeatRows=1)
+        table_style = TableStyle([
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 6),
+            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.grey),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.whitesmoke),
+            ('LEFTPADDING', (0, 0), (-1, -1), 3),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+            ('TOPPADDING', (0, 0), (-1, -1), 2),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+        ])
+        table.setStyle(table_style)
+        story.append(table)
+        if chunk_index < len(header_chunks) - 1:
+            story.append(PageBreak())
+
+    doc.build(story)
+    return buffer.getvalue()

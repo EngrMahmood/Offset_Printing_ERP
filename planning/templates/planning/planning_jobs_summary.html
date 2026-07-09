@@ -1,0 +1,148 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Job Summary — Planning{% endblock %}
+{% block header_title %}Job Summary{% endblock %}
+{% block header_subtitle %}View selected columns and export the job summary in Excel or PDF.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-secondary">Back to Planning</a>
+    <a href="{% url 'planning:jobs_summary' %}" class="erp-btn erp-btn-primary">Refresh</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+.erp-form-grid {
+    display: grid;
+    grid-template-columns: minmax(240px, 1.8fr) minmax(220px, 1.2fr) auto;
+    gap: 14px;
+    align-items: end;
+}
+.erp-table {
+    width: 100%;
+    min-width: 900px;
+}
+.erp-table-wrap {
+    overflow-x: auto;
+}
+.erp-tiny {
+    font-size: 0.82rem;
+}
+.erp-column-checkboxes {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+@media (max-width: 900px) {
+    .erp-form-grid { grid-template-columns: 1fr; }
+    .erp-column-checkboxes { grid-template-columns: 1fr; }
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Summary</div>
+                <h3 class="erp-section-title">Active Jobs Summary</h3>
+                <p class="erp-section-desc">Select which columns to show and export the visible rows.</p>
+            </div>
+        </div>
+
+        <form method="get" class="erp-form-grid">
+            <div style="display:grid; gap:12px;">
+                <div class="erp-form-field">
+                    <label>Search</label>
+                    <input type="text" name="q" value="{{ filters.q }}" placeholder="JC, PO, SKU, Job name">
+                </div>
+                <div class="erp-form-field">
+                    <label>Status</label>
+                    <select name="status">
+                        <option value="">All statuses</option>
+                        {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-form-field">
+                    <label>Department</label>
+                    <input type="text" name="department" value="{{ filters.department }}" placeholder="Department">
+                </div>
+                <div class="erp-form-field">
+                    <label>Machine</label>
+                    <input type="text" name="machine" value="{{ filters.machine }}" placeholder="Machine name">
+                </div>
+                <div style="display:grid; gap:8px; grid-template-columns:1fr 1fr;">
+                    <div class="erp-form-field">
+                        <label>PO Approval from</label>
+                        <input type="date" name="from_date" value="{{ filters.from_date }}">
+                    </div>
+                    <div class="erp-form-field">
+                        <label>to</label>
+                        <input type="date" name="to_date" value="{{ filters.to_date }}">
+                    </div>
+                </div>
+            </div>
+
+            <div class="erp-card" style="padding:16px;">
+                <div class="erp-card-header" style="margin-bottom:10px;">
+                    <h3 class="erp-card-title">Columns</h3>
+                </div>
+                <div class="erp-column-checkboxes">
+                    {% for key,label in column_options %}
+                    <label class="erp-checkbox-label" style="display:flex;align-items:center;gap:8px;">
+                        <input type="checkbox" name="columns" value="{{ key }}" {% if key in selected_columns %}checked{% endif %}>
+                        {{ label }}
+                    </label>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <div class="erp-actions" style="display:grid; gap:10px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'planning:jobs_summary' %}" class="erp-btn erp-btn-secondary">Reset</a>
+                <a href="?{{ export_query }}&export=xlsx" class="erp-btn erp-btn-success">Download Excel</a>
+                <a href="?{{ export_query }}&export=pdf" class="erp-btn erp-btn-warning">Download PDF</a>
+            </div>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        {% for col in selected_columns %}
+                        {% for key,label in column_options %}
+                        {% if key == col %}
+                        <th>{{ label }}</th>
+                        {% endif %}
+                        {% endfor %}
+                        {% endfor %}
+                        <th>View</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if rows %}
+                        {% for row in rows %}
+                        <tr>
+                            {% for col in selected_columns %}
+                            <td>{{ row[col] }}</td>
+                            {% endfor %}
+                            <td><a href="{% url 'planning:job_detail' row.id %}" class="erp-btn erp-btn-secondary sm">View</a></td>
+                        </tr>
+                        {% endfor %}
+                    {% else %}
+                        <tr>
+                            <td colspan="{{ selected_columns|length|add:1 }}">
+                                <div class="erp-empty">No jobs matched the selected filters.</div>
+                            </td>
+                        </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
