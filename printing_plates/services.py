@@ -130,6 +130,7 @@ def planning_job_should_skip_plate_making(planning_job):
     """True when a new planning plate request must not be opened."""
     if not planning_job:
         return False
+    from core.models import JOB_CARD_PRODUCTION_START_STATUSES
     from workflow.services import _normalize_status
 
     if _normalize_status(planning_job.status) in PLANNING_SKIP_PLATE_MAKING_STATUSES:
@@ -140,8 +141,11 @@ def planning_job_should_skip_plate_making(planning_job):
         job_card = planning_job.job_card
     except Exception:
         job_card = None
-    if job_card and plates_were_issued_to_production(job_card):
-        return True
+    # Repeat jobs often inherit plate_set_no from a prior SKU run before release.
+    # Only treat plates as "on the floor" once the job card is released/in production.
+    if job_card and job_card.workflow_status in JOB_CARD_PRODUCTION_START_STATUSES:
+        if plates_were_issued_to_production(job_card):
+            return True
 
     return False
 

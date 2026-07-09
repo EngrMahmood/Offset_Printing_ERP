@@ -730,6 +730,46 @@ class PlateMakingPreventionTests(TestCase):
         )
         self.assertFalse(planning_job_should_skip_plate_making(job))
 
+    def test_pm_approved_repeat_job_with_inherited_plate_set_no_allows_plate_making(self):
+        from printing_plates.services import (
+            create_or_get_plate_request_from_planning_job,
+            planning_job_should_skip_plate_making,
+        )
+
+        machine = Machine.objects.create(name='KBA Repeat PM Test')
+        department = Department.objects.create(name='Offset Repeat PM Test')
+        material = Material.objects.create(name='Art Paper Repeat PM Test')
+        job = PlanningJob.objects.create(
+            jc_number='JC-REPEAT-PM',
+            sku='SKU-REPEAT-PM',
+            status='qc_approved',
+            planning_stage='repeat_plate_making',
+            repeat_flag='Repeat',
+            material='Paper',
+            application='Label',
+            machine_name='KBA',
+            plate_set_no='11174',
+        )
+        JobCard.objects.create(
+            job_card_no='JC-REPEAT-PM',
+            planning_job=job,
+            SKU='SKU-REPEAT-PM',
+            order_qty=5000,
+            total_impressions_required=5000,
+            total_sheet_quantity=500,
+            total_colors=4,
+            plate_set_no='11174',
+            po_date=timezone.now().date(),
+            machine_name=machine,
+            department=department,
+            material=material,
+            status='production_approved',
+        )
+        self.assertFalse(planning_job_should_skip_plate_making(job))
+        plate_request = create_or_get_plate_request_from_planning_job(job, self.admin)
+        self.assertIsNotNone(plate_request)
+        self.assertEqual(plate_request.status, PlateRequest.STATUS_DRAFT)
+
 
 class ReleaseBlockedByOpenPlateRequestTests(TestCase):
     def setUp(self):
