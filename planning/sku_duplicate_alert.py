@@ -135,11 +135,59 @@ def _build_member_row(job, *, current_job_id=None, is_primary=False):
     }
 
 
+def _compose_sku_alert_payload(
+    *,
+    sku,
+    cluster_jobs,
+    recent_dispatches,
+    current_job_id=None,
+):
+    """Build alert dict for duplicate clusters and/or recent-dispatch low priority."""
+    sku_value = (sku or '').strip()
+    if not sku_value:
+        return None
+
+    cluster_jobs = [job for job in cluster_jobs if _is_active_planning_job(job)]
+    is_duplicate_cluster = len(cluster_jobs) >= 2
+    if not is_duplicate_cluster and not recent_dispatches:
+        return None
+
+    cluster_jobs.sort(key=_job_sort_key)
+    primary_job = cluster_jobs[0] if cluster_jobs else None
+    members = []
+    combine_eligible = []
+    for job in cluster_jobs:
+        is_primary = primary_job is not None and job.pk == primary_job.pk
+        row = _build_member_row(job, current_job_id=current_job_id, is_primary=is_primary)
+        members.append(row)
+        if not row['printing_started']:
+            combine_eligible.append(row['jc_number'])
+
+    combine_possible = is_duplicate_cluster and len(combine_eligible) >= 2
+    alert_payload = {
+        'sku': sku_value,
+        'active_count': len(members) if members else 1,
+        'is_duplicate_cluster': is_duplicate_cluster,
+        'members': members,
+        'primary_jc_number': (primary_job.jc_number if primary_job else '-') or '-',
+        'primary_po_number': (primary_job.po_number if primary_job else '-') or '-',
+        'combine_possible': combine_possible,
+        'combine_eligible_jcs': combine_eligible,
+        'recent_dispatches': recent_dispatches,
+        'show_priority_hint': bool(recent_dispatches),
+        'recent_dispatch_days': RECENT_DISPATCH_DAYS,
+    }
+    if current_job_id is not None:
+        alert_payload['current_job_id'] = current_job_id
+    return enrich_sku_duplicate_alert(alert_payload)
+
+
 def build_sku_duplicate_alert(planning_job):
     """
-    Return alert context when multiple active jobs share the SKU, else None.
+    Return alert context when multiple active jobs share the SKU and/or the SKU
+    was dispatched recently, else None.
 
-    Shown on every member JC so planners see the full cluster from any search result.
+    Shown on every matching JC so planners see the signal from any search result.
     """
     if not planning_job or not _is_active_planning_job(planning_job):
         return None
@@ -149,37 +197,17 @@ def build_sku_duplicate_alert(planning_job):
         return None
 
     cluster_jobs = list(active_jobs_for_sku(sku))
-    if len(cluster_jobs) < 2:
-        return None
-
-    cluster_jobs.sort(key=_job_sort_key)
-    primary_job = cluster_jobs[0]
-    members = []
-    combine_eligible = []
-    for job in cluster_jobs:
-        is_primary = job.pk == primary_job.pk
-        row = _build_member_row(job, current_job_id=planning_job.pk, is_primary=is_primary)
-        members.append(row)
-        if not row['printing_started']:
-            combine_eligible.append(row['jc_number'])
-
     recent_dispatches = recent_dispatches_for_sku(sku)
-    combine_possible = len(combine_eligible) >= 2
-
-    return {
-        'sku': sku,
-        'active_count': len(members),
-        'current_job_id': planning_job.pk,
-        'current_jc_number': planning_job.jc_number or '-',
-        'members': members,
-        'primary_jc_number': primary_job.jc_number or '-',
-        'primary_po_number': primary_job.po_number or '-',
-        'combine_possible': combine_possible,
-        'combine_eligible_jcs': combine_eligible,
-        'recent_dispatches': recent_dispatches,
-        'show_priority_hint': bool(recent_dispatches),
-        'recent_dispatch_days': RECENT_DISPATCH_DAYS,
-    }
+    alert_payload = _compose_sku_alert_payload(
+        sku=sku,
+        cluster_jobs=cluster_jobs,
+        recent_dispatches=recent_dispatches,
+        current_job_id=planning_job.pk,
+    )
+    if not alert_payload:
+        return None
+    alert_payload['current_jc_number'] = planning_job.jc_number or '-'
+    return alert_payload
 
 
 def build_sku_duplicate_alert_for_sku(sku, *, current_job=None):
@@ -191,10 +219,12 @@ def build_sku_duplicate_alert_for_sku(sku, *, current_job=None):
         return build_sku_duplicate_alert(current_job)
 
     cluster_jobs = list(active_jobs_for_sku(sku_value))
-    if len(cluster_jobs) < 2:
-        return None
-    anchor = cluster_jobs[0]
-    return build_sku_duplicate_alert(anchor)
+    recent_dispatches = recent_dispatches_for_sku(sku_value)
+    return _compose_sku_alert_payload(
+        sku=sku_value,
+        cluster_jobs=cluster_jobs,
+        recent_dispatches=recent_dispatches,
+    )
 
 
 def attach_sku_duplicate_alerts_to_jobs(jobs):
@@ -255,33 +285,18 @@ def attach_sku_duplicate_alerts_to_jobs(jobs):
 
     for key, page_jobs in sku_to_jobs_on_page.items():
         cluster_jobs = clusters_by_key.get(key, [])
-        if len(cluster_jobs) < 2:
-            continue
-        cluster_jobs.sort(key=_job_sort_key)
-        primary_job = cluster_jobs[0]
-        members = []
-        combine_eligible = []
-        for cluster_job in cluster_jobs:
-            is_primary = cluster_job.pk == primary_job.pk
-            row = _build_member_row(cluster_job, is_primary=is_primary)
-            members.append(row)
-            if not row['printing_started']:
-                combine_eligible.append(row['jc_number'])
-
         recent_dispatches = dispatches_by_key.get(key, [])
-        combine_possible = len(combine_eligible) >= 2
-        base = {
-            'sku': page_jobs[0].sku,
-            'active_count': len(members),
-            'members': members,
-            'primary_jc_number': primary_job.jc_number or '-',
-            'primary_po_number': primary_job.po_number or '-',
-            'combine_possible': combine_possible,
-            'combine_eligible_jcs': combine_eligible,
-            'recent_dispatches': recent_dispatches,
-            'show_priority_hint': bool(recent_dispatches),
-            'recent_dispatch_days': RECENT_DISPATCH_DAYS,
-        }
+        if len(cluster_jobs) < 2 and not recent_dispatches:
+            continue
+
+        base = _compose_sku_alert_payload(
+            sku=page_jobs[0].sku,
+            cluster_jobs=cluster_jobs,
+            recent_dispatches=recent_dispatches,
+        )
+        if not base:
+            continue
+
         for job in page_jobs:
             alert = {
                 **base,
@@ -289,10 +304,10 @@ def attach_sku_duplicate_alerts_to_jobs(jobs):
                 'current_jc_number': job.jc_number or '-',
                 'members': [
                     {**member, 'is_current': member['job_id'] == job.pk}
-                    for member in members
+                    for member in base['members']
                 ],
             }
-            job.sku_duplicate_alert = alert
+            job.sku_duplicate_alert = enrich_sku_duplicate_alert(alert)
 
     return job_list
 
@@ -310,3 +325,115 @@ def attach_sku_duplicate_alerts_to_job_cards(job_cards):
         planning_job = getattr(card, 'planning_job', None)
         card.sku_duplicate_alert = getattr(planning_job, 'sku_duplicate_alert', None) if planning_job else None
     return cards
+
+
+def _active_planning_jobs_queryset():
+    return PlanningJob.objects.filter(is_active=True).exclude(status__iexact='completed')
+
+
+def duplicate_sku_lower_values():
+    """Lowercase SKUs that appear on two or more active planning jobs."""
+    from django.db.models import Count
+    from django.db.models.functions import Lower
+
+    return list(
+        _active_planning_jobs_queryset()
+        .annotate(sku_lower=Lower('sku'))
+        .exclude(sku_lower='')
+        .values('sku_lower')
+        .annotate(job_count=Count('id'))
+        .filter(job_count__gte=2)
+        .values_list('sku_lower', flat=True)
+    )
+
+
+def low_priority_sku_lower_values(days=RECENT_DISPATCH_DAYS):
+    """Lowercase SKUs with dispatch activity in the recent window."""
+    from django.db.models.functions import Lower
+
+    cutoff = timezone.localdate() - timedelta(days=days)
+    return list(
+        Dispatch.objects.filter(is_active=True, dispatch_date__gte=cutoff)
+        .annotate(sku_lower=Lower('job_card__SKU'))
+        .exclude(sku_lower='')
+        .values_list('sku_lower', flat=True)
+        .distinct()
+    )
+
+
+def _sku_alert_target_values(alert_key):
+    alert_key = (alert_key or '').strip().lower()
+    duplicate_values = set(duplicate_sku_lower_values())
+    low_priority_values = set(low_priority_sku_lower_values())
+    if alert_key == 'duplicate':
+        return duplicate_values
+    if alert_key == 'low_priority':
+        return low_priority_values
+    if alert_key == 'attention':
+        return duplicate_values | low_priority_values
+    return set()
+
+
+def job_matches_sku_alert_filter(job, alert_key):
+    target_values = _sku_alert_target_values(alert_key)
+    if not target_values:
+        return False
+    sku_lower = (job.sku or '').strip().lower()
+    return bool(sku_lower) and sku_lower in target_values
+
+
+def filter_planning_jobs_by_sku_alert(queryset, alert_key):
+    """Filter queryset to duplicate clusters, low-priority SKUs, or both."""
+    from django.db.models.functions import Lower
+
+    target_values = _sku_alert_target_values(alert_key)
+    if not target_values:
+        return queryset.none()
+    return queryset.annotate(sku_lower=Lower('sku')).filter(sku_lower__in=target_values)
+
+
+def count_planning_jobs_by_sku_alert(queryset=None):
+    qs = _active_planning_jobs_queryset() if queryset is None else queryset
+    return {
+        'duplicate': filter_planning_jobs_by_sku_alert(qs, 'duplicate').count(),
+        'low_priority': filter_planning_jobs_by_sku_alert(qs, 'low_priority').count(),
+        'attention': filter_planning_jobs_by_sku_alert(qs, 'attention').count(),
+    }
+
+
+def resolve_sku_alert_kind(alert):
+    if not alert:
+        return ''
+    if alert.get('combine_possible'):
+        return 'combine'
+    if alert.get('show_priority_hint'):
+        return 'low_priority'
+    return 'duplicate'
+
+
+def enrich_sku_duplicate_alert(alert):
+    if alert:
+        alert['alert_kind'] = resolve_sku_alert_kind(alert)
+    return alert
+
+
+def build_planning_jobs_sku_alert_filter_urls(request, *, active_key=''):
+    """Preserve current GET params while toggling sku_alert quick filters."""
+    params = request.GET.copy()
+    params.pop('page', None)
+
+    def _url_for(key):
+        query = params.copy()
+        if key and active_key != key:
+            query['sku_alert'] = key
+        else:
+            query.pop('sku_alert', None)
+        encoded = query.urlencode()
+        return f'?{encoded}' if encoded else '?'
+
+    return {
+        'duplicate': _url_for('duplicate'),
+        'low_priority': _url_for('low_priority'),
+        'attention': _url_for('attention'),
+        'clear': _url_for(''),
+    }

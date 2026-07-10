@@ -1998,6 +1998,39 @@ class SkuDuplicateAlertTests(TestCase):
 		self.job_b.save(update_fields=['is_active', 'updated_at'])
 		self.assertIsNone(build_sku_duplicate_alert(self.job_a))
 
+	def test_single_active_job_with_recent_dispatch_shows_low_priority(self):
+		from core.models import Dispatch
+		from planning.sku_duplicate_alert import (
+			attach_sku_duplicate_alerts_to_jobs,
+			build_sku_duplicate_alert,
+			filter_planning_jobs_by_sku_alert,
+			job_matches_sku_alert_filter,
+		)
+
+		self.job_b.is_active = False
+		self.job_b.save(update_fields=['is_active', 'updated_at'])
+		self.card_a.is_print_job = False
+		self.card_a.status = 'in_production'
+		self.card_a.save(update_fields=['is_print_job', 'status', 'updated_at'])
+		Dispatch.objects.create(
+			job_card=self.card_a,
+			dc_no='DC-SINGLE-1',
+			dispatch_date=self.today,
+			dispatch_qty=1000,
+			is_active=True,
+		)
+		alert = build_sku_duplicate_alert(self.job_a)
+		self.assertIsNotNone(alert)
+		self.assertFalse(alert['is_duplicate_cluster'])
+		self.assertTrue(alert['show_priority_hint'])
+		self.assertEqual(alert['alert_kind'], 'low_priority')
+		self.assertTrue(job_matches_sku_alert_filter(self.job_a, 'low_priority'))
+		filtered = filter_planning_jobs_by_sku_alert(PlanningJob.objects.all(), 'low_priority')
+		self.assertIn(self.job_a.pk, set(filtered.values_list('pk', flat=True)))
+		attach_sku_duplicate_alerts_to_jobs([self.job_a])
+		self.assertIsNotNone(self.job_a.sku_duplicate_alert)
+		self.assertEqual(self.job_a.sku_duplicate_alert['alert_kind'], 'low_priority')
+
 	def test_printing_started_disables_combine(self):
 		from core.models import Production
 		from planning.sku_duplicate_alert import build_sku_duplicate_alert
@@ -2032,4 +2065,21 @@ class SkuDuplicateAlertTests(TestCase):
 		)
 		alert = build_sku_duplicate_alert(self.job_b)
 		self.assertTrue(alert['show_priority_hint'])
+		self.assertTrue(alert['combine_possible'])
 		self.assertEqual(alert['recent_dispatches'][0]['jc_number'], 'JC-DUP-A')
+		self.assertEqual(alert['alert_kind'], 'combine')
+
+	def test_sku_alert_filters_duplicate_and_attention(self):
+		from planning.sku_duplicate_alert import (
+			count_planning_jobs_by_sku_alert,
+			filter_planning_jobs_by_sku_alert,
+		)
+
+		dup_ids = set(
+			filter_planning_jobs_by_sku_alert(PlanningJob.objects.all(), 'duplicate')
+			.values_list('pk', flat=True)
+		)
+		self.assertEqual(dup_ids, {self.job_a.pk, self.job_b.pk})
+		counts = count_planning_jobs_by_sku_alert()
+		self.assertGreaterEqual(counts['duplicate'], 2)
+		self.assertGreaterEqual(counts['attention'], 2)

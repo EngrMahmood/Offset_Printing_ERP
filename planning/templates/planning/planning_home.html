@@ -118,6 +118,32 @@
                 gap: 6px;
             }
         }
+
+        .erp-badge-duplicate-combine {
+            background-color: #fbbf24;
+            color: #1f2937;
+            border: 1px solid #d97706;
+            font-weight: 600;
+        }
+
+        .erp-badge-duplicate-priority {
+            background-color: #4169e1;
+            color: #ffffff;
+            border: 1px solid #2f4eb0;
+            font-weight: 600;
+        }
+
+        .erp-sku-alert-filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+            align-items: center;
+        }
+
+        .erp-sku-alert-filters .erp-btn.is-active {
+            box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.35);
+        }
     </style>
 {% endblock %}
 
@@ -167,6 +193,24 @@
                 <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-secondary">Reset</a>
             </div>
         </form>
+        <div class="erp-sku-alert-filters">
+            <span class="erp-muted" style="font-size:0.82rem; margin-right:4px;">SKU alerts:</span>
+            <a href="{% url 'planning:jobs' %}{{ sku_alert_filter_urls.attention }}"
+               class="erp-btn erp-btn-secondary erp-btn-sm{% if filters.sku_alert == 'attention' %} is-active{% endif %}">
+                All alerts ({{ sku_alert_counts.attention }})
+            </a>
+            <a href="{% url 'planning:jobs' %}{{ sku_alert_filter_urls.duplicate }}"
+               class="erp-btn erp-btn-secondary erp-btn-sm{% if filters.sku_alert == 'duplicate' %} is-active{% endif %}">
+                Duplicate SKU ({{ sku_alert_counts.duplicate }})
+            </a>
+            <a href="{% url 'planning:jobs' %}{{ sku_alert_filter_urls.low_priority }}"
+               class="erp-btn erp-btn-secondary erp-btn-sm{% if filters.sku_alert == 'low_priority' %} is-active{% endif %}">
+                Low priority ({{ sku_alert_counts.low_priority }})
+            </a>
+            {% if filters.sku_alert %}
+            <a href="{% url 'planning:jobs' %}{{ sku_alert_filter_urls.clear }}" class="erp-btn erp-btn-secondary erp-btn-sm">Clear alert filter</a>
+            {% endif %}
+        </div>
     </section>
     <section class="erp-section-shell">
         <div class="erp-table-wrap erp-table-dense">

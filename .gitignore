@@ -35,3 +35,5 @@ planning/docs/Master_Data_extracted.csv
 planning/docs/master_restore_verification.json
 planning/docs/*_extracted.csv
 planning/docs/*_verification.json
+migration_reports/
+missing_product_type_skus.csv

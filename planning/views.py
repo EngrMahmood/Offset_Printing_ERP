@@ -1180,6 +1180,7 @@ def planning_home(request):
     machine_filter = (request.GET.get('machine') or '').strip()
     from_date = _parse_date_filter(request.GET.get('from_date'))
     to_date = _parse_date_filter(request.GET.get('to_date'))
+    sku_alert_filter = (request.GET.get('sku_alert') or '').strip().lower()
 
     if q:
         queryset = queryset.filter(
@@ -1204,6 +1205,18 @@ def planning_home(request):
     if machine_filter:
         queryset = queryset.filter(machine_name__icontains=machine_filter)
 
+    from planning.sku_duplicate_alert import (
+        attach_sku_duplicate_alerts_to_jobs,
+        build_planning_jobs_sku_alert_filter_urls,
+        count_planning_jobs_by_sku_alert,
+        filter_planning_jobs_by_sku_alert,
+        job_matches_sku_alert_filter,
+    )
+
+    sku_alert_counts = count_planning_jobs_by_sku_alert(queryset)
+    if sku_alert_filter in {'duplicate', 'low_priority', 'attention'}:
+        queryset = filter_planning_jobs_by_sku_alert(queryset, sku_alert_filter)
+
     if from_date or to_date:
         queryset = queryset.select_related('job_card')
         jobs_list = list(queryset)
@@ -1219,6 +1232,11 @@ def planning_home(request):
             jobs_list = [job for job in jobs_list if job.po_approval_date_display and job.po_approval_date_display >= from_date]
         if to_date:
             jobs_list = [job for job in jobs_list if job.po_approval_date_display and job.po_approval_date_display <= to_date]
+        if sku_alert_filter in {'duplicate', 'low_priority', 'attention'}:
+            jobs_list = [
+                job for job in jobs_list
+                if job_matches_sku_alert_filter(job, sku_alert_filter)
+            ]
 
         status_counts = {}
         for job in jobs_list:
@@ -1330,9 +1348,12 @@ def planning_home(request):
             job.status_changed_by = ''
             job.status_changed_at = None
 
-    from planning.sku_duplicate_alert import attach_sku_duplicate_alerts_to_jobs
-
     attach_sku_duplicate_alerts_to_jobs(jobs)
+
+    sku_alert_filter_urls = build_planning_jobs_sku_alert_filter_urls(
+        request,
+        active_key=sku_alert_filter,
+    )
 
     return render(
         request,
@@ -1355,7 +1376,10 @@ def planning_home(request):
                 'machine': machine_filter,
                 'from_date': request.GET.get('from_date', ''),
                 'to_date': request.GET.get('to_date', ''),
+                'sku_alert': sku_alert_filter,
             },
+            'sku_alert_counts': sku_alert_counts,
+            'sku_alert_filter_urls': sku_alert_filter_urls,
         },
     )
 

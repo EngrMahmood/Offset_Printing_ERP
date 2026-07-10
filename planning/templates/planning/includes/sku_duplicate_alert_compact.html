@@ -1,10 +1,15 @@
 {% if job.sku_duplicate_alert %}
 <div style="margin-top:4px;">
     <a href="{% url 'planning:job_detail' job.id %}#sku-duplicate-alert"
-       class="erp-badge {% if job.sku_duplicate_alert.combine_possible %}erp-badge-warning{% else %}erp-badge-info{% endif %}"
-       title="Same SKU on {{ job.sku_duplicate_alert.active_count }} active jobs — open for details">
+       class="erp-badge {% if job.sku_duplicate_alert.alert_kind == 'low_priority' %}erp-badge-duplicate-priority{% else %}erp-badge-duplicate-combine{% endif %}"
+       title="{% if job.sku_duplicate_alert.is_duplicate_cluster %}Same SKU on {{ job.sku_duplicate_alert.active_count }} active jobs{% else %}SKU dispatched within {{ job.sku_duplicate_alert.recent_dispatch_days }} days{% endif %} — open for details">
+        {% if job.sku_duplicate_alert.is_duplicate_cluster %}
         Duplicate SKU ({{ job.sku_duplicate_alert.active_count }})
         {% if job.sku_duplicate_alert.combine_possible %}· Combine{% endif %}
+        {% if job.sku_duplicate_alert.show_priority_hint %}· Low priority{% endif %}
+        {% else %}
+        Low priority SKU
+        {% endif %}
     </a>
 </div>
 {% endif %}
