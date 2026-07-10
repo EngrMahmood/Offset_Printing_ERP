@@ -91,58 +91,8 @@ def _format_decimal_string(raw_value):
 
 
 def _normalize_color_spec_input(raw_value):
-    from core.print_colors import resolve_print_color_name
-
-    raw_text = str(raw_value or '').strip()
-    if not raw_text:
-        return ''
-
-    resolved = resolve_print_color_name(raw_text)
-    if resolved:
-        return resolved
-
-    lowered = raw_text.lower()
-    if lowered in {'no', 'none', 'n/a', 'na', 'nil'}:
-        return ''
-
-    usable = False
-    if re.search(r'color|colour|colours|colors', lowered):
-        usable = True
-    elif re.search(r'\d+\s*c\b', lowered) or ('c' in lowered and re.search(r'\d', lowered)):
-        usable = True
-    elif any(sep in lowered for sep in ['+', '/', '-']):
-        usable = True
-    elif raw_text.isdigit() or re.fullmatch(r'\d+\.\d+', raw_text):
-        usable = True
-
-    if not usable:
-        return raw_text
-
-    normalized = lowered.replace('colours', 'color').replace('colour', 'color').replace('colors', 'color')
-    normalized = normalized.replace('c/', '+').replace('c+', '+').replace('/', '+').replace('-', '+')
-    normalized = re.sub(r'[^0-9\+\s]+', '', normalized).strip()
-    normalized = re.sub(r'\s+', '+', normalized)
-    normalized = re.sub(r'\++', '+', normalized)
-
-    plus_match = re.compile(r'^(\d+)\+(\d+)$').fullmatch(normalized)
-    if plus_match:
-        candidate = f"{int(plus_match.group(1))}+{int(plus_match.group(2))}"
-        return resolve_print_color_name(candidate) or candidate
-
-    single_match = re.compile(r'^(\d+)\s*(?:colou?r(?:s)?)?$', re.IGNORECASE).fullmatch(normalized)
-    if single_match:
-        candidate = str(int(single_match.group(1)))
-        return resolve_print_color_name(candidate) or candidate
-
-    numbers = re.findall(r'[0-9]+', normalized)
-    if len(numbers) == 1:
-        candidate = str(int(numbers[0]))
-        return resolve_print_color_name(candidate) or candidate
-    if len(numbers) == 2:
-        candidate = f"{int(numbers[0])}+{int(numbers[1])}"
-        return resolve_print_color_name(candidate) or candidate
-
-    return raw_text
+    from core.print_colors import normalize_color_spec_value
+    return normalize_color_spec_value(raw_value)
 
 
 def _normalize_application_input(raw_value):

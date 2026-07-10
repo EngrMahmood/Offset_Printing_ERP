@@ -305,3 +305,27 @@ class DeliveryLocationSyncTests(TestCase):
         self.assertEqual(created, 0)
         self.assertEqual(DeliveryLocation.objects.filter(name__iexact='Main Warehouse').count(), 1)
 
+
+class PrintColorNormalizationTests(TestCase):
+    def test_sheet_decimal_notation_maps_to_plus_form(self):
+        from core.print_colors import normalize_color_spec_value
+
+        self.assertEqual(normalize_color_spec_value('4.0'), '4+0')
+        self.assertEqual(normalize_color_spec_value('1.0'), '1+0')
+        self.assertEqual(normalize_color_spec_value(4.0), '4+0')
+        self.assertEqual(normalize_color_spec_value('4+0'), '4+0')
+
+    def test_mangled_legacy_values_repair_to_plus_form(self):
+        from core.print_colors import normalize_color_spec_value, repair_mangled_decimal_color_spec
+
+        self.assertEqual(repair_mangled_decimal_color_spec('40'), '4+0')
+        self.assertEqual(repair_mangled_decimal_color_spec('10'), '1+0')
+        self.assertEqual(normalize_color_spec_value('40'), '4+0')
+        self.assertEqual(normalize_color_spec_value('10'), '1+0')
+
+    def test_legacy_color_text_still_normalizes(self):
+        from core.print_colors import normalize_color_spec_value
+
+        self.assertEqual(normalize_color_spec_value('4 color'), '4')
+        self.assertEqual(normalize_color_spec_value('4C'), '4')
+

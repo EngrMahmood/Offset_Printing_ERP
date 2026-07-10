@@ -351,6 +351,7 @@ class PlateRequestDetailView(LoginRequiredMixin, GraphicsDesignerAccessMixin, De
         )
         recipe_status = (master_recipe.master_data_status if master_recipe else '') or ''
         context['can_correct_designer_layout'] = recipe_status != 'approved'
+        context['master_sku_locked'] = recipe_status == 'approved'
         return context
 
 
@@ -394,9 +395,14 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
             )
             from planning.services import (
                 apply_designer_layout_to_sku_recipe,
+                designer_layout_missing_fields,
+                designer_layout_validation_errors,
                 ensure_sku_recipe_for_planning_job,
                 get_awc_conflict_message,
+                normalize_sheet_size,
+                resolve_designer_layout_values,
                 sync_planning_job_fields_to_sku_recipe,
+                _missing_required_master_fields,
             )
             from printing_plates.plate_set_helpers import build_plate_set_suggestion
 
@@ -478,7 +484,6 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
             plate_request.sets_required = sets_required
             plate_request.plate_quantity = plate_quantity_value
             plate_request.remarks = remarks
-            plate_request.die_cutting = normalize_die_cutting(request.POST.get('die_cutting', ''))
 
             if planning_job:
                 planning_job.remarks = remarks
@@ -498,14 +503,10 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                     recipe.save(update_fields=['remarks', 'notes'])
 
             # Always block Send to Vendor when designer fields are missing (except remarks).
-            from planning.services import (
-                designer_layout_missing_fields,
-                resolve_designer_layout_values,
-                _missing_required_master_fields,
-            )
-
-            layout_values = resolve_designer_layout_values(
-                {
+            master_locked = bool(recipe and (recipe.master_data_status or '') == 'approved')
+            designer_post = {}
+            if not master_locked:
+                designer_post = {
                     'size_w_mm': request.POST.get('size_w_mm', '').strip(),
                     'size_h_mm': request.POST.get('size_h_mm', '').strip(),
                     'print_sheet_size': request.POST.get('print_sheet_size', '').strip(),
@@ -513,6 +514,11 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                     'purchase_sheet_size': request.POST.get('purchase_sheet_size', '').strip(),
                     'purchase_sheet_ups': request.POST.get('purchase_sheet_ups', '').strip(),
                     'die_cutting': request.POST.get('die_cutting', '').strip(),
+                }
+
+            layout_values = resolve_designer_layout_values(
+                {
+                    **designer_post,
                     'awc_no': awc_no,
                     'set_no': set_no,
                     'new_set_no': new_set_no,
@@ -522,11 +528,12 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                 plate_request=plate_request,
             )
             missing_designer = designer_layout_missing_fields(layout_values)
-            if missing_designer:
+            layout_errors = designer_layout_validation_errors(layout_values)
+            if missing_designer or layout_errors:
                 messages.error(
                     request,
                     "Cannot send to vendor. Missing required fields (remarks optional): "
-                    + ", ".join(missing_designer)
+                    + ", ".join(missing_designer + layout_errors)
                     + ".",
                 )
                 return redirect('printing_plates:request_detail', pk=pk)
@@ -537,7 +544,7 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                     plate_request.sku_recipe = recipe
                     plate_request.save(update_fields=['sku_recipe'])
 
-            if recipe:
+            if recipe and not master_locked:
                 try:
                     apply_designer_layout_to_sku_recipe(
                         planning_job,
@@ -560,8 +567,8 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                     planning_job.purchase_sheet_ups = int(round(float(layout_values['purchase_sheet_ups'])))
                 except ValueError:
                     pass
-                planning_job.print_sheet_size = layout_values['print_sheet_size']
-                planning_job.purchase_sheet_size = layout_values['purchase_sheet_size']
+                planning_job.print_sheet_size = normalize_sheet_size(layout_values['print_sheet_size'])
+                planning_job.purchase_sheet_size = normalize_sheet_size(layout_values['purchase_sheet_size'])
                 planning_job.plate_set_no = layout_values['set_no'] or layout_values['new_set_no']
                 if is_plate_ink_spec(planning_job.color_spec):
                     planning_job.color_spec = ''
@@ -652,6 +659,7 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
             from planning.services import (
                 apply_designer_layout_to_sku_recipe,
                 designer_layout_missing_fields,
+                designer_layout_validation_errors,
                 ensure_sku_recipe_for_planning_job,
                 _missing_required_master_fields,
             )
@@ -693,10 +701,13 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                 'new_set_no': request.POST.get('new_set_no', plate_request.new_set_no or '').strip(),
             }
             missing_designer = designer_layout_missing_fields(layout_values)
-            if missing_designer:
+            layout_errors = designer_layout_validation_errors(layout_values)
+            if missing_designer or layout_errors:
                 messages.error(
                     request,
-                    'Designer fields are required (except remarks): ' + ', '.join(missing_designer) + '.',
+                    'Designer fields are required (except remarks): '
+                    + ', '.join(missing_designer + layout_errors)
+                    + '.',
                 )
                 return redirect('printing_plates:request_detail', pk=pk)
 

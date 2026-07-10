@@ -6,6 +6,12 @@ import re
 
 from django.db.models import Q
 
+_COLOR_PLUS_RE = re.compile(r'^(\d+)\s*\+\s*(\d+)$')
+_COLOR_SINGLE_RE = re.compile(r'^(\d+)\s*(?:colou?r(?:s)?)?$', re.IGNORECASE)
+_DECIMAL_COLOR_RE = re.compile(r'^(\d+)\.(\d+)$')
+# Legacy sheet import mangled 4.0 → 40, 1.0 → 10, etc. (dot stripped before parsing).
+_MANGLED_X0_COLOR_RE = re.compile(r'^([1-6])0$')
+
 
 def get_active_print_colors():
     from core.models import PrintColor
@@ -33,26 +39,84 @@ def resolve_print_color_name(value):
     return match or ''
 
 
-def normalize_print_color_for_form(value):
-    """Map legacy text (e.g. '4 color') to master name when possible, else keep legacy."""
+def repair_mangled_decimal_color_spec(value):
+    """Repair decimal mangling from legacy import (40 → 4+0, 10 → 1+0, …)."""
     raw = str(value or '').strip()
     if not raw:
         return ''
-    resolved = resolve_print_color_name(raw)
+    match = _MANGLED_X0_COLOR_RE.fullmatch(raw)
+    if match:
+        return f'{int(match.group(1))}+0'
+    return raw
+
+
+def normalize_color_spec_value(raw_value):
+    """Normalize Color column / color_spec for storage (sheet import, forms, cleanup)."""
+    raw_text = str(raw_value or '').strip()
+    if not raw_text:
+        return ''
+
+    repaired = repair_mangled_decimal_color_spec(raw_text)
+    if repaired != raw_text:
+        raw_text = repaired
+
+    resolved = resolve_print_color_name(raw_text)
     if resolved:
         return resolved
 
-    plus = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', raw)
-    if plus:
-        candidate = f'{int(plus.group(1))}+{int(plus.group(2))}'
+    # Sheet stores 4+0 as Excel decimal 4.0 — must run before stripping punctuation.
+    decimal_match = _DECIMAL_COLOR_RE.fullmatch(raw_text)
+    if decimal_match:
+        candidate = f'{int(decimal_match.group(1))}+{int(decimal_match.group(2))}'
         return resolve_print_color_name(candidate) or candidate
 
-    single = re.fullmatch(r'(\d+)(?:\s*colou?rs?)?', raw, re.IGNORECASE)
-    if single:
-        candidate = str(int(single.group(1)))
+    lowered = raw_text.lower()
+    if lowered in {'no', 'none', 'n/a', 'na', 'nil'}:
+        return ''
+
+    usable = False
+    if re.search(r'color|colour|colours|colors', lowered):
+        usable = True
+    elif re.search(r'\d+\s*c\b', lowered) or ('c' in lowered and re.search(r'\d', lowered)):
+        usable = True
+    elif any(sep in lowered for sep in ['+', '/', '-']):
+        usable = True
+    elif raw_text.isdigit() or _DECIMAL_COLOR_RE.fullmatch(raw_text):
+        usable = True
+
+    if not usable:
+        return raw_text
+
+    normalized = lowered.replace('colours', 'color').replace('colour', 'color').replace('colors', 'color')
+    normalized = normalized.replace('c/', '+').replace('c+', '+').replace('/', '+').replace('-', '+')
+    normalized = re.sub(r'[^0-9\+\s]+', '', normalized).strip()
+    normalized = re.sub(r'\s+', '+', normalized)
+    normalized = re.sub(r'\++', '+', normalized)
+
+    plus_match = _COLOR_PLUS_RE.fullmatch(normalized)
+    if plus_match:
+        candidate = f'{int(plus_match.group(1))}+{int(plus_match.group(2))}'
         return resolve_print_color_name(candidate) or candidate
 
-    return raw
+    single_match = _COLOR_SINGLE_RE.fullmatch(normalized)
+    if single_match:
+        candidate = str(int(single_match.group(1)))
+        return resolve_print_color_name(candidate) or candidate
+
+    numbers = re.findall(r'[0-9]+', normalized)
+    if len(numbers) == 1:
+        candidate = str(int(numbers[0]))
+        return resolve_print_color_name(candidate) or candidate
+    if len(numbers) == 2:
+        candidate = f'{int(numbers[0])}+{int(numbers[1])}'
+        return resolve_print_color_name(candidate) or candidate
+
+    return raw_text
+
+
+def normalize_print_color_for_form(value):
+    """Map legacy text (e.g. '4 color') to master name when possible, else keep legacy."""
+    return normalize_color_spec_value(value)
 
 
 def print_color_total_units(value):

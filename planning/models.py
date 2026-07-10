@@ -387,7 +387,7 @@ class PlanningJob(models.Model):
 
     @property
     def color_spec_display(self):
-        recipe = self.sku_recipe
+        recipe = self.approved_sku_recipe or self.sku_recipe
         if (self.color_spec or '').strip():
             return self.color_spec
         if recipe and (recipe.color_spec or '').strip():

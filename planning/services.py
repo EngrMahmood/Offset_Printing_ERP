@@ -171,6 +171,37 @@ SKU_RECIPE_FIELD_ROLE_LABELS = {
     'shared': 'Shared',
 }
 
+# Print / purchase sheet: width then * or x or X then height (e.g. 25*36, 28x40, 7.5 x 10.5).
+SHEET_SIZE_FORMAT_RE = re.compile(
+    r'^\s*(\d+(?:\.\d+)?)\s*([*xX])\s*(\d+(?:\.\d+)?)\s*$'
+)
+
+
+def is_valid_sheet_size(value):
+    text = str(value or '').strip()
+    if not text or text == '.':
+        return False
+    return bool(SHEET_SIZE_FORMAT_RE.match(text))
+
+
+def normalize_sheet_size(value):
+    """Normalize sheet size to W*H using * separator."""
+    text = str(value or '').strip()
+    match = SHEET_SIZE_FORMAT_RE.match(text)
+    if not match:
+        return text
+    return f'{match.group(1)}*{match.group(3)}'
+
+
+def _parse_layout_positive_int(raw_value):
+    text = str(raw_value or '').strip()
+    if text == '':
+        return None
+    try:
+        return int(round(float(text)))
+    except (TypeError, ValueError):
+        return None
+
 
 def get_sku_recipe_field_role(field_name):
     if field_name in SKU_RECIPE_PLANNER_FIELDS:
@@ -728,6 +759,13 @@ def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, 
             value = normalize_awc_no(raw_value)
         elif recipe_field == 'die_cutting':
             value = normalize_die_cutting(raw_value)
+        elif recipe_field in {'print_sheet_size', 'purchase_sheet_size'}:
+            value = normalize_sheet_size(raw_value)
+            if value and not is_valid_sheet_size(value):
+                raise ValueError(
+                    f'{recipe_field.replace("_", " ").title()} must use format '
+                    'width x height (e.g. 25*36 or 28x40).'
+                )
         else:
             value = str(raw_value).strip()
         # Only skip truly empty strings. \"NO\" / \"None\" / \"N/A\" are valid die-cutting answers.
@@ -739,6 +777,9 @@ def apply_designer_layout_to_sku_recipe(planning_job, recipe, posted_values, *, 
                 value = int(round(float(value)))
             except (TypeError, ValueError):
                 continue
+            if recipe_field in {'ups', 'purchase_sheet_ups'} and value < 1:
+                label = 'Ups' if recipe_field == 'ups' else 'Purchase Sheet Ups'
+                raise ValueError(f'{label} must be at least 1.')
 
         setattr(recipe, recipe_field, value)
         update_fields.append(recipe_field)
@@ -782,6 +823,11 @@ def designer_layout_missing_fields(posted_values):
     ]
     missing = []
     for field_name, label in required:
+        if field_name in {'ups', 'purchase_sheet_ups'}:
+            value = _parse_layout_positive_int(posted_values.get(field_name))
+            if value is None or value < 1:
+                missing.append(label)
+            continue
         if str(posted_values.get(field_name) or '').strip() == '':
             missing.append(label)
     set_no = str(posted_values.get('set_no') or '').strip()
@@ -789,6 +835,30 @@ def designer_layout_missing_fields(posted_values):
     if not set_no and not new_set_no:
         missing.append('Set No / New Set No')
     return missing
+
+
+def designer_layout_validation_errors(posted_values):
+    """Return human-readable validation errors for designer layout values."""
+    errors = []
+    for field_name, label in (
+        ('print_sheet_size', 'Print Sheet Size'),
+        ('purchase_sheet_size', 'Purchase Sheet Size'),
+    ):
+        value = str(posted_values.get(field_name) or '').strip()
+        if not value:
+            continue
+        if not is_valid_sheet_size(value):
+            errors.append(
+                f'{label} must use format width x height (e.g. 25*36, 28x40, or 7.5 x 10.5).'
+            )
+    for field_name, label in (
+        ('ups', 'Ups'),
+        ('purchase_sheet_ups', 'Purchase Sheet Ups'),
+    ):
+        value = _parse_layout_positive_int(posted_values.get(field_name))
+        if value is not None and value < 1:
+            errors.append(f'{label} must be at least 1.')
+    return errors
 
 
 def resolve_designer_layout_values(posted_values, *, recipe=None, planning_job=None, plate_request=None):

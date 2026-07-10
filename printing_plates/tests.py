@@ -287,9 +287,9 @@ class PlateWorkflowTestCase(TestCase):
         recipe.refresh_from_db()
         self.assertEqual(recipe.size_w_mm, 250)
         self.assertEqual(recipe.size_h_mm, 351)
-        self.assertEqual(recipe.print_sheet_size, '28x40')
+        self.assertEqual(recipe.print_sheet_size, '28*40')
         self.assertEqual(recipe.ups, 4)
-        self.assertEqual(recipe.purchase_sheet_size, '30x42')
+        self.assertEqual(recipe.purchase_sheet_size, '30*42')
         self.assertEqual(recipe.purchase_sheet_ups, 2)
         self.assertEqual(recipe.plate_set_no, 'Set-A')
         self.assertEqual(recipe.awc_no, 'AWC-777')
@@ -302,12 +302,12 @@ class PlateWorkflowTestCase(TestCase):
         job.refresh_from_db()
         self.assertEqual(job.size_w_mm, 250)
         self.assertEqual(job.size_h_mm, 351)
-        self.assertEqual(job.print_sheet_size, '28x40')
+        self.assertEqual(job.print_sheet_size, '28*40')
         self.assertEqual(job.color_spec, '2')
         self.assertEqual(job.total_colors, 2)
         self.assertNotEqual(job.color_spec, 'Cyan, Yellow')
         self.assertEqual(job.ups, 4.0)
-        self.assertEqual(job.purchase_sheet_size, '30x42')
+        self.assertEqual(job.purchase_sheet_size, '30*42')
         self.assertEqual(job.purchase_sheet_ups, 2.0)
         self.assertEqual(job.plate_set_no, 'Set-A')
         self.assertEqual(job.remarks, 'Layout standard prep')
@@ -521,6 +521,14 @@ class PlateWorkflowTestCase(TestCase):
             awc_no='AWC-SAME-1',
             master_data_status='approved',
             is_active=True,
+            size_w_mm=100,
+            size_h_mm=200,
+            print_sheet_size='28*40',
+            ups=4,
+            purchase_sheet_size='30*42',
+            purchase_sheet_ups=2,
+            die_cutting='NO',
+            color_spec='4',
         )
         self.planning_job.sku = 'SKU-001'
         self.planning_job.save(update_fields=['sku', 'updated_at'])
@@ -570,6 +578,50 @@ class PlateWorkflowTestCase(TestCase):
             'purchase_sheet_size': '30x42',
             'purchase_sheet_ups': '2',
             # die_cutting intentionally missing
+        })
+        self.assertEqual(response.status_code, 302)
+        self.plate_request.refresh_from_db()
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_DRAFT)
+
+    def test_send_to_vendor_blocked_when_purchase_sheet_ups_zero(self):
+        self.client.login(username='designer', password='password')
+        url = reverse('printing_plates:request_action', kwargs={'pk': self.plate_request.pk})
+        response = self.client.post(url, {
+            'action': 'send_to_vendor',
+            'vendor': 'Dot Max',
+            'print_color': '4',
+            'plate_color': 'Black',
+            'set_no': 'Set-1',
+            'awc_no': 'AWC-1',
+            'size_w_mm': '100',
+            'size_h_mm': '200',
+            'print_sheet_size': '28x40',
+            'ups': '4',
+            'purchase_sheet_size': '30x42',
+            'purchase_sheet_ups': '0',
+            'die_cutting': 'NO',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.plate_request.refresh_from_db()
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_DRAFT)
+
+    def test_send_to_vendor_blocked_when_sheet_size_invalid(self):
+        self.client.login(username='designer', password='password')
+        url = reverse('printing_plates:request_action', kwargs={'pk': self.plate_request.pk})
+        response = self.client.post(url, {
+            'action': 'send_to_vendor',
+            'vendor': 'Dot Max',
+            'print_color': '4',
+            'plate_color': 'Black',
+            'set_no': 'Set-1',
+            'awc_no': 'AWC-1',
+            'size_w_mm': '100',
+            'size_h_mm': '200',
+            'print_sheet_size': '.',
+            'ups': '4',
+            'purchase_sheet_size': '30x42',
+            'purchase_sheet_ups': '2',
+            'die_cutting': 'NO',
         })
         self.assertEqual(response.status_code, 302)
         self.plate_request.refresh_from_db()

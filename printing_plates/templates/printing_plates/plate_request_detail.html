@@ -341,47 +341,81 @@
                             </div>
 
                             <div class="plate-action-callout is-warning">Designer Layout Specifications (required to send — saves to Master SKU)</div>
+                            {% if master_sku_locked %}
+                            <p class="sku-recipe-viewer-note">SKU master is <strong>approved</strong> — layout fields below are read-only from master. Ask planner/admin to reopen SKU master if a correction is needed.</p>
+                            {% else %}
                             <p class="sku-recipe-viewer-note">All designer fields below are required except Remarks. Send to Vendor is blocked until they are complete. Values like Die Cutting <strong>NO</strong> are valid and will be saved.</p>
+                            {% endif %}
                             <div class="erp-form-grid sku-recipe-form">
                                 <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
                                     <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_size_w_mm" class="erp-form-label">Size Width (mm) <span class="req">*</span></label>
-                                    <input type="number" step="1" id="id_size_w_mm" name="size_w_mm" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.size_w_mm %}{{ plate_request.planning_job.size_w_mm }}{% elif master_recipe %}{{ master_recipe.size_w_mm|default:'' }}{% endif %}">
+                                    {% if master_sku_locked %}
+                                    <input type="text" id="id_size_w_mm" class="erp-input plate-input-readonly" value="{{ master_recipe.size_w_mm|default:'' }}" readonly>
+                                    {% else %}
+                                    <input type="number" step="1" min="1" id="id_size_w_mm" name="size_w_mm" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.size_w_mm is not None %}{{ plate_request.planning_job.size_w_mm }}{% elif master_recipe %}{{ master_recipe.size_w_mm|default:'' }}{% endif %}">
+                                    {% endif %}
                                 </div>
                                 <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
                                     <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_size_h_mm" class="erp-form-label">Size Height (mm) <span class="req">*</span></label>
-                                    <input type="number" step="1" id="id_size_h_mm" name="size_h_mm" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.size_h_mm %}{{ plate_request.planning_job.size_h_mm }}{% elif master_recipe %}{{ master_recipe.size_h_mm|default:'' }}{% endif %}">
+                                    {% if master_sku_locked %}
+                                    <input type="text" id="id_size_h_mm" class="erp-input plate-input-readonly" value="{{ master_recipe.size_h_mm|default:'' }}" readonly>
+                                    {% else %}
+                                    <input type="number" step="1" min="1" id="id_size_h_mm" name="size_h_mm" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.size_h_mm is not None %}{{ plate_request.planning_job.size_h_mm }}{% elif master_recipe %}{{ master_recipe.size_h_mm|default:'' }}{% endif %}">
+                                    {% endif %}
                                 </div>
                                 <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
                                     <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_print_sheet_size" class="erp-form-label">Print Sheet Size (inches) <span class="req">*</span></label>
-                                    <input type="text" id="id_print_sheet_size" name="print_sheet_size" required placeholder="e.g. 28x40" class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.print_sheet_size %}{{ plate_request.planning_job.print_sheet_size }}{% elif master_recipe %}{{ master_recipe.print_sheet_size|default:'' }}{% endif %}">
+                                    {% if master_sku_locked %}
+                                    <input type="text" id="id_print_sheet_size" class="erp-input plate-input-readonly" value="{{ master_recipe.print_sheet_size|default:'' }}" readonly>
+                                    {% else %}
+                                    <input type="text" id="id_print_sheet_size" name="print_sheet_size" required placeholder="e.g. 28x40" pattern="^\d+(\.\d+)?\s*[*xX]\s*\d+(\.\d+)?\s*$" title="Width x height, e.g. 25*36 or 28x40" class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.print_sheet_size %}{{ plate_request.planning_job.print_sheet_size }}{% elif master_recipe %}{{ master_recipe.print_sheet_size|default:'' }}{% endif %}">
+                                    <div class="erp-form-help">Format: width then * or x then height (e.g. 25*36, 28x40).</div>
+                                    {% endif %}
                                 </div>
                                 <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
                                     <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_ups" class="erp-form-label">Ups <span class="req">*</span></label>
-                                    <input type="number" step="1" id="id_ups" name="ups" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.ups %}{{ plate_request.planning_job.ups }}{% elif master_recipe %}{{ master_recipe.ups|default:'' }}{% endif %}">
+                                    {% if master_sku_locked %}
+                                    <input type="text" id="id_ups" class="erp-input plate-input-readonly" value="{{ master_recipe.ups|default:'' }}" readonly>
+                                    {% else %}
+                                    <input type="number" step="1" min="1" id="id_ups" name="ups" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.ups is not None %}{{ plate_request.planning_job.ups }}{% elif master_recipe %}{{ master_recipe.ups|default:'' }}{% endif %}">
+                                    {% endif %}
                                 </div>
                                 <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
                                     <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_purchase_sheet_size" class="erp-form-label">Purchase Sheet Size (inches) <span class="req">*</span></label>
-                                    <input type="text" id="id_purchase_sheet_size" name="purchase_sheet_size" required placeholder="e.g. 30x42" class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_size %}{{ plate_request.planning_job.purchase_sheet_size }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_size|default:'' }}{% endif %}">
+                                    {% if master_sku_locked %}
+                                    <input type="text" id="id_purchase_sheet_size" class="erp-input plate-input-readonly" value="{{ master_recipe.purchase_sheet_size|default:'' }}" readonly>
+                                    {% else %}
+                                    <input type="text" id="id_purchase_sheet_size" name="purchase_sheet_size" required placeholder="e.g. 30x42" pattern="^\d+(\.\d+)?\s*[*xX]\s*\d+(\.\d+)?\s*$" title="Width x height, e.g. 25*36 or 30x42" class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_size %}{{ plate_request.planning_job.purchase_sheet_size }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_size|default:'' }}{% endif %}">
+                                    <div class="erp-form-help">Format: width then * or x then height (e.g. 25*36, 30x42).</div>
+                                    {% endif %}
                                 </div>
                                 <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine">
                                     <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_purchase_sheet_ups" class="erp-form-label">Purchase Sheet Ups <span class="req">*</span></label>
-                                    <input type="number" step="1" id="id_purchase_sheet_ups" name="purchase_sheet_ups" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_ups %}{{ plate_request.planning_job.purchase_sheet_ups }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_ups|default:'' }}{% endif %}">
+                                    {% if master_sku_locked %}
+                                    <input type="text" id="id_purchase_sheet_ups" class="erp-input plate-input-readonly" value="{{ master_recipe.purchase_sheet_ups|default:'' }}" readonly>
+                                    {% else %}
+                                    <input type="number" step="1" min="1" id="id_purchase_sheet_ups" name="purchase_sheet_ups" required class="erp-input" value="{% if plate_request.planning_job and plate_request.planning_job.purchase_sheet_ups is not None %}{{ plate_request.planning_job.purchase_sheet_ups }}{% elif master_recipe %}{{ master_recipe.purchase_sheet_ups|default:'' }}{% endif %}">
+                                    {% endif %}
                                 </div>
                                 <div class="erp-form-field sku-recipe-field sku-recipe-field--designer is-mine erp-form-grid__full">
                                     <span class="sku-recipe-field__badge is-mine">Designer • Your field</span>
                                     <label for="id_die_cutting" class="erp-form-label">Die Cutting <span class="req">*</span></label>
+                                    {% if master_sku_locked %}
+                                    <input type="text" id="id_die_cutting" class="erp-input plate-input-readonly" value="{{ master_recipe.die_cutting|default:plate_request.display_die_cutting|default:'' }}" readonly>
+                                    {% else %}
                                     <select id="id_die_cutting" name="die_cutting" required class="erp-select">
                                         <option value="">Select Yes or No</option>
                                         <option value="YES" {% if plate_request.display_die_cutting == 'YES' %}selected{% endif %}>Yes</option>
                                         <option value="NO" {% if plate_request.display_die_cutting == 'NO' %}selected{% endif %}>No</option>
                                     </select>
                                     <div class="erp-form-help">Stored on the plate request as Yes/No only.</div>
+                                    {% endif %}
                                 </div>
                             </div>
 
