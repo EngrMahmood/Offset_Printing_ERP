@@ -93,8 +93,13 @@
         </div>
 
         {% if missing_required_fields and recipe_status != 'approved' %}
-            <div class="erp-alert erp-alert-warning" style="margin-bottom:8px;">
+            <div class="erp-alert is-error" style="margin-bottom:8px;">
                 <strong>Missing required fields before approval:</strong> {{ missing_required_fields|join:', ' }}
+            </div>
+        {% endif %}
+        {% if warning_master_fields and recipe_status != 'approved' %}
+            <div class="erp-alert erp-alert-warning" style="margin-bottom:8px;">
+                <strong>Notice before approval:</strong> {{ warning_master_fields|join:', ' }} not set yet (usually assigned at plate making).
             </div>
         {% endif %}
         {% if mismatch_alerts %}

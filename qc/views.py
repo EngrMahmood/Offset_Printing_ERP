@@ -29,6 +29,7 @@ from workflow.services import (
     _collect_pending_sku_rows,
     _format_display_qty,
     _missing_required_master_fields,
+    _warning_master_fields,
     _normalize_application_input,
     _normalize_color_spec_input,
     _normalize_status,
@@ -344,7 +345,7 @@ def master_sku_review_queue(request):
                 messages.error(request, f'SKU {sku} is not in QC review queue.')
                 return _redirect_queue()
 
-            missing_required = _missing_required_master_fields(recipe, recipe.job_name)
+            missing_required = _missing_required_master_fields(recipe, recipe.job_name, allow_missing_plate_set_no=True)
             if missing_required:
                 messages.error(
                     request,
@@ -369,9 +370,16 @@ def master_sku_review_queue(request):
             ])
 
             sync_result = _sync_new_jobs_for_approved_sku(sku, actor=request.user)
+            approval_warnings = _warning_master_fields(recipe, recipe.job_name)
+            notice = ''
+            if approval_warnings:
+                notice = (
+                    f' Notice: {", ".join(approval_warnings)} not set yet '
+                    '(usually assigned at plate making).'
+                )
             messages.success(
                 request,
-                f'SKU {sku} approved. Planning jobs refreshed: updated {sync_result["updated"]}, locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.',
+                f'SKU {sku} approved. Planning jobs refreshed: updated {sync_result["updated"]}, locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.{notice}',
             )
             return _redirect_queue()
 
@@ -436,7 +444,10 @@ def master_sku_review_queue(request):
 
         row['recipe'] = recipe
         row['recipe_status'] = recipe_status
-        row['missing_required_fields'] = _missing_required_master_fields(recipe, row.get('job_name') or '')
+        row['missing_required_fields'] = _missing_required_master_fields(
+            recipe, row.get('job_name') or '', allow_missing_plate_set_no=True,
+        )
+        row['warning_master_fields'] = _warning_master_fields(recipe, row.get('job_name') or '')
 
         po_number = row.get('po_number') or '-'
         po_summary_map.setdefault(po_number, {'po_number': po_number, 'count': 0})
@@ -462,7 +473,10 @@ def master_sku_review_queue(request):
             'delivery_date': '-',
             'recipe': recipe,
             'recipe_status': recipe.master_data_status,
-            'missing_required_fields': _missing_required_master_fields(recipe, recipe.job_name),
+            'missing_required_fields': _missing_required_master_fields(
+                recipe, recipe.job_name, allow_missing_plate_set_no=True,
+            ),
+            'warning_master_fields': _warning_master_fields(recipe, recipe.job_name),
         })
         seen_review_skus.add(sku_key)
 
@@ -617,7 +631,7 @@ def pending_skus(request):
                 if current_status not in {'pending_review', 'reviewed'}:
                     messages.error(request, f'SKU {sku} can only be Approved from Pending Review or Reviewed status.')
                     return _redirect_pending()
-                missing_required = _missing_required_master_fields(recipe)
+                missing_required = _missing_required_master_fields(recipe, allow_missing_plate_set_no=True)
                 if missing_required:
                     messages.error(
                         request,
@@ -639,9 +653,16 @@ def pending_skus(request):
                     'last_rejected_by', 'last_rejected_at', 'updated_at',
                 ])
                 sync_result = _sync_new_jobs_for_approved_sku(sku, actor=request.user)
+                approval_warnings = _warning_master_fields(recipe)
+                notice = ''
+                if approval_warnings:
+                    notice = (
+                        f' Notice: {", ".join(approval_warnings)} not set yet '
+                        '(usually assigned at plate making).'
+                    )
                 messages.success(
                     request,
-                    f'SKU {sku} approved for master data usage. Planning jobs refreshed: updated {sync_result["updated"]}, locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.',
+                    f'SKU {sku} approved for master data usage. Planning jobs refreshed: updated {sync_result["updated"]}, locked {sync_result["locked"]}, missing draft jobs {sync_result.get("missing_jobs", 0)}.{notice}',
                 )
                 return _redirect_pending()
 
@@ -794,7 +815,10 @@ def pending_skus(request):
         recipe = recipes_by_sku.get(_sku_key(row.get('sku')))
         row['recipe'] = recipe
         row['recipe_status'] = recipe.master_data_status if recipe else 'missing'
-        row['missing_required_fields'] = _missing_required_master_fields(recipe, row.get('job_name') or '')
+        row['missing_required_fields'] = _missing_required_master_fields(
+            recipe, row.get('job_name') or '', allow_missing_plate_set_no=True,
+        )
+        row['warning_master_fields'] = _warning_master_fields(recipe, row.get('job_name') or '')
 
     pending_rows.sort(key=lambda row: (row['po_number'], row['sku']))
     approval_rows = [
@@ -998,7 +1022,7 @@ def pending_sku_master_entry(request):
                 obj.created_by = request.user
 
             if action == 'submit_review':
-                missing_required = _missing_required_master_fields(obj)
+                missing_required = _missing_required_master_fields(obj, allow_missing_plate_set_no=True)
                 if missing_required:
                     messages.error(
                         request,
@@ -1069,7 +1093,10 @@ def pending_sku_master_entry(request):
         'suggested_qty': _format_display_qty(suggested_item.get('quantity')),
         'suggested_delivery_date': suggested_item.get('delivery_date') or '-',
         'recipe_status': (current_recipe.master_data_status if current_recipe else 'missing'),
-        'missing_required_fields': _missing_required_master_fields(current_recipe, po_job_name),
+        'missing_required_fields': _missing_required_master_fields(
+            current_recipe, po_job_name, allow_missing_plate_set_no=True,
+        ),
+        'warning_master_fields': _warning_master_fields(current_recipe, po_job_name),
         'mismatch_alerts': mismatch_alerts,
     }
     context['can_admin_actions'] = is_admin_user
@@ -1198,7 +1225,7 @@ def sku_recipes_list(request):
                 if current_status != 'reviewed':
                     messages.error(request, f'SKU {recipe.sku} can only be Approved from Reviewed status.')
                     return redirect(redirect_url)
-                missing_required = _missing_required_master_fields(recipe, recipe.job_name)
+                missing_required = _missing_required_master_fields(recipe, recipe.job_name, allow_missing_plate_set_no=True)
                 if missing_required:
                     messages.error(
                         request,
@@ -1209,7 +1236,15 @@ def sku_recipes_list(request):
                 recipe.approved_by = request.user
                 recipe.approved_at = timezone.now()
                 recipe.save(update_fields=['master_data_status', 'approved_by', 'approved_at', 'updated_at'])
-                messages.success(request, f'SKU {recipe.sku} approved.')
+                approval_warnings = _warning_master_fields(recipe, recipe.job_name)
+                if approval_warnings:
+                    messages.warning(
+                        request,
+                        f'SKU {recipe.sku} approved. Notice: {", ".join(approval_warnings)} not set yet '
+                        '(usually assigned at plate making).',
+                    )
+                else:
+                    messages.success(request, f'SKU {recipe.sku} approved.')
                 return redirect(redirect_url)
 
             if action == 'back_to_draft':
@@ -1473,7 +1508,7 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.approved_at = None
                     messages.success(request, f'SKU Recipe "{obj.sku}" reviewed and submitted for approval.')
                 elif action == 'approve' and current_status == 'reviewed':
-                    missing = _missing_required_master_fields(obj)
+                    missing = _missing_required_master_fields(obj, allow_missing_plate_set_no=True)
                     if missing:
                         messages.error(request, f'Cannot approve. Missing required fields: {", ".join(missing)}.')
                         return render(request, 'planning/sku_recipe_edit.html', {'form': form, 'recipe': obj, 'page_title': page_title, 'can_edit_approved': can_edit_approved, 'can_admin_actions': can_admin_actions})
@@ -1481,7 +1516,15 @@ def sku_recipe_edit(request, recipe_id=None):
                     obj.approved_by = request.user
                     obj.approved_at = timezone.now()
                     _do_sync_on_approve = True
-                    messages.success(request, f'SKU Recipe "{obj.sku}" approved for master data usage.')
+                    approval_warnings = _warning_master_fields(obj)
+                    if approval_warnings:
+                        messages.warning(
+                            request,
+                            f'SKU Recipe "{obj.sku}" approved. Notice: {", ".join(approval_warnings)} not set yet '
+                            '(usually assigned at plate making).',
+                        )
+                    else:
+                        messages.success(request, f'SKU Recipe "{obj.sku}" approved for master data usage.')
                 elif action == 'back_to_draft' and current_status in ('pending_review', 'reviewed'):
                     comment = (request.POST.get('rejection_comment') or '').strip()
                     if not comment:

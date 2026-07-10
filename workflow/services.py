@@ -196,7 +196,7 @@ SKU_MASTER_APPROVAL_REQUIRED_FIELDS = [
 ]
 
 
-def _missing_required_master_fields(recipe, fallback_job_name=''):
+def _missing_required_master_fields(recipe, fallback_job_name='', *, allow_missing_plate_set_no=False):
     missing = []
     cut_and_pack = bool(
         recipe and (getattr(recipe, 'job_process_type', '') or 'print_and_pack') == 'cut_and_pack'
@@ -209,24 +209,37 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
             label
             for field, label in SKU_MASTER_APPROVAL_REQUIRED_FIELDS
             if not (field == 'job_name' and fallback)
+            and not (allow_missing_plate_set_no and field == 'plate_set_no')
         ]
 
     for field, label in SKU_MASTER_APPROVAL_REQUIRED_FIELDS:
         if cut_and_pack and field in skip_for_cut_and_pack:
             continue
+        if allow_missing_plate_set_no and field == 'plate_set_no':
+            continue
         value = getattr(recipe, field, None)
-        # Set no is often assigned at plate making (per job), not on master — don't block QC.
-        if field == 'plate_set_no':
-            if isinstance(value, str) and not value.strip():
-                continue
-            if value is None:
-                continue
         if isinstance(value, str):
             if not value.strip():
                 missing.append(label)
         elif value is None:
             missing.append(label)
     return missing
+
+
+PLATE_SET_NO_WARNING_LABEL = 'Plate Set No.'
+
+
+def _warning_master_fields(recipe, fallback_job_name=''):
+    del fallback_job_name
+    if not recipe:
+        return [PLATE_SET_NO_WARNING_LABEL]
+    value = getattr(recipe, 'plate_set_no', None)
+    if isinstance(value, str):
+        if value.strip():
+            return []
+    elif value is not None:
+        return []
+    return [PLATE_SET_NO_WARNING_LABEL]
 
 
 def _build_recipe_map(items):

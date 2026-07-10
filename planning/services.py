@@ -11,7 +11,7 @@ from django.db.models.functions import Upper
 from django.utils import timezone
 from core.models import Machine, Department, Material
 from .models import PLANNING_STATUS_ALIASES, PlanningJob, PoDocument, SkuRecipe
-from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note, _normalize_status, _to_int, _to_decimal, SKU_MASTER_APPROVAL_REQUIRED_FIELDS
+from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note, _normalize_status, _to_int, _to_decimal, SKU_MASTER_APPROVAL_REQUIRED_FIELDS, _warning_master_fields
 from core.jc_numbering import allocate_next_jc_number
 
 NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
@@ -201,32 +201,6 @@ def _parse_layout_positive_int(raw_value):
         return int(round(float(text)))
     except (TypeError, ValueError):
         return None
-
-
-def designer_set_no_present(*, recipe=None, planning_job=None, plate_request=None, posted_values=None):
-    """True when any set-no source is filled (plate request, master, or job)."""
-    posted_values = posted_values or {}
-    candidates = [
-        posted_values.get('set_no'),
-        posted_values.get('new_set_no'),
-        getattr(plate_request, 'set_no', None) if plate_request else None,
-        getattr(plate_request, 'new_set_no', None) if plate_request else None,
-        getattr(recipe, 'plate_set_no', None) if recipe else None,
-        getattr(planning_job, 'plate_set_no', None) if planning_job else None,
-    ]
-    return any(str(value or '').strip() for value in candidates)
-
-
-def master_sku_layout_locked(*, recipe=None, planning_job=None, plate_request=None, posted_values=None):
-    """Lock approved master layout fields only once a set no exists."""
-    if not recipe or (recipe.master_data_status or '') != 'approved':
-        return False
-    return designer_set_no_present(
-        recipe=recipe,
-        planning_job=planning_job,
-        plate_request=plate_request,
-        posted_values=posted_values,
-    )
 
 
 def get_sku_recipe_field_role(field_name):
@@ -1292,7 +1266,7 @@ def _sku_key(sku):
 
 
 
-def _missing_required_master_fields(recipe, fallback_job_name=''):
+def _missing_required_master_fields(recipe, fallback_job_name='', *, allow_missing_plate_set_no=False):
     missing = []
     cut_and_pack = bool(
         recipe and (getattr(recipe, 'job_process_type', '') or 'print_and_pack') == 'cut_and_pack'
@@ -1305,17 +1279,15 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
             label
             for field, label in SKU_MASTER_APPROVAL_REQUIRED_FIELDS
             if not (field == 'job_name' and fallback)
+            and not (allow_missing_plate_set_no and field == 'plate_set_no')
         ]
 
     for field, label in SKU_MASTER_APPROVAL_REQUIRED_FIELDS:
         if cut_and_pack and field in skip_for_cut_and_pack:
             continue
+        if allow_missing_plate_set_no and field == 'plate_set_no':
+            continue
         value = getattr(recipe, field, None)
-        if field == 'plate_set_no':
-            if isinstance(value, str) and not value.strip():
-                continue
-            if value is None:
-                continue
         if isinstance(value, str):
             if not value.strip():
                 missing.append(label)

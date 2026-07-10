@@ -308,7 +308,6 @@ class PlateRequestDetailView(LoginRequiredMixin, GraphicsDesignerAccessMixin, De
             from planning.services import (
                 ensure_sku_recipe_for_planning_job,
                 get_best_sku_recipe_for_sku,
-                master_sku_layout_locked,
                 sync_planning_job_fields_to_sku_recipe,
             )
             master_recipe = master_recipe or get_best_sku_recipe_for_sku(sku)
@@ -350,15 +349,12 @@ class PlateRequestDetailView(LoginRequiredMixin, GraphicsDesignerAccessMixin, De
             if plate_request.plate_quantity is not None
             else suggestion['plate_quantity']
         )
-        from planning.services import master_sku_layout_locked
-
-        layout_locked = master_sku_layout_locked(
-            recipe=master_recipe,
-            planning_job=plate_request.planning_job,
-            plate_request=plate_request,
+        context['can_correct_designer_layout'] = (
+            not master_recipe or (master_recipe.master_data_status or '') != 'approved'
         )
-        context['can_correct_designer_layout'] = not layout_locked
-        context['master_sku_locked'] = layout_locked
+        context['master_sku_locked'] = bool(
+            master_recipe and (master_recipe.master_data_status or '') == 'approved'
+        )
         return context
 
 
@@ -406,7 +402,6 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                 designer_layout_validation_errors,
                 ensure_sku_recipe_for_planning_job,
                 get_awc_conflict_message,
-                master_sku_layout_locked,
                 normalize_sheet_size,
                 resolve_designer_layout_values,
                 sync_planning_job_fields_to_sku_recipe,
@@ -511,12 +506,7 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                     recipe.save(update_fields=['remarks', 'notes'])
 
             # Always block Send to Vendor when designer fields are missing (except remarks).
-            master_locked = master_sku_layout_locked(
-                recipe=recipe,
-                planning_job=planning_job,
-                plate_request=plate_request,
-                posted_values={'set_no': set_no, 'new_set_no': new_set_no},
-            )
+            master_locked = bool(recipe and recipe.master_data_status == 'approved')
             designer_post = {}
             if not master_locked:
                 designer_post = {
@@ -674,7 +664,6 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                 designer_layout_missing_fields,
                 designer_layout_validation_errors,
                 ensure_sku_recipe_for_planning_job,
-                master_sku_layout_locked,
                 _missing_required_master_fields,
             )
             from core.print_colors import (
@@ -695,11 +684,7 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
             if not recipe:
                 messages.error(request, 'SKU master row was not found for this plate request.')
                 return redirect('printing_plates:request_detail', pk=pk)
-            if (recipe.master_data_status or '') == 'approved' and master_sku_layout_locked(
-                recipe=recipe,
-                planning_job=planning_job,
-                plate_request=plate_request,
-            ):
+            if (recipe.master_data_status or '') == 'approved':
                 messages.error(
                     request,
                     'SKU master is approved and locked. Ask planner/admin to Reopen SKU before correcting designer fields.',

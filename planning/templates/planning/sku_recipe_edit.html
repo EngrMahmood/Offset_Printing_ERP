@@ -64,6 +64,11 @@
         <strong>Missing required fields before approval:</strong> {{ missing_required_fields|join:', ' }}
     </div>
     {% endif %}
+    {% if recipe and warning_master_fields %}
+    <div class="erp-alert erp-alert-warning">
+        <strong>Notice before approval:</strong> {{ warning_master_fields|join:', ' }} not set yet (usually assigned at plate making).
+    </div>
+    {% endif %}
 
     {% if planner_can_edit_layout and sku_recipe_viewer_role == 'planner' %}
     <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">

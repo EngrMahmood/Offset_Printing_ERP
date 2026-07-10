@@ -199,7 +199,9 @@
                         </td>
                         <td>
                             {% if row.missing_required_fields %}
-                                <span class="erp-note" style="color:#8a3f00;">{{ row.missing_required_fields|join:", " }}</span>
+                                <span class="erp-note" style="color:#8a2424;">{{ row.missing_required_fields|join:", " }}</span>
+                            {% elif row.warning_master_fields %}
+                                <span class="erp-note" style="color:#8a3f00;">{{ row.warning_master_fields|join:", " }} (warning)</span>
                             {% else %}
                                 <span class="erp-note">-</span>
                             {% endif %}

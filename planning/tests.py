@@ -1325,6 +1325,27 @@ class SkuRecipeFormRolePermissionTests(TestCase):
 		missing = _missing_required_master_fields(recipe)
 		self.assertIn('Product Type', missing)
 
+	def test_plate_set_no_warning_only_for_master_approval(self):
+		from planning.models import SkuRecipe
+		from workflow.services import _missing_required_master_fields, _warning_master_fields
+
+		recipe = SkuRecipe(
+			sku='SKU-SET-1',
+			job_name='Test Job',
+			material='Paper',
+			color_spec='4 color',
+			application='UV',
+			product_type='Label',
+			print_sheet_size='720x1020',
+			purchase_sheet_size='720x1020',
+			ups=4,
+			die_cutting='YES',
+			plate_set_no='',
+		)
+		self.assertIn('Plate Set No.', _warning_master_fields(recipe))
+		self.assertNotIn('Plate Set No.', _missing_required_master_fields(recipe, allow_missing_plate_set_no=True))
+		self.assertIn('Plate Set No.', _missing_required_master_fields(recipe))
+
 	def test_graphics_designer_cannot_edit_product_type(self):
 		from planning.forms import SkuRecipeForm
 		from planning.services import apply_sku_recipe_form_role_permissions, get_sku_recipe_form_ui_context
