@@ -180,7 +180,9 @@
                 <tbody>
                     {% for job in jobs %}
                     <tr>
-                        <td><strong><a href="{% url 'planning:job_detail' job.id %}">{{ job.jc_number }}</a></strong></td>
+                        <td><strong><a href="{% url 'planning:job_detail' job.id %}">{{ job.jc_number }}</a></strong>
+                        {% include 'planning/includes/sku_duplicate_alert_compact.html' %}
+                        </td>
                         <td>{{ job.po_number|default:'-' }}</td>
                         <td>{{ job.sku|default:'-' }}</td>
                         <td title="{{ job.job_name }}">{{ job.job_name|default:'-' }}</td>

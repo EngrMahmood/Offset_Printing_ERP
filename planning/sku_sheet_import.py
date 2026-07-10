@@ -7,6 +7,12 @@ import io
 from decimal import Decimal, InvalidOperation
 
 from planning.forms import _normalize_application_value, _normalize_color_spec_value
+from planning.sku_migration_phases import (
+    build_sku_phase_map,
+    get_sku_migration_phase,
+    infer_product_type_from_sku,
+    sku_eligible_for_migration_phase,
+)
 from planning.models import PlanningJob, SkuRecipe
 from planning.services import (
     _field_is_blank,
@@ -60,12 +66,18 @@ SHEET_IGNORED_HEADERS = {
     'Order Status',
     'Size W Inch',
     'Size H Inch',
+    'Front Pass',
+    'Back Pass',
+    'No. Of Clrs Back',
+    'No. of Clrs Front',
+    'Total Crls',
+    'Total M/R Time (15m/clr)',
 }
 
 # Sheet "Purchase Material" → planning job purchase_material_origin (not on SkuRecipe).
 JOB_ORIGIN_HEADERS = ('Purchase Material', 'Purchase Material Origin', 'Purchase Origin')
 
-INT_FIELDS = {'size_w_mm', 'size_h_mm', 'ups', 'purchase_sheet_ups'}
+INT_FIELDS = {'size_w_mm', 'size_h_mm', 'ups', 'purchase_sheet_ups', 'print_passes'}
 DECIMAL_FIELDS = {'default_unit_cost', 'daily_demand'}
 # Master fields the Google Sheet may fill (blanks only by default).
 RESTORE_FIELDS = [
@@ -76,6 +88,7 @@ RESTORE_FIELDS = [
     'product_type',
     'machine_name',
     'plate_set_no',
+    'print_passes',
     'size_w_mm',
     'size_h_mm',
     'ups',
@@ -105,6 +118,59 @@ def _sheet_row_get(source, header):
     return None
 
 
+def _find_sheet_header(all_rows):
+    """Locate header row containing SKU and JOB NAME."""
+    for i, row in enumerate(all_rows[:15]):
+        values = [_norm_header(c) for c in row]
+        if 'SKU' in values and any(v.upper() in {'JOB NAME', 'JOBNAME'} for v in values):
+            return i, values
+    raise ValueError('Could not find header row (need SKU and JOB NAME).')
+
+
+def _tabular_rows(header, data_rows):
+    rows = []
+    for values in data_rows:
+        row = {}
+        for idx, key in enumerate(header):
+            if key:
+                row[key] = values[idx] if idx < len(values) else None
+        rows.append(row)
+    return rows
+
+
+def _normalize_job_process_type(raw):
+    text = str(raw or '').strip().lower()
+    if not text:
+        return ''
+    if 'cut' in text and 'pack' in text:
+        return 'cut_and_pack'
+    if 'print' in text and 'pack' in text:
+        return 'print_and_pack'
+    return ''
+
+
+def _clean_print_passes(value):
+    passes = _clean_int(value)
+    if passes in {1, 2, 3, 4}:
+        return passes
+    return None
+
+
+def dedupe_sheet_rows(rows):
+    """Keep one row per SKU (case-insensitive); later rows win."""
+    by_sku = {}
+    order = []
+    for row in rows:
+        sku = str(_sheet_row_get(row, 'SKU') or '').strip()
+        if not sku:
+            continue
+        key = sku.casefold()
+        if key not in by_sku:
+            order.append(key)
+        by_sku[key] = row
+    return [by_sku[key] for key in order]
+
+
 def parse_sheet_rows(upload_file):
     """Return list of row dicts from CSV or XLSX upload file / path-like."""
     name = (getattr(upload_file, 'name', '') or '').lower()
@@ -118,7 +184,9 @@ def parse_sheet_rows(upload_file):
             name = str(upload_file).lower()
 
     rows = []
-    if name.endswith('.csv') or (not name.endswith('.xlsx') and b',' in raw[:200]):
+    if name.endswith('.csv') or (
+        not name.endswith('.xlsx') and not name.endswith('.xlsb') and b',' in raw[:200]
+    ):
         decoded = raw.decode('utf-8-sig')
         reader = csv.DictReader(io.StringIO(decoded))
         for row in reader:
@@ -130,25 +198,23 @@ def parse_sheet_rows(upload_file):
 
         wb = openpyxl.load_workbook(io.BytesIO(raw), data_only=True)
         ws = wb.active
-        header_row_idx = None
-        header = []
-        for i, row in enumerate(ws.iter_rows(min_row=1, max_row=10, values_only=True), 1):
-            values = [_norm_header(c) for c in row]
-            if 'SKU' in values and any(v.upper() in {'JOB NAME', 'JOBNAME'} for v in values):
-                header_row_idx = i
-                header = values
-                break
-        if not header_row_idx:
-            raise ValueError('Could not find header row (need SKU and JOB NAME).')
-        for values in ws.iter_rows(min_row=header_row_idx + 1, values_only=True):
-            row = {}
-            for idx, key in enumerate(header):
-                if key:
-                    row[key] = values[idx] if idx < len(values) else None
-            rows.append(row)
-        return rows
+        all_rows = [list(values) for values in ws.iter_rows(values_only=True)]
+        header_idx, header = _find_sheet_header(all_rows)
+        return _tabular_rows(header, all_rows[header_idx + 1:])
 
-    raise ValueError('Unsupported file type. Use CSV or XLSX.')
+    if name.endswith('.xlsb'):
+        from pyxlsb import open_workbook
+
+        with open_workbook(io.BytesIO(raw)) as wb:
+            with wb.get_sheet(wb.sheets[0]) as ws:
+                all_rows = [
+                    [cell.v if hasattr(cell, 'v') else cell for cell in row]
+                    for row in ws.rows()
+                ]
+        header_idx, header = _find_sheet_header(all_rows)
+        return _tabular_rows(header, all_rows[header_idx + 1:])
+
+    raise ValueError('Unsupported file type. Use CSV, XLSX, or XLSB.')
 
 
 def _clean_int(value):
@@ -234,6 +300,17 @@ def row_to_field_values(source):
     if _is_none_color(color_raw) and _normalize_application_value(app_raw) == 'NO':
         payload.setdefault('job_process_type', 'cut_and_pack')
 
+    job_process = _normalize_job_process_type(_sheet_row_get(source, 'Job Process'))
+    if job_process:
+        payload['job_process_type'] = job_process
+
+    if payload.get('job_process_type') == 'cut_and_pack':
+        payload['print_passes'] = None
+    else:
+        passes = _clean_print_passes(_sheet_row_get(source, 'No. of Passes'))
+        if passes is not None:
+            payload['print_passes'] = passes
+
     return payload
 
 
@@ -249,6 +326,18 @@ def row_to_job_origin(source):
     return ''
 
 
+def _job_process_fill_allowed(current, new_value, *, fill_blanks_only):
+    """Allow correcting default print_and_pack → cut_and_pack when filling blanks."""
+    current = (current or 'print_and_pack').strip()
+    if current == new_value:
+        return False
+    if fill_blanks_only:
+        if current == 'print_and_pack' and new_value == 'cut_and_pack':
+            return True
+        return _field_is_blank(current)
+    return True
+
+
 def apply_sheet_values_to_recipe(recipe, values, *, fill_blanks_only=True):
     """
     Apply sheet values onto a recipe.
@@ -260,6 +349,16 @@ def apply_sheet_values_to_recipe(recipe, values, *, fill_blanks_only=True):
     for field_name, value in values.items():
         if field_name not in RESTORE_FIELDS and field_name != 'job_process_type':
             continue
+        if field_name == 'job_process_type':
+            if not value:
+                continue
+            current = getattr(recipe, field_name, None)
+            if not _job_process_fill_allowed(current, value, fill_blanks_only=fill_blanks_only):
+                continue
+            setattr(recipe, field_name, value)
+            updated.append(field_name)
+            continue
+
         if _field_is_blank(value):
             continue
         current = getattr(recipe, field_name, None)
@@ -269,6 +368,13 @@ def apply_sheet_values_to_recipe(recipe, values, *, fill_blanks_only=True):
             continue
         setattr(recipe, field_name, value)
         updated.append(field_name)
+
+    if (getattr(recipe, 'job_process_type', None) or 'print_and_pack') == 'cut_and_pack':
+        if recipe.print_passes is not None:
+            recipe.print_passes = None
+            if 'print_passes' not in updated:
+                updated.append('print_passes')
+
     return updated
 
 
@@ -321,24 +427,41 @@ def apply_purchase_origin_to_jobs(sku, origin, *, fill_blanks_only=True):
     return updated_jobs
 
 
-def restore_sku_recipes_from_rows(rows, *, fill_blanks_only=True, create_missing=False, user=None):
+def restore_sku_recipes_from_rows(
+    rows,
+    *,
+    fill_blanks_only=True,
+    create_missing=False,
+    user=None,
+    migration_phase=None,
+    infer_product_type=False,
+):
     """
-    Restore blank SkuRecipe fields and planning-job purchase origin from sheet rows.
+    Restore blank SkuRecipe master fields from sheet rows.
 
     Does not demote approved recipes. Does not overwrite non-blank fields when
     fill_blanks_only is True.
+
+    migration_phase: 1, 2, or 3 — only touch SKUs in that safety tier (see
+    planning.sku_migration_phases). None = all phases (legacy behaviour).
+
+    infer_product_type: when True with migration_phase 1 or 2, fill blank product_type
+    from SKU prefix rules for ERP-only SKUs not covered by the sheet.
 
     Mapping notes:
     - Remarks → notes (master)
     - AWC No → awc_no (master)
     - Machine / Plate Set No → master blanks (also hydrate from jobs separately)
-    - Purchase Material → purchase_material_origin on planning jobs (local|import)
+    - Purchase Material on sheet is NOT written here (job finalize field).
     """
+    rows = dedupe_sheet_rows(rows)
+    phase_map = build_sku_phase_map() if migration_phase is not None else {}
     created = 0
     updated = 0
     skipped = 0
+    phase_skipped = 0
     missing_sku = 0
-    jobs_origin_updated = 0
+    inferred_product_type = 0
     field_hits = {}
     samples = []
 
@@ -346,21 +469,19 @@ def restore_sku_recipes_from_rows(rows, *, fill_blanks_only=True, create_missing
         sku = str(_sheet_row_get(source, 'SKU') or '').strip()
         if not sku:
             continue
+        if not sku_eligible_for_migration_phase(sku, migration_phase, phase_map=phase_map):
+            phase_skipped += 1
+            continue
         values = row_to_field_values(source)
         job_name = values.get('job_name') or str(_sheet_row_get(source, 'JOB NAME') or '').strip()
         if job_name:
             values['job_name'] = job_name
-        origin = row_to_job_origin(source)
 
         recipe = SkuRecipe.objects.filter(sku__iexact=sku).first()
         recipe_changed = []
         if not recipe:
             if not create_missing:
                 missing_sku += 1
-                if origin:
-                    jobs_origin_updated += apply_purchase_origin_to_jobs(
-                        sku, origin, fill_blanks_only=fill_blanks_only,
-                    )
                 continue
             recipe = SkuRecipe(sku=sku, created_by=user, master_data_status='draft', legacy_produced=True)
             if job_name:
@@ -379,6 +500,16 @@ def restore_sku_recipes_from_rows(rows, *, fill_blanks_only=True, create_missing
             if not recipe.legacy_produced:
                 recipe.legacy_produced = True
                 recipe_changed = list(recipe_changed) + ['legacy_produced']
+            if (
+                infer_product_type
+                and migration_phase in (1, 2)
+                and _field_is_blank(recipe.product_type)
+            ):
+                inferred = infer_product_type_from_sku(sku)
+                if inferred:
+                    recipe.product_type = inferred
+                    recipe_changed = list(recipe_changed) + ['product_type']
+                    inferred_product_type += 1
             if recipe_changed:
                 recipe.save(update_fields=list(dict.fromkeys(recipe_changed + ['updated_at'])))
                 updated += 1
@@ -389,20 +520,31 @@ def restore_sku_recipes_from_rows(rows, *, fill_blanks_only=True, create_missing
             else:
                 skipped += 1
 
-        if origin:
-            n = apply_purchase_origin_to_jobs(sku, origin, fill_blanks_only=fill_blanks_only)
-            jobs_origin_updated += n
-            if n:
-                field_hits['purchase_material_origin'] = (
-                    field_hits.get('purchase_material_origin', 0) + n
-                )
+    if infer_product_type and migration_phase in (1, 2):
+        from planning.models import SkuRecipe as SkuRecipeModel
+
+        for recipe in SkuRecipeModel.objects.filter(product_type='').iterator(chunk_size=500):
+            if get_sku_migration_phase(recipe.sku, phase_map=phase_map) != migration_phase:
+                continue
+            inferred = infer_product_type_from_sku(recipe.sku)
+            if not inferred:
+                continue
+            recipe.product_type = inferred
+            recipe.save(update_fields=['product_type', 'updated_at'])
+            inferred_product_type += 1
+            updated += 1
+            field_hits['product_type'] = field_hits.get('product_type', 0) + 1
+            if len(samples) < 20:
+                samples.append((recipe.pk, recipe.sku, recipe.master_data_status, ['product_type (inferred)']))
 
     return {
         'created': created,
         'updated': updated,
         'skipped': skipped,
+        'phase_skipped': phase_skipped,
         'missing_sku': missing_sku,
-        'jobs_origin_updated': jobs_origin_updated,
+        'inferred_product_type': inferred_product_type,
         'field_hits': field_hits,
         'samples': samples,
+        'migration_phase': migration_phase,
     }

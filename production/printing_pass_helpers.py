@@ -6,7 +6,7 @@ import re
 
 from core.models import JobCard
 
-MAX_PRINT_PASSES = 3
+MAX_PRINT_PASSES = 4
 INFERENCE_RATIO_TOLERANCE = 0.18
 
 

@@ -109,7 +109,7 @@ class PlanningJob(models.Model):
     print_passes = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
-        help_text='Number of press passes (1, 2, or 3). Total impressions = print sheets × passes.',
+        help_text='Number of press passes (1, 2, 3, or 4). Total impressions = print sheets × passes.',
     )
     planned_total_impressions = models.PositiveIntegerField(null=True, blank=True)
 
@@ -834,7 +834,7 @@ class SkuRecipe(models.Model):
     print_passes = models.PositiveSmallIntegerField(
         null=True,
         blank=True,
-        help_text='Number of press passes (1, 2, or 3) for Print + Pack SKUs.',
+        help_text='Number of press passes (1, 2, 3, or 4) for Print + Pack SKUs.',
     )
     plate_set_no = models.CharField(max_length=120, blank=True)
 

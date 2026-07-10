@@ -98,6 +98,17 @@
         <li>Use the changelog to compare versions and verify the merged planning/main updates.</li>
     </ul>
 
+    <h2>9. Duplicate SKU Alerts</h2>
+    <ul>
+        <li>When the same SKU is active on more than one PO, every related JC shows a <strong>Duplicate SKU</strong> banner.</li>
+        <li>Open any JC from search — you still see all sibling jobs, PO numbers, status, stage, and printing state.</li>
+        <li><strong>Combine run possible</strong> appears when two or more active jobs have not started printing. Primary reference is the <strong>first PO</strong> (earliest JC).</li>
+        <li>Combine is for machine time only. Tell production to run together; keep qty, dispatch, and documentation <strong>separate per PO</strong>.</li>
+        <li><strong>Priority hint</strong> appears when this SKU was dispatched within the last 14 days — schedule new PO lines with lower urgency unless expedited.</li>
+        <li>Once printing has started on a sibling job, combine is not applicable for that cluster.</li>
+        <li>Reuse plates from the first PO when artwork is unchanged — avoid duplicate plate requests.</li>
+    </ul>
+
     <div class="erp-alert erp-alert-warning">
         Keep this planning guide updated whenever workflow rules, mandatory fields, or routing behavior changes.
         Review the guide after each release or merge to ensure users have current instructions.

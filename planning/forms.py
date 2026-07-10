@@ -96,6 +96,7 @@ PRINT_PASS_CHOICES = [
     (1, '1 Pass'),
     (2, '2 Passes'),
     (3, '3 Passes'),
+    (4, '4 Passes'),
 ]
 
 
@@ -357,7 +358,7 @@ class SkuRecipeForm(forms.ModelForm):
             )
             self.fields['print_passes'].label = 'No. of Passes'
             self.fields['print_passes'].help_text = (
-                'Press passes for this SKU (1, 2, or 3). Not used for Cut & Pack.'
+                'Press passes for this SKU (1, 2, 3, or 4). Not used for Cut & Pack.'
             )
 
         # Print Color required only for Print + Pack (validated in clean()).
@@ -407,8 +408,8 @@ class SkuRecipeForm(forms.ModelForm):
         if value in (None, ''):
             return None
         passes = int(value)
-        if passes not in {1, 2, 3}:
-            raise forms.ValidationError('Select 1, 2, or 3 passes.')
+        if passes not in {1, 2, 3, 4}:
+            raise forms.ValidationError('Select 1, 2, 3, or 4 passes.')
         return passes
 
     def clean_color_spec(self):

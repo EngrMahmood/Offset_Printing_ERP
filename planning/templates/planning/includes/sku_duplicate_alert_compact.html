@@ -1,0 +1,10 @@
+{% if job.sku_duplicate_alert %}
+<div style="margin-top:4px;">
+    <a href="{% url 'planning:job_detail' job.id %}#sku-duplicate-alert"
+       class="erp-badge {% if job.sku_duplicate_alert.combine_possible %}erp-badge-warning{% else %}erp-badge-info{% endif %}"
+       title="Same SKU on {{ job.sku_duplicate_alert.active_count }} active jobs — open for details">
+        Duplicate SKU ({{ job.sku_duplicate_alert.active_count }})
+        {% if job.sku_duplicate_alert.combine_possible %}· Combine{% endif %}
+    </a>
+</div>
+{% endif %}

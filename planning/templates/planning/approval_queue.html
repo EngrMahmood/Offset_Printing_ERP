@@ -223,6 +223,13 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% if job.sku_duplicate_alert %}
+                    <tr>
+                        <td colspan="11" style="background:#fffdf5;">
+                            {% include 'planning/includes/sku_duplicate_alert.html' with sku_duplicate_alert=job.sku_duplicate_alert %}
+                        </td>
+                    </tr>
+                    {% endif %}
                 {% empty %}
                     <tr><td colspan="10" style="padding:24px;text-align:center;color:#7a8fa6;">No Job Cards are waiting for planning approval.</td></tr>
                 {% endfor %}
@@ -300,6 +307,13 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% if job.sku_duplicate_alert %}
+                    <tr>
+                        <td colspan="11" style="background:#fffdf5;">
+                            {% include 'planning/includes/sku_duplicate_alert.html' with sku_duplicate_alert=job.sku_duplicate_alert %}
+                        </td>
+                    </tr>
+                    {% endif %}
                 {% empty %}
                     <tr><td colspan="10" style="padding:24px;text-align:center;color:#7a8fa6;">No Job Cards are waiting for QC approval.</td></tr>
                 {% endfor %}
@@ -375,6 +389,13 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% if job.sku_duplicate_alert %}
+                    <tr>
+                        <td colspan="11" style="background:#fffdf5;">
+                            {% include 'planning/includes/sku_duplicate_alert.html' with sku_duplicate_alert=job.sku_duplicate_alert %}
+                        </td>
+                    </tr>
+                    {% endif %}
                 {% empty %}
                     <tr><td colspan="10" style="padding:24px;text-align:center;color:#7a8fa6;">No Job Cards are waiting for production manager approval.</td></tr>
                 {% endfor %}
@@ -452,6 +473,13 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% if job.sku_duplicate_alert %}
+                    <tr>
+                        <td colspan="11" style="background:#fffdf5;">
+                            {% include 'planning/includes/sku_duplicate_alert.html' with sku_duplicate_alert=job.sku_duplicate_alert %}
+                        </td>
+                    </tr>
+                    {% endif %}
                 {% empty %}
                     <tr><td colspan="10" style="padding:24px;text-align:center;color:#7a8fa6;">No Job Cards are ready to release for production.</td></tr>
                 {% endfor %}

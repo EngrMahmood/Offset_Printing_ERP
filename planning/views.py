@@ -495,7 +495,7 @@ def _build_job_card_layout_context(job):
 def build_planning_readme_text():
     return """Offset ERP - Planning Module Easy Guide
 
-Last Updated: 2026-04-19
+Last Updated: 2026-07-10
 
 =============================
 1) MASTER SKU (STEP 1)
@@ -598,6 +598,32 @@ New route behavior:
 - Route every PO through intake queue.
 - Resolve pending SKUs same day.
 - Complete approvals before production release.
+
+=============================
+9) DUPLICATE SKU ALERTS
+=============================
+Purpose:
+- Warn planners when the same SKU is active on more than one PO / JC at the same time.
+
+Where shown:
+- Planning Jobs list (badge on JC)
+- Job detail, Pending SKU master entry, Approval Queue (full banner)
+- Every active JC in the cluster shows the same alert (not only the newest PO).
+
+Combine run (save machine time):
+- Shown when two or more active jobs for the SKU have NOT started printing yet.
+- Primary reference is the FIRST PO / earliest JC.
+- Expedite planning, release job cards, and tell production to run together.
+- Keep documentation separate per PO (qty, dispatch, invoicing).
+
+Priority hint (lower urgency):
+- Shown when any JC for this SKU was dispatched within the last 14 days.
+- Use for scheduling — new PO lines can wait unless customer expedite applies.
+- Combine is not applicable once printing has started on a sibling job.
+
+Plates:
+- When combining or repeating the same artwork, reuse plates from the first PO.
+- Do not send a second plate request unless plates are damaged or artwork changed.
 """
 
 
@@ -1304,6 +1330,10 @@ def planning_home(request):
             job.status_changed_by = ''
             job.status_changed_at = None
 
+    from planning.sku_duplicate_alert import attach_sku_duplicate_alerts_to_jobs
+
+    attach_sku_duplicate_alerts_to_jobs(jobs)
+
     return render(
         request,
         'planning/planning_home.html',
@@ -1691,6 +1721,10 @@ def planning_job_detail(request, job_id):
         packing_entries = job_card.productions.filter(is_active=True, entry_type='packing').select_related('sorter', 'created_by').order_by('date', 'id')
         dispatch_entries = job_card.dispatch_set.filter(is_active=True).select_related('created_by').order_by('dispatch_date', 'id')
 
+    from planning.sku_duplicate_alert import build_sku_duplicate_alert
+
+    sku_duplicate_alert = build_sku_duplicate_alert(job)
+
     return render(
         request,
         'planning/planning_job_detail.html',
@@ -1728,6 +1762,7 @@ def planning_job_detail(request, job_id):
             'printing_entries': printing_entries,
             'packing_entries': packing_entries,
             'dispatch_entries': dispatch_entries,
+            'sku_duplicate_alert': sku_duplicate_alert,
         },
     )
 
@@ -2534,6 +2569,14 @@ def approval_queue(request):
         job.master_data_diffs = get_master_data_field_diffs(job)
         job.requires_reopen_for_sync = job_requires_reopen_for_master_sync(job)
 
+    from planning.sku_duplicate_alert import attach_sku_duplicate_alerts_to_job_cards, attach_sku_duplicate_alerts_to_jobs
+
+    attach_sku_duplicate_alerts_to_job_cards(planning_jobs)
+    attach_sku_duplicate_alerts_to_job_cards(qc_jobs)
+    attach_sku_duplicate_alerts_to_job_cards(pm_jobs)
+    attach_sku_duplicate_alerts_to_job_cards(release_jobs)
+    attach_sku_duplicate_alerts_to_jobs(master_sync_requests)
+
     context = {
         'planning_jobs': planning_jobs,
         'qc_jobs': qc_jobs,
@@ -3301,7 +3344,7 @@ def sku_recipe_bulk_upload(request):
     if request.method == 'POST':
         upload_file = request.FILES.get('upload_file')
         if not upload_file:
-            messages.error(request, 'Please choose a CSV or XLSX file to upload.')
+            messages.error(request, 'Please choose a CSV, XLSX, or XLSB file to upload.')
             return redirect('planning:sku_recipe_bulk_upload')
 
         from planning.sku_sheet_import import (
@@ -3327,6 +3370,7 @@ def sku_recipe_bulk_upload(request):
         bulk_highlights = {}
         highlight_fields = {
             'sku', 'job_name', 'material', 'color_spec', 'application', 'product_type',
+            'job_process_type', 'print_passes', 'machine_name', 'plate_set_no',
             'size_w_mm', 'size_h_mm', 'ups', 'print_sheet_size',
             'purchase_sheet_size', 'purchase_sheet_ups',
             'default_unit_cost', 'daily_demand',
@@ -4285,6 +4329,9 @@ def pending_sku_master_entry(request):
         'plate_request_already_active': bool(active_plate_request),
     }
     context['can_admin_actions'] = is_admin_user
+    from planning.sku_duplicate_alert import build_sku_duplicate_alert_for_sku
+
+    context['sku_duplicate_alert'] = build_sku_duplicate_alert_for_sku(sku, current_job=job_obj)
     context.update(get_sku_recipe_form_ui_context(request.user, is_readonly=is_readonly))
     return render(request, 'planning/pending_sku_master_entry.html', context)
 

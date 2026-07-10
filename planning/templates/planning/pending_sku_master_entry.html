@@ -29,6 +29,8 @@
         <div class="erp-alert {% if 'error' in msg.tags %}erp-alert-danger{% elif 'warning' in msg.tags %}erp-alert-warning{% else %}erp-alert-info{% endif %}">{{ msg }}</div>
     {% endfor %}
 
+    {% include 'planning/includes/sku_duplicate_alert.html' %}
+
     {# ── Context notice ── #}
     {% if is_readonly %}
     <div class="erp-alert erp-alert-info">

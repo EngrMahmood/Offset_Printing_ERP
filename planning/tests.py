@@ -1780,3 +1780,256 @@ class SkuRecipePlanningSyncTests(TestCase):
 		self.assertEqual(recipe.size_w_mm, 100)
 		self.assertEqual(recipe.ups, 12)
 		self.assertEqual(recipe.plate_set_no, 'SET-99')
+
+
+class SkuSheetImportTests(TestCase):
+	def test_row_to_field_values_maps_job_process_and_print_passes(self):
+		from planning.sku_sheet_import import row_to_field_values
+
+		values = row_to_field_values({
+			'SKU': 'TEST-SKU',
+			'Job Process': 'Print + Pack',
+			'No. of Passes': 2.0,
+			'Product Type': 'Insert Card',
+		})
+		self.assertEqual(values['job_process_type'], 'print_and_pack')
+		self.assertEqual(values['print_passes'], 2)
+		self.assertEqual(values['product_type'], 'Insert Card')
+
+	def test_row_to_field_values_cut_and_pack_clears_print_passes(self):
+		from planning.sku_sheet_import import row_to_field_values
+
+		values = row_to_field_values({
+			'SKU': 'CUT-SKU',
+			'Job Process': 'Cut & Pack (no printing)',
+			'No. of Passes': 1.0,
+			'Color': 'No',
+			'Application': 'No',
+		})
+		self.assertEqual(values['job_process_type'], 'cut_and_pack')
+		self.assertIsNone(values.get('print_passes'))
+
+	def test_apply_sheet_values_fills_blank_product_type_and_print_passes(self):
+		from planning.models import SkuRecipe
+		from planning.sku_sheet_import import apply_sheet_values_to_recipe
+
+		recipe = SkuRecipe.objects.create(
+			sku='SHEET-FILL-001',
+			job_name='Fill Test',
+			job_process_type='print_and_pack',
+		)
+		changed = apply_sheet_values_to_recipe(
+			recipe,
+			{'product_type': 'Label', 'print_passes': 3},
+			fill_blanks_only=True,
+		)
+		self.assertIn('product_type', changed)
+		self.assertIn('print_passes', changed)
+		self.assertEqual(recipe.product_type, 'Label')
+		self.assertEqual(recipe.print_passes, 3)
+
+	def test_apply_sheet_values_allows_cut_and_pack_correction(self):
+		from planning.models import SkuRecipe
+		from planning.sku_sheet_import import apply_sheet_values_to_recipe
+
+		recipe = SkuRecipe.objects.create(
+			sku='SHEET-CUT-001',
+			job_name='Cut Test',
+			job_process_type='print_and_pack',
+			print_passes=2,
+		)
+		changed = apply_sheet_values_to_recipe(
+			recipe,
+			{'job_process_type': 'cut_and_pack', 'print_passes': None},
+			fill_blanks_only=True,
+		)
+		self.assertIn('job_process_type', changed)
+		self.assertIn('print_passes', changed)
+		self.assertEqual(recipe.job_process_type, 'cut_and_pack')
+		self.assertIsNone(recipe.print_passes)
+
+	def test_dedupe_sheet_rows_keeps_last_row_per_sku(self):
+		from planning.sku_sheet_import import dedupe_sheet_rows
+
+		rows = dedupe_sheet_rows([
+			{'SKU': 'ABC', 'Product Type': 'Old'},
+			{'SKU': 'abc', 'Product Type': 'New'},
+		])
+		self.assertEqual(len(rows), 1)
+		self.assertEqual(rows[0]['Product Type'], 'New')
+
+
+class SkuMigrationPhaseTests(TestCase):
+	def test_phase1_when_no_planning_jobs(self):
+		from planning.models import SkuRecipe
+		from planning.sku_migration_phases import get_sku_migration_phase
+
+		SkuRecipe.objects.create(sku='ORPHAN-SKU-1', job_name='Orphan')
+		self.assertEqual(get_sku_migration_phase('ORPHAN-SKU-1'), 1)
+
+	def test_phase2_when_planning_job_not_released(self):
+		from planning.models import PlanningJob, SkuRecipe
+		from planning.sku_migration_phases import get_sku_migration_phase
+
+		user = get_user_model().objects.create_user(username='phase_user', password='pass')
+		SkuRecipe.objects.create(sku='PLAN-SKU-1', job_name='Planned')
+		PlanningJob.objects.create(
+			jc_number='JC-PHASE-001',
+			sku='PLAN-SKU-1',
+			job_name='Planned',
+			status='draft',
+			created_by=user,
+		)
+		self.assertEqual(get_sku_migration_phase('PLAN-SKU-1'), 2)
+
+	def test_phase3_when_job_released(self):
+		from planning.models import PlanningJob, SkuRecipe
+		from planning.sku_migration_phases import get_sku_migration_phase
+
+		user = get_user_model().objects.create_user(username='phase_user2', password='pass')
+		SkuRecipe.objects.create(sku='PROD-SKU-1', job_name='Production')
+		PlanningJob.objects.create(
+			jc_number='JC-PHASE-002',
+			sku='PROD-SKU-1',
+			job_name='Production',
+			status='released',
+			created_by=user,
+		)
+		self.assertEqual(get_sku_migration_phase('PROD-SKU-1'), 3)
+
+	def test_restore_respects_migration_phase(self):
+		from planning.models import PlanningJob, SkuRecipe
+		from planning.sku_sheet_import import restore_sku_recipes_from_rows
+
+		user = get_user_model().objects.create_user(username='phase_user3', password='pass')
+		SkuRecipe.objects.create(sku='P1-SKU', job_name='Phase 1', product_type='')
+		SkuRecipe.objects.create(sku='P2-SKU', job_name='Phase 2', product_type='')
+		PlanningJob.objects.create(
+			jc_number='JC-PHASE-003',
+			sku='P2-SKU',
+			job_name='Phase 2',
+			status='draft',
+			created_by=user,
+		)
+		rows = [
+			{'SKU': 'P1-SKU', 'JOB NAME': 'Phase 1', 'Product Type': 'Label', 'Job Process': 'Print + Pack', 'No. of Passes': 1},
+			{'SKU': 'P2-SKU', 'JOB NAME': 'Phase 2', 'Product Type': 'Label', 'Job Process': 'Print + Pack', 'No. of Passes': 1},
+		]
+		result = restore_sku_recipes_from_rows(rows, migration_phase=1)
+		self.assertEqual(result['updated'], 1)
+		self.assertEqual(result['phase_skipped'], 1)
+		self.assertEqual(SkuRecipe.objects.get(sku='P1-SKU').product_type, 'Label')
+		self.assertEqual(SkuRecipe.objects.get(sku='P2-SKU').product_type, '')
+
+
+class SkuDuplicateAlertTests(TestCase):
+	def setUp(self):
+		from core.models import Department, Machine, Material, Production
+		from django.utils import timezone
+
+		self.machine = Machine.objects.create(name='SM 74 Alert Test')
+		self.department = Department.objects.create(name='Offset Alert Test')
+		self.material = Material.objects.create(name='Art Paper Alert Test')
+		self.today = timezone.localdate()
+
+		self.job_a = PlanningJob.objects.create(
+			jc_number='JC-DUP-A',
+			po_number='PO-001',
+			sku='SKU-DUP-ALERT',
+			status='qc_approved',
+			planning_stage='jc_ready',
+			po_approval_date=date(2026, 7, 1),
+		)
+		self.job_b = PlanningJob.objects.create(
+			jc_number='JC-DUP-B',
+			po_number='PO-002',
+			sku='SKU-DUP-ALERT',
+			status='qc_approved',
+			planning_stage='jc_ready',
+			po_approval_date=date(2026, 7, 5),
+		)
+		self.card_a = JobCard.objects.create(
+			job_card_no='JC-DUP-A',
+			planning_job=self.job_a,
+			SKU='SKU-DUP-ALERT',
+			order_qty=5000,
+			total_impressions_required=5000,
+			total_sheet_quantity=500,
+			total_colors=4,
+			plate_set_no='SET-DUP-A',
+			po_date=self.today,
+			machine_name=self.machine,
+			department=self.department,
+			material=self.material,
+			status='qc_approved',
+		)
+		self.card_b = JobCard.objects.create(
+			job_card_no='JC-DUP-B',
+			planning_job=self.job_b,
+			SKU='SKU-DUP-ALERT',
+			order_qty=3000,
+			total_impressions_required=3000,
+			total_sheet_quantity=300,
+			total_colors=4,
+			plate_set_no='SET-DUP-B',
+			po_date=self.today,
+			machine_name=self.machine,
+			department=self.department,
+			material=self.material,
+			status='qc_approved',
+		)
+
+	def test_build_alert_lists_all_active_jobs_and_combine(self):
+		from planning.sku_duplicate_alert import build_sku_duplicate_alert
+
+		alert = build_sku_duplicate_alert(self.job_b)
+		self.assertIsNotNone(alert)
+		self.assertEqual(alert['active_count'], 2)
+		self.assertTrue(alert['combine_possible'])
+		self.assertEqual(alert['primary_jc_number'], 'JC-DUP-A')
+		self.assertEqual(alert['current_jc_number'], 'JC-DUP-B')
+		jc_numbers = {row['jc_number'] for row in alert['members']}
+		self.assertEqual(jc_numbers, {'JC-DUP-A', 'JC-DUP-B'})
+
+	def test_single_active_job_returns_no_alert(self):
+		from planning.sku_duplicate_alert import build_sku_duplicate_alert
+
+		self.job_b.is_active = False
+		self.job_b.save(update_fields=['is_active', 'updated_at'])
+		self.assertIsNone(build_sku_duplicate_alert(self.job_a))
+
+	def test_printing_started_disables_combine(self):
+		from core.models import Production
+		from planning.sku_duplicate_alert import build_sku_duplicate_alert
+
+		self.card_a.status = 'released'
+		self.card_a.save(update_fields=['status', 'updated_at'])
+		Production.objects.create(
+			job_card=self.card_a,
+			entry_type='printing',
+			date=self.today,
+			shift='A',
+			machine=self.machine,
+			output_sheets=100,
+			is_active=True,
+		)
+		alert = build_sku_duplicate_alert(self.job_b)
+		self.assertFalse(alert['combine_possible'])
+
+	def test_recent_dispatch_shows_priority_hint(self):
+		from core.models import Dispatch
+		from planning.sku_duplicate_alert import build_sku_duplicate_alert
+
+		self.card_a.is_print_job = False
+		self.card_a.status = 'in_production'
+		self.card_a.save(update_fields=['is_print_job', 'status', 'updated_at'])
+		Dispatch.objects.create(
+			job_card=self.card_a,
+			dc_no='DC-DUP-1',
+			dispatch_date=self.today,
+			dispatch_qty=1000,
+			is_active=True,
+		)
+		alert = build_sku_duplicate_alert(self.job_b)
+		self.assertTrue(alert['show_priority_hint'])
+		self.assertEqual(alert['recent_dispatches'][0]['jc_number'], 'JC-DUP-A')
