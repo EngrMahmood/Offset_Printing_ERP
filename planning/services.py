@@ -203,6 +203,32 @@ def _parse_layout_positive_int(raw_value):
         return None
 
 
+def designer_set_no_present(*, recipe=None, planning_job=None, plate_request=None, posted_values=None):
+    """True when any set-no source is filled (plate request, master, or job)."""
+    posted_values = posted_values or {}
+    candidates = [
+        posted_values.get('set_no'),
+        posted_values.get('new_set_no'),
+        getattr(plate_request, 'set_no', None) if plate_request else None,
+        getattr(plate_request, 'new_set_no', None) if plate_request else None,
+        getattr(recipe, 'plate_set_no', None) if recipe else None,
+        getattr(planning_job, 'plate_set_no', None) if planning_job else None,
+    ]
+    return any(str(value or '').strip() for value in candidates)
+
+
+def master_sku_layout_locked(*, recipe=None, planning_job=None, plate_request=None, posted_values=None):
+    """Lock approved master layout fields only once a set no exists."""
+    if not recipe or (recipe.master_data_status or '') != 'approved':
+        return False
+    return designer_set_no_present(
+        recipe=recipe,
+        planning_job=planning_job,
+        plate_request=plate_request,
+        posted_values=posted_values,
+    )
+
+
 def get_sku_recipe_field_role(field_name):
     if field_name in SKU_RECIPE_PLANNER_FIELDS:
         return 'planner'
@@ -1285,6 +1311,11 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
         if cut_and_pack and field in skip_for_cut_and_pack:
             continue
         value = getattr(recipe, field, None)
+        if field == 'plate_set_no':
+            if isinstance(value, str) and not value.strip():
+                continue
+            if value is None:
+                continue
         if isinstance(value, str):
             if not value.strip():
                 missing.append(label)

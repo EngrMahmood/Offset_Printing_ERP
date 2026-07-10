@@ -561,6 +561,35 @@ class PlateWorkflowTestCase(TestCase):
         self.assertEqual(self.plate_request.status, PlateRequest.STATUS_SENT)
         self.assertEqual(self.plate_request.awc_no, 'AWC-SAME-1')
 
+    def test_approved_master_without_set_no_keeps_layout_editable(self):
+        from planning.models import SkuRecipe
+        from planning.services import master_sku_layout_locked
+
+        recipe = SkuRecipe.objects.create(
+            sku='SKU-001',
+            job_name='Same Design',
+            awc_no='AWC-SAME-1',
+            master_data_status='approved',
+            is_active=True,
+            color_spec='4',
+        )
+        self.plate_request.sku_recipe = recipe
+        self.plate_request.save(update_fields=['sku_recipe'])
+
+        self.assertFalse(master_sku_layout_locked(
+            recipe=recipe,
+            planning_job=self.planning_job,
+            plate_request=self.plate_request,
+        ))
+
+        recipe.plate_set_no = 'SET-100'
+        recipe.save(update_fields=['plate_set_no', 'updated_at'])
+        self.assertTrue(master_sku_layout_locked(
+            recipe=recipe,
+            planning_job=self.planning_job,
+            plate_request=self.plate_request,
+        ))
+
     def test_send_to_vendor_blocked_when_designer_fields_missing(self):
         self.client.login(username='designer', password='password')
         url = reverse('printing_plates:request_action', kwargs={'pk': self.plate_request.pk})

@@ -215,6 +215,12 @@ def _missing_required_master_fields(recipe, fallback_job_name=''):
         if cut_and_pack and field in skip_for_cut_and_pack:
             continue
         value = getattr(recipe, field, None)
+        # Set no is often assigned at plate making (per job), not on master — don't block QC.
+        if field == 'plate_set_no':
+            if isinstance(value, str) and not value.strip():
+                continue
+            if value is None:
+                continue
         if isinstance(value, str):
             if not value.strip():
                 missing.append(label)

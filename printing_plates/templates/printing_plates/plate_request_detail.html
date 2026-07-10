@@ -342,7 +342,9 @@
 
                             <div class="plate-action-callout is-warning">Designer Layout Specifications (required to send — saves to Master SKU)</div>
                             {% if master_sku_locked %}
-                            <p class="sku-recipe-viewer-note">SKU master is <strong>approved</strong> — layout fields below are read-only from master. Ask planner/admin to reopen SKU master if a correction is needed.</p>
+                            <p class="sku-recipe-viewer-note">SKU master is <strong>approved</strong> and a set no is on file — layout fields below are read-only from master. Ask planner/admin to reopen SKU master if a correction is needed.</p>
+                            {% elif master_recipe.master_data_status == 'approved' %}
+                            <p class="sku-recipe-viewer-note">SKU master is <strong>approved</strong> but <strong>set no is not assigned yet</strong> — enter set no and complete layout fields below before sending to vendor / QC.</p>
                             {% else %}
                             <p class="sku-recipe-viewer-note">All designer fields below are required except Remarks. Send to Vendor is blocked until they are complete. Values like Die Cutting <strong>NO</strong> are valid and will be saved.</p>
                             {% endif %}
