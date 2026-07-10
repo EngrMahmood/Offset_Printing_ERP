@@ -59,8 +59,9 @@
                     <table class="erp-table">
                         <thead>
                             <tr>
-                                <th>Item ID</th>
-                                <th>Item Type</th>
+                                <th>Raw Material SKU</th>
+                                <th>Material</th>
+                                <th>Purchase Size</th>
                                 <th>System Stock</th>
                                 <th>Latest Accuracy</th>
                                 <th>Physical Count</th>
@@ -69,8 +70,9 @@
                         <tbody>
                             {% for row in count_rows %}
                             <tr>
-                                <td><strong>{{ row.item.item_id|default:'—' }}</strong></td>
+                                <td><strong>{{ row.item.sku|default:'—' }}</strong></td>
                                 <td>{{ row.item.material.name }}</td>
+                                <td>{{ row.item.purchase_sheet_size }}</td>
                                 <td>{{ row.system_sheet_qty }}</td>
                                 <td>{% if row.latest_accuracy is not None %}{{ row.latest_accuracy }}%{% else %}—{% endif %}</td>
                                 <td>
@@ -78,7 +80,7 @@
                                 </td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="5">No supply chain items configured.</td></tr>
+                            <tr><td colspan="6">No raw material SKUs configured.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>
@@ -116,8 +118,9 @@
                     <thead>
                         <tr>
                             <th>Date</th>
-                            <th>Item ID</th>
-                            <th>Item Type</th>
+                            <th>Raw Material SKU</th>
+                            <th>Material</th>
+                            <th>Purchase Size</th>
                             <th>Physical</th>
                             <th>System</th>
                             <th>Variance</th>
@@ -129,8 +132,9 @@
                         {% for count in history %}
                         <tr>
                             <td>{{ count.count_date|date:'Y-m-d' }}</td>
-                            <td>{{ count.item.item_id|default:'—' }}</td>
-                            <td>{{ count.item.material.name }}</td>
+                            <td>{{ count.raw_material_sku.sku|default:'—' }}</td>
+                            <td>{{ count.raw_material_sku.material.name|default:'—' }}</td>
+                            <td>{{ count.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
                             <td>{{ count.physical_sheet_qty }}</td>
                             <td>{{ count.system_sheet_qty }}</td>
                             <td>{{ count.variance }}</td>

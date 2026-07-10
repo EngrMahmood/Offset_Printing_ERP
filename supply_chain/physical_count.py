@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from .models import PhysicalStockCount, SupplyChainItem
+from .models import PhysicalStockCount, RawMaterialSku
 from .services import build_dashboard_data
 
 
@@ -25,7 +25,7 @@ def get_item_system_stock(item):
 
 def build_physical_count_rows(items=None):
     if items is None:
-        items = SupplyChainItem.objects.select_related('material').order_by('item_id', 'material__name')
+        items = RawMaterialSku.objects.select_related('material').filter(is_active=True).order_by('sku', 'material__name')
 
     rows = []
     for item in items:
@@ -44,7 +44,7 @@ def save_physical_count(item, count_date, physical_sheet_qty, physical_pkt_rim_q
     stock = get_item_system_stock(item)
     accuracy = compute_inventory_accuracy(physical_sheet_qty, stock['system_sheet_qty'])
     return PhysicalStockCount.objects.create(
-        item=item,
+        raw_material_sku=item,
         count_date=count_date,
         physical_sheet_qty=int(physical_sheet_qty or 0),
         physical_pkt_rim_qty=int(physical_pkt_rim_qty or 0),
@@ -58,14 +58,14 @@ def save_physical_count(item, count_date, physical_sheet_qty, physical_pkt_rim_q
 def physical_count_history(limit=200):
     return (
         PhysicalStockCount.objects
-        .select_related('item', 'item__material')
+        .select_related('raw_material_sku', 'raw_material_sku__material')
         .order_by('-count_date', '-id')[:limit]
     )
 
 
 def latest_accuracy_by_item():
     result = {}
-    for count in PhysicalStockCount.objects.order_by('item_id', '-count_date', '-id'):
-        if count.item_id not in result:
-            result[count.item_id] = count
+    for count in PhysicalStockCount.objects.order_by('raw_material_sku_id', '-count_date', '-id'):
+        if count.raw_material_sku_id not in result:
+            result[count.raw_material_sku_id] = count
     return result

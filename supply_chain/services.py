@@ -1,12 +1,12 @@
 from django.db.models import Sum
 
-from .models import SupplyChainItem, StockDemand, StockTransaction
+from .models import RawMaterialSku, StockDemand, StockTransaction
 
 
 def build_dashboard_data(items=None):
-    """Aggregate stock metrics per item — logic unchanged from original dashboard view."""
+    """Aggregate stock metrics per raw material SKU."""
     if items is None:
-        items = SupplyChainItem.objects.select_related('material').all()
+        items = RawMaterialSku.objects.select_related('material').filter(is_active=True)
 
     dashboard_data = []
     for item in items:
@@ -50,7 +50,7 @@ def transaction_queryset(transaction_type, month_filter=None):
     qs = (
         StockTransaction.objects
         .filter(transaction_type=transaction_type)
-        .select_related('item', 'item__material', 'job_card', 'production')
+        .select_related('raw_material_sku', 'raw_material_sku__material', 'job_card', 'production')
         .order_by('-date', '-id')
     )
     if month_filter:
@@ -61,7 +61,7 @@ def transaction_queryset(transaction_type, month_filter=None):
 def demand_queryset(month_filter=None):
     qs = (
         StockDemand.objects
-        .select_related('item', 'item__material')
+        .select_related('raw_material_sku', 'raw_material_sku__material')
         .order_by('-month_str', '-id')
     )
     if month_filter:

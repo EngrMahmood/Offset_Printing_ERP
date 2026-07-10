@@ -1,47 +1,60 @@
 from django.contrib import messages
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.views.decorators.http import require_POST
 
 from core.models import JobCard
 
 from .decorators import supply_chain_required
+from .demand_gap import (
+    available_plan_months,
+    build_demand_gap_report,
+    parse_gap_filters,
+)
 from .excel_io import (
     export_demands,
+    export_demand_gap_jobs,
+    export_demand_gap_materials,
     export_item_wise_consumption,
     export_items,
     export_kpi_dashboard,
     export_month_wise_consumption,
     export_physical_counts,
+    export_raw_material_sku_template,
     export_transactions,
     import_demands,
+    import_raw_material_skus,
     import_transactions,
 )
 from .forms import (
     BulkPhysicalCountForm,
     ExcelUploadForm,
     PhysicalStockCountForm,
+    QuickRawMaterialSkuForm,
+    RawMaterialSkuForm,
     StockDemandForm,
     StockTransactionForm,
-    SupplyChainItemForm,
 )
-from .models import PhysicalStockCount, SupplyChainItem
 from .jc_sync import (
     build_job_card_link_rows,
     sync_all_job_card_issuances,
     sync_issuance_for_job_card,
 )
 from .kpis import build_kpi_dashboard_data
+from .models import PhysicalStockCount, RawMaterialSku
 from .physical_count import (
     build_physical_count_rows,
     physical_count_history,
     save_physical_count,
 )
+from .raw_material_sku import list_material_choices, upsert_raw_material_sku_row
 from .reports import (
     build_item_wise_monthly_consumption,
     build_month_wise_item_consumption,
     parse_report_filters,
 )
-from .services import build_dashboard_data, demand_queryset, transaction_queryset
+from .services import demand_queryset, transaction_queryset
 
 
 TRANSACTION_PAGES = {
@@ -95,32 +108,100 @@ def kpi_dashboard(request):
 
 @supply_chain_required
 def item_list(request):
-    items = SupplyChainItem.objects.select_related('material').order_by('item_id', 'material__name')
-    if request.method == 'POST' and request.POST.get('action') == 'import':
-        return _handle_item_import(request)
-    if request.GET.get('export') == 'xlsx':
-        return export_items(items, 'supply_chain_items.xlsx')
+    items = RawMaterialSku.objects.select_related('material').order_by('material__name', 'purchase_sheet_size', 'sku')
 
-    upload_form = ExcelUploadForm()
-    return render(request, 'supply_chain/items.html', {
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        if action == 'import':
+            return _handle_raw_material_import(request)
+        if action == 'quick_add':
+            return _handle_quick_add_raw_material(request)
+
+    if request.GET.get('export') == 'xlsx':
+        return export_items(items, 'raw_material_skus.xlsx')
+    if request.GET.get('export') == 'template':
+        return export_raw_material_sku_template()
+
+    return render(request, 'supply_chain/raw_material_skus.html', {
         'items': items,
-        'upload_form': upload_form,
+        'upload_form': ExcelUploadForm(),
+        'quick_form': QuickRawMaterialSkuForm(),
+        'material_choices': list_material_choices(),
     })
 
 
 @supply_chain_required
+@require_POST
+def quick_add_raw_material_sku(request):
+    return _handle_quick_add_raw_material(request, as_json=True)
+
+
+def _handle_quick_add_raw_material(request, as_json=False):
+    form = QuickRawMaterialSkuForm(request.POST)
+    if not form.is_valid():
+        if as_json:
+            return JsonResponse({'ok': False, 'error': form.errors.as_text()}, status=400)
+        messages.error(request, form.errors.as_text())
+        return redirect('supply_chain:items')
+
+    obj, errors, _created = upsert_raw_material_sku_row({
+        'sku': form.cleaned_data['sku'],
+        'material_name': form.cleaned_data['material_name'],
+        'purchase_sheet_size': form.cleaned_data['purchase_sheet_size'],
+    })
+    if errors:
+        if as_json:
+            return JsonResponse({'ok': False, 'error': '; '.join(errors)}, status=400)
+        messages.error(request, '; '.join(errors))
+        return redirect('supply_chain:items')
+
+    if as_json:
+        return JsonResponse({
+            'ok': True,
+            'id': obj.pk,
+            'sku': obj.sku,
+            'material_name': obj.material.name,
+            'purchase_sheet_size': obj.purchase_sheet_size,
+            'display_label': obj.display_label,
+        })
+
+    messages.success(request, f'Saved raw material SKU {obj.sku}.')
+    return redirect('supply_chain:items')
+
+
+def _handle_raw_material_import(request):
+    upload_form = ExcelUploadForm(request.POST, request.FILES)
+    if not upload_form.is_valid():
+        messages.error(request, 'Please choose a valid Excel or CSV file.')
+        return redirect('supply_chain:items')
+
+    try:
+        result = import_raw_material_skus(upload_form.cleaned_data['upload_file'])
+        messages.success(
+            request,
+            f"Imported {result['created']} new and updated {result['updated']} raw material SKU(s). "
+            f"Skipped {result['skipped']}.",
+        )
+        if result['errors']:
+            messages.warning(request, ' '.join(result['errors'][:5]))
+    except Exception as exc:
+        messages.error(request, f'Import failed: {exc}')
+    return redirect('supply_chain:items')
+
+
+@supply_chain_required
 def item_edit(request, pk):
-    item = get_object_or_404(SupplyChainItem.objects.select_related('material'), pk=pk)
+    item = get_object_or_404(RawMaterialSku.objects.select_related('material'), pk=pk)
     if request.method == 'POST':
-        form = SupplyChainItemForm(request.POST, instance=item)
+        form = RawMaterialSkuForm(request.POST, instance=item)
         if form.is_valid():
             form.save()
-            messages.success(request, f'Updated {item.item_id or item.material.name}.')
+            messages.success(request, f'Updated {item.sku}.')
             return redirect('supply_chain:items')
     else:
-        form = SupplyChainItemForm(instance=item)
+        form = RawMaterialSkuForm(instance=item)
 
-    return render(request, 'supply_chain/item_edit.html', {'item': item, 'form': form})
+    return render(request, 'supply_chain/raw_material_sku_edit.html', {'item': item, 'form': form})
 
 
 @supply_chain_required
@@ -142,11 +223,10 @@ def monthly_demand(request):
     if request.GET.get('export') == 'xlsx':
         return export_demands(demands, 'stock_monthly_demand.xlsx')
 
-    upload_form = ExcelUploadForm()
     return render(request, 'supply_chain/monthly_demand.html', {
         'demands': demands,
         'form': form,
-        'upload_form': upload_form,
+        'upload_form': ExcelUploadForm(),
         'month_filter': month_filter,
     })
 
@@ -182,14 +262,13 @@ def transaction_page(request, page_key):
     if request.GET.get('export') == 'xlsx':
         return export_transactions(transaction_type, transactions, config['export_name'])
 
-    upload_form = ExcelUploadForm()
     return render(request, 'supply_chain/transactions.html', {
         'page_key': page_key,
         'page_url': reverse('supply_chain:' + page_key),
         'config': config,
         'transactions': transactions,
         'form': form,
-        'upload_form': upload_form,
+        'upload_form': ExcelUploadForm(),
         'month_filter': month_filter,
         'show_jc_sync': page_key == 'issuance',
     })
@@ -203,7 +282,7 @@ def _handle_transaction_import(request, page_key, transaction_type, month_filter
 
     try:
         created, skipped = import_transactions(transaction_type, upload_form.cleaned_data['upload_file'])
-        messages.success(request, f'Imported {created} row(s). Skipped {skipped} row(s) without a matching Item ID.')
+        messages.success(request, f'Imported {created} row(s). Skipped {skipped} row(s) without a matching raw material SKU.')
     except Exception as exc:
         messages.error(request, f'Import failed: {exc}')
 
@@ -220,18 +299,13 @@ def _handle_demand_import(request, month_filter):
 
     try:
         created, skipped = import_demands(upload_form.cleaned_data['upload_file'])
-        messages.success(request, f'Imported {created} demand row(s). Skipped {skipped} row(s) without a matching Item ID.')
+        messages.success(request, f'Imported {created} demand row(s). Skipped {skipped} row(s) without a matching raw material SKU.')
     except Exception as exc:
         messages.error(request, f'Import failed: {exc}')
 
     if month_filter:
         return redirect(f"{request.path}?month={month_filter}")
     return redirect('supply_chain:monthly_demand')
-
-
-def _handle_item_import(request):
-    messages.info(request, 'Item master import is available via export/edit workflow. Bulk item creation uses Material master sync.')
-    return redirect('supply_chain:items')
 
 
 @supply_chain_required
@@ -311,7 +385,7 @@ def physical_counts(request):
         if action == 'single':
             form = PhysicalStockCountForm(request.POST)
             if form.is_valid():
-                item = form.cleaned_data['item']
+                item = form.cleaned_data['raw_material_sku']
                 save_physical_count(
                     item=item,
                     count_date=form.cleaned_data['count_date'],
@@ -319,7 +393,7 @@ def physical_counts(request):
                     physical_pkt_rim_qty=form.cleaned_data['physical_pkt_rim_qty'],
                     notes=form.cleaned_data['notes'],
                 )
-                messages.success(request, f'Physical count saved for {item.item_id or item.material.name}.')
+                messages.success(request, f'Physical count saved for {item.sku}.')
                 return redirect('supply_chain:physical_counts')
         elif action == 'bulk':
             bulk_form = BulkPhysicalCountForm(request.POST)
@@ -342,8 +416,6 @@ def physical_counts(request):
                 messages.success(request, f'Saved {saved} physical count record(s).')
                 return redirect('supply_chain:physical_counts')
 
-    form = PhysicalStockCountForm()
-    bulk_form = BulkPhysicalCountForm()
     accuracy_values = [
         float(row['latest_accuracy'])
         for row in count_rows
@@ -355,9 +427,36 @@ def physical_counts(request):
         'history_count': PhysicalStockCount.objects.count(),
     }
     return render(request, 'supply_chain/physical_counts.html', {
-        'form': form,
-        'bulk_form': bulk_form,
+        'form': PhysicalStockCountForm(),
+        'bulk_form': BulkPhysicalCountForm(),
         'count_rows': count_rows,
         'history': history,
         'summary': summary,
+    })
+
+
+@supply_chain_required
+def demand_gap(request):
+    filters = parse_gap_filters(request.GET)
+    report = build_demand_gap_report(filters)
+
+    export_type = request.GET.get('export')
+    if export_type == 'materials':
+        return export_demand_gap_materials(report['material_rows'])
+    if export_type == 'jobs':
+        return export_demand_gap_jobs(report['job_rows'])
+
+    from planning.models import PLANNING_STATUS_CHOICES
+
+    return render(request, 'supply_chain/demand_gap.html', {
+        'material_rows': report['material_rows'],
+        'job_rows': report['job_rows'],
+        'summary': report['summary'],
+        'filters': filters,
+        'plan_months': available_plan_months(),
+        'status_choices': PLANNING_STATUS_CHOICES,
+        'process_type_choices': [
+            ('print_and_pack', 'Print + Pack'),
+            ('cut_and_pack', 'Cut & Pack'),
+        ],
     })

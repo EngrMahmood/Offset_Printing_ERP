@@ -25,7 +25,7 @@ def _issuance_queryset(month_filter=None, from_date=None, to_date=None):
     qs = (
         StockTransaction.objects
         .filter(transaction_type='ISSUANCE')
-        .select_related('item', 'item__material')
+        .select_related('raw_material_sku', 'raw_material_sku__material')
         .order_by('date', 'id')
     )
     if month_filter:
@@ -43,11 +43,11 @@ def _aggregate_consumption(month_filter=None, from_date=None, to_date=None):
 
     for txn in _issuance_queryset(month_filter, from_date, to_date):
         month_label = _effective_month(txn)
-        key = (txn.item_id, month_label)
+        key = (txn.raw_material_sku_id, month_label)
         bucket[key]['sheet_qty_pcs'] += txn.sheet_qty_pcs
         bucket[key]['pkt_rim_qty'] += txn.pkt_rim_qty
-        bucket[key]['consumption_value'] += float(txn.sheet_qty_pcs) * float(txn.item.unit_cost)
-        item_meta[txn.item_id] = txn.item
+        bucket[key]['consumption_value'] += float(txn.sheet_qty_pcs) * float(txn.raw_material_sku.unit_cost)
+        item_meta[txn.raw_material_sku_id] = txn.raw_material_sku
 
     rows = []
     for (item_pk, month_label), totals in bucket.items():
@@ -55,8 +55,9 @@ def _aggregate_consumption(month_filter=None, from_date=None, to_date=None):
         rows.append({
             'month': month_label,
             'item': item,
-            'item_id': item.item_id or '',
+            'item_id': item.sku,
             'item_type': item.material.name,
+            'purchase_sheet_size': item.purchase_sheet_size,
             'uom': item.uom,
             'sheet_packing_pcs': item.sheet_packing_pcs,
             'sheet_qty_pcs': totals['sheet_qty_pcs'],

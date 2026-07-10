@@ -1,0 +1,29 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Edit Raw Material SKU — Supply Chain{% endblock %}
+{% block header_title %}Edit Raw Material SKU{% endblock %}
+{% block header_subtitle %}{{ item.display_label }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:items' %}" class="erp-btn erp-btn-secondary">Back to SKU Master</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <form method="post" class="erp-form-grid">
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="erp-form-field{% if field.name == 'is_active' %} erp-form-field--checkbox{% endif %}">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="erp-form-error">{{ field.errors.0 }}</div>{% endif %}
+                </div>
+                {% endfor %}
+                <div class="erp-form-field erp-form-grid__actions">
+                    <button type="submit" class="erp-btn erp-btn-primary">Save Changes</button>
+                </div>
+            </form>
+        </section>
+    </div>
+{% endblock %}

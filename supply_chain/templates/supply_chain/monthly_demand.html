@@ -51,8 +51,9 @@
                     <thead>
                         <tr>
                             <th>Month</th>
-                            <th>Item ID</th>
-                            <th>Item Type</th>
+                            <th>Raw Material SKU</th>
+                            <th>Material</th>
+                            <th>Purchase Size</th>
                             <th>UOM</th>
                             <th>Sheet Packing/Pcs</th>
                             <th>Sheet Qty/Pcs</th>
@@ -63,10 +64,11 @@
                         {% for demand in demands %}
                         <tr>
                             <td>{{ demand.month_str|default:'—' }}</td>
-                            <td>{{ demand.item.item_id|default:'—' }}</td>
-                            <td>{{ demand.item.material.name }}</td>
-                            <td>{{ demand.item.uom }}</td>
-                            <td>{{ demand.item.sheet_packing_pcs }}</td>
+                            <td>{{ demand.raw_material_sku.sku|default:'—' }}</td>
+                            <td>{{ demand.raw_material_sku.material.name|default:'—' }}</td>
+                            <td>{{ demand.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
+                            <td>{{ demand.raw_material_sku.uom|default:'—' }}</td>
+                            <td>{{ demand.raw_material_sku.sheet_packing_pcs|default:'—' }}</td>
                             <td>{{ demand.sheet_qty_pcs }}</td>
                             <td>{{ demand.pkt_rim_qty }}</td>
                         </tr>

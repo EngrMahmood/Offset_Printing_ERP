@@ -90,8 +90,9 @@
                 <table class="erp-table">
                     <thead>
                         <tr>
-                            <th>Item ID</th>
-                            <th>Item Type</th>
+                            <th>Raw Material SKU</th>
+                            <th>Material</th>
+                            <th>Purchase Size</th>
                             <th>ABC</th>
                             <th>FSN</th>
                             <th>Closing</th>
@@ -106,8 +107,9 @@
                     <tbody>
                         {% for row in kpi_rows %}
                         <tr>
-                            <td><strong>{{ row.item.item_id|default:'—' }}</strong></td>
+                            <td><strong>{{ row.item.sku|default:'—' }}</strong></td>
                             <td>{{ row.item.material.name }}</td>
+                            <td>{{ row.item.purchase_sheet_size }}</td>
                             <td><span class="erp-badge {% if row.abc_class == 'A' %}erp-badge-approved{% elif row.abc_class == 'B' %}erp-badge-pending{% else %}erp-badge-archived{% endif %}">{{ row.abc_class }}</span></td>
                             <td><span class="erp-badge {% if row.fsn_class == 'Fast' %}erp-badge-approved{% elif row.fsn_class == 'Slow' %}erp-badge-pending{% else %}erp-badge-rejected{% endif %}">{{ row.fsn_class }}</span></td>
                             <td>{{ row.closing }}</td>

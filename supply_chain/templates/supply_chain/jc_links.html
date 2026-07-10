@@ -54,7 +54,7 @@
                         <tr>
                             <th>JC Number</th>
                             <th>Material</th>
-                            <th>SC Item</th>
+                            <th>Raw Material SKU</th>
                             <th>Active Productions</th>
                             <th>Synced Issuances</th>
                             <th>Status</th>
@@ -66,14 +66,14 @@
                         <tr>
                             <td><strong>{{ row.job_card.job_card_no }}</strong></td>
                             <td>{{ row.job_card.material.name }}</td>
-                            <td>{{ row.supply_chain_item.item_id|default:'—' }}</td>
+                            <td>{{ row.raw_material_sku.sku|default:'—' }}</td>
                             <td>{{ row.active_productions }}</td>
                             <td>{{ row.synced_issuances }}</td>
                             <td>
                                 {% if row.is_linked %}
                                     <span class="erp-badge erp-badge-approved">Linked</span>
                                 {% else %}
-                                    <span class="erp-badge erp-badge-rejected">No SC Item</span>
+                                    <span class="erp-badge erp-badge-rejected">No SKU</span>
                                 {% endif %}
                             </td>
                             <td>

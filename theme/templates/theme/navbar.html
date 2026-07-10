@@ -213,11 +213,15 @@
         </a>
         <a href="{% url 'supply_chain:items' %}"
            class="erp-subnav-link {% if url == 'items' or url == 'item_edit' %}is-active{% endif %}">
-            Item Master
+            Raw Material SKUs
         </a>
         <a href="{% url 'supply_chain:monthly_demand' %}"
            class="erp-subnav-link {% if url == 'monthly_demand' %}is-active{% endif %}">
             Monthly Demand
+        </a>
+        <a href="{% url 'supply_chain:demand_gap' %}"
+           class="erp-subnav-link {% if url == 'demand_gap' %}is-active{% endif %}">
+            Demand Gap
         </a>
         <a href="{% url 'supply_chain:opening' %}"
            class="erp-subnav-link {% if url == 'opening' %}is-active{% endif %}">

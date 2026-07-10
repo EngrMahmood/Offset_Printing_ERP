@@ -1,0 +1,125 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Raw Material SKUs — Supply Chain{% endblock %}
+{% block header_title %}Raw Material SKU Master{% endblock %}
+{% block header_subtitle %}Procurement SKUs keyed by material name and purchase sheet size.{% endblock %}
+{% block header_actions %}
+    <a href="?export=template" class="erp-btn erp-btn-secondary"><i class="fas fa-file-download"></i> Download Template</a>
+    <a href="?export=xlsx" class="erp-btn erp-btn-secondary"><i class="fas fa-file-export"></i> Export Excel</a>
+    <a href="{% url 'supply_chain:demand_gap' %}" class="erp-btn erp-btn-primary">Demand Gap</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Quick Add</div>
+                    <h3 class="erp-section-title">Add raw material SKU</h3>
+                    <p class="erp-section-desc">Same material can have multiple SKUs by purchase sheet size (e.g. Taffeta 25x36 vs 23x36).</p>
+                </div>
+            </div>
+            <form method="post" class="erp-form-grid">
+                {% csrf_token %}
+                <input type="hidden" name="action" value="quick_add">
+                <div class="erp-form-field">
+                    <label for="id_material_name">Material</label>
+                    <div style="display:flex; gap:8px; align-items:center;">
+                        <input list="material-choices" name="material_name" id="id_material_name" class="erp-input" required placeholder="e.g. Taffeta">
+                        <button type="button" class="erp-btn erp-btn-secondary sm" onclick="quickAddMaterial()" title="Add material">+</button>
+                    </div>
+                    <datalist id="material-choices">
+                        {% for name in material_choices %}
+                            <option value="{{ name }}"></option>
+                        {% endfor %}
+                    </datalist>
+                </div>
+                <div class="erp-form-field">
+                    <label for="id_purchase_sheet_size">Purchase Sheet Size</label>
+                    <input type="text" name="purchase_sheet_size" id="id_purchase_sheet_size" class="erp-input" required placeholder="e.g. 25x36">
+                </div>
+                <div class="erp-form-field">
+                    <label for="id_sku">Raw Material SKU</label>
+                    <input type="text" name="sku" id="id_sku" class="erp-input" required placeholder="e.g. RM-TAF-2536">
+                </div>
+                <div class="erp-form-field erp-form-grid__actions">
+                    <button type="submit" class="erp-btn erp-btn-primary">Save SKU</button>
+                </div>
+            </form>
+        </section>
+
+        {% include 'supply_chain/includes/import_export_panel.html' with import_action='import' import_label='Import Raw Material SKUs' %}
+
+        <section class="erp-section-shell">
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Raw Material SKU</th>
+                            <th>Material</th>
+                            <th>Purchase Sheet Size</th>
+                            <th>UOM</th>
+                            <th>Unit Cost</th>
+                            <th>Safety Stock</th>
+                            <th>Active</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in items %}
+                        <tr>
+                            <td><strong>{{ item.sku }}</strong></td>
+                            <td>{{ item.material.name }}</td>
+                            <td>{{ item.purchase_sheet_size }}</td>
+                            <td>{{ item.uom }}</td>
+                            <td>{{ item.unit_cost }}</td>
+                            <td>{{ item.safety_stock }}</td>
+                            <td>{% if item.is_active %}Yes{% else %}No{% endif %}</td>
+                            <td>
+                                <a href="{% url 'supply_chain:item_edit' item.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8">No raw material SKUs yet. Download the template or use quick add above.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        function quickAddMaterial() {
+            const name = prompt('Enter new material name:');
+            if (!name || !name.trim()) return;
+            const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+            const formData = new FormData();
+            formData.append('type', 'material');
+            formData.append('name', name.trim());
+            fetch('{% url "quick_add_master" %}', {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken },
+                body: formData,
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (!data.ok) {
+                    alert('Error: ' + (data.error || data.message || 'Failed to add material.'));
+                    return;
+                }
+                const input = document.getElementById('id_material_name');
+                input.value = data.name;
+                const datalist = document.getElementById('material-choices');
+                if (!Array.from(datalist.options).some(opt => opt.value === data.name)) {
+                    const option = document.createElement('option');
+                    option.value = data.name;
+                    datalist.appendChild(option);
+                }
+            })
+            .catch(() => alert('An error occurred while adding material.'));
+        }
+    </script>
+{% endblock %}

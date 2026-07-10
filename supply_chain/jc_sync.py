@@ -2,13 +2,16 @@ from __future__ import annotations
 
 from django.db import transaction
 
-from .models import StockTransaction, SupplyChainItem
+from .models import RawMaterialSku, StockTransaction
+from .raw_material_sku import resolve_raw_material_sku_for_job_card
 
 
-def get_supply_chain_item_for_job_card(job_card):
-    if not job_card or not job_card.material_id:
-        return None
-    return SupplyChainItem.objects.filter(material_id=job_card.material_id).first()
+def get_raw_material_sku_for_job_card(job_card):
+    return resolve_raw_material_sku_for_job_card(job_card)
+
+
+# Backward-compatible alias
+get_supply_chain_item_for_job_card = get_raw_material_sku_for_job_card
 
 
 def _month_label(value):
@@ -26,8 +29,8 @@ def sync_issuance_from_production(production):
     if not job_card:
         return None
 
-    item = get_supply_chain_item_for_job_card(job_card)
-    if not item:
+    raw_sku = get_raw_material_sku_for_job_card(job_card)
+    if not raw_sku:
         return None
 
     consumed_sheets = int(production.output_sheets or 0) + int(production.waste_sheets or 0)
@@ -38,7 +41,7 @@ def sync_issuance_from_production(production):
     txn, _created = StockTransaction.objects.update_or_create(
         production=production,
         defaults={
-            'item': item,
+            'raw_material_sku': raw_sku,
             'transaction_type': 'ISSUANCE',
             'source': 'JOB_CARD',
             'job_card': job_card,
@@ -76,7 +79,7 @@ def sync_all_job_card_issuances():
     productions = (
         Production.objects
         .filter(is_active=True)
-        .select_related('job_card', 'job_card__material')
+        .select_related('job_card', 'job_card__material', 'job_card__planning_job')
         .order_by('id')
     )
     for production in productions:
@@ -95,14 +98,11 @@ def build_job_card_link_rows(limit=100):
     job_cards = (
         JobCard.objects
         .filter(is_active=True, material__isnull=False)
-        .select_related('material', 'material__supply_chain_details')
+        .select_related('material', 'planning_job')
         .order_by('-id')[:limit]
     )
     for job_card in job_cards:
-        try:
-            sc_item = job_card.material.supply_chain_details
-        except SupplyChainItem.DoesNotExist:
-            sc_item = None
+        raw_sku = get_raw_material_sku_for_job_card(job_card)
 
         active_productions = job_card.productions.filter(is_active=True).count()
         synced_issuances = StockTransaction.objects.filter(
@@ -113,9 +113,10 @@ def build_job_card_link_rows(limit=100):
 
         rows.append({
             'job_card': job_card,
-            'supply_chain_item': sc_item,
+            'supply_chain_item': raw_sku,
+            'raw_material_sku': raw_sku,
             'active_productions': active_productions,
             'synced_issuances': synced_issuances,
-            'is_linked': sc_item is not None,
+            'is_linked': raw_sku is not None,
         })
     return rows

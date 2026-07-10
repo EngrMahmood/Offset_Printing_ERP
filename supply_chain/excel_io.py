@@ -5,7 +5,8 @@ from datetime import datetime
 from django.http import HttpResponse
 from django.utils import timezone
 
-from .models import StockDemand, StockTransaction, SupplyChainItem
+from .models import RawMaterialSku, StockDemand, StockTransaction
+from .raw_material_sku import import_raw_material_skus as _import_raw_material_skus
 
 try:
     import openpyxl
@@ -19,8 +20,9 @@ TRANSACTION_HEADERS = [
     'Month',
     'Date',
     'GIN / JC',
-    'Item ID',
-    'Item Type',
+    'Raw Material SKU',
+    'Material Name',
+    'Purchase Sheet Size',
     'UOM',
     'Sheet Packing/Pcs',
     'Sheet Qty/Pcs',
@@ -28,8 +30,9 @@ TRANSACTION_HEADERS = [
 ]
 
 DEMAND_HEADERS = [
-    'Item ID',
-    'Item Type',
+    'Raw Material SKU',
+    'Material Name',
+    'Purchase Sheet Size',
     'UOM',
     'Sheet Packing/Pcs',
     'Month',
@@ -37,20 +40,25 @@ DEMAND_HEADERS = [
     'Pkt/Rim Qty',
 ]
 
-ITEM_HEADERS = [
-    'Item ID',
-    'Item Type',
+RAW_MATERIAL_SKU_HEADERS = [
+    'Raw Material SKU',
+    'Material Name',
+    'Purchase Sheet Size',
     'UOM',
     'Sheet Packing/Pcs',
     'Unit Cost',
     'Safety Stock',
     'Max Stock Level',
     'Lead Time (Days)',
+    'Active',
 ]
 
+ITEM_HEADERS = RAW_MATERIAL_SKU_HEADERS
+
 ITEM_WISE_CONSUMPTION_HEADERS = [
-    'Item ID',
-    'Item Type',
+    'Raw Material SKU',
+    'Material Name',
+    'Purchase Sheet Size',
     'UOM',
     'Sheet Packing/Pcs',
     'Month',
@@ -60,8 +68,9 @@ ITEM_WISE_CONSUMPTION_HEADERS = [
 ]
 
 KPI_HEADERS = [
-    'Item ID',
-    'Item Type',
+    'Raw Material SKU',
+    'Material Name',
+    'Purchase Sheet Size',
     'ABC',
     'FSN',
     'Closing Stock',
@@ -83,8 +92,9 @@ KPI_HEADERS = [
 
 PHYSICAL_COUNT_HEADERS = [
     'Count Date',
-    'Item ID',
-    'Item Type',
+    'Raw Material SKU',
+    'Material Name',
+    'Purchase Sheet Size',
     'Physical Sheet Qty/Pcs',
     'System Sheet Qty/Pcs',
     'Variance',
@@ -94,13 +104,45 @@ PHYSICAL_COUNT_HEADERS = [
 
 MONTH_WISE_CONSUMPTION_HEADERS = [
     'Month',
-    'Item ID',
-    'Item Type',
+    'Raw Material SKU',
+    'Material Name',
+    'Purchase Sheet Size',
     'UOM',
     'Sheet Packing/Pcs',
     'Sheet Qty/Pcs',
     'Pkt/Rim Qty',
     'Consumption Value',
+]
+
+DEMAND_GAP_MATERIAL_HEADERS = [
+    'Material',
+    'Purchase Sheet Size',
+    'Raw Material SKU',
+    'On Hand (Sheets)',
+    'Total Demand (Sheets)',
+    'Gap (Sheets)',
+    'Status',
+    'Print Jobs',
+    'Cut & Pack Jobs',
+    'Job Count',
+]
+
+DEMAND_GAP_JOB_HEADERS = [
+    'JC Number',
+    'Status',
+    'Process Type',
+    'Material',
+    'Purchase Sheet Size',
+    'Order Qty',
+    'Purchase Sheets (Planning)',
+    'Job Demand (Sheets)',
+    'Print Sheets Consumed',
+    'Packed Pcs',
+    'Dispatched Pcs',
+    'Remaining From Print',
+    'Remaining From Pack',
+    'Remaining From Dispatch',
+    'Mapped',
 ]
 
 
@@ -118,11 +160,25 @@ def _parse_date(value):
     return timezone.now().date()
 
 
-def _get_item_by_id(item_id):
-    item_id = (item_id or '').strip()
-    if not item_id:
+def _get_raw_material_sku_from_row(row):
+    sku = (row.get('Raw Material SKU') or row.get('Item ID') or '').strip()
+    if not sku:
         return None
-    return SupplyChainItem.objects.filter(item_id__iexact=item_id).select_related('material').first()
+    return RawMaterialSku.objects.filter(sku__iexact=sku).select_related('material').first()
+
+
+def _get_item_by_id(item_id):
+    return _get_raw_material_sku_from_row({'Raw Material SKU': item_id})
+
+
+def _sku_row_values(item):
+    return [
+        item.sku,
+        item.material.name,
+        item.purchase_sheet_size,
+        item.uom,
+        item.sheet_packing_pcs,
+    ]
 
 
 def _read_rows(upload_file):
@@ -192,10 +248,7 @@ def export_transactions(transaction_type, queryset, filename):
             txn.month_str or '',
             txn.date.isoformat() if txn.date else '',
             txn.gin_jc or '',
-            txn.item.item_id or '',
-            txn.item.material.name,
-            txn.item.uom,
-            txn.item.sheet_packing_pcs,
+            *(_sku_row_values(txn.raw_material_sku)),
             txn.sheet_qty_pcs,
             txn.pkt_rim_qty,
         ])
@@ -206,10 +259,7 @@ def export_demands(queryset, filename):
     rows = []
     for demand in queryset:
         rows.append([
-            demand.item.item_id or '',
-            demand.item.material.name,
-            demand.item.uom,
-            demand.item.sheet_packing_pcs,
+            *(_sku_row_values(demand.raw_material_sku)),
             demand.month_str or '',
             demand.sheet_qty_pcs,
             demand.pkt_rim_qty,
@@ -221,16 +271,54 @@ def export_items(queryset, filename):
     rows = []
     for item in queryset:
         rows.append([
-            item.item_id or '',
+            item.sku,
             item.material.name,
+            item.purchase_sheet_size,
             item.uom,
             item.sheet_packing_pcs,
             float(item.unit_cost),
             item.safety_stock,
             item.max_stock_level,
             item.lead_time_days,
+            'Yes' if item.is_active else 'No',
         ])
-    return _write_workbook(filename, ITEM_HEADERS, rows)
+    return _write_workbook(filename, RAW_MATERIAL_SKU_HEADERS, rows)
+
+
+def export_raw_material_sku_template(filename='raw_material_sku_template.xlsx'):
+    example = [[
+        'RM-TAF-2536',
+        'Taffeta',
+        '25x36',
+        'Sheets',
+        1,
+        12.5,
+        100,
+        10000,
+        7,
+        'Yes',
+    ]]
+    return _write_workbook(filename, RAW_MATERIAL_SKU_HEADERS, example)
+
+
+def _normalize_raw_material_import_row(row):
+    return {
+        'sku': row.get('Raw Material SKU') or row.get('Item ID'),
+        'material_name': row.get('Material Name') or row.get('Item Type'),
+        'purchase_sheet_size': row.get('Purchase Sheet Size'),
+        'uom': row.get('UOM'),
+        'sheet_packing_pcs': row.get('Sheet Packing/Pcs'),
+        'unit_cost': row.get('Unit Cost'),
+        'safety_stock': row.get('Safety Stock'),
+        'max_stock_level': row.get('Max Stock Level'),
+        'lead_time_days': row.get('Lead Time (Days)'),
+        'is_active': row.get('Active'),
+    }
+
+
+def import_raw_material_skus(upload_file):
+    rows = [_normalize_raw_material_import_row(row) for row in _read_rows(upload_file)]
+    return _import_raw_material_skus(rows)
 
 
 def export_item_wise_consumption(rows, filename='item_wise_monthly_consumption.xlsx'):
@@ -238,6 +326,7 @@ def export_item_wise_consumption(rows, filename='item_wise_monthly_consumption.x
         [
             row['item_id'],
             row['item_type'],
+            row.get('purchase_sheet_size', ''),
             row['uom'],
             row['sheet_packing_pcs'],
             row['month'],
@@ -256,6 +345,7 @@ def export_month_wise_consumption(rows, filename='month_wise_item_consumption.xl
             row['month'],
             row['item_id'],
             row['item_type'],
+            row.get('purchase_sheet_size', ''),
             row['uom'],
             row['sheet_packing_pcs'],
             row['sheet_qty_pcs'],
@@ -270,8 +360,9 @@ def export_month_wise_consumption(rows, filename='month_wise_item_consumption.xl
 def export_kpi_dashboard(rows, filename='supply_chain_kpis.xlsx'):
     data_rows = [
         [
-            row['item'].item_id or '',
+            row['item'].sku or '',
             row['item'].material.name,
+            row['item'].purchase_sheet_size,
             row['abc_class'],
             row['fsn_class'],
             row['closing'],
@@ -301,8 +392,9 @@ def export_physical_counts(queryset, filename='physical_stock_counts.xlsx'):
         variance = count.physical_sheet_qty - count.system_sheet_qty
         data_rows.append([
             count.count_date.isoformat() if count.count_date else '',
-            count.item.item_id or '',
-            count.item.material.name,
+            count.raw_material_sku.sku,
+            count.raw_material_sku.material.name,
+            count.raw_material_sku.purchase_sheet_size,
             count.physical_sheet_qty,
             count.system_sheet_qty,
             variance,
@@ -318,13 +410,13 @@ def import_transactions(transaction_type, upload_file):
     skipped = 0
 
     for row in rows:
-        item = _get_item_by_id(row.get('Item ID'))
+        item = _get_raw_material_sku_from_row(row)
         if not item:
             skipped += 1
             continue
 
         StockTransaction.objects.create(
-            item=item,
+            raw_material_sku=item,
             transaction_type=transaction_type,
             month_str=(row.get('Month') or '').strip() or None,
             date=_parse_date(row.get('Date')),
@@ -343,13 +435,13 @@ def import_demands(upload_file):
     skipped = 0
 
     for row in rows:
-        item = _get_item_by_id(row.get('Item ID'))
+        item = _get_raw_material_sku_from_row(row)
         if not item:
             skipped += 1
             continue
 
         StockDemand.objects.create(
-            item=item,
+            raw_material_sku=item,
             month_str=(row.get('Month') or '').strip() or None,
             sheet_qty_pcs=int(row.get('Sheet Qty/Pcs') or 0),
             pkt_rim_qty=int(row.get('Pkt/Rim Qty') or 0),
@@ -357,3 +449,47 @@ def import_demands(upload_file):
         created += 1
 
     return created, skipped
+
+
+def export_demand_gap_materials(material_rows, filename='demand_gap_materials.xlsx'):
+    data_rows = []
+    for row in material_rows:
+        sku = ''
+        if row.get('raw_material_sku'):
+            sku = row['raw_material_sku'].sku
+        data_rows.append([
+            row.get('material_name') or '',
+            row.get('purchase_sheet_size') or '',
+            sku,
+            row.get('on_hand') if row.get('on_hand') is not None else '',
+            row.get('total_demand') or 0,
+            row.get('gap') if row.get('gap') is not None else '',
+            row.get('gap_status') or '',
+            row.get('print_job_count') or 0,
+            row.get('cut_pack_job_count') or 0,
+            row.get('job_count') or 0,
+        ])
+    return _write_workbook(filename, DEMAND_GAP_MATERIAL_HEADERS, data_rows)
+
+
+def export_demand_gap_jobs(job_rows, filename='demand_gap_jobs.xlsx'):
+    data_rows = []
+    for row in job_rows:
+        data_rows.append([
+            row.get('jc_number') or '',
+            row.get('status_label') or row.get('status') or '',
+            row.get('process_label') or row.get('process_type') or '',
+            row.get('material_name') or '',
+            row.get('purchase_sheet_size') or '',
+            row.get('order_qty') or 0,
+            row.get('purchase_sheets_planning') or '',
+            row.get('job_demand_sheets') or 0,
+            row.get('consumed_print_sheets') or 0,
+            row.get('packed_pcs') or 0,
+            row.get('dispatched_pcs') or 0,
+            row.get('remaining_from_print') if row.get('remaining_from_print') is not None else '',
+            row.get('remaining_from_pack') if row.get('remaining_from_pack') is not None else '',
+            row.get('remaining_from_dispatch') if row.get('remaining_from_dispatch') is not None else '',
+            'Yes' if row.get('is_mapped') else 'No',
+        ])
+    return _write_workbook(filename, DEMAND_GAP_JOB_HEADERS, data_rows)

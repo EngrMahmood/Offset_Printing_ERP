@@ -76,8 +76,9 @@
                             <th>Month</th>
                             <th>Date</th>
                             <th>GIN / JC</th>
-                            <th>Item ID</th>
-                            <th>Item Type</th>
+                            <th>Raw Material SKU</th>
+                            <th>Material</th>
+                            <th>Purchase Size</th>
                             <th>UOM</th>
                             <th>Sheet Packing/Pcs</th>
                             <th>Sheet Qty/Pcs</th>
@@ -103,10 +104,11 @@
                                     {{ txn.gin_jc|default:'—' }}
                                 {% endif %}
                             </td>
-                            <td>{{ txn.item.item_id|default:'—' }}</td>
-                            <td>{{ txn.item.material.name }}</td>
-                            <td>{{ txn.item.uom }}</td>
-                            <td>{{ txn.item.sheet_packing_pcs }}</td>
+                            <td>{{ txn.raw_material_sku.sku|default:'—' }}</td>
+                            <td>{{ txn.raw_material_sku.material.name|default:'—' }}</td>
+                            <td>{{ txn.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
+                            <td>{{ txn.raw_material_sku.uom|default:'—' }}</td>
+                            <td>{{ txn.raw_material_sku.sheet_packing_pcs|default:'—' }}</td>
                             <td>{{ txn.sheet_qty_pcs }}</td>
                             <td>{{ txn.pkt_rim_qty }}</td>
                         </tr>

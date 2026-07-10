@@ -6,6 +6,7 @@
 {% block header_subtitle %}Stock visibility with KPI-driven alerts across opening, receiving, issuance, and closing balances.{% endblock %}
 {% block header_actions %}
     <a href="{% url 'supply_chain:kpi_dashboard' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-chart-pie"></i> KPI Engine</a>
+    <a href="{% url 'supply_chain:demand_gap' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-balance-scale"></i> Demand Gap</a>
     <a href="{% url 'supply_chain:monthly_demand' %}" class="erp-btn erp-btn-primary"><i class="fas fa-chart-line"></i> Monthly Demand</a>
 {% endblock %}
 
@@ -71,8 +72,9 @@
                     <thead>
                         <tr>
                             <th>Sr</th>
-                            <th>Item ID</th>
-                            <th>Item Type</th>
+                            <th>Raw Material SKU</th>
+                            <th>Material</th>
+                            <th>Purchase Size</th>
                             <th>ABC</th>
                             <th>FSN</th>
                             <th>Closing</th>
@@ -87,8 +89,9 @@
                         {% for row in dashboard_data %}
                         <tr>
                             <td>{{ forloop.counter }}</td>
-                            <td><strong>{{ row.item.item_id|default:'—' }}</strong></td>
+                            <td><strong>{{ row.item.sku|default:'—' }}</strong></td>
                             <td>{{ row.item.material.name }}</td>
+                            <td>{{ row.item.purchase_sheet_size }}</td>
                             <td>{{ row.abc_class }}</td>
                             <td>{{ row.fsn_class }}</td>
                             <td><strong>{{ row.closing }}</strong></td>

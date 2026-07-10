@@ -1,0 +1,204 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Demand Gap — Supply Chain{% endblock %}
+{% block header_title %}Planning Demand vs Stock Gap{% endblock %}
+{% block header_subtitle %}Purchase-sheet demand from planning and production progress compared with on-hand inventory.{% endblock %}
+{% block header_actions %}
+    <a href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}export=materials" class="erp-btn erp-btn-secondary">
+        <i class="fas fa-file-excel"></i> Export Materials
+    </a>
+    <a href="?{% if request.GET.urlencode %}{{ request.GET.urlencode }}&{% endif %}export=jobs" class="erp-btn erp-btn-secondary">
+        <i class="fas fa-file-export"></i> Export Jobs
+    </a>
+    <a href="{% url 'supply_chain:dashboard' %}" class="erp-btn erp-btn-primary">Stock Dashboard</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <form method="get" class="erp-filter-bar">
+                <div class="erp-filter-group">
+                    <label for="plan_month">Plan Month</label>
+                    <select name="plan_month" id="plan_month" class="erp-input">
+                        <option value="">All months</option>
+                        {% for month in plan_months %}
+                            <option value="{{ month }}" {% if filters.plan_month == month %}selected{% endif %}>{{ month }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-filter-group">
+                    <label for="status">Status</label>
+                    <select name="status" id="status" class="erp-input">
+                        <option value="">All statuses</option>
+                        {% for value, label in status_choices %}
+                            <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-filter-group">
+                    <label for="process_type">Process</label>
+                    <select name="process_type" id="process_type" class="erp-input">
+                        <option value="">All processes</option>
+                        {% for value, label in process_type_choices %}
+                            <option value="{{ value }}" {% if filters.process_type == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-filter-group">
+                    <label for="material_q">Material</label>
+                    <input type="text" name="material_q" id="material_q" class="erp-input" value="{{ filters.material_q }}" placeholder="Search material">
+                </div>
+                <div class="erp-filter-group erp-filter-group--checkbox">
+                    <label>
+                        <input type="checkbox" name="shortages_only" value="1" {% if filters.shortages_only %}checked{% endif %}>
+                        Shortages only
+                    </label>
+                </div>
+                <button type="submit" class="erp-btn erp-btn-primary">Apply Filters</button>
+                <a href="{% url 'supply_chain:demand_gap' %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </form>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-info-grid">
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Active Jobs</div>
+                    <div class="erp-info-item__value">{{ summary.total_jobs }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Materials Tracked</div>
+                    <div class="erp-info-item__value">{{ summary.materials_tracked }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Shortages</div>
+                    <div class="erp-info-item__value">{{ summary.shortage_count }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Total Shortage Sheets</div>
+                    <div class="erp-info-item__value">{{ summary.total_shortage_sheets }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Unmapped Jobs</div>
+                    <div class="erp-info-item__value">{{ summary.unmapped_job_count }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Unmapped Demand</div>
+                    <div class="erp-info-item__value">{{ summary.unmapped_demand_sheets }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Material Gap</div>
+                    <h3 class="erp-section-title">Demand vs on-hand stock</h3>
+                    <p class="erp-section-desc">
+                        Demand uses planning purchase sheets. Print + Pack jobs adjust by print entries, pack qty, and dispatch.
+                        Cut &amp; Pack jobs adjust by pack qty and dispatch only.
+                    </p>
+                </div>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Material</th>
+                            <th>Purchase Size</th>
+                            <th>Raw Material SKU</th>
+                            <th>On Hand</th>
+                            <th>Total Demand</th>
+                            <th>Gap</th>
+                            <th>Status</th>
+                            <th>Print</th>
+                            <th>Cut &amp; Pack</th>
+                            <th>Jobs</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in material_rows %}
+                        <tr>
+                            <td><strong>{{ row.material_name }}</strong></td>
+                            <td>{{ row.purchase_sheet_size|default:'—' }}</td>
+                            <td>
+                                {% if row.raw_material_sku %}
+                                    {{ row.raw_material_sku.sku }}
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td>{% if row.on_hand is not None %}{{ row.on_hand }}{% else %}—{% endif %}</td>
+                            <td>{{ row.total_demand }}</td>
+                            <td>
+                                {% if row.gap is not None %}
+                                    <strong>{{ row.gap }}</strong>
+                                {% else %}
+                                    —
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if row.gap_status == 'shortage' %}
+                                    <span class="erp-badge erp-badge-rejected">Shortage</span>
+                                {% elif row.gap_status == 'surplus' %}
+                                    <span class="erp-badge erp-badge-approved">Surplus</span>
+                                {% elif row.gap_status == 'balanced' %}
+                                    <span class="erp-badge erp-badge-pending">Balanced</span>
+                                {% else %}
+                                    <span class="erp-badge erp-badge-draft">Unmapped</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ row.print_job_count }}</td>
+                            <td>{{ row.cut_pack_job_count }}</td>
+                            <td>{{ row.job_count }}</td>
+                        </tr>
+                        {% if row.jobs %}
+                        <tr>
+                            <td colspan="10" class="erp-table-nested">
+                                <details>
+                                    <summary>View {{ row.job_count }} job contribution(s)</summary>
+                                    <table class="erp-table erp-table-compact">
+                                        <thead>
+                                            <tr>
+                                                <th>JC</th>
+                                                <th>Status</th>
+                                                <th>Process</th>
+                                                <th>Planning Sheets</th>
+                                                <th>Purchase Size</th>
+                                                <th>Demand</th>
+                                                <th>Print Used</th>
+                                                <th>Packed</th>
+                                                <th>Dispatched</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for job in row.jobs %}
+                                            <tr>
+                                                <td>{{ job.jc_number }}</td>
+                                                <td>{{ job.status_label }}</td>
+                                                <td>{{ job.process_label }}</td>
+                                                <td>{{ job.purchase_sheets_planning }}</td>
+                                                <td>{{ job.purchase_sheet_size }}</td>
+                                                <td><strong>{{ job.job_demand_sheets }}</strong></td>
+                                                <td>{{ job.consumed_print_sheets }}</td>
+                                                <td>{{ job.packed_pcs }}</td>
+                                                <td>{{ job.dispatched_pcs }}</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                    </table>
+                                </details>
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% empty %}
+                        <tr>
+                            <td colspan="10" class="erp-table-empty">No demand gap rows match the current filters.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

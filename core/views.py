@@ -138,7 +138,7 @@ def home(request):
     from planning.models import PlanningJob, SkuRecipe
     from printing_plates.models import PlateRequest
     from core.models import Notification, Production, Dispatch, Machine, Operator
-    from supply_chain.models import SupplyChainItem
+    from supply_chain.models import RawMaterialSku
 
     pending_qc_jobs = PlanningJob.objects.filter(status='pending_qc').count()
     pending_sku_reviews = SkuRecipe.objects.filter(master_data_status='pending_review').count()
@@ -150,7 +150,7 @@ def home(request):
     total_released_jobs = PlanningJob.objects.filter(status='released').count()
     total_produced_sheets = Production.objects.filter(is_active=True).aggregate(total=models.Sum('output_sheets'))['total'] or 0
     total_dispatched_qty = Dispatch.objects.filter(is_active=True).aggregate(total=models.Sum('dispatch_qty'))['total'] or 0
-    total_inventory_items = SupplyChainItem.objects.count()
+    total_inventory_items = RawMaterialSku.objects.filter(is_active=True).count()
 
     # Shop Floor Operations KPIs
     today = timezone.now().date()
