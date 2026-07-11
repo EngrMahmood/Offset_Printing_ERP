@@ -2,6 +2,8 @@ import csv
 import io
 from datetime import datetime
 
+from django.db.models import Q
+from django.db.models import Q
 from django.http import HttpResponse
 from django.utils import timezone
 
@@ -160,8 +162,28 @@ def _parse_date(value):
     return timezone.now().date()
 
 
+def _as_text(value):
+    """Coerce Excel/CSV cell values to trimmed text (handles ints/floats)."""
+    if value is None:
+        return ''
+    if isinstance(value, bool):
+        return str(value).strip()
+    if isinstance(value, float) and value.is_integer():
+        value = int(value)
+    return str(value).strip()
+
+
+def _as_int(value, default=0):
+    if value is None or value == '':
+        return default
+    try:
+        return int(float(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def _get_raw_material_sku_from_row(row):
-    sku = (row.get('Raw Material SKU') or row.get('Item ID') or '').strip()
+    sku = _as_text(row.get('Raw Material SKU') or row.get('Item ID'))
     if not sku:
         return None
     return RawMaterialSku.objects.filter(sku__iexact=sku).select_related('material').first()
@@ -303,10 +325,10 @@ def export_raw_material_sku_template(filename='raw_material_sku_template.xlsx'):
 
 def _normalize_raw_material_import_row(row):
     return {
-        'sku': row.get('Raw Material SKU') or row.get('Item ID'),
-        'material_name': row.get('Material Name') or row.get('Item Type'),
-        'purchase_sheet_size': row.get('Purchase Sheet Size'),
-        'uom': row.get('UOM'),
+        'sku': _as_text(row.get('Raw Material SKU') or row.get('Item ID')),
+        'material_name': _as_text(row.get('Material Name') or row.get('Item Type')),
+        'purchase_sheet_size': _as_text(row.get('Purchase Sheet Size')),
+        'uom': _as_text(row.get('UOM')),
         'sheet_packing_pcs': row.get('Sheet Packing/Pcs'),
         'unit_cost': row.get('Unit Cost'),
         'safety_stock': row.get('Safety Stock'),
@@ -407,48 +429,133 @@ def export_physical_counts(queryset, filename='physical_stock_counts.xlsx'):
 def import_transactions(transaction_type, upload_file):
     rows = _read_rows(upload_file)
     created = 0
-    skipped = 0
+    skipped_missing_sku = 0
+    skipped_duplicates = 0
+    seen_in_file = set()
 
     for row in rows:
         item = _get_raw_material_sku_from_row(row)
         if not item:
-            skipped += 1
+            skipped_missing_sku += 1
+            continue
+
+        txn_date = _parse_date(row.get('Date'))
+        gin_jc = _as_text(row.get('GIN / JC') or row.get('GIN/JC')) or None
+        sheet_qty_pcs = _as_int(row.get('Sheet Qty/Pcs'))
+        pkt_rim_qty = _as_int(row.get('Pkt/Rim Qty'))
+        month_str = _as_text(row.get('Month')) or None
+
+        dedupe_key = (
+            transaction_type,
+            item.pk,
+            txn_date.isoformat(),
+            (gin_jc or '').strip().lower(),
+            sheet_qty_pcs,
+            pkt_rim_qty,
+        )
+        if dedupe_key in seen_in_file:
+            skipped_duplicates += 1
+            continue
+        seen_in_file.add(dedupe_key)
+
+        if gin_jc:
+            duplicate_qs = StockTransaction.objects.filter(
+                raw_material_sku=item,
+                transaction_type=transaction_type,
+                source='MANUAL',
+                date=txn_date,
+                sheet_qty_pcs=sheet_qty_pcs,
+                pkt_rim_qty=pkt_rim_qty,
+                gin_jc__iexact=gin_jc,
+            )
+        else:
+            duplicate_qs = StockTransaction.objects.filter(
+                raw_material_sku=item,
+                transaction_type=transaction_type,
+                source='MANUAL',
+                date=txn_date,
+                sheet_qty_pcs=sheet_qty_pcs,
+                pkt_rim_qty=pkt_rim_qty,
+            ).filter(Q(gin_jc__isnull=True) | Q(gin_jc=''))
+
+        if duplicate_qs.exists():
+            skipped_duplicates += 1
             continue
 
         StockTransaction.objects.create(
             raw_material_sku=item,
             transaction_type=transaction_type,
-            month_str=(row.get('Month') or '').strip() or None,
-            date=_parse_date(row.get('Date')),
-            gin_jc=(row.get('GIN / JC') or row.get('GIN/JC') or '').strip() or None,
-            sheet_qty_pcs=int(row.get('Sheet Qty/Pcs') or 0),
-            pkt_rim_qty=int(row.get('Pkt/Rim Qty') or 0),
+            source='MANUAL',
+            month_str=month_str,
+            date=txn_date,
+            gin_jc=gin_jc,
+            sheet_qty_pcs=sheet_qty_pcs,
+            pkt_rim_qty=pkt_rim_qty,
         )
         created += 1
 
-    return created, skipped
+    return {
+        'created': created,
+        'skipped_missing_sku': skipped_missing_sku,
+        'skipped_duplicates': skipped_duplicates,
+        'skipped': skipped_missing_sku + skipped_duplicates,
+    }
 
 
 def import_demands(upload_file):
     rows = _read_rows(upload_file)
     created = 0
-    skipped = 0
+    skipped_missing_sku = 0
+    skipped_duplicates = 0
+    seen_in_file = set()
 
     for row in rows:
         item = _get_raw_material_sku_from_row(row)
         if not item:
-            skipped += 1
+            skipped_missing_sku += 1
+            continue
+
+        month_str = _as_text(row.get('Month')) or None
+        sheet_qty_pcs = _as_int(row.get('Sheet Qty/Pcs'))
+        pkt_rim_qty = _as_int(row.get('Pkt/Rim Qty'))
+        dedupe_key = (item.pk, (month_str or '').lower(), sheet_qty_pcs, pkt_rim_qty)
+        if dedupe_key in seen_in_file:
+            skipped_duplicates += 1
+            continue
+        seen_in_file.add(dedupe_key)
+
+        if month_str:
+            duplicate_qs = StockDemand.objects.filter(
+                raw_material_sku=item,
+                month_str__iexact=month_str,
+                sheet_qty_pcs=sheet_qty_pcs,
+                pkt_rim_qty=pkt_rim_qty,
+            )
+        else:
+            duplicate_qs = StockDemand.objects.filter(
+                raw_material_sku=item,
+                sheet_qty_pcs=sheet_qty_pcs,
+                pkt_rim_qty=pkt_rim_qty,
+            ).filter(Q(month_str__isnull=True) | Q(month_str=''))
+
+        if duplicate_qs.exists():
+            skipped_duplicates += 1
             continue
 
         StockDemand.objects.create(
             raw_material_sku=item,
-            month_str=(row.get('Month') or '').strip() or None,
-            sheet_qty_pcs=int(row.get('Sheet Qty/Pcs') or 0),
-            pkt_rim_qty=int(row.get('Pkt/Rim Qty') or 0),
+            month_str=month_str,
+            sheet_qty_pcs=sheet_qty_pcs,
+            pkt_rim_qty=pkt_rim_qty,
         )
         created += 1
 
-    return created, skipped
+    return {
+        'created': created,
+        'skipped_missing_sku': skipped_missing_sku,
+        'skipped_duplicates': skipped_duplicates,
+        'skipped': skipped_missing_sku + skipped_duplicates,
+    }
 
 
 def export_demand_gap_materials(material_rows, filename='demand_gap_materials.xlsx'):

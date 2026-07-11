@@ -1,150 +1,216 @@
 {% extends 'theme/base.html' %}
 
-{% block title %}Printing Plates Queue{% endblock %}
+{% block title %}Plate Queue — Offset Printing ERP{% endblock %}
+{% block header_title %}Plate Queue{% endblock %}
+{% block header_subtitle %}Open plate work and plates already released to production.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'printing_plates:request_add' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> New Request</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .erp-form-grid {
+        display: grid;
+        grid-template-columns: 1.4fr 1fr 1fr auto;
+        gap: 12px;
+        margin-bottom: 12px;
+        align-items: end;
+    }
+    .erp-form-grid .erp-field {
+        display: grid;
+        gap: 6px;
+        min-width: 0;
+    }
+    .erp-form-grid .erp-field-label {
+        font-size: 0.72rem;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #6b7280;
+        font-weight: 600;
+    }
+    .erp-status-tabs {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-bottom: 14px;
+        align-items: center;
+    }
+    .erp-status-tabs .erp-btn.is-active {
+        box-shadow: inset 0 0 0 2px rgba(37, 99, 235, 0.35);
+        font-weight: 600;
+    }
+    .erp-table-wrap {
+        overflow-x: auto;
+    }
+    .plate-queue-table {
+        width: 100%;
+        min-width: 980px;
+        font-size: 0.84rem;
+    }
+    .plate-queue-table th,
+    .plate-queue-table td {
+        padding: 8px 10px;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+    .plate-queue-table td.plates-wrap-cell {
+        white-space: normal;
+        max-width: 220px;
+        overflow-wrap: anywhere;
+    }
+    @media (max-width: 980px) {
+        .erp-form-grid {
+            grid-template-columns: 1fr 1fr;
+        }
+        .erp-form-grid .erp-actions {
+            grid-column: 1 / -1;
+        }
+    }
+    @media (max-width: 640px) {
+        .erp-form-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+</style>
+{% endblock %}
 
 {% block content %}
-<div class="erp-page-stack erp-records-shell">
-    {% include 'printing_plates/includes/plates_nav.html' with active_tab='queue' %}
-
+<div class="erp-page-stack">
     <section class="erp-section-shell">
         <div class="erp-card-header">
-            <h2>Plate Queue</h2>
-            <p>Open plate requests waiting on graphics (draft, sent, or received). Same data as Plate Requests — active work only.</p>
-        </div>
-
-        <div class="erp-records-layout">
-            <aside class="erp-filter-sidebar erp-records-filter-sidebar is-collapsible" data-collapse-key="plateQueueFilterCollapsed">
-                <div class="erp-records-filter-head">
-                    <h3 class="erp-filter-sidebar-title">Filter Queue</h3>
-                    <button type="button" class="erp-btn erp-btn-secondary erp-records-filter-toggle" aria-expanded="true">Collapse</button>
-                </div>
-                <div class="erp-records-filter-body">
-                    <ul class="plates-filter-list">
-                        {% for filter in type_filters %}
-                        <li>
-                            <a href="?type={{ filter.key|urlencode }}&status={{ status_filter|urlencode }}&q={{ q|urlencode }}" class="plates-filter-link{% if request_type == filter.key %} is-active{% endif %}">
-                                <span>{% if filter.key %}{{ filter.label }}{% else %}All open{% endif %}</span>
-                                <span class="plates-filter-count">{{ filter.count }}</span>
-                            </a>
-                        </li>
-                        {% endfor %}
-                    </ul>
-
-                    <hr style="border:0; border-top:1px solid rgba(0,0,0,0.06); margin:12px 0;">
-
-                    <ul class="plates-filter-list">
-                        <li>
-                            <a href="?type={{ request_type|urlencode }}&status=draft&q={{ q|urlencode }}" class="plates-filter-link{% if status_filter == 'draft' %} is-active{% endif %}">
-                                <span>Draft</span>
-                                <span class="plates-filter-count">{{ draft_count }}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="?type={{ request_type|urlencode }}&status=sent_to_vendor&q={{ q|urlencode }}" class="plates-filter-link{% if status_filter == 'sent_to_vendor' %} is-active{% endif %}">
-                                <span>Sent</span>
-                                <span class="plates-filter-count">{{ sent_count }}</span>
-                            </a>
-                        </li>
-                        <li>
-                            <a href="?type={{ request_type|urlencode }}&status=received_from_vendor&q={{ q|urlencode }}" class="plates-filter-link{% if status_filter == 'received_from_vendor' %} is-active{% endif %}">
-                                <span>Received</span>
-                                <span class="plates-filter-count">{{ received_count }}</span>
-                            </a>
-                        </li>
-                    </ul>
-
-                    <form method="GET" class="erp-filter-group" style="margin-top:12px;">
-                        <input type="hidden" name="type" value="{{ request_type }}">
-                        <input type="hidden" name="status" value="{{ status_filter }}">
-                        <label for="q" class="erp-field-label">Search</label>
-                        <input id="q" name="q" value="{{ q }}" placeholder="JC, SKU, AWC, set no" class="erp-input" style="width:100%;">
-                        <div class="erp-filter-actions" style="margin-top:10px;">
-                            <button type="submit" class="erp-btn erp-btn-primary" style="width:100%; justify-content:center;">Apply</button>
-                            <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary" style="width:100%; justify-content:center;">Clear</a>
-                        </div>
-                    </form>
-                </div>
-            </aside>
-
-            <div class="erp-records-data-pane">
-                <div class="erp-records-pane-head">
-                    <div class="erp-table-meta" style="margin:0;">
-                        <p class="erp-table-meta-text" style="margin:0;">
-                            {% if is_paginated %}
-                            Showing page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }} · {{ queue_count }} matching
-                            {% else %}
-                            {{ queue_count }} open request(s)
-                            {% endif %}
-                        </p>
-                    </div>
-                </div>
-
-                {% if plate_requests %}
-                    <div class="erp-table-scroll erp-records-table-wrap">
-                        <table class="erp-table erp-table-dense plate-queue-table">
-                            <thead>
-                                <tr>
-                                    <th>JC Number</th>
-                                    <th>Type</th>
-                                    <th>SKU</th>
-                                    <th>Job Name</th>
-                                    <th>AWC No</th>
-                                    <th>Workflow</th>
-                                    <th>Plate Set</th>
-                                    <th>Inks / Print Color</th>
-                                    <th>Progress</th>
-                                    <th>Requested</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for req in plate_requests %}
-                                <tr>
-                                    <td>
-                                        <strong>
-                                            <a href="{% url 'printing_plates:request_detail' req.pk %}" class="plates-jc-link">
-                                                {{ req.jc_number|default:'—' }}
-                                            </a>
-                                        </strong>
-                                    </td>
-                                    <td class="erp-plate-type-cell">
-                                        {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type %}
-                                    </td>
-                                    <td title="{{ req.sku|default:'' }}">{{ req.sku|default:'—' }}</td>
-                                    <td title="{{ req.job_name|default:'' }}">{{ req.job_name|default:'—' }}</td>
-                                    <td>{{ req.display_awc_no|default:'—' }}</td>
-                                    <td><span class="erp-badge">{{ req.get_status_display }}</span></td>
-                                    <td>{{ req.display_set_no|default:'—' }}</td>
-                                    <td title="{{ req.damaged_colors|default:req.plate_color|default:req.print_color_display|default:'' }}">
-                                        {{ req.damaged_colors|default:req.plate_color|default:req.print_color_display|default:'—' }}
-                                    </td>
-                                    <td>
-                                        <a href="{% url 'printing_plates:request_detail' req.pk %}">
-                                            {{ req.progress|default:req.get_status_display }}
-                                        </a>
-                                    </td>
-                                    <td>{{ req.requested_at|date:'Y-m-d H:i'|default:req.created_at|date:'Y-m-d H:i'|default:'—' }}</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                {% else %}
-                    <p class="erp-empty-state">No open plate requests in the queue.</p>
-                {% endif %}
-
-                {% if is_paginated %}
-                <nav class="erp-pagination" aria-label="Page navigation" style="margin-top: 15px;">
-                    {% if page_obj.has_previous %}
-                        <a href="?q={{ q|urlencode }}&type={{ request_type|urlencode }}&status={{ status_filter|urlencode }}&page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary">Previous</a>
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Printing Plates</div>
+                <h3 class="erp-section-title">Plate Queue</h3>
+                <p class="erp-section-desc">
+                    {% if status_filter == 'available_for_production' %}
+                    {{ queue_count }} plate{{ queue_count|pluralize }} released to production
+                    {% else %}
+                    {{ queue_count }} matching request{{ queue_count|pluralize }}
                     {% endif %}
-                    <span class="erp-table-meta-text">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
-                    {% if page_obj.has_next %}
-                        <a href="?q={{ q|urlencode }}&type={{ request_type|urlencode }}&status={{ status_filter|urlencode }}&page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary">Next</a>
-                    {% endif %}
-                </nav>
-                {% endif %}
+                </p>
             </div>
         </div>
+
+        <form method="get" class="erp-form-grid">
+            <div class="erp-field">
+                <label class="erp-field-label" for="q">Search</label>
+                <input id="q" class="erp-input" type="text" name="q" value="{{ q }}" placeholder="JC / SKU / Job / AWC / Set / Vendor">
+            </div>
+            <div class="erp-field">
+                <label class="erp-field-label" for="type">Type</label>
+                <select id="type" class="erp-input" name="type">
+                    {% for item in type_choices %}
+                    <option value="{{ item.key }}" {% if request_type == item.key %}selected{% endif %}>
+                        {% if item.key %}{{ item.label }}{% else %}All Types{% endif %}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-field">
+                <label class="erp-field-label" for="vendor">Vendor</label>
+                <select id="vendor" class="erp-input" name="vendor">
+                    <option value="">All Vendors</option>
+                    <option value="empty" {% if vendor_filter == 'empty' %}selected{% endif %}>(No vendor)</option>
+                    {% for item in vendor_options %}
+                    <option value="{{ item.name }}" {% if vendor_filter|lower == item.name|lower %}selected{% endif %}>{{ item.name }} ({{ item.count }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <input type="hidden" name="status" value="{{ status_filter }}">
+            <div class="erp-actions" style="gap:8px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Filter</button>
+                <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
+        </form>
+
+        <div class="erp-status-tabs">
+            <span class="erp-muted" style="font-size:0.82rem; margin-right:2px;">Status:</span>
+            {% for tab in status_tabs %}
+            <a href="?status={{ tab.key|urlencode }}&type={{ request_type|urlencode }}&vendor={{ vendor_filter|urlencode }}&q={{ q|urlencode }}"
+               class="erp-btn erp-btn-secondary erp-btn-sm{% if status_filter == tab.key or status_filter == 'open' and tab.key == 'open' %} is-active{% endif %}">
+                {{ tab.label }} ({{ tab.count }})
+            </a>
+            {% endfor %}
+        </div>
+
+        {% if plate_requests %}
+        <div class="erp-table-wrap">
+            <table class="erp-table erp-table-dense plate-queue-table">
+                <thead>
+                    <tr>
+                        <th>JC Number</th>
+                        <th>Type</th>
+                        <th>SKU</th>
+                        <th>Job Name</th>
+                        <th>AWC No</th>
+                        <th>Status</th>
+                        <th>Plate Set</th>
+                        <th>Vendor</th>
+                        <th>Inks / Color</th>
+                        <th>Progress</th>
+                        <th>Requested</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for req in plate_requests %}
+                    <tr>
+                        <td>
+                            <strong>
+                                <a href="{% url 'printing_plates:request_detail' req.pk %}" class="plates-jc-link">
+                                    {{ req.jc_number|default:'—' }}
+                                </a>
+                            </strong>
+                        </td>
+                        <td class="erp-plate-type-cell">
+                            {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type %}
+                        </td>
+                        <td class="plates-wrap-cell" title="{{ req.sku|default:'' }}">{{ req.sku|default:'—' }}</td>
+                        <td class="plates-wrap-cell" title="{{ req.job_name|default:'' }}">{{ req.job_name|default:'—' }}</td>
+                        <td>{{ req.display_awc_no|default:'—' }}</td>
+                        <td>
+                            {% if req.status == 'available_for_production' %}
+                            <span class="erp-badge erp-badge-approved">Released to Production</span>
+                            {% else %}
+                            <span class="erp-badge">{{ req.get_status_display }}</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ req.display_set_no|default:'—' }}</td>
+                        <td>{{ req.vendor|default:'—' }}</td>
+                        <td class="plates-wrap-cell" title="{{ req.damaged_colors|default:req.plate_color|default:req.print_color_display|default:'' }}">
+                            {{ req.damaged_colors|default:req.plate_color|default:req.print_color_display|default:'—' }}
+                        </td>
+                        <td>
+                            <a href="{% url 'printing_plates:request_detail' req.pk %}">
+                                {{ req.progress|default:req.get_status_display }}
+                            </a>
+                        </td>
+                        <td>{{ req.requested_at|date:'Y-m-d H:i'|default:req.created_at|date:'Y-m-d H:i'|default:'—' }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="erp-empty-state">
+            {% if status_filter == 'available_for_production' %}
+            No plates released to production match these filters.
+            {% else %}
+            No open plate requests match these filters.
+            {% endif %}
+        </p>
+        {% endif %}
+
+        {% if is_paginated %}
+        <nav class="erp-pagination" aria-label="Page navigation" style="margin-top:15px;">
+            {% if page_obj.has_previous %}
+            <a href="?q={{ q|urlencode }}&type={{ request_type|urlencode }}&status={{ status_filter|urlencode }}&vendor={{ vendor_filter|urlencode }}&page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary">Previous</a>
+            {% endif %}
+            <span class="erp-table-meta-text">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            {% if page_obj.has_next %}
+            <a href="?q={{ q|urlencode }}&type={{ request_type|urlencode }}&status={{ status_filter|urlencode }}&vendor={{ vendor_filter|urlencode }}&page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary">Next</a>
+            {% endif %}
+        </nav>
+        {% endif %}
     </section>
 </div>
 {% endblock %}

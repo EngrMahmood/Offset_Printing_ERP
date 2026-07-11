@@ -346,8 +346,29 @@ class PlateWorkflowTestCase(TestCase):
         self.assertContains(response, 'SKU-QUEUE-001')
         self.assertContains(response, 'Queue Test Job')
         self.assertContains(response, 'Layout in progress')
+        self.assertContains(response, 'Released to Production')
         self.assertEqual(response.context['queue_count'], 1)
+        self.assertEqual(response.context['status_filter'], 'open')
         self.assertEqual(response.context['plate_requests'][0].plate_request_type, 'New Artwork')
+
+    def test_plate_queue_released_tab_shows_available_plates(self):
+        self.plate_request.status = PlateRequest.STATUS_AVAILABLE
+        self.plate_request.save()
+        self.planning_job.refresh_from_db()
+        self.assertEqual(self.planning_job.planning_stage, 'plate_received')
+
+        self.client.login(username='designer', password='password')
+        open_response = self.client.get(reverse('printing_plates:queue'))
+        self.assertEqual(open_response.context['queue_count'], 0)
+
+        released_response = self.client.get(
+            reverse('printing_plates:queue') + '?status=available_for_production'
+        )
+        self.assertEqual(released_response.status_code, 200)
+        self.assertEqual(released_response.context['status_filter'], PlateRequest.STATUS_AVAILABLE)
+        self.assertEqual(released_response.context['queue_count'], 1)
+        self.assertContains(released_response, 'JC-0001')
+        self.assertContains(released_response, 'Released to Production')
 
     def test_plate_request_list_renders_columns(self):
         self.plate_request.progress = 'Layout in progress'
@@ -363,6 +384,31 @@ class PlateWorkflowTestCase(TestCase):
         self.assertContains(response, 'JC-0001')
         self.assertContains(response, 'Layout in progress')
         self.assertEqual(response.context['list_count'], 1)
+
+    def test_plate_request_list_shows_cancelled_and_archived(self):
+        from printing_plates.services import cancel_plate_request
+
+        cancel_plate_request(
+            self.plate_request,
+            actor=self.admin_user,
+            reason='Not required for this PO',
+        )
+        self.plate_request.refresh_from_db()
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_ARCHIVED)
+
+        self.client.login(username='designer', password='password')
+        all_response = self.client.get(reverse('printing_plates:request_list'))
+        self.assertEqual(all_response.status_code, 200)
+        self.assertGreaterEqual(all_response.context['cancelled_count'], 1)
+        self.assertContains(all_response, 'JC-0001')
+
+        cancelled_response = self.client.get(
+            reverse('printing_plates:request_list') + '?type=cancelled'
+        )
+        self.assertEqual(cancelled_response.status_code, 200)
+        self.assertGreaterEqual(cancelled_response.context['list_count'], 1)
+        self.assertContains(cancelled_response, 'JC-0001')
+        self.assertContains(cancelled_response, 'Cancelled')
 
     def test_plate_request_detail_renders_sections(self):
         self.client.login(username='designer', password='password')

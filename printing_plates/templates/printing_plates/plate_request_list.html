@@ -133,7 +133,11 @@
                                     <td>{{ req.plate_quantity_display|default:req.plate_quantity|default:'—' }}</td>
                                     <td class="plates-workflow-cell">
                                         {% if req.is_cancelled %}
-                                        <span class="erp-badge erp-badge-danger">Cancelled</span>
+                                        <span class="erp-badge erp-badge-rejected">Cancelled</span>
+                                        {% elif req.status == 'archived' %}
+                                        <span class="erp-badge erp-badge-archived">Archived</span>
+                                        {% elif req.status == 'available_for_production' %}
+                                        <span class="erp-badge erp-badge-approved">Released to Production</span>
                                         {% else %}
                                         <span class="erp-badge">{{ req.get_status_display }}</span>
                                         {% endif %}

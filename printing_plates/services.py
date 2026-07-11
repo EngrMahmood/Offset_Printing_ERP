@@ -243,10 +243,10 @@ REPLACEMENT_FILTER_Q = (
 )
 
 CANCELLED_FILTER_Q = (
-    Q(progress__istartswith='Cancelled')
+    Q(status=PlateRequest.STATUS_ARCHIVED)
+    | Q(progress__istartswith='Cancelled')
     | Q(remarks__icontains='Cancelled — plates not required')
     | Q(remarks__icontains='Cancelled - plates not required')
-    | Q(status=PlateRequest.STATUS_ARCHIVED, progress__icontains='Cancel')
 )
 
 REPEAT_FLAG_Q = (
@@ -280,7 +280,7 @@ PLATE_REQUEST_TYPE_FILTERS = [
 
 
 def plate_request_active_queryset():
-    """Plate requests shown in Printing Plates lists."""
+    """Open / in-progress plate requests for the working queue."""
     in_plate_making_stage = Q(planning_job__planning_stage__in=PLATE_REQUEST_STAGE_SCOPE)
     open_any_stage = Q(status__in=PLATE_REQUEST_OPEN_STATUSES)
     return PlateRequest.objects.filter(
@@ -288,22 +288,34 @@ def plate_request_active_queryset():
     ).filter(in_plate_making_stage | open_any_stage)
 
 
+def plate_request_list_queryset():
+    """
+    Full history for All Requests: open, released, cancelled, and archived.
+    (Active queue intentionally excludes closed rows.)
+    """
+    return PlateRequest.objects.filter(planning_job__isnull=False)
+
+
 def filter_plate_requests_by_type(queryset, type_key):
     type_key = (type_key or '').strip().lower()
     if not type_key:
         return queryset
     if type_key == 'repeat':
-        return queryset.filter(REPEAT_FLAG_Q | REPEAT_STAGE_FALLBACK_Q).exclude(REPLACEMENT_FILTER_Q)
+        return queryset.filter(REPEAT_FLAG_Q | REPEAT_STAGE_FALLBACK_Q).exclude(
+            REPLACEMENT_FILTER_Q
+        ).exclude(CANCELLED_FILTER_Q)
     if type_key == 'new_artwork':
-        return queryset.filter(NEW_FLAG_Q | NEW_STAGE_FALLBACK_Q).exclude(REPLACEMENT_FILTER_Q)
+        return queryset.filter(NEW_FLAG_Q | NEW_STAGE_FALLBACK_Q).exclude(
+            REPLACEMENT_FILTER_Q
+        ).exclude(CANCELLED_FILTER_Q)
     if type_key == 'replacement':
-        return queryset.filter(REPLACEMENT_FILTER_Q)
+        return queryset.filter(REPLACEMENT_FILTER_Q).exclude(CANCELLED_FILTER_Q)
     if type_key == 'cancelled':
         return queryset.filter(CANCELLED_FILTER_Q)
     if type_key == 'empty':
-        return queryset.exclude(REPEAT_FLAG_Q | NEW_FLAG_Q | REPEAT_STAGE_FALLBACK_Q | NEW_STAGE_FALLBACK_Q).exclude(
-            REPLACEMENT_FILTER_Q
-        )
+        return queryset.exclude(
+            REPEAT_FLAG_Q | NEW_FLAG_Q | REPEAT_STAGE_FALLBACK_Q | NEW_STAGE_FALLBACK_Q
+        ).exclude(REPLACEMENT_FILTER_Q).exclude(CANCELLED_FILTER_Q)
     return queryset
 
 

@@ -46,12 +46,12 @@
                     <span style="font-size: 1.05rem; font-weight: 600; color: #2b3440;">Plate Sent</span>
                 </div>
                 <div style="display: flex; flex-direction: column;">
-                    <a href="{% url 'printing_plates:sent_list' %}" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem;">
+                    <a href="{% url 'printing_plates:queue' %}?status=sent_to_vendor" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem;">
                         <span>All</span>
                         <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ sent_all_count }}</span>
                     </a>
                     {% for item in sent_vendor_options %}
-                    <a href="{% url 'printing_plates:sent_list' %}?vendor={{ item.name|urlencode }}" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem;">
+                    <a href="{% url 'printing_plates:queue' %}?status=sent_to_vendor&vendor={{ item.name|urlencode }}" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem;">
                         <span>{{ item.name }}</span>
                         <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ item.count }}</span>
                     </a>
@@ -66,19 +66,31 @@
                     <span style="font-size: 1.05rem; font-weight: 600; color: #2b3440;">Plate Received</span>
                 </div>
                 <div style="display: flex; flex-direction: column;">
-                    <a href="{% url 'printing_plates:received_list' %}" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem;">
+                    <a href="{% url 'printing_plates:queue' %}?status=received_from_vendor" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem;">
                         <span>All</span>
                         <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ rec_all_count }}</span>
                     </a>
                     {% for item in rec_vendor_options %}
-                    <a href="{% url 'printing_plates:received_list' %}?vendor={{ item.name|urlencode }}" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem;">
+                    <a href="{% url 'printing_plates:queue' %}?status=received_from_vendor&vendor={{ item.name|urlencode }}" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; border-bottom: 1px solid rgba(115,115,115,0.06); text-decoration: none; color: #4a5568; font-size: 0.9rem;">
                         <span>{{ item.name }}</span>
                         <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ item.count }}</span>
                     </a>
                     {% endfor %}
-                    <a href="{% url 'printing_plates:received_list' %}?vendor=empty" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; text-decoration: none; color: #4a5568; font-size: 0.9rem;">
+                    <a href="{% url 'printing_plates:queue' %}?status=received_from_vendor&vendor=empty" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; text-decoration: none; color: #4a5568; font-size: 0.9rem;">
                         <span>(empty)</span>
                         <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ rec_empty_count }}</span>
+                    </a>
+                </div>
+            </div>
+
+            <div style="background: #fff; border-radius: 8px; border: 1px solid rgba(115,115,115,0.08); box-shadow: 0 4px 6px -1px rgba(0,0,0,0.01), 0 2px 4px -1px rgba(0,0,0,0.006); overflow: hidden; display: flex; flex-direction: column;">
+                <div style="background: #fdfdfd; padding: 16px 20px; border-bottom: 1px solid rgba(115,115,115,0.06);">
+                    <span style="font-size: 1.05rem; font-weight: 600; color: #2b3440;">Released to Production</span>
+                </div>
+                <div style="display: flex; flex-direction: column;">
+                    <a href="{% url 'printing_plates:queue' %}?status=available_for_production" style="display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; text-decoration: none; color: #4a5568; font-size: 0.9rem;">
+                        <span>All released</span>
+                        <span style="background: #edf2f7; color: #4a5568; padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500;">{{ released_count }}</span>
                     </a>
                 </div>
             </div>

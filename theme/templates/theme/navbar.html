@@ -319,21 +319,13 @@
            class="erp-subnav-link {% if url == 'dashboard' %}is-active{% endif %}">
             <i class="fas fa-chart-line"></i> Dashboard
         </a>
+        <a href="{% url 'printing_plates:queue' %}"
+           class="erp-subnav-link {% if url == 'queue' or url == 'sent_list' or url == 'received_list' %}is-active{% endif %}">
+            <i class="fas fa-list"></i> Plate Queue
+        </a>
         <a href="{% url 'printing_plates:request_list' %}"
            class="erp-subnav-link {% if url == 'request_list' %}is-active{% endif %}">
-            <i class="far fa-file-alt"></i> Plate Requests
-        </a>
-        <a href="{% url 'printing_plates:sent_list' %}"
-           class="erp-subnav-link {% if url == 'sent_list' %}is-active{% endif %}">
-            <i class="fas fa-paper-plane"></i> Plate Sent
-        </a>
-        <a href="{% url 'printing_plates:received_list' %}"
-           class="erp-subnav-link {% if url == 'received_list' %}is-active{% endif %}">
-            <i class="fas fa-check-circle"></i> Plate Received
-        </a>
-        <a href="{% url 'printing_plates:queue' %}"
-           class="erp-subnav-link {% if url == 'queue' %}is-active{% endif %}">
-            Plate Queue
+            <i class="far fa-file-alt"></i> All Requests
         </a>
         <a href="{% url 'printing_plates:request_add' %}"
            class="erp-subnav-link {% if url == 'request_add' %}is-active{% endif %}">

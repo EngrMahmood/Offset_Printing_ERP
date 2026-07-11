@@ -293,3 +293,50 @@ class PhysicalStockCountTests(TestCase):
         self.assertEqual(count.system_sheet_qty, 200)
         self.assertEqual(count.accuracy_percent, Decimal('90.00'))
         self.assertEqual(count.variance, -20)
+
+
+class TransactionImportDedupeTests(TestCase):
+    def setUp(self):
+        material = Material.objects.create(name='Dup Paper')
+        self.item = _create_raw_sku(material, 'DUP-001', purchase_sheet_size='20*30')
+
+    def _workbook(self, rows):
+        from io import BytesIO
+        import openpyxl
+
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.append([
+            'Month', 'Date', 'GIN / JC', 'Raw Material SKU', 'Material Name',
+            'Purchase Sheet Size', 'UOM', 'Sheet Packing/Pcs', 'Sheet Qty/Pcs', 'Pkt/Rim Qty',
+        ])
+        for row in rows:
+            ws.append(row)
+        buf = BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        buf.name = 'receiving.xlsx'
+        return buf
+
+    def test_blocks_duplicate_receiving_rows(self):
+        from supply_chain.excel_io import import_transactions
+
+        row = [
+            'July 2026', '2026-07-11', 'GIN-9', self.item.sku, 'Dup Paper',
+            '20*30', 'Sheets', 1, 50, 0,
+        ]
+        first = import_transactions('RECEIVING', self._workbook([row, row]))
+        second = import_transactions('RECEIVING', self._workbook([row]))
+
+        self.assertEqual(first['created'], 1)
+        self.assertEqual(first['skipped_duplicates'], 1)
+        self.assertEqual(second['created'], 0)
+        self.assertEqual(second['skipped_duplicates'], 1)
+        self.assertEqual(
+            StockTransaction.objects.filter(
+                raw_material_sku=self.item,
+                transaction_type='RECEIVING',
+                source='MANUAL',
+            ).count(),
+            1,
+        )

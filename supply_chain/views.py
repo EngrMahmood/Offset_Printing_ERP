@@ -281,8 +281,13 @@ def _handle_transaction_import(request, page_key, transaction_type, month_filter
         return redirect('supply_chain:' + page_key)
 
     try:
-        created, skipped = import_transactions(transaction_type, upload_form.cleaned_data['upload_file'])
-        messages.success(request, f'Imported {created} row(s). Skipped {skipped} row(s) without a matching raw material SKU.')
+        result = import_transactions(transaction_type, upload_form.cleaned_data['upload_file'])
+        messages.success(
+            request,
+            f"Imported {result['created']} row(s). "
+            f"Skipped {result['skipped_duplicates']} duplicate(s) and "
+            f"{result['skipped_missing_sku']} without a matching raw material SKU.",
+        )
     except Exception as exc:
         messages.error(request, f'Import failed: {exc}')
 
@@ -298,8 +303,13 @@ def _handle_demand_import(request, month_filter):
         return redirect('supply_chain:monthly_demand')
 
     try:
-        created, skipped = import_demands(upload_form.cleaned_data['upload_file'])
-        messages.success(request, f'Imported {created} demand row(s). Skipped {skipped} row(s) without a matching raw material SKU.')
+        result = import_demands(upload_form.cleaned_data['upload_file'])
+        messages.success(
+            request,
+            f"Imported {result['created']} demand row(s). "
+            f"Skipped {result['skipped_duplicates']} duplicate(s) and "
+            f"{result['skipped_missing_sku']} without a matching raw material SKU.",
+        )
     except Exception as exc:
         messages.error(request, f'Import failed: {exc}')
 

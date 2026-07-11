@@ -17,6 +17,7 @@ from .services import (
     bulk_cancel_stale_open_plate_requests,
     filter_plate_requests_by_type,
     plate_request_active_queryset,
+    plate_request_list_queryset,
     stale_open_plate_requests_for_cleanup_queryset,
 )
 from core.models import Vendor
@@ -61,6 +62,11 @@ class PlateDashboardView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Templa
         context['rec_empty_count'] = rec_qs.filter(vendor='').count()
         context['rec_vendor_options'] = build_vendor_filter_options(rec_qs)
 
+        context['released_count'] = PlateRequest.objects.filter(
+            planning_job__isnull=False,
+            status=PlateRequest.STATUS_AVAILABLE,
+        ).count()
+
         return context
 
 
@@ -71,7 +77,7 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
     paginate_by = 50
 
     def get_queryset(self):
-        queryset = plate_request_active_queryset().select_related(
+        queryset = plate_request_list_queryset().select_related(
             'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by'
         ).order_by('-requested_at', '-created_at')
 
@@ -95,7 +101,7 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
 
-        base_qs = plate_request_active_queryset()
+        base_qs = plate_request_list_queryset()
         counts = build_plate_request_type_counts(base_qs)
         context.update(counts)
         context['type_filters'] = build_type_filter_sidebar(counts)
@@ -110,25 +116,64 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
 
 
 class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
-    """Active plate work: open plate requests only (same source of truth as Plate Requests)."""
+    """Plate queue: open work plus plates already released to production."""
 
     model = PlateRequest
     template_name = 'printing_plates/plate_queue.html'
     context_object_name = 'plate_requests'
     paginate_by = 50
 
-    def get_queryset(self):
-        queryset = plate_request_active_queryset().filter(
-            status__in=[
-                PlateRequest.STATUS_DRAFT,
-                PlateRequest.STATUS_SENT,
-                PlateRequest.STATUS_RECEIVED,
-            ],
-        ).select_related(
-            'planning_job', 'job_card', 'sku_recipe', 'machine', 'department', 'requested_by'
-        ).order_by('-requested_at', '-created_at')
+    OPEN_STATUSES = (
+        PlateRequest.STATUS_DRAFT,
+        PlateRequest.STATUS_SENT,
+        PlateRequest.STATUS_RECEIVED,
+    )
 
+    def _released_queryset(self):
+        """Plates issued to production (leave plate-making stage, so not in open queue)."""
+        return PlateRequest.objects.filter(
+            planning_job__isnull=False,
+            status=PlateRequest.STATUS_AVAILABLE,
+        )
+
+    def _open_queryset(self):
+        return plate_request_active_queryset().filter(status__in=self.OPEN_STATUSES)
+
+    def _normalize_status_filter(self, raw):
+        value = (raw or '').strip().lower()
+        if value in {'released', 'available', PlateRequest.STATUS_AVAILABLE}:
+            return PlateRequest.STATUS_AVAILABLE
+        if value in self.OPEN_STATUSES:
+            return value
+        # Default: all open statuses (draft / sent / received)
+        return 'open'
+
+    def get_queryset(self):
+        self.status_filter = self._normalize_status_filter(self.request.GET.get('status'))
+        self.request_type = self.request.GET.get('type', '').strip().lower()
+        self.vendor_filter = self.request.GET.get('vendor', '').strip()
         q = self.request.GET.get('q', '').strip()
+
+        if self.status_filter == PlateRequest.STATUS_AVAILABLE:
+            queryset = self._released_queryset()
+        elif self.status_filter in self.OPEN_STATUSES:
+            queryset = self._open_queryset().filter(status=self.status_filter)
+        else:
+            # Default / open: active draft + sent + received
+            queryset = self._open_queryset()
+
+        queryset = queryset.select_related(
+            'planning_job', 'job_card', 'sku_recipe', 'machine', 'department',
+            'requested_by', 'sent_by', 'received_by',
+        ).order_by('-requested_at', '-created_at', '-id')
+
+        queryset = filter_plate_requests_by_type(queryset, self.request_type)
+
+        if self.vendor_filter == 'empty':
+            queryset = queryset.filter(vendor='')
+        elif self.vendor_filter:
+            queryset = queryset.filter(vendor__iexact=self.vendor_filter)
+
         if q:
             queryset = queryset.filter(
                 Q(job_card__job_card_no__icontains=q)
@@ -139,43 +184,52 @@ class PlateQueueView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
                 | Q(awc_no__icontains=q)
                 | Q(set_no__icontains=q)
                 | Q(new_set_no__icontains=q)
+                | Q(vendor__icontains=q)
+                | Q(plate_color__icontains=q)
             )
-
-        self.request_type = self.request.GET.get('type', '').strip().lower()
-        queryset = filter_plate_requests_by_type(queryset, self.request_type)
-
-        self.status_filter = self.request.GET.get('status', '').strip()
-        if self.status_filter in {
-            PlateRequest.STATUS_DRAFT,
-            PlateRequest.STATUS_SENT,
-            PlateRequest.STATUS_RECEIVED,
-        }:
-            queryset = queryset.filter(status=self.status_filter)
 
         return queryset
 
     def get_context_data(self, **kwargs):
         context = super().get_context_data(**kwargs)
-        base_qs = plate_request_active_queryset().filter(
-            status__in=[
-                PlateRequest.STATUS_DRAFT,
-                PlateRequest.STATUS_SENT,
-                PlateRequest.STATUS_RECEIVED,
-            ],
-        )
+        open_qs = self._open_queryset()
+        released_qs = self._released_queryset()
+        type_base = open_qs if self.status_filter != PlateRequest.STATUS_AVAILABLE else released_qs
+
         context['q'] = self.request.GET.get('q', '')
         context['request_type'] = getattr(self, 'request_type', '')
-        context['status_filter'] = getattr(self, 'status_filter', '')
+        context['status_filter'] = getattr(self, 'status_filter', 'open')
+        context['vendor_filter'] = getattr(self, 'vendor_filter', '')
         context['queue_count'] = self.get_queryset().count()
-        counts = build_plate_request_type_counts(base_qs)
+        context['open_count'] = open_qs.count()
+        context['draft_count'] = open_qs.filter(status=PlateRequest.STATUS_DRAFT).count()
+        context['sent_count'] = open_qs.filter(status=PlateRequest.STATUS_SENT).count()
+        context['received_count'] = open_qs.filter(status=PlateRequest.STATUS_RECEIVED).count()
+        context['released_count'] = released_qs.count()
+        context['vendor_options'] = build_vendor_filter_options(
+            open_qs if self.status_filter != PlateRequest.STATUS_AVAILABLE else released_qs
+        )
+        context['type_choices'] = [
+            item for item in PLATE_REQUEST_TYPE_FILTERS
+            if item['key'] in {'', 'repeat', 'new_artwork', 'replacement'}
+        ]
+        counts = build_plate_request_type_counts(type_base)
         context.update(counts)
         context['type_filters'] = build_type_filter_sidebar(
             counts,
-            filters=[item for item in PLATE_REQUEST_TYPE_FILTERS if item['key'] in {'', 'repeat', 'new_artwork', 'replacement'}],
+            filters=context['type_choices'],
         )
-        context['draft_count'] = base_qs.filter(status=PlateRequest.STATUS_DRAFT).count()
-        context['sent_count'] = base_qs.filter(status=PlateRequest.STATUS_SENT).count()
-        context['received_count'] = base_qs.filter(status=PlateRequest.STATUS_RECEIVED).count()
+        context['status_tabs'] = [
+            {'key': 'open', 'label': 'Open', 'count': context['open_count']},
+            {'key': PlateRequest.STATUS_DRAFT, 'label': 'Draft', 'count': context['draft_count']},
+            {'key': PlateRequest.STATUS_SENT, 'label': 'Sent', 'count': context['sent_count']},
+            {'key': PlateRequest.STATUS_RECEIVED, 'label': 'Received', 'count': context['received_count']},
+            {
+                'key': PlateRequest.STATUS_AVAILABLE,
+                'label': 'Released to Production',
+                'count': context['released_count'],
+            },
+        ]
         return context
 
 
