@@ -1,9 +1,43 @@
+import re
+
 from django.db import models
 from django.utils import timezone
 
 
+# Width × height: "10.5 x 15", "10.5X15", "10.5*15", "10.5 × 15" → "10.5*15"
+_PURCHASE_SIZE_PAIR_RE = re.compile(
+    r'^\s*(\d+(?:\.\d+)?)\s*[xX×*]\s*(\d+(?:\.\d+)?)\s*$'
+)
+
+
 def normalize_purchase_sheet_size(value):
-    return ' '.join(str(value or '').strip().split())
+    """Canonical purchase sheet size for matching and rollup.
+
+    Dimension pairs become ``width*height`` (no spaces). Other labels keep
+    collapsed whitespace only (e.g. ``A4``).
+    """
+    text = ' '.join(str(value or '').strip().split())
+    if not text:
+        return ''
+    match = _PURCHASE_SIZE_PAIR_RE.match(text)
+    if match:
+        return f'{match.group(1)}*{match.group(2)}'
+    return text
+
+
+def normalize_material_name(value):
+    """Case-insensitive material key: collapse whitespace and lowercase."""
+    return ' '.join(str(value or '').strip().split()).lower()
+
+
+def display_material_name(value):
+    """Stable display label for free-text material names."""
+    text = ' '.join(str(value or '').strip().split())
+    if not text:
+        return ''
+    if text.isupper() or text.islower():
+        return text.title()
+    return text
 
 
 class RawMaterialSku(models.Model):

@@ -184,6 +184,114 @@ class DemandGapLogicTests(TestCase):
         self.assertEqual(material_row['on_hand'], 100)
         self.assertEqual(material_row['gap'], 400)
         self.assertEqual(material_row['gap_status'], 'shortage')
+        self.assertEqual(material_row['purchase_sheet_size'], '25*36')
+
+    def test_purchase_size_variants_merge(self):
+        from supply_chain.models import normalize_purchase_sheet_size
+
+        self.assertEqual(normalize_purchase_sheet_size('10.5 x 15'), '10.5*15')
+        self.assertEqual(normalize_purchase_sheet_size('10.5*15'), '10.5*15')
+        self.assertEqual(normalize_purchase_sheet_size('10.5X15'), '10.5*15')
+        self.assertEqual(normalize_purchase_sheet_size('A4'), 'A4')
+
+        material = Material.objects.create(name='Taffeta')
+        SkuRecipe.objects.create(
+            sku='SKU-TAF-A',
+            job_name='Taf A',
+            material='Taffeta',
+            ups=10,
+            purchase_sheet_ups=2,
+            purchase_sheet_size='10.5 x 15',
+            master_data_status='approved',
+        )
+        SkuRecipe.objects.create(
+            sku='SKU-TAF-B',
+            job_name='Taf B',
+            material='Taffeta',
+            ups=10,
+            purchase_sheet_ups=2,
+            purchase_sheet_size='10.5*15',
+            master_data_status='approved',
+        )
+        PlanningJob.objects.create(
+            jc_number='JC-TAF-A',
+            sku='SKU-TAF-A',
+            material='Taffeta',
+            order_qty=10000,
+            ups=10,
+            purchase_sheet_ups=2,
+            purchase_sheet_size='10.5 x 15',
+            wastage_sheets=0,
+            status='draft',
+        )
+        PlanningJob.objects.create(
+            jc_number='JC-TAF-B',
+            sku='SKU-TAF-B',
+            material='Taffeta',
+            order_qty=20000,
+            ups=10,
+            purchase_sheet_ups=2,
+            purchase_sheet_size='10.5*15',
+            wastage_sheets=0,
+            status='draft',
+        )
+
+        report = build_demand_gap_report()
+        taffeta_rows = [
+            row for row in report['material_rows']
+            if row.get('material_name') == 'Taffeta' and row.get('purchase_sheet_size') == '10.5*15'
+        ]
+        self.assertEqual(len(taffeta_rows), 1)
+        self.assertEqual(taffeta_rows[0]['job_count'], 2)
+        self.assertEqual(taffeta_rows[0]['total_demand'], 1500)
+
+    def test_material_name_case_variants_merge(self):
+        from supply_chain.models import normalize_material_name
+
+        self.assertEqual(normalize_material_name('Art Paper 128'), 'art paper 128')
+        self.assertEqual(normalize_material_name('Art paper 128'), 'art paper 128')
+        self.assertEqual(normalize_material_name('  BROWN   STICKER '), 'brown sticker')
+
+        material = Material.objects.create(name='Art Paper 128')
+        sku = RawMaterialSku.objects.create(
+            material=material,
+            sku='ARTPAPER128-2536',
+            purchase_sheet_size='25*36',
+        )
+        PlanningJob.objects.create(
+            jc_number='JC-ART-A',
+            sku='SKU-ART-A',
+            material='Art Paper 128',
+            order_qty=10000,
+            ups=10,
+            purchase_sheet_ups=2,
+            purchase_sheet_size='25x36',
+            wastage_sheets=0,
+            status='draft',
+        )
+        PlanningJob.objects.create(
+            jc_number='JC-ART-B',
+            sku='SKU-ART-B',
+            material='Art paper 128',
+            order_qty=4000,
+            ups=10,
+            purchase_sheet_ups=2,
+            purchase_sheet_size='25*36',
+            wastage_sheets=0,
+            status='draft',
+        )
+
+        report = build_demand_gap_report()
+        art_rows = [
+            row for row in report['material_rows']
+            if normalize_material_name(row.get('material_name')) == 'art paper 128'
+            and row.get('purchase_sheet_size') == '25*36'
+        ]
+        self.assertEqual(len(art_rows), 1)
+        self.assertEqual(art_rows[0]['job_count'], 2)
+        self.assertEqual(art_rows[0]['total_demand'], 700)
+        self.assertEqual(art_rows[0]['raw_material_sku'].pk, sku.pk)
+        self.assertEqual(art_rows[0]['gap_status'], 'shortage')
 
     def test_dispatch_from_planning_run_when_no_job_card(self):
         job = self._create_print_job(jc_number='JC-NO-JC')

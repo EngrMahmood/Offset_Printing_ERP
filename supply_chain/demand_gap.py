@@ -4,15 +4,18 @@ import math
 from collections import defaultdict
 from decimal import Decimal, ROUND_HALF_UP
 
-from django.db.models import Prefetch, Sum
+from django.db.models import Case, IntegerField, Prefetch, Sum, Value, When
 
-from core.jobcard_service import _resolve_by_name
-from core.models import Material, Production
-from planning.models import PLANNING_STATUS_ALIASES, PlanningJob
+from core.models import Dispatch, Material, Production
+from planning.models import PLANNING_STATUS_ALIASES, PlanningJob, SkuRecipe
 
-from .models import RawMaterialSku, normalize_purchase_sheet_size
-from .raw_material_sku import resolve_raw_material_sku_for_planning_job
-from .services import build_dashboard_data
+from .models import (
+    RawMaterialSku,
+    StockTransaction,
+    display_material_name,
+    normalize_material_name,
+    normalize_purchase_sheet_size,
+)
 
 COMPLETED_STATUSES = {'completed', 'closed'}
 
@@ -33,35 +36,141 @@ def _get_job_card(planning_job):
         return None
 
 
+def _recipe_for_job(planning_job, recipe_by_sku):
+    sku = (planning_job.sku or '').strip().lower()
+    if not sku:
+        return None
+    return recipe_by_sku.get(sku)
+
+
+def _purchase_sheet_size_for_job(planning_job, recipe=None):
+    size = (planning_job.purchase_sheet_size or '').strip()
+    if size:
+        return normalize_purchase_sheet_size(size)
+    if recipe and (recipe.purchase_sheet_size or '').strip():
+        return normalize_purchase_sheet_size(recipe.purchase_sheet_size)
+    return ''
+
+
+def _material_name_for_job(planning_job, recipe=None):
+    name = (planning_job.material or '').strip()
+    if name:
+        return name
+    if recipe and (recipe.material or '').strip():
+        return recipe.material.strip()
+    return ''
+
+
+def _purchase_sheet_ups_for_job(planning_job, recipe=None):
+    if planning_job.purchase_sheet_ups is not None:
+        return planning_job.purchase_sheet_ups
+    if recipe and recipe.purchase_sheet_ups is not None:
+        return recipe.purchase_sheet_ups
+    return None
+
+
+def _process_type_for_job(planning_job, recipe=None):
+    if recipe and (recipe.job_process_type or '').strip():
+        return recipe.job_process_type.strip()
+    return (planning_job.job_process_type or 'print_and_pack').strip() or 'print_and_pack'
+
+
+def _purchase_sheets_for_job(planning_job, recipe=None):
+    """Mirror PlanningJob.purchase_sheet_required_display without N+1 recipe hits."""
+    net_qty = planning_job.net_print_qty
+    ups_value = planning_job.ups
+    if ups_value is None and recipe and recipe.ups is not None:
+        ups_value = recipe.ups
+
+    sheets_required = None
+    if net_qty is not None and ups_value:
+        sheets_required = math.ceil(net_qty / ups_value) + (planning_job.wastage_sheets or 0)
+    elif planning_job.print_sheets is not None:
+        sheets_required = planning_job.print_sheets + (planning_job.wastage_sheets or 0)
+    elif planning_job.actual_sheet_required is not None:
+        sheets_required = planning_job.actual_sheet_required
+
+    purchase_sheet_ups = _purchase_sheet_ups_for_job(planning_job, recipe)
+    if sheets_required is not None and purchase_sheet_ups:
+        return math.ceil(sheets_required / purchase_sheet_ups)
+    return planning_job.purchase_sheet_required
+
+
+def _prefetched_list(instance, related_name):
+    cache = getattr(instance, '_prefetched_objects_cache', None) or {}
+    if related_name in cache:
+        return list(cache[related_name])
+    return None
+
+
+def _job_card_activity(job_card):
+    """Packed / dispatched / print consumption from prefetched relations when possible."""
+    if not job_card:
+        return {
+            'packed_pcs': 0,
+            'dispatched_pcs': 0,
+            'consumed_print_sheets': 0,
+            'has_print_activity': False,
+        }
+
+    productions = _prefetched_list(job_card, 'productions')
+    if productions is None:
+        productions = list(job_card.productions.filter(is_active=True))
+
+    packed_pcs = 0
+    consumed_print_sheets = 0
+    has_print = False
+    for production in productions:
+        if not production.is_active:
+            continue
+        if production.entry_type == 'packing':
+            packed_pcs += int(production.packing_qty or 0)
+        elif production.entry_type == 'printing':
+            has_print = True
+            consumed_print_sheets += int(production.output_sheets or 0) + int(production.waste_sheets or 0)
+
+    dispatches = _prefetched_list(job_card, 'dispatch_set')
+    if dispatches is None:
+        dispatched_pcs = int(
+            job_card.dispatch_set.filter(is_active=True).aggregate(total=Sum('dispatch_qty'))['total'] or 0
+        )
+    else:
+        dispatched_pcs = sum(
+            int(row.dispatch_qty or 0)
+            for row in dispatches
+            if row.is_active
+        )
+
+    return {
+        'packed_pcs': packed_pcs,
+        'dispatched_pcs': dispatched_pcs,
+        'consumed_print_sheets': consumed_print_sheets,
+        'has_print_activity': has_print,
+    }
+
+
 def _get_dispatched_pcs(planning_job, job_card):
     if job_card:
-        return int(job_card.total_dispatch or 0)
+        return _job_card_activity(job_card)['dispatched_pcs']
     if not planning_job.pk:
         return 0
-    total = planning_job.dispatch_runs.aggregate(total=Sum('delivered_qty'))['total']
-    return int(total or 0)
+    runs = _prefetched_list(planning_job, 'dispatch_runs')
+    if runs is None:
+        total = planning_job.dispatch_runs.aggregate(total=Sum('delivered_qty'))['total']
+        return int(total or 0)
+    return sum(int(run.delivered_qty or 0) for run in runs)
 
 
 def _get_packed_pcs(job_card):
-    if not job_card:
-        return 0
-    return int(job_card.total_packed_pcs or 0)
+    return _job_card_activity(job_card)['packed_pcs']
 
 
 def _get_consumed_print_sheets(job_card):
-    if not job_card:
-        return 0
-    totals = job_card.printing_productions.aggregate(
-        total_output=Sum('output_sheets'),
-        total_waste=Sum('waste_sheets'),
-    )
-    return int(totals['total_output'] or 0) + int(totals['total_waste'] or 0)
+    return _job_card_activity(job_card)['consumed_print_sheets']
 
 
 def _has_print_activity(job_card):
-    if not job_card:
-        return False
-    return job_card.printing_productions.exists()
+    return _job_card_activity(job_card)['has_print_activity']
 
 
 def _proportional_remaining(purchase_sheets, order_qty, remaining_pcs):
@@ -75,17 +184,25 @@ def _proportional_remaining(purchase_sheets, order_qty, remaining_pcs):
     return int(value.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
 
 
-def compute_job_demand_sheets(planning_job, job_card=None):
+def compute_job_demand_sheets(planning_job, job_card=None, *, recipe=None, activity=None):
     """Compute remaining purchase-sheet demand for one planning job."""
-    purchase_sheets = planning_job.purchase_sheet_required_display
+    purchase_sheets = _purchase_sheets_for_job(planning_job, recipe)
     order_qty = int(planning_job.order_qty or 0)
-    is_cut_pack = planning_job.is_cut_and_pack()
+    process_type = _process_type_for_job(planning_job, recipe)
+    is_cut_pack = process_type == 'cut_and_pack'
 
-    packed_pcs = _get_packed_pcs(job_card)
-    dispatched_pcs = _get_dispatched_pcs(planning_job, job_card)
-    has_print = _has_print_activity(job_card) if not is_cut_pack else False
-    consumed_print_sheets = _get_consumed_print_sheets(job_card) if has_print else 0
-    purchase_sheet_ups = planning_job.purchase_sheet_ups_display
+    if activity is None:
+        activity = _job_card_activity(job_card)
+
+    packed_pcs = int(activity.get('packed_pcs') or 0)
+    if job_card:
+        dispatched_pcs = int(activity.get('dispatched_pcs') or 0)
+    else:
+        dispatched_pcs = _get_dispatched_pcs(planning_job, None)
+
+    has_print = bool(activity.get('has_print_activity')) if not is_cut_pack else False
+    consumed_print_sheets = int(activity.get('consumed_print_sheets') or 0) if has_print else 0
+    purchase_sheet_ups = _purchase_sheet_ups_for_job(planning_job, recipe)
 
     result = {
         'purchase_sheets_planning': purchase_sheets,
@@ -155,21 +272,93 @@ def compute_job_demand_sheets(planning_job, job_card=None):
     return result
 
 
-def resolve_material_for_job(planning_job, job_card=None):
+def _preferred_material(existing, candidate):
+    """Prefer mixed-case master names over ALL-CAPS / all-lowercase duplicates."""
+    if existing is None:
+        return candidate
+    existing_name = existing.name or ''
+    candidate_name = candidate.name or ''
+    if existing_name.isupper() and not candidate_name.isupper():
+        return candidate
+    if existing_name.islower() and not candidate_name.islower():
+        return candidate
+    return existing
+
+
+def _build_materials_by_name():
+    materials_by_name = {}
+    for material in Material.objects.all():
+        key = normalize_material_name(material.name)
+        if not key:
+            continue
+        materials_by_name[key] = _preferred_material(materials_by_name.get(key), material)
+    return materials_by_name
+
+
+def resolve_material_for_job(planning_job, job_card=None, *, materials_by_name=None, recipe=None):
+    material_name = ''
     if job_card and job_card.material_id:
-        return job_card.material
-    material_name = planning_job.material_display or (planning_job.material or '').strip()
-    return _resolve_by_name(Material, material_name)
+        material_name = job_card.material.name or ''
+    if not material_name:
+        material_name = _material_name_for_job(planning_job, recipe)
+    key = normalize_material_name(material_name)
+    if not key:
+        return None
+    if materials_by_name is not None:
+        return materials_by_name.get(key)
+    return Material.objects.filter(name__iexact=material_name.strip()).first()
 
 
-def build_job_demand_row(planning_job, job_card=None, raw_skus_by_key=None):
+def build_job_demand_row(
+    planning_job,
+    job_card=None,
+    *,
+    raw_skus_by_key=None,
+    materials_by_name=None,
+    recipe_by_sku=None,
+):
     if job_card is None:
         job_card = _get_job_card(planning_job)
 
-    demand = compute_job_demand_sheets(planning_job, job_card)
-    raw_sku, material, purchase_sheet_size = resolve_raw_material_sku_for_planning_job(planning_job, job_card)
-    if raw_sku is None and raw_skus_by_key and material and purchase_sheet_size:
-        raw_sku = raw_skus_by_key.get((material.pk, purchase_sheet_size.lower()))
+    recipe = _recipe_for_job(planning_job, recipe_by_sku or {})
+    activity = _job_card_activity(job_card)
+    demand = compute_job_demand_sheets(
+        planning_job,
+        job_card,
+        recipe=recipe,
+        activity=activity,
+    )
+
+    raw_material_name = ''
+    if job_card and job_card.material_id:
+        raw_material_name = job_card.material.name or ''
+    if not raw_material_name:
+        raw_material_name = _material_name_for_job(planning_job, recipe)
+
+    material = resolve_material_for_job(
+        planning_job,
+        job_card,
+        materials_by_name=materials_by_name,
+        recipe=recipe,
+    )
+    purchase_sheet_size = _purchase_sheet_size_for_job(planning_job, recipe)
+    material_key = normalize_material_name(
+        material.name if material else raw_material_name
+    )
+    raw_sku = None
+    if material_key and purchase_sheet_size and raw_skus_by_key is not None:
+        raw_sku = raw_skus_by_key.get((material_key, purchase_sheet_size.lower()))
+
+    if raw_sku:
+        display_name = raw_sku.material.name
+        material = raw_sku.material
+    elif material:
+        display_name = material.name
+    else:
+        display_name = display_material_name(raw_material_name) or '—'
+
+    process_type = _process_type_for_job(planning_job, recipe)
+    process_labels = dict(PlanningJob.JOB_PROCESS_TYPE_CHOICES)
 
     return {
         'planning_job': planning_job,
@@ -177,10 +366,11 @@ def build_job_demand_row(planning_job, job_card=None, raw_skus_by_key=None):
         'jc_number': planning_job.jc_number,
         'status': planning_job.workflow_status,
         'status_label': planning_job.workflow_status_label,
-        'process_type': planning_job.job_process_type_display,
-        'process_label': planning_job.job_process_type_label,
-        'material_name': material.name if material else (planning_job.material_display or planning_job.material or '—'),
-        'purchase_sheet_size': purchase_sheet_size or (planning_job.purchase_sheet_size_display or '—'),
+        'process_type': process_type,
+        'process_label': process_labels.get(process_type, process_type),
+        'material_name': display_name,
+        'material_key': material_key,
+        'purchase_sheet_size': purchase_sheet_size or '—',
         'material': material,
         'raw_material_sku': raw_sku,
         'supply_chain_item': raw_sku,
@@ -207,7 +397,24 @@ def _planning_jobs_queryset(filters=None):
         .prefetch_related(
             Prefetch(
                 'job_card__productions',
-                queryset=Production.objects.filter(is_active=True),
+                queryset=Production.objects.filter(is_active=True).only(
+                    'id',
+                    'job_card_id',
+                    'entry_type',
+                    'is_active',
+                    'output_sheets',
+                    'waste_sheets',
+                    'packing_qty',
+                ),
+            ),
+            Prefetch(
+                'job_card__dispatch_set',
+                queryset=Dispatch.objects.filter(is_active=True).only(
+                    'id',
+                    'job_card_id',
+                    'is_active',
+                    'dispatch_qty',
+                ),
             ),
             'dispatch_runs',
         )
@@ -246,23 +453,98 @@ def _gap_status(gap, is_mapped):
     return 'balanced'
 
 
+def _build_recipe_by_sku(planning_jobs):
+    wanted = {(job.sku or '').strip().lower() for job in planning_jobs if (job.sku or '').strip()}
+    if not wanted:
+        return {}
+    recipe_by_sku = {}
+    for recipe in SkuRecipe.objects.order_by('-updated_at').only(
+        'sku',
+        'material',
+        'purchase_sheet_size',
+        'purchase_sheet_ups',
+        'job_process_type',
+        'ups',
+    ):
+        key = (recipe.sku or '').strip().lower()
+        if key in wanted and key not in recipe_by_sku:
+            recipe_by_sku[key] = recipe
+    return recipe_by_sku
+
+
+def _on_hand_by_sku(sku_ids):
+    result = {sku_id: 0 for sku_id in sku_ids}
+    if not sku_ids:
+        return result
+
+    rows = (
+        StockTransaction.objects
+        .filter(raw_material_sku_id__in=sku_ids)
+        .values('raw_material_sku_id')
+        .annotate(
+            opening=Sum(
+                Case(
+                    When(transaction_type='OPENING', then='sheet_qty_pcs'),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                )
+            ),
+            receiving=Sum(
+                Case(
+                    When(transaction_type='RECEIVING', then='sheet_qty_pcs'),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                )
+            ),
+            issuance=Sum(
+                Case(
+                    When(transaction_type='ISSUANCE', then='sheet_qty_pcs'),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                )
+            ),
+            adjustment=Sum(
+                Case(
+                    When(transaction_type='ADJUSTMENT', then='sheet_qty_pcs'),
+                    default=Value(0),
+                    output_field=IntegerField(),
+                )
+            ),
+        )
+    )
+    for row in rows:
+        result[row['raw_material_sku_id']] = (
+            (row['opening'] or 0)
+            + (row['receiving'] or 0)
+            - (row['issuance'] or 0)
+            + (row['adjustment'] or 0)
+        )
+    return result
+
+
 def build_demand_gap_report(filters=None):
     filters = filters or {}
-    raw_skus = RawMaterialSku.objects.select_related('material').filter(is_active=True)
-    raw_skus_by_key = {
-        (sku.material_id, normalize_purchase_sheet_size(sku.purchase_sheet_size).lower()): sku
-        for sku in raw_skus
-    }
-    on_hand_by_sku = {
-        row['item'].pk: row['closing']
-        for row in build_dashboard_data(raw_skus)
-    }
+    planning_jobs = list(_planning_jobs_queryset(filters))
+    recipe_by_sku = _build_recipe_by_sku(planning_jobs)
+    materials_by_name = _build_materials_by_name()
+
+    raw_skus = list(RawMaterialSku.objects.select_related('material').filter(is_active=True))
+    raw_skus_by_key = {}
+    for sku in raw_skus:
+        material_key = normalize_material_name(sku.material.name)
+        size_key = normalize_purchase_sheet_size(sku.purchase_sheet_size).lower()
+        if material_key and size_key:
+            # Prefer first SKU; later duplicates with same normalized key are ignored
+            raw_skus_by_key.setdefault((material_key, size_key), sku)
+    on_hand_by_sku = _on_hand_by_sku([sku.pk for sku in raw_skus])
 
     job_rows = []
-    for planning_job in _planning_jobs_queryset(filters):
+    for planning_job in planning_jobs:
         row = build_job_demand_row(
             planning_job,
             raw_skus_by_key=raw_skus_by_key,
+            materials_by_name=materials_by_name,
+            recipe_by_sku=recipe_by_sku,
         )
         if row['is_incomplete'] or row['job_demand_sheets'] is None:
             continue
@@ -306,29 +588,33 @@ def build_demand_gap_report(filters=None):
     for row in job_rows:
         demand = int(row['job_demand_sheets'] or 0)
         planning_full = int(row['purchase_sheets_planning'] or 0)
+        size_key = normalize_purchase_sheet_size(row.get('purchase_sheet_size')).lower()
+        material_key = row.get('material_key') or normalize_material_name(row.get('material_name'))
         if row['raw_material_sku']:
-            bucket_key = row['raw_material_sku'].pk
-        elif row['material'] and row.get('purchase_sheet_size') and row['purchase_sheet_size'] != '—':
-            bucket_key = ('unmapped', row['material'].pk, row['purchase_sheet_size'].lower())
+            bucket_key = ('sku', row['raw_material_sku'].pk)
+        elif material_key and size_key and size_key != '—':
+            bucket_key = ('unmapped', material_key, size_key)
         else:
             bucket_key = None
 
-        if bucket_key is None or (isinstance(bucket_key, tuple) and bucket_key[0] == 'unmapped'):
-            if isinstance(bucket_key, tuple):
-                partial = material_buckets[bucket_key]
-                if partial['material'] is None:
-                    partial['material'] = row['material']
-                    partial['material_name'] = row['material_name']
-                    partial['purchase_sheet_size'] = row['purchase_sheet_size']
-                bucket = partial
-            else:
-                bucket = unmapped_bucket
+        if bucket_key is None:
+            bucket = unmapped_bucket
+        elif bucket_key[0] == 'unmapped':
+            bucket = material_buckets[bucket_key]
+            if bucket['material'] is None:
+                bucket['material'] = row['material']
+                bucket['material_name'] = row['material_name']
+                bucket['purchase_sheet_size'] = size_key or row['purchase_sheet_size']
         else:
             bucket = material_buckets[bucket_key]
             if bucket['material'] is None:
                 bucket['material'] = row['material']
                 bucket['material_name'] = row['material_name']
-                bucket['purchase_sheet_size'] = row['purchase_sheet_size']
+                bucket['purchase_sheet_size'] = (
+                    normalize_purchase_sheet_size(row['raw_material_sku'].purchase_sheet_size)
+                    or size_key
+                    or row['purchase_sheet_size']
+                )
                 bucket['raw_material_sku'] = row['raw_material_sku']
                 bucket['supply_chain_item'] = row['raw_material_sku']
                 bucket['is_mapped'] = True

@@ -21,10 +21,6 @@ def resolve_raw_material_sku(material, purchase_sheet_size, *, active_only=True)
     if active_only:
         qs = qs.filter(is_active=True)
 
-    exact = qs.filter(purchase_sheet_size__iexact=normalized_size).select_related('material').first()
-    if exact:
-        return exact
-
     for candidate in qs.select_related('material'):
         if normalize_purchase_sheet_size(candidate.purchase_sheet_size).lower() == normalized_size.lower():
             return candidate
@@ -110,10 +106,11 @@ def upsert_raw_material_sku_row(row_data):
         'is_active': _parse_bool(row_data.get('is_active'), True),
     }
 
-    existing_by_pair = RawMaterialSku.objects.filter(
-        material=material,
-        purchase_sheet_size__iexact=purchase_sheet_size,
-    ).first()
+    existing_by_pair = None
+    for candidate in RawMaterialSku.objects.filter(material=material):
+        if normalize_purchase_sheet_size(candidate.purchase_sheet_size).lower() == purchase_sheet_size.lower():
+            existing_by_pair = candidate
+            break
     existing_by_sku = RawMaterialSku.objects.filter(sku__iexact=sku).first()
 
     if existing_by_sku and existing_by_pair and existing_by_sku.pk != existing_by_pair.pk:

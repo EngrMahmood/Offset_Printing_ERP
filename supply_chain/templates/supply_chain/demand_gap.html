@@ -172,7 +172,7 @@
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {% for job in row.jobs %}
+                                            {% for job in row.jobs|slice:":40" %}
                                             <tr>
                                                 <td>{{ job.jc_number }}</td>
                                                 <td>{{ job.status_label }}</td>
@@ -187,6 +187,11 @@
                                             {% endfor %}
                                         </tbody>
                                     </table>
+                                    {% if row.job_count > 40 %}
+                                    <p class="erp-section-desc" style="margin-top:8px;">
+                                        Showing first 40 of {{ row.job_count }} jobs. Use <strong>Export Jobs</strong> for the full list.
+                                    </p>
+                                    {% endif %}
                                 </details>
                             </td>
                         </tr>
