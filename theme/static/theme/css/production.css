@@ -251,6 +251,45 @@
 .section-spaced { margin-bottom: 20px; }
 .production-wip .erp-filter-actions { display:flex; gap:8px; flex-wrap:wrap; }
 .min-w-180 { min-width: 180px; }
+
+/* Show full SKU / job name: wrap text; allow horizontal scroll if the row is still wide. */
+.production-wip .erp-records-data-pane .erp-records-table-wrap {
+    overflow-x: auto;
+    overflow-y: auto;
+}
+.production-wip .production-wip-jobs-table {
+    table-layout: auto;
+    width: 100%;
+    min-width: 1080px;
+}
+.production-wip .production-wip-jobs-table th,
+.production-wip .production-wip-jobs-table td {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: nowrap;
+    vertical-align: top;
+}
+.production-wip .production-wip-jobs-table th.col-sku,
+.production-wip .production-wip-jobs-table td.col-sku,
+.production-wip .production-wip-jobs-table th.col-job-name,
+.production-wip .production-wip-jobs-table td.col-job-name {
+    white-space: normal;
+    word-break: break-word;
+    overflow-wrap: anywhere;
+    min-width: 200px;
+    max-width: 360px;
+}
+.production-wip .production-wip-jobs-table .records-actions-cell,
+.production-wip .production-wip-jobs-table .erp-inline-form {
+    white-space: normal;
+}
+.production-wip .production-wip-jobs-table .erp-inline-form {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+}
+
 /* Dashboard filter actions */
 .production-dashboard .pd-filter-actions { display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap; }
 

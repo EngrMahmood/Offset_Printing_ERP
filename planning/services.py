@@ -1350,7 +1350,12 @@ def get_job_qc_submission_blockers(job, *, apply_recipe_sync=True):
         )
         return blockers
 
-    missing_master = _missing_required_master_fields(approved_recipe, job.job_name)
+    # Plate Set No. is warning-only (optional on SKU master); do not block QC submission.
+    missing_master = _missing_required_master_fields(
+        approved_recipe,
+        job.job_name,
+        allow_missing_plate_set_no=True,
+    )
     if missing_master:
         blockers.append(
             'Approved SKU master is incomplete: '
@@ -1363,7 +1368,9 @@ def get_job_qc_submission_blockers(job, *, apply_recipe_sync=True):
     for field_name, error_message in job.pre_submit_qc_validation_errors().items():
         if error_message in blockers:
             continue
-        if field_name in {'machine_name', 'plate_set_no', 'print_passes'}:
+        if field_name == 'plate_set_no':
+            continue
+        if field_name in {'machine_name', 'print_passes'}:
             blockers.append(
                 f'{error_message} Update these on the locked SKU master (Reopen SKU), then re-approve.'
             )
@@ -1373,8 +1380,33 @@ def get_job_qc_submission_blockers(job, *, apply_recipe_sync=True):
     return blockers
 
 
+def get_job_qc_submission_warnings(job):
+    """Non-blocking warnings before Send to QC (e.g. optional Plate Set No.)."""
+    if job.is_cut_and_pack():
+        return []
+
+    warnings = []
+    approved_recipe = job.approved_sku_recipe
+    if approved_recipe:
+        warning_fields = _warning_master_fields(approved_recipe, job.job_name)
+        if warning_fields:
+            warnings.append(
+                'SKU master is missing optional field(s): '
+                f'{", ".join(warning_fields)}. You can send to QC now; update when available.'
+            )
+    elif not str(job.effective_plate_set_no or '').strip():
+        warnings.append(
+            'Plate Set No. is not set. You can send to QC now; update when available.'
+        )
+    return warnings
+
+
 def preview_job_qc_submission_blockers(job):
     return get_job_qc_submission_blockers(job, apply_recipe_sync=False)
+
+
+def preview_job_qc_submission_warnings(job):
+    return get_job_qc_submission_warnings(job)
 
 
 def _sync_new_sku_requirement(existing_requirement, is_new):

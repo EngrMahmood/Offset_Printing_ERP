@@ -361,16 +361,50 @@ def low_priority_sku_lower_values(days=RECENT_DISPATCH_DAYS):
     )
 
 
+def combine_sku_lower_values():
+    """Lowercase SKUs where ≥2 active jobs have no printing logged (combine eligible)."""
+    from django.db.models import Count, Exists, OuterRef
+    from django.db.models.functions import Lower
+
+    from core.models import Production
+
+    printing_started = Production.objects.filter(
+        job_card__planning_job_id=OuterRef('pk'),
+        is_active=True,
+        entry_type='printing',
+    )
+    return list(
+        _active_planning_jobs_queryset()
+        .annotate(
+            sku_lower=Lower('sku'),
+            has_printing=Exists(printing_started),
+        )
+        .filter(has_printing=False)
+        .exclude(sku_lower='')
+        .values('sku_lower')
+        .annotate(job_count=Count('id'))
+        .filter(job_count__gte=2)
+        .values_list('sku_lower', flat=True)
+    )
+
+
+SKU_ALERT_FILTER_KEYS = frozenset({'duplicate', 'combine', 'low_priority', 'attention'})
+
+
 def _sku_alert_target_values(alert_key):
     alert_key = (alert_key or '').strip().lower()
-    duplicate_values = set(duplicate_sku_lower_values())
-    low_priority_values = set(low_priority_sku_lower_values())
     if alert_key == 'duplicate':
-        return duplicate_values
+        return set(duplicate_sku_lower_values())
+    if alert_key == 'combine':
+        return set(combine_sku_lower_values())
     if alert_key == 'low_priority':
-        return low_priority_values
+        return set(low_priority_sku_lower_values())
     if alert_key == 'attention':
-        return duplicate_values | low_priority_values
+        return (
+            set(duplicate_sku_lower_values())
+            | set(combine_sku_lower_values())
+            | set(low_priority_sku_lower_values())
+        )
     return set()
 
 
@@ -383,7 +417,7 @@ def job_matches_sku_alert_filter(job, alert_key):
 
 
 def filter_planning_jobs_by_sku_alert(queryset, alert_key):
-    """Filter queryset to duplicate clusters, low-priority SKUs, or both."""
+    """Filter queryset to duplicate, combine, low-priority SKUs, or all alerts."""
     from django.db.models.functions import Lower
 
     target_values = _sku_alert_target_values(alert_key)
@@ -396,6 +430,7 @@ def count_planning_jobs_by_sku_alert(queryset=None):
     qs = _active_planning_jobs_queryset() if queryset is None else queryset
     return {
         'duplicate': filter_planning_jobs_by_sku_alert(qs, 'duplicate').count(),
+        'combine': filter_planning_jobs_by_sku_alert(qs, 'combine').count(),
         'low_priority': filter_planning_jobs_by_sku_alert(qs, 'low_priority').count(),
         'attention': filter_planning_jobs_by_sku_alert(qs, 'attention').count(),
     }
@@ -433,6 +468,7 @@ def build_planning_jobs_sku_alert_filter_urls(request, *, active_key=''):
 
     return {
         'duplicate': _url_for('duplicate'),
+        'combine': _url_for('combine'),
         'low_priority': _url_for('low_priority'),
         'attention': _url_for('attention'),
         'clear': _url_for(''),

@@ -49,6 +49,17 @@
     <div class="erp-alert erp-alert-warning" style="background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">{{ qc_recipe_warning }}</div>
     {% endif %}
 
+    {% if qc_submission_warnings %}
+    <div class="erp-alert erp-alert-warning">
+        <strong>Optional — recommended before Send to QC:</strong>
+        <ul style="margin:8px 0 0 18px; padding:0;">
+            {% for item in qc_submission_warnings %}
+            <li>{{ item }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
     {% if qc_submission_blockers %}
     <div class="erp-alert erp-alert-warning">
         <strong>Before Send to QC:</strong>

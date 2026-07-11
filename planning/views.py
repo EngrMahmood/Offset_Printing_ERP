@@ -5,7 +5,7 @@ import io
 import json
 import re
 from difflib import SequenceMatcher
-from datetime import datetime
+from datetime import date, datetime
 
 
 def _build_qr_image_base64(data):
@@ -91,6 +91,7 @@ from .services import (
     get_master_data_field_diffs,
     get_job_qc_submission_blockers,
     preview_job_qc_submission_blockers,
+    preview_job_qc_submission_warnings,
     job_has_master_data_mismatch,
     job_requires_reopen_for_master_sync,
     preview_master_sync_calculations,
@@ -1207,6 +1208,7 @@ def planning_home(request):
         queryset = queryset.filter(machine_name__icontains=machine_filter)
 
     from planning.sku_duplicate_alert import (
+        SKU_ALERT_FILTER_KEYS,
         attach_sku_duplicate_alerts_to_jobs,
         build_planning_jobs_sku_alert_filter_urls,
         count_planning_jobs_by_sku_alert,
@@ -1215,9 +1217,10 @@ def planning_home(request):
     )
 
     sku_alert_counts = count_planning_jobs_by_sku_alert(queryset)
-    if sku_alert_filter in {'duplicate', 'low_priority', 'attention'}:
+    if sku_alert_filter in SKU_ALERT_FILTER_KEYS:
         queryset = filter_planning_jobs_by_sku_alert(queryset, sku_alert_filter)
 
+    jobs_list = None
     if from_date or to_date:
         queryset = queryset.select_related('job_card')
         jobs_list = list(queryset)
@@ -1233,12 +1236,102 @@ def planning_home(request):
             jobs_list = [job for job in jobs_list if job.po_approval_date_display and job.po_approval_date_display >= from_date]
         if to_date:
             jobs_list = [job for job in jobs_list if job.po_approval_date_display and job.po_approval_date_display <= to_date]
-        if sku_alert_filter in {'duplicate', 'low_priority', 'attention'}:
+        if sku_alert_filter in SKU_ALERT_FILTER_KEYS:
             jobs_list = [
                 job for job in jobs_list
                 if job_matches_sku_alert_filter(job, sku_alert_filter)
             ]
 
+    export_type = (request.GET.get('export') or '').strip().lower()
+    if export_type in {'xlsx', 'pdf'}:
+        export_columns = [
+            'jc_number', 'po_number', 'sku', 'job_name', 'sku_alert', 'active_jobs',
+            'combine_possible', 'related_jcs', 'status', 'planning_stage',
+            'machine_name', 'department', 'order_qty', 'delivery_date',
+            'po_approval_date', 'plan_date',
+        ]
+        if jobs_list is not None:
+            export_jobs = list(jobs_list[:1000])
+        else:
+            export_jobs = list(
+                queryset.select_related('job_card').order_by('sku', '-plan_date', '-id')[:1000]
+            )
+        attach_sku_duplicate_alerts_to_jobs(export_jobs)
+        # Group duplicate SKUs together so combine candidates are easy to scan.
+        export_jobs.sort(
+            key=lambda job: (
+                (job.sku or '').strip().lower(),
+                job.po_approval_date or job.plan_date or date.min,
+                job.id or 0,
+            )
+        )
+        rows = []
+        for job in export_jobs:
+            alert = getattr(job, 'sku_duplicate_alert', None) or {}
+            alert_kind = alert.get('alert_kind') or ''
+            if alert_kind == 'combine':
+                sku_alert_label = 'Duplicate SKU · Combine'
+            elif alert_kind == 'duplicate':
+                sku_alert_label = 'Duplicate SKU'
+            elif alert_kind == 'low_priority':
+                sku_alert_label = 'Low priority'
+            else:
+                sku_alert_label = ''
+            related_jcs = ''
+            if alert.get('members'):
+                related_jcs = ', '.join(
+                    member.get('jc_number') or '-'
+                    for member in alert['members']
+                    if member.get('job_id') != job.id
+                )
+            row = {
+                'id': job.id,
+                'jc_number': _summary_column_value(job, 'jc_number'),
+                'po_number': _summary_column_value(job, 'po_number'),
+                'sku': _summary_column_value(job, 'sku'),
+                'job_name': _summary_column_value(job, 'job_name'),
+                'sku_alert': sku_alert_label,
+                'active_jobs': alert.get('active_count') or '',
+                'combine_possible': 'Yes' if alert.get('combine_possible') else ('No' if alert else ''),
+                'related_jcs': related_jcs,
+                'status': _summary_column_value(job, 'status'),
+                'planning_stage': _summary_column_value(job, 'planning_stage'),
+                'machine_name': _summary_column_value(job, 'machine_name'),
+                'department': _summary_column_value(job, 'department'),
+                'order_qty': _summary_column_value(job, 'order_qty'),
+                'delivery_date': _summary_column_value(job, 'delivery_date'),
+                'po_approval_date': _summary_column_value(job, 'po_approval_date'),
+                'plan_date': _summary_column_value(job, 'plan_date'),
+            }
+            rows.append(row)
+        header_labels = {
+            **dict(SUMMARY_COLUMN_OPTIONS),
+            'sku_alert': 'SKU Alert',
+            'active_jobs': 'Active Jobs',
+            'combine_possible': 'Can Combine',
+            'related_jcs': 'Related JCs',
+        }
+        payload = {
+            'report': {'title': 'Planning Jobs'},
+            'generated_at': timezone.localtime().strftime('%Y-%m-%d %H:%M:%S'),
+            'data': rows,
+            'headers': export_columns,
+            'header_labels': header_labels,
+        }
+        if export_type == 'xlsx':
+            content = export_as_xlsx(payload)
+            response = HttpResponse(
+                content,
+                content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            )
+            response['Content-Disposition'] = 'attachment; filename="planning-jobs.xlsx"'
+            return response
+        content = export_as_pdf(payload)
+        response = HttpResponse(content, content_type='application/pdf')
+        response['Content-Disposition'] = 'attachment; filename="planning-jobs.pdf"'
+        return response
+
+    if jobs_list is not None:
         status_counts = {}
         for job in jobs_list:
             normalized_status = _normalize_status(job.status)
@@ -1356,6 +1449,11 @@ def planning_home(request):
         active_key=sku_alert_filter,
     )
 
+    filter_params = request.GET.copy()
+    filter_params.pop('page', None)
+    filter_params.pop('export', None)
+    filter_query = filter_params.urlencode()
+
     return render(
         request,
         'planning/planning_home.html',
@@ -1381,6 +1479,8 @@ def planning_home(request):
             },
             'sku_alert_counts': sku_alert_counts,
             'sku_alert_filter_urls': sku_alert_filter_urls,
+            'filter_query': filter_query,
+            'export_query': filter_query,
         },
     )
 
@@ -1729,8 +1829,10 @@ def planning_job_detail(request, job_id):
         )
 
     qc_submission_blockers = []
+    qc_submission_warnings = []
     if status_now == 'draft' and not qc_recipe_warning:
         qc_submission_blockers = preview_job_qc_submission_blockers(job)
+        qc_submission_warnings = preview_job_qc_submission_warnings(job)
 
     plate_requests = list(job.plate_requests.select_related('requested_by').order_by('-requested_at', '-created_at')[:12])
     latest_cancelled_plate = next((req for req in plate_requests if req.is_cancelled), None)
@@ -1765,6 +1867,7 @@ def planning_job_detail(request, job_id):
             'last_edited_at': job.last_edited_at,
             'qc_missing_fields': job.qc_missing_fields(),
             'qc_submission_blockers': qc_submission_blockers,
+            'qc_submission_warnings': qc_submission_warnings,
             'qc_recipe_warning': qc_recipe_warning,
             'can_print_job_card': can_print_from_job or can_print_from_card,
             'can_admin_delete': _user_is_admin(request.user),
@@ -2015,8 +2118,10 @@ def planning_job_edit(request, job_id):
     po_approval_date_display = _get_po_approval_date_for_job(job)
     master_data_diffs = get_master_data_field_diffs(job)
     qc_submission_blockers = []
+    qc_submission_warnings = []
     if job.status == 'draft' and not qc_recipe_warning:
         qc_submission_blockers = preview_job_qc_submission_blockers(job)
+        qc_submission_warnings = preview_job_qc_submission_warnings(job)
 
     return render(
         request,
@@ -2027,6 +2132,7 @@ def planning_job_edit(request, job_id):
             'recipe': active_recipe,
             'qc_recipe_warning': qc_recipe_warning,
             'qc_submission_blockers': qc_submission_blockers,
+            'qc_submission_warnings': qc_submission_warnings,
             'can_admin_delete': _user_is_admin(request.user),
             'po_approval_date_display': po_approval_date_display,
             'master_data_diffs': master_data_diffs,

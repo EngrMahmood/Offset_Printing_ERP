@@ -1346,6 +1346,49 @@ class SkuRecipeFormRolePermissionTests(TestCase):
 		self.assertNotIn('Plate Set No.', _missing_required_master_fields(recipe, allow_missing_plate_set_no=True))
 		self.assertIn('Plate Set No.', _missing_required_master_fields(recipe))
 
+	def test_plate_set_no_does_not_block_qc_submission(self):
+		from planning.models import SkuRecipe
+		from planning.services import get_job_qc_submission_blockers, get_job_qc_submission_warnings
+
+		recipe = SkuRecipe.objects.create(
+			sku='SKU-OPTIONAL-SET',
+			job_name='Optional Set Job',
+			material='Paper',
+			color_spec='4 color',
+			application='UV',
+			product_type='Label',
+			size_w_mm=100,
+			size_h_mm=100,
+			print_sheet_size='720x1020',
+			purchase_sheet_size='720x1020',
+			ups=4,
+			purchase_sheet_ups=4,
+			awc_no='AWC-1',
+			die_cutting='YES',
+			print_passes=1,
+			machine_name='GTO 1',
+			plate_set_no='',
+			master_data_status='approved',
+			is_active=True,
+		)
+		job = PlanningJob.objects.create(
+			jc_number='JC-OPTIONAL-SET',
+			po_number='PO-OPTIONAL-SET',
+			sku=recipe.sku,
+			job_name=recipe.job_name,
+			status='draft',
+			order_qty=1000,
+			wastage_sheets=10,
+			purchase_material_origin='local',
+			machine_name='GTO 1',
+			print_passes=1,
+			plate_set_no='',
+		)
+		blockers = get_job_qc_submission_blockers(job, apply_recipe_sync=False)
+		self.assertFalse(any('Plate Set' in item for item in blockers))
+		warnings = get_job_qc_submission_warnings(job)
+		self.assertTrue(any('Plate Set' in item for item in warnings))
+
 	def test_graphics_designer_cannot_edit_product_type(self):
 		from planning.forms import SkuRecipeForm
 		from planning.services import apply_sku_recipe_form_role_permissions, get_sku_recipe_form_ui_context
@@ -2101,6 +2144,94 @@ class SkuDuplicateAlertTests(TestCase):
 			.values_list('pk', flat=True)
 		)
 		self.assertEqual(dup_ids, {self.job_a.pk, self.job_b.pk})
+		combine_ids = set(
+			filter_planning_jobs_by_sku_alert(PlanningJob.objects.all(), 'combine')
+			.values_list('pk', flat=True)
+		)
+		self.assertEqual(combine_ids, {self.job_a.pk, self.job_b.pk})
 		counts = count_planning_jobs_by_sku_alert()
 		self.assertGreaterEqual(counts['duplicate'], 2)
+		self.assertGreaterEqual(counts['combine'], 2)
 		self.assertGreaterEqual(counts['attention'], 2)
+
+	def test_combine_filter_excludes_when_printing_started(self):
+		from core.models import Production
+		from planning.sku_duplicate_alert import filter_planning_jobs_by_sku_alert
+
+		self.card_a.status = 'released'
+		self.card_a.save(update_fields=['status', 'updated_at'])
+		Production.objects.create(
+			job_card=self.card_a,
+			entry_type='printing',
+			date=self.today,
+			shift='A',
+			machine=self.machine,
+			output_sheets=100,
+			is_active=True,
+		)
+		combine_ids = set(
+			filter_planning_jobs_by_sku_alert(PlanningJob.objects.all(), 'combine')
+			.values_list('pk', flat=True)
+		)
+		self.assertNotIn(self.job_a.pk, combine_ids)
+		self.assertNotIn(self.job_b.pk, combine_ids)
+		dup_ids = set(
+			filter_planning_jobs_by_sku_alert(PlanningJob.objects.all(), 'duplicate')
+			.values_list('pk', flat=True)
+		)
+		self.assertEqual(dup_ids, {self.job_a.pk, self.job_b.pk})
+
+
+class PlanningJobsQueueFilterTests(TestCase):
+	def setUp(self):
+		User = get_user_model()
+		self.user = User.objects.create_user(username='planner_queue', password='pass')
+		UserProfile.objects.get_or_create(user=self.user)
+		self.client.force_login(self.user)
+		for i in range(55):
+			PlanningJob.objects.create(
+				jc_number=f'JC-PAGE-{i:03d}',
+				po_number=f'PO-PAGE-{i:03d}',
+				sku='SKU-PAGE-DUP',
+				status='qc_approved',
+				planning_stage='jc_ready',
+			)
+
+	def test_pagination_preserves_sku_alert_filter(self):
+		response = self.client.get(reverse('planning:jobs'), {'sku_alert': 'duplicate', 'page': '2'})
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(response.context['filters']['sku_alert'], 'duplicate')
+		self.assertIn('sku_alert=duplicate', response.context['filter_query'])
+		html = response.content.decode()
+		self.assertIn('sku_alert=duplicate', html)
+		self.assertIn('Duplicate SKU · Combine', html)
+		self.assertIn('page=1', html)
+
+	def test_export_xlsx_respects_sku_alert_filter(self):
+		response = self.client.get(reverse('planning:jobs'), {'sku_alert': 'combine', 'export': 'xlsx'})
+		self.assertEqual(response.status_code, 200)
+		self.assertEqual(
+			response['Content-Type'],
+			'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+		)
+		self.assertIn('planning-jobs.xlsx', response['Content-Disposition'])
+
+	def test_export_includes_combine_alert_columns(self):
+		from io import BytesIO
+
+		from openpyxl import load_workbook
+
+		response = self.client.get(reverse('planning:jobs'), {'sku_alert': 'combine', 'export': 'xlsx'})
+		self.assertEqual(response.status_code, 200)
+		workbook = load_workbook(BytesIO(response.content))
+		sheet = workbook.active
+		headers = [cell.value for cell in next(sheet.iter_rows(min_row=4, max_row=4))]
+		self.assertIn('SKU Alert', headers)
+		self.assertIn('Can Combine', headers)
+		self.assertIn('Related JCs', headers)
+		alert_idx = headers.index('SKU Alert')
+		combine_idx = headers.index('Can Combine')
+		data_rows = list(sheet.iter_rows(min_row=5, values_only=True))
+		self.assertTrue(data_rows)
+		self.assertEqual(data_rows[0][alert_idx], 'Duplicate SKU · Combine')
+		self.assertEqual(data_rows[0][combine_idx], 'Yes')

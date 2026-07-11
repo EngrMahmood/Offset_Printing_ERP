@@ -86,18 +86,40 @@
 
     }
 
-    .dispatch-records-table td:nth-child(3),
+    .dispatch-records-page .erp-records-table-wrap {
+        overflow-x: auto;
+    }
 
-    .dispatch-records-table td:nth-child(4) {
+    .dispatch-records-page .erp-records-table-wrap .dispatch-records-table {
+        table-layout: auto;
+        min-width: 1100px;
+        width: 100%;
+    }
 
-        max-width: 180px;
-
-        overflow: hidden;
-
-        text-overflow: ellipsis;
-
+    .dispatch-records-page .erp-records-table-wrap .dispatch-records-table th,
+    .dispatch-records-page .erp-records-table-wrap .dispatch-records-table td {
+        overflow: visible;
+        text-overflow: clip;
         white-space: nowrap;
+        vertical-align: top;
+    }
 
+    .dispatch-records-page .erp-records-table-wrap .dispatch-records-table th.col-sku,
+    .dispatch-records-page .erp-records-table-wrap .dispatch-records-table td.col-sku {
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        min-width: 200px;
+        max-width: 360px;
+    }
+
+    .dispatch-records-page .erp-records-table-wrap .dispatch-records-table th.col-customer,
+    .dispatch-records-page .erp-records-table-wrap .dispatch-records-table td.col-customer {
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+        min-width: 140px;
+        max-width: 240px;
     }
 
     .dispatch-records-table .records-actions-cell .erp-actions {
@@ -192,7 +214,7 @@
 
 {% block content %}
 
-    <div class="erp-page-stack erp-records-shell">
+    <div class="erp-page-stack erp-records-shell dispatch-records-page">
 
         <section class="erp-section-shell">
 
@@ -441,7 +463,7 @@
 
                     </div>
                     </div>
-                    <div class="erp-table-scroll erp-records-table-wrap">
+                    <div class="erp-table-scroll erp-records-table-wrap" data-skip-records-fit="true">
 
                         <table class="erp-table erp-table-dense dispatch-records-table">
 
@@ -455,9 +477,9 @@
 
                                     <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Job Card</a></th>
 
-                                    <th>SKU</th>
+                                    <th class="col-sku"><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=sku&dir={% if sort == 'sku' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">SKU</a></th>
 
-                                    <th>Customer</th>
+                                    <th class="col-customer">Customer</th>
 
                                     <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=dc_no&dir={% if sort == 'dc_no' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">DC No</a></th>
 
@@ -489,9 +511,9 @@
 
                                     <td title="{{ row.job_card.job_card_no }}"><strong>{{ row.job_card.job_card_no }}</strong></td>
 
-                                    <td title="{{ row.job_card.SKU }}">{{ row.job_card.SKU|default:'-' }}</td>
+                                    <td class="col-sku" title="{{ row.job_card.SKU }}">{{ row.job_card.SKU|default:'-' }}</td>
 
-                                    <td title="{{ row.job_card.destination|default:'-' }}">{{ row.job_card.destination|default:'-' }}</td>
+                                    <td class="col-customer" title="{{ row.job_card.destination|default:'-' }}">{{ row.job_card.destination|default:'-' }}</td>
 
                                     <td>
 
