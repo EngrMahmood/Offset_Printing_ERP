@@ -138,9 +138,6 @@ class PlanningJobFinalizationForm(forms.ModelForm):
 
         status = (cleaned.get('status') or self.instance.status or '').strip().lower()
         if status in PLANNING_QC_GATE_STATUSES and not cut_and_pack:
-            if not getattr(self.instance, 'plate_set_no', '').strip():
-                self.add_error(None, 'Plate Set is required before QC approval.')
-
             qc_required_messages = {
                 'wastage_sheets': 'Wastage is required before QC approval.',
                 'purchase_material_origin': 'Purchase Material Origin is required before QC approval.',

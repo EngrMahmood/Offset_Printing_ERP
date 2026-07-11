@@ -744,6 +744,7 @@ def dispatch_records(request):
     sortable_fields = {
         'date': 'dispatch_date',
         'job_card': 'job_card__job_card_no',
+        'sku': 'job_card__SKU',
         'dc_no': 'dc_no',
         'qty': 'dispatch_qty',
         'added_by': 'created_by__username',

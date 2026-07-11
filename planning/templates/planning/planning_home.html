@@ -8,6 +8,8 @@
 {% block header_subtitle %}Queue visibility for PO intake, SKU readiness, and active planning jobs.{% endblock %}
 {% block header_actions %}
     <a href="{% url 'planning:jobs_archived' %}" class="erp-btn erp-btn-secondary">Archived</a>
+    <a href="{% url 'planning:jobs' %}{% if export_query %}?{{ export_query }}&{% else %}?{% endif %}export=xlsx" class="erp-btn erp-btn-secondary">Export Excel</a>
+    <a href="{% url 'planning:jobs' %}{% if export_query %}?{{ export_query }}&{% else %}?{% endif %}export=pdf" class="erp-btn erp-btn-secondary">Export PDF</a>
     <a href="{% url 'planning:import_sheet' %}" class="erp-btn erp-btn-primary">Import Sheet</a>
 {% endblock %}
 
@@ -159,6 +161,7 @@
             </div>
         </div>
         <form method="get" class="erp-form-grid" style="grid-template-columns:1fr 1fr auto; gap:12px; margin-bottom:12px;">
+            {% if filters.sku_alert %}<input type="hidden" name="sku_alert" value="{{ filters.sku_alert }}">{% endif %}
             <div style="display:grid; gap:8px;">
                 <input type="text" name="q" placeholder="Search JC / PO / SKU / Job" value="{{ filters.q }}">
                 <input type="text" name="machine" placeholder="Machine Name" value="{{ filters.machine }}">
@@ -202,6 +205,10 @@
             <a href="{% url 'planning:jobs' %}{{ sku_alert_filter_urls.duplicate }}"
                class="erp-btn erp-btn-secondary erp-btn-sm{% if filters.sku_alert == 'duplicate' %} is-active{% endif %}">
                 Duplicate SKU ({{ sku_alert_counts.duplicate }})
+            </a>
+            <a href="{% url 'planning:jobs' %}{{ sku_alert_filter_urls.combine }}"
+               class="erp-btn erp-btn-secondary erp-btn-sm{% if filters.sku_alert == 'combine' %} is-active{% endif %}">
+                Duplicate SKU · Combine ({{ sku_alert_counts.combine }})
             </a>
             <a href="{% url 'planning:jobs' %}{{ sku_alert_filter_urls.low_priority }}"
                class="erp-btn erp-btn-secondary erp-btn-sm{% if filters.sku_alert == 'low_priority' %} is-active{% endif %}">
@@ -340,8 +347,8 @@
         {% if jobs.has_other_pages %}
         <div class="erp-pager">
             <span style="color:#666;">Page {{ jobs.number }} of {{ jobs.paginator.num_pages }}</span>
-            {% if jobs.has_previous %}<a href="?page={{ jobs.previous_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-secondary">← Previous</a>{% endif %}
-            {% if jobs.has_next %}<a href="?page={{ jobs.next_page_number }}{% if filters.q %}&q={{ filters.q }}{% endif %}{% if filters.status %}&status={{ filters.status }}{% endif %}{% if filters.planning_stage %}&planning_stage={{ filters.planning_stage }}{% endif %}{% if filters.machine %}&machine={{ filters.machine }}{% endif %}{% if filters.from_date %}&from_date={{ filters.from_date }}{% endif %}{% if filters.to_date %}&to_date={{ filters.to_date }}{% endif %}" class="erp-btn erp-btn-primary">Next →</a>{% endif %}
+            {% if jobs.has_previous %}<a href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ jobs.previous_page_number }}" class="erp-btn erp-btn-secondary">← Previous</a>{% endif %}
+            {% if jobs.has_next %}<a href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ jobs.next_page_number }}" class="erp-btn erp-btn-primary">Next →</a>{% endif %}
         </div>
         {% endif %}
     </section>

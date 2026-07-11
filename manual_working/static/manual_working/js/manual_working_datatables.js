@@ -11,13 +11,16 @@ document.addEventListener('DOMContentLoaded', function () {
 
     table.find('tbody td:first-child').addClass('manual-working-sticky-col');
 
+    // Server already paginates; DataTables operates on the current page only.
+    // Full filtered Excel/CSV is available via the server Export buttons.
     table.DataTable({
         scrollX: false,
         scrollCollapse: false,
         autoWidth: false,
-        pageLength: 25,
-        dom: 'Bfrtip',
-        buttons: ['copyHtml5', 'csvHtml5', 'excelHtml5'],
+        paging: false,
+        deferRender: true,
+        info: true,
+        dom: 'frtip',
         columnDefs: [
             { targets: '_all', defaultContent: '' },
             { targets: 0, width: '120px', className: 'manual-working-sticky-col' },
@@ -31,7 +34,6 @@ document.addEventListener('DOMContentLoaded', function () {
                 return;
             }
 
-            wrapper.find('.dt-buttons').appendTo(topBar);
             wrapper.find('.dataTables_filter').appendTo(topBar);
             wrapper.find('.dataTables_info').appendTo(bottomBar);
             wrapper.find('.dataTables_paginate').appendTo(bottomBar);

@@ -11,11 +11,16 @@
     <link rel="stylesheet" href="{% static 'manual_working/css/manual_working.css' %}?v=3">
 {% endblock %}
 
+{% block header_actions %}
+    <a href="{% url 'manual_working:manual_working_list' %}{% if export_query %}?{{ export_query }}&{% else %}?{% endif %}export=xlsx" class="erp-btn erp-btn-primary">Export Excel (all filtered)</a>
+    <a href="{% url 'manual_working:manual_working_list' %}{% if export_query %}?{{ export_query }}&{% else %}?{% endif %}export=csv" class="erp-btn erp-btn-secondary">Export CSV</a>
+{% endblock %}
+
 {% block content %}
     <div class="manual-working-page">
     <div class="erp-section-divider">
         Manual Working Transition Board
-        <span class="erp-badge is-count">{{ rows|length }}</span>
+        <span class="erp-badge is-count">{{ page_obj.paginator.count }}</span>
     </div>
 
     <form method="get" class="erp-form-grid" style="gap:12px; margin-bottom:16px;">
@@ -89,6 +94,7 @@
         <div class="erp-form-actions" style="grid-column: 1 / -1; justify-content:flex-start; gap:12px;">
             <button type="submit" class="erp-btn erp-btn-primary">Apply filters</button>
             <a href="?" class="erp-btn erp-btn-secondary">Reset</a>
+            <a href="{% url 'manual_working:manual_working_list' %}{% if export_query %}?{{ export_query }}&{% else %}?{% endif %}export=xlsx" class="erp-btn erp-btn-secondary">Export Excel (all filtered)</a>
         </div>
     </form>
 
@@ -290,6 +296,17 @@
         </div>
         <div class="manual-working-dt-bottom"></div>
     </div>
+    {% if page_obj.has_other_pages %}
+    <div class="erp-pager" style="margin-top:12px; display:flex; gap:8px; align-items:center;">
+        <span style="color:#666;">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+        {% if page_obj.has_previous %}
+        <a href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary">← Previous</a>
+        {% endif %}
+        {% if page_obj.has_next %}
+        <a href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-primary">Next →</a>
+        {% endif %}
+    </div>
+    {% endif %}
     </div>
 {% endblock %}
 
@@ -299,5 +316,5 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <script src="https://cdn.datatables.net/buttons/2.4.1/js/dataTables.buttons.min.js"></script>
     <script src="https://cdn.datatables.net/buttons/2.4.1/js/buttons.html5.min.js"></script>
-    <script src="{% static 'manual_working/js/manual_working_datatables.js' %}?v=3"></script>
+    <script src="{% static 'manual_working/js/manual_working_datatables.js' %}?v=5"></script>
 {% endblock %}

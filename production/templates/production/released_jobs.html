@@ -147,11 +147,11 @@
         {% if page_obj.has_other_pages %}
         <div class="erp-pagination" style="margin-top:12px;">
             {% if page_obj.has_previous %}
-            <a class="erp-btn erp-btn-secondary" href="?page={{ page_obj.previous_page_number }}&q={{ q|urlencode }}&plate_status={{ plate_status }}">Previous</a>
+            <a class="erp-btn erp-btn-secondary" href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ page_obj.previous_page_number }}">Previous</a>
             {% endif %}
             <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
             {% if page_obj.has_next %}
-            <a class="erp-btn erp-btn-secondary" href="?page={{ page_obj.next_page_number }}&q={{ q|urlencode }}&plate_status={{ plate_status }}">Next</a>
+            <a class="erp-btn erp-btn-secondary" href="?{% if filter_query %}{{ filter_query }}&{% endif %}page={{ page_obj.next_page_number }}">Next</a>
             {% endif %}
         </div>
         {% endif %}

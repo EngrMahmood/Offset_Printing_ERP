@@ -631,8 +631,6 @@ class PlanningJob(models.Model):
             if not str(self.purchase_material_origin or '').strip():
                 errors['purchase_material_origin'] = 'Purchase Material Origin is required before QC approval.'
             return errors
-        if not self.effective_plate_set_no:
-            errors['plate_set_no'] = 'Plate Set is required before QC approval.'
         if self.wastage_sheets is None:
             errors['wastage_sheets'] = 'Wastage is required before QC approval.'
         if not self.effective_machine_name:

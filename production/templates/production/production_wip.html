@@ -15,8 +15,6 @@
 
 {% block content %}
 <div class="erp-page-stack erp-records-shell production-wip">
-    {# top action links are provided by the global header_actions; remove duplicate actions here #}
-
     <section class="erp-section-shell">
         <div class="erp-card-header">
             <div class="erp-card-title-stack">
@@ -53,44 +51,6 @@
             </form>
         </div>
         {% endif %}
-
-        <div class="erp-section-shell section-spaced">
-            <div class="erp-card-header">
-                <div class="erp-card-title-stack">
-                    <div class="erp-eyebrow">Active Status Options</div>
-                    <h3 class="erp-section-title">WIP Status Definitions</h3>
-                </div>
-                {% if user.profile.role == 'admin' %}
-                <div class="erp-card-action">
-                    <button type="button" class="erp-btn erp-btn-secondary wip-toggle-status-panel">
-                        <i class="fas fa-plus"></i> New Status
-                    </button>
-                </div>
-                {% endif %}
-            </div>
-            <div class="erp-table-scroll erp-records-table-wrap">
-                <table class="erp-table erp-table-dense">
-                    <thead>
-                        <tr>
-                            <th>Status</th>
-                            <th>Created By</th>
-                            <th>Created At</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for status in statuses %}
-                        <tr>
-                            <td>{{ status.name }}</td>
-                            <td>{{ status.created_by.username|default:'System' }}</td>
-                            <td>{{ status.created_at|date:'d M Y H:i' }}</td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="3" class="erp-table-meta-text">No WIP status labels defined yet.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
 
         <div class="erp-records-layout">
             <aside class="erp-filter-sidebar erp-records-filter-sidebar is-collapsible" data-collapse-key="productionWipFilterCollapsed">
@@ -129,14 +89,14 @@
                     <p class="erp-table-meta-text">Showing {{ job_cards|length }} jobs released to production.</p>
                 </div>
                 </div>
-                <div class="erp-table-scroll erp-records-table-wrap">
-                    <table class="erp-table erp-table-dense production-records-table">
+                <div class="erp-table-scroll erp-records-table-wrap" data-skip-records-fit="true">
+                    <table class="erp-table erp-table-dense production-records-table production-wip-jobs-table">
                         <thead>
                             <tr>
                                 <th>Job Card</th>
                                 <th>PO</th>
-                                <th>SKU</th>
-                                <th>Job Name</th>
+                                <th class="col-sku">SKU</th>
+                                <th class="col-job-name">Job Name</th>
                                 <th>Machine</th>
                                 <th>Order Qty</th>
                                 <th>Production Status</th>
@@ -149,13 +109,13 @@
                             <tr>
                                 <td>{{ job.job_card_no }}</td>
                                 <td>{{ job.PO_No|default:'-' }}</td>
-                                <td>{{ job.SKU }}</td>
-                                <td>{{ job.planning_job.job_name|default:'-' }}</td>
+                                <td class="col-sku" title="{{ job.SKU }}">{{ job.SKU }}</td>
+                                <td class="col-job-name" title="{{ job.planning_job.job_name|default:'-' }}">{{ job.planning_job.job_name|default:'-' }}</td>
                                 <td>{{ job.machine_name_display|default:'-' }}</td>
                                 <td>{{ job.order_qty }}</td>
                                 <td>{{ job.workflow_status_label }}</td>
                                 <td>{{ job.wip_status_name }}</td>
-                                <td>
+                                <td class="records-actions-cell">
                                     <form method="post" action="{% url 'production_wip' %}" class="erp-inline-form">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="set_job_status">
