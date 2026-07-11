@@ -206,7 +206,6 @@ JOB_CARD_PLANNING_REQUIRED_FIELDS = (
     ('po_date', 'PO Received Date'),
     ('total_sheet_quantity', 'Total Sheet Quantity'),
     ('total_colors', 'Number of Colors'),
-    ('plate_set_no', 'Plate Set'),
     ('wastage', 'Wastage'),
     ('machine_name', 'Machine Name'),
 )

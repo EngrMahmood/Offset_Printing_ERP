@@ -665,16 +665,11 @@
     }
 
     function promptReleasePlateSetNo(form, existingPlateSetNo, jobCardNo) {
-        var plateSetNo = prompt('Enter Plate Set No for ' + jobCardNo + ':', existingPlateSetNo || '');
+        var plateSetNo = prompt('Enter Plate Set No for ' + jobCardNo + ' (optional):', existingPlateSetNo || '');
         if (plateSetNo === null) {
             return false;
         }
-        plateSetNo = plateSetNo.trim();
-        if (!plateSetNo) {
-            alert('Plate Set No is required to release this job.');
-            return false;
-        }
-        form.plate_set_no.value = plateSetNo;
+        form.plate_set_no.value = plateSetNo.trim();
         return true;
     }
 

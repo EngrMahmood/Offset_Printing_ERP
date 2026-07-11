@@ -7,6 +7,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from .jc_numbering import allocate_next_jc_number
+from .jobcard_service import execute_job_card_action
 from .models import DeliveryLocation, JobCard, Machine, Production, Dispatch, SequenceCounter
 from .services import sync_delivery_locations_from_planning
 from .views import _dispatch_remaining_badge
@@ -271,6 +272,33 @@ class DispatchFeatureTests(TestCase):
         self.assertEqual(partial['badge_class'], 'erp-badge-pending')
         self.assertEqual(not_started['label'], 'Not dispatched')
         self.assertEqual(not_started['badge_class'], 'erp-badge-draft')
+
+
+class JobCardPlanningValidationTests(TestCase):
+    def setUp(self):
+        self.machine = Machine.objects.create(name='Validation Test Machine')
+
+    def test_plate_set_no_is_optional_for_planning_approval(self):
+        job_card = JobCard.objects.create(
+            job_card_no='JC-PLATE-OPTIONAL-001',
+            SKU='SKU-OPTIONAL-PLATE',
+            order_qty=100,
+            ups=10,
+            is_print_job=True,
+            total_impressions_required=100,
+            status='draft',
+            po_date=date(2026, 1, 1),
+            total_sheet_quantity=10,
+            total_colors=4,
+            wastage=0,
+            machine_name=self.machine,
+            plate_set_no='',
+        )
+
+        self.assertNotIn('Plate Set', job_card.planning_missing_fields())
+        execute_job_card_action(job_card, 'approve_planning', actor=None)
+        job_card.refresh_from_db()
+        self.assertEqual(job_card.workflow_status, 'planning_approved')
 
 
 class DeliveryLocationSyncTests(TestCase):
