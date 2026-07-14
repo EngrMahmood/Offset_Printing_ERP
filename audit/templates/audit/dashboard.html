@@ -1,0 +1,426 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}Operational Audit & Pending Work — Offset ERP{% endblock %}
+
+{% block header_title %}Operational Audit & Pending Work{% endblock %}
+{% block header_subtitle %}Identify missing logs and monitor outstanding production jobs process-wise{% endblock %}
+
+{% block header_actions %}
+<div class="flex gap-2">
+    <a href="{% url 'audit:export_excel' %}" class="erp-btn erp-btn-success"><i class="fas fa-file-excel"></i> Export Excel</a>
+    <a href="{% url 'audit:export_pdf' %}" class="erp-btn erp-btn-danger"><i class="fas fa-file-pdf"></i> Download PDF</a>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <!-- TAB STRIP -->
+    <div class="erp-tab-strip mb-4">
+        <a href="?tab=audit{% if q %}&q={{ q }}{% endif %}" class="erp-tab-button {% if active_tab == 'audit' %}is-active{% endif %}">
+            <i class="fas fa-search-dollar mr-1"></i> Audit Portal (Missing Logs)
+            {% if audit.total_gaps_count > 0 %}
+                <span class="ml-1.5 px-1.5 py-0.2 bg-red-500 text-white rounded-full text-[9px] font-black animate-pulse">{{ audit.total_gaps_count }}</span>
+            {% endif %}
+        </a>
+        <a href="?tab=pending{% if q %}&q={{ q }}{% endif %}" class="erp-tab-button {% if active_tab == 'pending' %}is-active{% endif %}">
+            <i class="fas fa-stream mr-1"></i> Process-Wise Pending Work
+        </a>
+    </div>
+
+    <!-- TAB 1: AUDIT PORTAL -->
+    {% if active_tab == 'audit' %}
+    <div class="space-y-6">
+        <!-- Audit KPI Summary -->
+        <div class="erp-kpi-grid">
+            <div class="erp-kpi-card bg-gradient-to-br from-white to-amber-50/30 border-amber-200">
+                <div class="erp-kpi-row">
+                    <div>
+                        <div class="erp-kpi-label">Pre-Press Gaps</div>
+                        <div class="erp-kpi-value text-amber-800">{{ audit.pre_press|length }}</div>
+                    </div>
+                    <div class="erp-kpi-icon bg-amber-100 text-amber-700"><i class="fas fa-pen-nib"></i></div>
+                </div>
+            </div>
+            <div class="erp-kpi-card bg-gradient-to-br from-white to-rose-50/30 border-rose-200">
+                <div class="erp-kpi-row">
+                    <div>
+                        <div class="erp-kpi-label">Press Gaps</div>
+                        <div class="erp-kpi-value text-rose-800">{{ audit.press|length }}</div>
+                    </div>
+                    <div class="erp-kpi-icon bg-rose-100 text-rose-700"><i class="fas fa-print"></i></div>
+                </div>
+            </div>
+            <div class="erp-kpi-card bg-gradient-to-br from-white to-purple-50/30 border-purple-200">
+                <div class="erp-kpi-row">
+                    <div>
+                        <div class="erp-kpi-label">Post-Press Gaps</div>
+                        <div class="erp-kpi-value text-purple-800">{{ audit.post_press|length }}</div>
+                    </div>
+                    <div class="erp-kpi-icon bg-purple-100 text-purple-700"><i class="fas fa-box-open"></i></div>
+                </div>
+            </div>
+            <div class="erp-kpi-card bg-gradient-to-br from-white to-blue-50/30 border-blue-200">
+                <div class="erp-kpi-row">
+                    <div>
+                        <div class="erp-kpi-label">QC & Dispatch Gaps</div>
+                        <div class="erp-kpi-value text-blue-800">
+                            {% with qc_len=audit.qc|length disp_len=audit.dispatch|length %}
+                                {{ qc_len|add:disp_len }}
+                            {% endwith %}
+                        </div>
+                    </div>
+                    <div class="erp-kpi-icon bg-blue-100 text-blue-700"><i class="fas fa-clipboard-list"></i></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GAP CATEGORIES -->
+        <div class="grid grid-cols-1 gap-6">
+            <!-- Press/Printing Gaps -->
+            <div class="erp-card bg-white">
+                <h3 class="font-bold text-slate-800 text-sm mb-3 pb-2 border-b border-rose-100 flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
+                    Press & Printing Team Audit Gaps ({{ audit.press|length }})
+                </h3>
+                <div class="erp-table-wrap">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 15%;">Job Card No</th>
+                                <th style="width: 20%;">SKU</th>
+                                <th style="width: 45%;">Audit Flag / Missing Entry Details</th>
+                                <th style="width: 12%;">Target Machine</th>
+                                <th style="width: 8%; text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in audit.press %}
+                            <tr class="{% if item.gap_type == 'critical' %}bg-rose-50/30 hover:bg-rose-50{% endif %}">
+                                <td class="font-bold text-slate-700">{{ item.job_card_no }}</td>
+                                <td class="text-xs">{{ item.sku }}</td>
+                                <td class="text-xs">
+                                    {% if item.gap_type == 'critical' %}
+                                        <span class="inline-block bg-rose-100 text-rose-800 border border-rose-200 rounded px-1.5 py-0.5 text-[9px] font-black uppercase tracking-wider mr-1"><i class="fas fa-exclamation-triangle"></i> Critical</span>
+                                    {% elif item.gap_type == 'warning' %}
+                                        <span class="inline-block bg-amber-100 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wider mr-1">Missing Entry</span>
+                                    {% else %}
+                                        <span class="inline-block bg-blue-50 text-blue-700 border border-blue-100 rounded px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-wider mr-1">Check Info</span>
+                                    {% endif %}
+                                    <span class="text-slate-600 font-medium">{{ item.gaps }}</span>
+                                </td>
+                                <td class="text-xs text-center">{{ item.machine }}</td>
+                                <td class="text-center">
+                                    <a href="{% url 'printing_production_entry' %}" class="erp-btn erp-btn-secondary text-[9px] py-0.5"><i class="fas fa-plus"></i> Log Print</a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-6 text-slate-400 text-xs"><i class="fas fa-check-circle text-emerald-500 mr-1"></i> No Press audit discrepancies detected.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Post-Press Gaps -->
+            <div class="erp-card bg-white">
+                <h3 class="font-bold text-slate-800 text-sm mb-3 pb-2 border-b border-purple-100 flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-purple-500"></span>
+                    Post-Press & Packing Team Audit Gaps ({{ audit.post_press|length }})
+                </h3>
+                <div class="erp-table-wrap">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 15%;">Job Card No</th>
+                                <th style="width: 20%;">SKU</th>
+                                <th style="width: 45%;">Audit Flag / Missing Entry Details</th>
+                                <th style="width: 12%;">Target Machine</th>
+                                <th style="width: 8%; text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in audit.post_press %}
+                            <tr>
+                                <td class="font-bold text-slate-700">{{ item.job_card_no }}</td>
+                                <td class="text-xs">{{ item.sku }}</td>
+                                <td class="text-xs text-slate-600 font-medium">{{ item.gaps }}</td>
+                                <td class="text-xs text-center">{{ item.machine }}</td>
+                                <td class="text-center">
+                                    <a href="{% url 'packing_production_entry' %}" class="erp-btn erp-btn-secondary text-[9px] py-0.5"><i class="fas fa-plus"></i> Log Packing</a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-6 text-slate-400 text-xs"><i class="fas fa-check-circle text-emerald-500 mr-1"></i> No Post-Press audit discrepancies detected.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Pre-Press Gaps -->
+            <div class="erp-card bg-white">
+                <h3 class="font-bold text-slate-800 text-sm mb-3 pb-2 border-b border-amber-100 flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-amber-500"></span>
+                    Pre-Press & Graphics Team Audit Gaps ({{ audit.pre_press|length }})
+                </h3>
+                <div class="erp-table-wrap">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th style="width: 15%;">Job Card No</th>
+                                <th style="width: 20%;">SKU</th>
+                                <th style="width: 45%;">Audit Flag / Missing Setup Details</th>
+                                <th style="width: 12%;">Target Machine</th>
+                                <th style="width: 8%; text-align: center;">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in audit.pre_press %}
+                            <tr>
+                                <td class="font-bold text-slate-700">{{ item.job_card_no }}</td>
+                                <td class="text-xs">{{ item.sku }}</td>
+                                <td class="text-xs text-slate-600 font-medium">{{ item.gaps }}</td>
+                                <td class="text-xs text-center">{{ item.machine }}</td>
+                                <td class="text-center">
+                                    <a href="{% url 'planning:job_edit' item.job_card_id %}" class="erp-btn erp-btn-secondary text-[9px] py-0.5"><i class="fas fa-edit"></i> Edit JC</a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="5" class="text-center py-6 text-slate-400 text-xs"><i class="fas fa-check-circle text-emerald-500 mr-1"></i> No Pre-Press setup gaps detected.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- QC & Dispatch Gaps -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                <!-- QC -->
+                <div class="erp-card bg-white">
+                    <h3 class="font-bold text-slate-800 text-sm mb-3 pb-2 border-b border-blue-100 flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span>
+                        QC Team Gaps ({{ audit.qc|length }})
+                    </h3>
+                    <div class="erp-table-wrap">
+                        <table class="erp-table">
+                            <thead>
+                                <tr>
+                                    <th>Job Card No</th>
+                                    <th>SKU</th>
+                                    <th style="text-align: center;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in audit.qc %}
+                                <tr>
+                                    <td class="font-bold text-slate-700 text-xs">{{ item.job_card_no }}</td>
+                                    <td class="text-[11px]">{{ item.sku }}</td>
+                                    <td class="text-center">
+                                        <a href="{% url 'qc:approval_queue' %}" class="erp-btn erp-btn-secondary text-[9px] py-0.5">QC Queue</a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="3" class="text-center py-6 text-slate-400 text-xs"><i class="fas fa-check-circle text-emerald-500 mr-1"></i> No jobs pending QC.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                <!-- Dispatch -->
+                <div class="erp-card bg-white">
+                    <h3 class="font-bold text-slate-800 text-sm mb-3 pb-2 border-b border-indigo-100 flex items-center gap-2">
+                        <span class="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>
+                        Dispatch Team Gaps ({{ audit.dispatch|length }})
+                    </h3>
+                    <div class="erp-table-wrap">
+                        <table class="erp-table">
+                            <thead>
+                                <tr>
+                                    <th>Job Card No</th>
+                                    <th>SKU</th>
+                                    <th>Gap Description</th>
+                                    <th style="text-align: center;">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in audit.dispatch %}
+                                <tr>
+                                    <td class="font-bold text-slate-700 text-xs">{{ item.job_card_no }}</td>
+                                    <td class="text-[11px]">{{ item.sku }}</td>
+                                    <td class="text-[10px] text-slate-600">{{ item.gaps }}</td>
+                                    <td class="text-center">
+                                        <a href="{% url 'dispatch_entry' %}" class="erp-btn erp-btn-secondary text-[9px] py-0.5">Log Dispatch</a>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="4" class="text-center py-6 text-slate-400 text-xs"><i class="fas fa-check-circle text-emerald-500 mr-1"></i> No dispatch discrepancies.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- TAB 2: PROCESS-WISE PENDING WORK -->
+    {% if active_tab == 'pending' %}
+    <div class="space-y-6">
+        <!-- Search bar -->
+        <form method="get" class="erp-filter-bar flex gap-3 max-w-md">
+            <input type="hidden" name="tab" value="pending">
+            <div class="flex-1">
+                <input type="text" name="q" value="{{ q }}" class="erp-input text-xs" placeholder="Search by Job Card, SKU, customer...">
+            </div>
+            <button type="submit" class="erp-btn erp-btn-primary px-4">Search</button>
+            {% if q %}
+                <a href="?tab=pending" class="erp-btn erp-btn-secondary px-3"><i class="fas fa-redo"></i></a>
+            {% endif %}
+        </form>
+
+        <div class="grid grid-cols-1 xl:grid-cols-3 gap-6">
+            <!-- COLUMN 1: PRE-PRESS -->
+            <div class="erp-card bg-white p-0">
+                <div class="p-4 border-b border-slate-100 bg-amber-50/20">
+                    <h3 class="font-bold text-slate-800 text-sm flex justify-between items-center">
+                        <span><i class="fas fa-pen-nib text-amber-500 mr-1"></i> 1. Pre-Press (Plates)</span>
+                        <span class="bg-amber-100 text-amber-800 font-bold px-2 py-0.5 rounded text-[10px]">{{ pending.pre_press|length }} Jobs</span>
+                    </h3>
+                </div>
+                <div class="p-3 space-y-3 max-h-[600px] overflow-y-auto">
+                    {% for item in pending.pre_press %}
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-lg p-3 hover:shadow-sm transition">
+                        <div class="flex justify-between items-start gap-2">
+                            <div>
+                                <span class="font-bold text-slate-800 text-xs block">{{ item.job_card.job_card_no }}</span>
+                                <span class="text-[10px] text-slate-400">SKU: {{ item.job_card.SKU }}</span>
+                            </div>
+                            <span class="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">
+                                {{ item.wip_status }}
+                            </span>
+                        </div>
+                        <div class="text-[11px] text-slate-600 mt-2 font-medium">
+                            Job: {{ item.job_card.planning_job.job_name|default:"-" }}
+                        </div>
+                        <div class="mt-2.5 pt-2 border-t border-slate-200/50 flex justify-between items-center text-xs">
+                            <span class="text-slate-400 text-[10px]">Plate Status:</span>
+                            <span class="font-bold {% if item.plate_status == 'No Request' %}text-rose-600{% else %}text-amber-600{% endif %}">
+                                {{ item.plate_status }}
+                            </span>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-10 text-slate-400 text-xs">No pending pre-press work.</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- COLUMN 2: PRESS (PRINTING) -->
+            <div class="erp-card bg-white p-0">
+                <div class="p-4 border-b border-slate-100 bg-emerald-50/20">
+                    <h3 class="font-bold text-slate-800 text-sm flex justify-between items-center">
+                        <span><i class="fas fa-print text-emerald-500 mr-1"></i> 2. Press (Printing)</span>
+                        <span class="bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded text-[10px]">{{ pending.press|length }} Jobs</span>
+                    </h3>
+                </div>
+                <div class="p-3 space-y-3 max-h-[600px] overflow-y-auto">
+                    {% for item in pending.press %}
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-lg p-3 hover:shadow-sm transition">
+                        <div class="flex justify-between items-start gap-2">
+                            <div>
+                                <span class="font-bold text-slate-800 text-xs block">{{ item.job_card.job_card_no }}</span>
+                                <span class="text-[10px] text-slate-400">SKU: {{ item.job_card.SKU }}</span>
+                            </div>
+                            <span class="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">
+                                {{ item.wip_status }}
+                            </span>
+                        </div>
+                        <div class="text-[11px] text-slate-600 mt-2 font-medium">
+                            Job: {{ item.job_card.planning_job.job_name|default:"-" }}
+                        </div>
+                        
+                        <!-- Progress bar -->
+                        <div class="mt-3 space-y-1">
+                            <div class="flex justify-between text-[10px] text-slate-400 font-bold">
+                                <span>Printed: {{ item.printed_sheets }} / {{ item.sheets_required }}</span>
+                                <span>{{ item.progress }}%</span>
+                            </div>
+                            <div class="w-100 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div class="bg-emerald-500 h-1.5 rounded-full" style="width: {{ item.progress }}%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-2.5 pt-2 border-t border-slate-200/50 flex justify-between items-center text-xs">
+                            <span class="text-slate-400 text-[10px]">Outstanding:</span>
+                            <span class="font-bold text-emerald-800">{{ item.balance }} Sheets</span>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-10 text-slate-400 text-xs">No pending press work.</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- COLUMN 3: POST-PRESS -->
+            <div class="erp-card bg-white p-0">
+                <div class="p-4 border-b border-slate-100 bg-purple-50/20">
+                    <h3 class="font-bold text-slate-800 text-sm flex justify-between items-center">
+                        <span><i class="fas fa-box-open text-purple-500 mr-1"></i> 3. Post-Press (Packing)</span>
+                        <span class="bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded text-[10px]">{{ pending.post_press|length }} Jobs</span>
+                    </h3>
+                </div>
+                <div class="p-3 space-y-3 max-h-[600px] overflow-y-auto">
+                    {% for item in pending.post_press %}
+                    <div class="bg-slate-50 border border-slate-200/80 rounded-lg p-3 hover:shadow-sm transition">
+                        <div class="flex justify-between items-start gap-2">
+                            <div>
+                                <span class="font-bold text-slate-800 text-xs block">{{ item.job_card.job_card_no }}</span>
+                                <span class="text-[10px] text-slate-400">SKU: {{ item.job_card.SKU }}</span>
+                            </div>
+                            <span class="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-black uppercase tracking-wider">
+                                {{ item.wip_status }}
+                            </span>
+                        </div>
+                        <div class="text-[11px] text-slate-600 mt-2 font-medium">
+                            Job: {{ item.job_card.planning_job.job_name|default:"-" }}
+                        </div>
+
+                        <!-- Progress bar -->
+                        <div class="mt-3 space-y-1">
+                            <div class="flex justify-between text-[10px] text-slate-400 font-bold">
+                                <span>Packed: {{ item.packed_qty }} / {{ item.order_qty }}</span>
+                                <span>{{ item.progress }}%</span>
+                            </div>
+                            <div class="w-100 bg-slate-200 rounded-full h-1.5 overflow-hidden">
+                                <div class="bg-purple-500 h-1.5 rounded-full" style="width: {{ item.progress }}%"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="mt-2.5 pt-2 border-t border-slate-200/50 flex justify-between items-center text-xs">
+                            <span class="text-slate-400 text-[10px]">Outstanding:</span>
+                            <span class="font-bold text-purple-800">{{ item.balance }} Pcs</span>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-10 text-slate-400 text-xs">No pending post-press work.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

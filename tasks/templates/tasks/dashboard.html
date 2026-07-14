@@ -1,0 +1,270 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}Task Management & Leaderboard — Offset ERP{% endblock %}
+
+{% block header_title %}Tasks & Leaderboard{% endblock %}
+{% block header_subtitle %}Assign, track, and score general administrative and supporting operational tasks{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'tasks:create' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> Assign Task</a>
+<a href="{% url 'tasks:teams' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-users"></i> Manage Teams</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <!-- KPI SUMMARY -->
+    <div class="erp-kpi-grid">
+        <div class="erp-kpi-card bg-gradient-to-br from-white to-blue-50/30">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Active Tasks</div>
+                    <div class="erp-kpi-value text-blue-800">
+                        {{ tasks|length }}
+                    </div>
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-tasks"></i></div>
+            </div>
+        </div>
+        <div class="erp-kpi-card bg-gradient-to-br from-white to-emerald-50/30">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Leaderboard Top Employee</div>
+                    <div class="erp-kpi-value text-emerald-800">
+                        {% if employee_leaderboard %}
+                            {{ employee_leaderboard.0.username }}
+                            <span class="text-xs font-normal text-muted-foreground block text-emerald-600">Avg Score: {{ employee_leaderboard.0.avg_score|floatformat:1 }}</span>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="erp-kpi-icon bg-emerald-100 text-emerald-700"><i class="fas fa-trophy"></i></div>
+            </div>
+        </div>
+        <div class="erp-kpi-card bg-gradient-to-br from-white to-purple-50/30">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Leaderboard Top Team</div>
+                    <div class="erp-kpi-value text-purple-800">
+                        {% if team_leaderboard %}
+                            {{ team_leaderboard.0.name }}
+                            <span class="text-xs font-normal text-muted-foreground block text-purple-600">Avg Score: {{ team_leaderboard.0.avg_score|floatformat:1 }}</span>
+                        {% else %}
+                            -
+                        {% endif %}
+                    </div>
+                </div>
+                <div class="erp-kpi-icon bg-purple-100 text-purple-700"><i class="fas fa-users-cog"></i></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MAIN TWO-COLUMN LAYOUT -->
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- FILTER & TASK LISTING (Left 2 Columns) -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Filter Bar -->
+            <form method="get" class="erp-filter-bar flex flex-wrap md:flex-nowrap gap-3 items-end">
+                <div class="flex-1 min-w-[120px]">
+                    <label class="block text-xs font-bold text-slate-500 mb-1">Status</label>
+                    <select name="status" class="erp-select">
+                        <option value="">All Statuses</option>
+                        <option value="pending" {% if status_filter == 'pending' %}selected{% endif %}>Pending</option>
+                        <option value="in_progress" {% if status_filter == 'in_progress' %}selected{% endif %}>In Progress</option>
+                        <option value="completed" {% if status_filter == 'completed' %}selected{% endif %}>Completed</option>
+                        <option value="verified" {% if status_filter == 'verified' %}selected{% endif %}>Verified</option>
+                        <option value="cancelled" {% if status_filter == 'cancelled' %}selected{% endif %}>Cancelled</option>
+                    </select>
+                </div>
+                <div class="flex-1 min-w-[120px]">
+                    <label class="block text-xs font-bold text-slate-500 mb-1">Priority</label>
+                    <select name="priority" class="erp-select">
+                        <option value="">All Priorities</option>
+                        <option value="low" {% if priority_filter == 'low' %}selected{% endif %}>Low</option>
+                        <option value="medium" {% if priority_filter == 'medium' %}selected{% endif %}>Medium</option>
+                        <option value="high" {% if priority_filter == 'high' %}selected{% endif %}>High</option>
+                        <option value="critical" {% if priority_filter == 'critical' %}selected{% endif %}>Critical</option>
+                    </select>
+                </div>
+                <div class="flex-1 min-w-[150px]">
+                    <label class="block text-xs font-bold text-slate-500 mb-1">Assignee</label>
+                    <select name="assignee" class="erp-select">
+                        <option value="">All Employees</option>
+                        {% for u in users %}
+                            <option value="{{ u.id }}" {% if assignee_filter == u.id|stringformat:"s" %}selected{% endif %}>{{ u.username }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="flex-1 min-w-[150px]">
+                    <label class="block text-xs font-bold text-slate-500 mb-1">Team</label>
+                    <select name="team" class="erp-select">
+                        <option value="">All Teams</option>
+                        {% for t in teams %}
+                            <option value="{{ t.id }}" {% if team_filter == t.id|stringformat:"s" %}selected{% endif %}>{{ t.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="flex gap-2">
+                    <button type="submit" class="erp-btn erp-btn-primary min-h-[36px] px-4">Filter</button>
+                    <a href="{% url 'tasks:dashboard' %}" class="erp-btn erp-btn-secondary min-h-[36px] px-3"><i class="fas fa-redo"></i></a>
+                </div>
+            </form>
+
+            <!-- Task List Table -->
+            <div class="erp-card p-0">
+                <div class="p-4 border-b border-slate-100 flex justify-between items-center">
+                    <h2 class="erp-section-title text-slate-700">Tasks</h2>
+                    <span class="text-xs text-slate-500 font-medium">{{ tasks|length }} tasks active</span>
+                </div>
+                <div class="erp-table-wrap border-0 rounded-none">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th style="width:35%;">Task Description</th>
+                                <th style="width:20%;">Assigned To</th>
+                                <th style="width:12%; text-align:center;">Priority</th>
+                                <th style="width:12%; text-align:center;">Status</th>
+                                <th style="width:13%;">Due Date</th>
+                                <th style="width:8%; text-align:center;">Score</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for t in tasks %}
+                            <tr class="hover:bg-slate-50 transition duration-150">
+                                <td>
+                                    <div class="font-semibold text-slate-800">
+                                        <a href="{% url 'tasks:detail' t.pk %}" class="hover:text-blue-600 transition">{{ t.title }}</a>
+                                    </div>
+                                    <div class="text-slate-400 text-xs truncate max-w-[280px]">{{ t.description }}</div>
+                                </td>
+                                <td>
+                                    {% if t.assignee %}
+                                        <div class="flex items-center gap-1.5 text-xs text-slate-700">
+                                            <i class="far fa-user text-slate-400"></i> {{ t.assignee.username }}
+                                        </div>
+                                    {% endif %}
+                                    {% if t.assigned_team %}
+                                        <div class="flex items-center gap-1.5 text-xs text-slate-700 mt-0.5">
+                                            <i class="fas fa-users text-purple-400"></i> <span class="bg-purple-50 text-purple-700 font-semibold px-1.5 py-0.5 rounded text-[10px]">{{ t.assigned_team.name }}</span>
+                                        </div>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if t.priority == 'critical' %}
+                                        <span class="bg-rose-50 text-rose-700 font-bold border border-rose-200 px-2 py-0.5 rounded-full text-[10px] uppercase">Critical</span>
+                                    {% elif t.priority == 'high' %}
+                                        <span class="bg-orange-50 text-orange-700 font-semibold border border-orange-200 px-2 py-0.5 rounded-full text-[10px] uppercase">High</span>
+                                    {% elif t.priority == 'medium' %}
+                                        <span class="bg-blue-50 text-blue-700 font-semibold border border-blue-200 px-2 py-0.5 rounded-full text-[10px] uppercase">Medium</span>
+                                    {% else %}
+                                        <span class="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded-full text-[10px] uppercase">Low</span>
+                                    {% endif %}
+                                </td>
+                                <td class="text-center">
+                                    {% if t.status == 'verified' %}
+                                        <span class="erp-badge erp-badge-completed"><i class="fas fa-check-double mr-1"></i> Verified</span>
+                                    {% elif t.status == 'completed' %}
+                                        <span class="erp-badge erp-badge-approved"><i class="fas fa-check mr-1"></i> Completed</span>
+                                    {% elif t.status == 'in_progress' %}
+                                        <span class="erp-badge erp-badge-production"><i class="fas fa-spinner fa-spin mr-1"></i> In Progress</span>
+                                    {% elif t.status == 'cancelled' %}
+                                        <span class="erp-badge erp-badge-rejected">Cancelled</span>
+                                    {% else %}
+                                        <span class="erp-badge erp-badge-pending">Pending</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    <div class="text-xs {% if t.status != 'completed' and t.status != 'verified' and t.due_date < today %}text-rose-600 font-bold{% else %}text-slate-600{% endif %}">
+                                        {{ t.due_date|date:"d M Y" }}
+                                        {% if t.status != 'completed' and t.status != 'verified' and t.due_date < today %}
+                                            <span class="block text-[9px] text-rose-500 uppercase tracking-wide">Overdue</span>
+                                        {% endif %}
+                                    </div>
+                                </td>
+                                <td class="text-center font-bold">
+                                    {% if t.score is not None %}
+                                        <span class="inline-block px-2 py-0.5 rounded text-xs {% if t.score >= 90 %}bg-emerald-100 text-emerald-800{% elif t.score >= 70 %}bg-blue-100 text-blue-800{% elif t.score >= 50 %}bg-amber-100 text-amber-800{% else %}bg-rose-100 text-rose-800{% endif %}">
+                                            {{ t.score }}
+                                        </span>
+                                    {% else %}
+                                        <span class="text-slate-300 text-xs">-</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="6" class="text-center py-10 text-slate-400">
+                                    <i class="fas fa-inbox text-3xl mb-3 block"></i>
+                                    No tasks found matching the filter criteria.
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- LEADERBOARDS (Right 1 Column) -->
+        <div class="space-y-6">
+            <!-- Employee Leaderboard -->
+            <div class="erp-card bg-gradient-to-b from-white to-slate-50/50 p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-slate-800 flex items-center gap-2"><i class="fas fa-trophy text-amber-500"></i> Employee Leaderboard</h3>
+                    <span class="text-[10px] bg-amber-50 text-amber-700 font-bold px-2 py-0.5 rounded">Top Ranked</span>
+                </div>
+                <div class="space-y-3">
+                    {% for item in employee_leaderboard %}
+                    <div class="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                        <!-- RankBadge -->
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs 
+                            {% if forloop.counter == 1 %}bg-amber-500 text-white{% elif forloop.counter == 2 %}bg-slate-300 text-slate-800{% elif forloop.counter == 3 %}bg-amber-700 text-white{% else %}bg-slate-100 text-slate-500{% endif %}">
+                            {{ forloop.counter }}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-semibold text-slate-800 truncate text-xs">{{ item.username }}</div>
+                            <div class="text-[10px] text-slate-400">{{ item.completed_count }} task(s) completed</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs font-black text-slate-700">{{ item.avg_score|floatformat:1 }}</div>
+                            <div class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Score</div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-6 text-slate-400 text-xs">No employee scores recorded yet.</div>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- Team Leaderboard -->
+            <div class="erp-card bg-gradient-to-b from-white to-slate-50/50 p-4">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-slate-800 flex items-center gap-2"><i class="fas fa-users-cog text-purple-500"></i> Team Leaderboard</h3>
+                </div>
+                <div class="space-y-3">
+                    {% for item in team_leaderboard %}
+                    <div class="flex items-center gap-3 bg-white p-3 rounded-lg border border-slate-100 shadow-sm">
+                        <!-- RankBadge -->
+                        <div class="w-6 h-6 rounded-full flex items-center justify-center font-bold text-xs 
+                            {% if forloop.counter == 1 %}bg-purple-600 text-white{% elif forloop.counter == 2 %}bg-purple-300 text-purple-800{% else %}bg-slate-100 text-slate-500{% endif %}">
+                            {{ forloop.counter }}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="font-semibold text-slate-800 truncate text-xs">{{ item.name }}</div>
+                            <div class="text-[10px] text-slate-400">{{ item.completed_count }} task(s) completed</div>
+                        </div>
+                        <div class="text-right">
+                            <div class="text-xs font-black text-slate-700">{{ item.avg_score|floatformat:1 }}</div>
+                            <div class="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Score</div>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-6 text-slate-400 text-xs">No team scores recorded yet.</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

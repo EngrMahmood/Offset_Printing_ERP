@@ -50,6 +50,8 @@ INSTALLED_APPS = [
     'production',
     'supply_chain',
     'job_summary',
+    'audit',
+    'tasks',
 ]
 
 MIDDLEWARE = [
