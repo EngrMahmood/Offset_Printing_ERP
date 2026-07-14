@@ -76,8 +76,9 @@
                             <td>{{ item.unit_cost }}</td>
                             <td>{{ item.safety_stock }}</td>
                             <td>{% if item.is_active %}Yes{% else %}No{% endif %}</td>
-                            <td>
+                            <td class="flex gap-1">
                                 <a href="{% url 'supply_chain:item_edit' item.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                                <a href="{% url 'supply_chain:item_delete' item.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
                             </td>
                         </tr>
                         {% empty %}

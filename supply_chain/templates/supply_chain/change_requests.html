@@ -1,0 +1,95 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Change Requests — Supply Chain{% endblock %}
+{% block header_title %}Change Management{% endblock %}
+{% block header_subtitle %}Review and manage data change requests across the supply chain application.{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <!-- Tabs Section -->
+        <div class="flex items-center justify-between border-b border-gray-200 pb-2 mb-4">
+            <div class="flex gap-4">
+                <a href="?status=pending" class="px-4 py-2 text-sm font-semibold rounded-md transition-colors {% if status_filter == 'PENDING' %}bg-blue-600 text-white shadow-sm{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                    Pending
+                </a>
+                <a href="?status=approved" class="px-4 py-2 text-sm font-semibold rounded-md transition-colors {% if status_filter == 'APPROVED' %}bg-green-600 text-white shadow-sm{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                    Approved
+                </a>
+                <a href="?status=rejected" class="px-4 py-2 text-sm font-semibold rounded-md transition-colors {% if status_filter == 'REJECTED' %}bg-red-600 text-white shadow-sm{% else %}text-gray-600 hover:bg-gray-100{% endif %}">
+                    Rejected
+                </a>
+            </div>
+            <div class="text-sm text-gray-500 font-medium">
+                Showing {{ requests.count }} request(s)
+            </div>
+        </div>
+
+        <!-- Requests List -->
+        <section class="erp-section-shell">
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Requested By</th>
+                            <th>Date Requested</th>
+                            <th>Action</th>
+                            <th>Target Model</th>
+                            <th>Target Record ID</th>
+                            <th>Status</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for req in requests %}
+                        <tr>
+                            <td><strong>#{{ req.id }}</strong></td>
+                            <td>{{ req.requested_by.username }}</td>
+                            <td>{{ req.requested_at|date:"Y-m-d H:i" }}</td>
+                            <td>
+                                {% if req.action == 'CREATE' %}
+                                    <span class="erp-badge erp-badge-draft">Create</span>
+                                {% elif req.action == 'UPDATE' %}
+                                    <span class="erp-badge erp-badge-approved">Update</span>
+                                {% else %}
+                                    <span class="erp-badge erp-badge-short-closed">Delete</span>
+                                {% endif %}
+                            </td>
+                            <td>{{ req.get_model_name_display }}</td>
+                            <td>
+                                {% if req.target_id %}
+                                    {{ req.target_id }}
+                                {% else %}
+                                    <span class="text-gray-400">—</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if req.status == 'PENDING' %}
+                                    <span class="erp-badge erp-badge-draft">Pending Review</span>
+                                {% elif req.status == 'APPROVED' %}
+                                    <span class="erp-badge erp-badge-completed">Approved</span>
+                                {% else %}
+                                    <span class="erp-badge erp-badge-short-closed" title="Reason: {{ req.rejection_reason }}">Rejected</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <a href="{% url 'supply_chain:change_request_detail' req.pk %}" class="erp-btn erp-btn-secondary sm">
+                                    <i class="fas fa-eye"></i> View Details
+                                </a>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center py-6 text-gray-500">
+                                <i class="far fa-folder-open text-2xl mb-2 block"></i>
+                                No change requests found with status "{{ status_filter|title }}".
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

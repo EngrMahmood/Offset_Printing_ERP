@@ -126,6 +126,7 @@
                             <th>Variance</th>
                             <th>Accuracy %</th>
                             <th>Notes</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -144,9 +145,15 @@
                                 </span>
                             </td>
                             <td>{{ count.notes|default:'—' }}</td>
+                            <td>
+                                <div class="flex gap-1">
+                                    <a href="{% url 'supply_chain:physical_count_edit' count.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                                    <a href="{% url 'supply_chain:physical_count_delete' count.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
+                                </div>
+                            </td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="8">No physical counts recorded yet.</td></tr>
+                        <tr><td colspan="10">No physical counts recorded yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

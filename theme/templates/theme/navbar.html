@@ -267,6 +267,10 @@
            class="erp-subnav-link {% if url == 'physical_counts' %}is-active{% endif %}">
             Physical Count
         </a>
+        <a href="{% url 'supply_chain:change_requests' %}"
+           class="erp-subnav-link {% if url == 'change_requests' or url == 'change_request_detail' %}is-active{% endif %}">
+            Change Requests
+        </a>
     </div>
 
     {% include 'theme/supply_chain_context_nav.html' %}

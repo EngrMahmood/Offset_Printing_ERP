@@ -3,6 +3,8 @@ from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
+from django.utils import timezone
+
 
 from core.models import JobCard
 
@@ -42,11 +44,12 @@ from .jc_sync import (
     sync_issuance_for_job_card,
 )
 from .kpis import build_kpi_dashboard_data
-from .models import PhysicalStockCount, RawMaterialSku
+from .models import PhysicalStockCount, RawMaterialSku, StockDemand, StockTransaction, ChangeRequest
 from .physical_count import (
     build_physical_count_rows,
     physical_count_history,
     save_physical_count,
+    compute_inventory_accuracy,
 )
 from .raw_material_sku import list_material_choices, upsert_raw_material_sku_row
 from .reports import (
@@ -55,6 +58,35 @@ from .reports import (
     parse_report_filters,
 )
 from .services import demand_queryset, transaction_queryset
+
+
+def is_supply_chain_admin(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    profile = getattr(user, 'profile', None)
+    if profile:
+        return profile.role in ('admin', 'manager')
+    return False
+
+
+def serialize_cleaned_data(cleaned_data):
+    from django.db.models import Model
+    import decimal
+    import datetime
+
+    serialized = {}
+    for k, v in cleaned_data.items():
+        if isinstance(v, Model):
+            serialized[f"{k}_id"] = v.pk
+        elif isinstance(v, decimal.Decimal):
+            serialized[k] = float(v)
+        elif isinstance(v, (datetime.date, datetime.datetime)):
+            serialized[k] = v.isoformat()
+        else:
+            serialized[k] = v
+    return serialized
 
 
 TRANSACTION_PAGES = {
@@ -108,11 +140,14 @@ def kpi_dashboard(request):
 
 @supply_chain_required
 def item_list(request):
-    items = RawMaterialSku.objects.select_related('material').order_by('material__name', 'purchase_sheet_size', 'sku')
+    items = RawMaterialSku.objects.filter(is_active=True).select_related('material').order_by('material__name', 'purchase_sheet_size', 'sku')
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         if action == 'import':
+            if not is_supply_chain_admin(request.user):
+                messages.error(request, 'Only administrators can import raw material SKUs.')
+                return redirect('supply_chain:items')
             return _handle_raw_material_import(request)
         if action == 'quick_add':
             return _handle_quick_add_raw_material(request)
@@ -127,6 +162,7 @@ def item_list(request):
         'upload_form': ExcelUploadForm(),
         'quick_form': QuickRawMaterialSkuForm(),
         'material_choices': list_material_choices(),
+        'is_admin': is_supply_chain_admin(request.user),
     })
 
 
@@ -144,32 +180,66 @@ def _handle_quick_add_raw_material(request, as_json=False):
         messages.error(request, form.errors.as_text())
         return redirect('supply_chain:items')
 
-    obj, errors, _created = upsert_raw_material_sku_row({
+    proposed_data = {
         'sku': form.cleaned_data['sku'],
         'material_name': form.cleaned_data['material_name'],
         'purchase_sheet_size': form.cleaned_data['purchase_sheet_size'],
-    })
-    if errors:
+    }
+
+    if is_supply_chain_admin(request.user):
+        obj, errors, _created = upsert_raw_material_sku_row(proposed_data)
+        if errors:
+            if as_json:
+                return JsonResponse({'ok': False, 'error': '; '.join(errors)}, status=400)
+            messages.error(request, '; '.join(errors))
+            return redirect('supply_chain:items')
+
+        # Log approved request for audit
+        ChangeRequest.objects.create(
+            model_name='RawMaterialSku',
+            action='CREATE',
+            target_id=obj.pk,
+            proposed_data=proposed_data,
+            requested_by=request.user,
+            status='APPROVED',
+            reviewed_by=request.user,
+            reviewed_at=timezone.now(),
+        )
+
         if as_json:
-            return JsonResponse({'ok': False, 'error': '; '.join(errors)}, status=400)
-        messages.error(request, '; '.join(errors))
-        return redirect('supply_chain:items')
+            return JsonResponse({
+                'ok': True,
+                'id': obj.pk,
+                'sku': obj.sku,
+                'material_name': obj.material.name,
+                'purchase_sheet_size': obj.purchase_sheet_size,
+                'display_label': obj.display_label,
+            })
 
-    if as_json:
-        return JsonResponse({
-            'ok': True,
-            'id': obj.pk,
-            'sku': obj.sku,
-            'material_name': obj.material.name,
-            'purchase_sheet_size': obj.purchase_sheet_size,
-            'display_label': obj.display_label,
-        })
-
-    messages.success(request, f'Saved raw material SKU {obj.sku}.')
+        messages.success(request, f'Saved raw material SKU {obj.sku}.')
+    else:
+        # Create a pending change request
+        ChangeRequest.objects.create(
+            model_name='RawMaterialSku',
+            action='CREATE',
+            proposed_data=proposed_data,
+            requested_by=request.user,
+            status='PENDING',
+        )
+        if as_json:
+            return JsonResponse({
+                'ok': True,
+                'message': 'Creation request submitted for admin review.'
+            })
+        messages.success(request, 'Creation request submitted for admin review.')
     return redirect('supply_chain:items')
 
 
 def _handle_raw_material_import(request):
+    if not is_supply_chain_admin(request.user):
+        messages.error(request, 'Only administrators can import raw material SKUs.')
+        return redirect('supply_chain:items')
+
     upload_form = ExcelUploadForm(request.POST, request.FILES)
     if not upload_form.is_valid():
         messages.error(request, 'Please choose a valid Excel or CSV file.')
@@ -191,12 +261,34 @@ def _handle_raw_material_import(request):
 
 @supply_chain_required
 def item_edit(request, pk):
-    item = get_object_or_404(RawMaterialSku.objects.select_related('material'), pk=pk)
+    item = get_object_or_404(RawMaterialSku.objects.filter(is_active=True).select_related('material'), pk=pk)
     if request.method == 'POST':
         form = RawMaterialSkuForm(request.POST, instance=item)
         if form.is_valid():
-            form.save()
-            messages.success(request, f'Updated {item.sku}.')
+            if is_supply_chain_admin(request.user):
+                form.save()
+                # Log approved request for audit
+                ChangeRequest.objects.create(
+                    model_name='RawMaterialSku',
+                    action='UPDATE',
+                    target_id=item.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='APPROVED',
+                    reviewed_by=request.user,
+                    reviewed_at=timezone.now(),
+                )
+                messages.success(request, f'Updated {item.sku}.')
+            else:
+                ChangeRequest.objects.create(
+                    model_name='RawMaterialSku',
+                    action='UPDATE',
+                    target_id=item.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='PENDING',
+                )
+                messages.success(request, 'Update request submitted for admin review.')
             return redirect('supply_chain:items')
     else:
         form = RawMaterialSkuForm(instance=item)
@@ -211,11 +303,34 @@ def monthly_demand(request):
 
     if request.method == 'POST':
         if request.POST.get('action') == 'import':
+            if not is_supply_chain_admin(request.user):
+                messages.error(request, 'Only administrators can import demands.')
+                return redirect('supply_chain:monthly_demand')
             return _handle_demand_import(request, month_filter)
         form = StockDemandForm(request.POST)
         if form.is_valid():
-            form.save()
-            messages.success(request, 'Monthly demand entry saved.')
+            if is_supply_chain_admin(request.user):
+                instance = form.save()
+                ChangeRequest.objects.create(
+                    model_name='StockDemand',
+                    action='CREATE',
+                    target_id=instance.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='APPROVED',
+                    reviewed_by=request.user,
+                    reviewed_at=timezone.now(),
+                )
+                messages.success(request, 'Monthly demand entry saved.')
+            else:
+                ChangeRequest.objects.create(
+                    model_name='StockDemand',
+                    action='CREATE',
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='PENDING',
+                )
+                messages.success(request, 'Creation request submitted for admin review.')
             return redirect('supply_chain:monthly_demand')
     else:
         form = StockDemandForm()
@@ -228,6 +343,7 @@ def monthly_demand(request):
         'form': form,
         'upload_form': ExcelUploadForm(),
         'month_filter': month_filter,
+        'is_admin': is_supply_chain_admin(request.user),
     })
 
 
@@ -244,17 +360,45 @@ def transaction_page(request, page_key):
 
     if request.method == 'POST':
         if request.POST.get('action') == 'import':
+            if not is_supply_chain_admin(request.user):
+                messages.error(request, 'Only administrators can import transactions.')
+                return redirect('supply_chain:' + page_key)
             return _handle_transaction_import(request, page_key, transaction_type, month_filter)
         if request.POST.get('action') == 'sync_jc' and page_key == 'issuance':
+            if not is_supply_chain_admin(request.user):
+                messages.error(request, 'Only administrators can sync job cards directly.')
+                return redirect('supply_chain:issuance')
             synced, skipped = sync_all_job_card_issuances()
             messages.success(request, f'Synced {synced} issuance row(s) from job cards. Skipped {skipped}.')
             return redirect('supply_chain:issuance')
         form = StockTransactionForm(request.POST)
         if form.is_valid():
-            txn = form.save(commit=False)
-            txn.transaction_type = transaction_type
-            txn.save()
-            messages.success(request, f'{config["title"]} entry saved.')
+            if is_supply_chain_admin(request.user):
+                txn = form.save(commit=False)
+                txn.transaction_type = transaction_type
+                txn.save()
+                ChangeRequest.objects.create(
+                    model_name='StockTransaction',
+                    action='CREATE',
+                    target_id=txn.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='APPROVED',
+                    reviewed_by=request.user,
+                    reviewed_at=timezone.now(),
+                )
+                messages.success(request, f'{config["title"]} entry saved.')
+            else:
+                proposed_data = serialize_cleaned_data(form.cleaned_data)
+                proposed_data['transaction_type'] = transaction_type
+                ChangeRequest.objects.create(
+                    model_name='StockTransaction',
+                    action='CREATE',
+                    proposed_data=proposed_data,
+                    requested_by=request.user,
+                    status='PENDING',
+                )
+                messages.success(request, 'Creation request submitted for admin review.')
             return redirect('supply_chain:' + page_key)
     else:
         form = StockTransactionForm()
@@ -271,10 +415,15 @@ def transaction_page(request, page_key):
         'upload_form': ExcelUploadForm(),
         'month_filter': month_filter,
         'show_jc_sync': page_key == 'issuance',
+        'is_admin': is_supply_chain_admin(request.user),
     })
 
 
 def _handle_transaction_import(request, page_key, transaction_type, month_filter):
+    if not is_supply_chain_admin(request.user):
+        messages.error(request, 'Only administrators can import transactions.')
+        return redirect('supply_chain:' + page_key)
+
     upload_form = ExcelUploadForm(request.POST, request.FILES)
     if not upload_form.is_valid():
         messages.error(request, 'Please choose a valid Excel or CSV file.')
@@ -297,6 +446,10 @@ def _handle_transaction_import(request, page_key, transaction_type, month_filter
 
 
 def _handle_demand_import(request, month_filter):
+    if not is_supply_chain_admin(request.user):
+        messages.error(request, 'Only administrators can import demands.')
+        return redirect('supply_chain:monthly_demand')
+
     upload_form = ExcelUploadForm(request.POST, request.FILES)
     if not upload_form.is_valid():
         messages.error(request, 'Please choose a valid Excel or CSV file.')
@@ -396,16 +549,39 @@ def physical_counts(request):
             form = PhysicalStockCountForm(request.POST)
             if form.is_valid():
                 item = form.cleaned_data['raw_material_sku']
-                save_physical_count(
-                    item=item,
-                    count_date=form.cleaned_data['count_date'],
-                    physical_sheet_qty=form.cleaned_data['physical_sheet_qty'],
-                    physical_pkt_rim_qty=form.cleaned_data['physical_pkt_rim_qty'],
-                    notes=form.cleaned_data['notes'],
-                )
-                messages.success(request, f'Physical count saved for {item.sku}.')
+                if is_supply_chain_admin(request.user):
+                    pc = save_physical_count(
+                        item=item,
+                        count_date=form.cleaned_data['count_date'],
+                        physical_sheet_qty=form.cleaned_data['physical_sheet_qty'],
+                        physical_pkt_rim_qty=form.cleaned_data['physical_pkt_rim_qty'],
+                        notes=form.cleaned_data['notes'],
+                    )
+                    ChangeRequest.objects.create(
+                        model_name='PhysicalStockCount',
+                        action='CREATE',
+                        target_id=pc.pk,
+                        proposed_data=serialize_cleaned_data(form.cleaned_data),
+                        requested_by=request.user,
+                        status='APPROVED',
+                        reviewed_by=request.user,
+                        reviewed_at=timezone.now(),
+                    )
+                    messages.success(request, f'Physical count saved for {item.sku}.')
+                else:
+                    ChangeRequest.objects.create(
+                        model_name='PhysicalStockCount',
+                        action='CREATE',
+                        proposed_data=serialize_cleaned_data(form.cleaned_data),
+                        requested_by=request.user,
+                        status='PENDING',
+                    )
+                    messages.success(request, 'Creation request submitted for admin review.')
                 return redirect('supply_chain:physical_counts')
         elif action == 'bulk':
+            if not is_supply_chain_admin(request.user):
+                messages.error(request, 'Only administrators can log bulk physical counts.')
+                return redirect('supply_chain:physical_counts')
             bulk_form = BulkPhysicalCountForm(request.POST)
             if bulk_form.is_valid():
                 count_date = bulk_form.cleaned_data['count_date']
@@ -417,10 +593,24 @@ def physical_counts(request):
                     raw_value = (request.POST.get(field_name) or '').strip()
                     if raw_value == '':
                         continue
-                    save_physical_count(
+                    pc = save_physical_count(
                         item=row['item'],
                         count_date=count_date,
                         physical_sheet_qty=int(raw_value),
+                    )
+                    ChangeRequest.objects.create(
+                        model_name='PhysicalStockCount',
+                        action='CREATE',
+                        target_id=pc.pk,
+                        proposed_data={
+                            'raw_material_sku_id': row['item'].pk,
+                            'count_date': count_date.isoformat(),
+                            'physical_sheet_qty': int(raw_value),
+                        },
+                        requested_by=request.user,
+                        status='APPROVED',
+                        reviewed_by=request.user,
+                        reviewed_at=timezone.now(),
                     )
                     saved += 1
                 messages.success(request, f'Saved {saved} physical count record(s).')
@@ -434,7 +624,7 @@ def physical_counts(request):
     summary = {
         'avg_accuracy': round(sum(accuracy_values) / len(accuracy_values), 2) if accuracy_values else None,
         'items_counted': len(accuracy_values),
-        'history_count': PhysicalStockCount.objects.count(),
+        'history_count': PhysicalStockCount.objects.filter(is_active=True).count(),
     }
     return render(request, 'supply_chain/physical_counts.html', {
         'form': PhysicalStockCountForm(),
@@ -442,6 +632,7 @@ def physical_counts(request):
         'count_rows': count_rows,
         'history': history,
         'summary': summary,
+        'is_admin': is_supply_chain_admin(request.user),
     })
 
 
@@ -469,4 +660,341 @@ def demand_gap(request):
             ('print_and_pack', 'Print + Pack'),
             ('cut_and_pack', 'Cut & Pack'),
         ],
+    })
+
+
+# Change Request Views
+@supply_chain_required
+def change_requests_list(request):
+    status_filter = request.GET.get('status', 'PENDING').upper()
+    if status_filter not in ('PENDING', 'APPROVED', 'REJECTED'):
+        status_filter = 'PENDING'
+
+    if is_supply_chain_admin(request.user):
+        requests = ChangeRequest.objects.filter(status=status_filter).select_related('requested_by', 'reviewed_by')
+    else:
+        requests = ChangeRequest.objects.filter(status=status_filter, requested_by=request.user).select_related('requested_by', 'reviewed_by')
+
+    return render(request, 'supply_chain/change_requests.html', {
+        'requests': requests,
+        'status_filter': status_filter,
+        'is_admin': is_supply_chain_admin(request.user),
+    })
+
+
+@supply_chain_required
+def change_request_detail(request, pk):
+    if is_supply_chain_admin(request.user):
+        req = get_object_or_404(ChangeRequest, pk=pk)
+    else:
+        req = get_object_or_404(ChangeRequest, pk=pk, requested_by=request.user)
+
+    return render(request, 'supply_chain/change_request_detail.html', {
+        'req': req,
+        'old_and_new': req.get_old_and_new_values(),
+        'proposed_fields': req.get_proposed_fields(),
+        'is_admin': is_supply_chain_admin(request.user),
+    })
+
+
+@supply_chain_required
+@require_POST
+def change_request_approve(request, pk):
+    if not is_supply_chain_admin(request.user):
+        messages.error(request, 'Only administrators can approve change requests.')
+        return redirect('supply_chain:change_requests')
+
+    req = get_object_or_404(ChangeRequest, pk=pk, status='PENDING')
+    try:
+        req.apply(request.user)
+        messages.success(request, f'Change request #{req.id} approved and applied successfully.')
+    except Exception as e:
+        messages.error(request, f'Error applying change: {str(e)}')
+
+    return redirect('supply_chain:change_requests')
+
+
+@supply_chain_required
+@require_POST
+def change_request_reject(request, pk):
+    if not is_supply_chain_admin(request.user):
+        messages.error(request, 'Only administrators can reject change requests.')
+        return redirect('supply_chain:change_requests')
+
+    req = get_object_or_404(ChangeRequest, pk=pk, status='PENDING')
+    reason = request.POST.get('rejection_reason', '').strip()
+    if not reason:
+        messages.error(request, 'A rejection reason is required.')
+        return redirect('supply_chain:change_request_detail', pk=req.pk)
+
+    req.status = 'REJECTED'
+    req.reviewed_by = request.user
+    req.reviewed_at = timezone.now()
+    req.rejection_reason = reason
+    req.save()
+
+    messages.success(request, f'Change request #{req.id} rejected.')
+    return redirect('supply_chain:change_requests')
+
+
+# Edit/Delete Views for other supply chain records
+@supply_chain_required
+def monthly_demand_edit(request, pk):
+    demand = get_object_or_404(StockDemand.objects.filter(is_active=True), pk=pk)
+    if request.method == 'POST':
+        form = StockDemandForm(request.POST, instance=demand)
+        if form.is_valid():
+            if is_supply_chain_admin(request.user):
+                form.save()
+                ChangeRequest.objects.create(
+                    model_name='StockDemand',
+                    action='UPDATE',
+                    target_id=demand.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='APPROVED',
+                    reviewed_by=request.user,
+                    reviewed_at=timezone.now(),
+                )
+                messages.success(request, 'Monthly demand entry updated.')
+            else:
+                ChangeRequest.objects.create(
+                    model_name='StockDemand',
+                    action='UPDATE',
+                    target_id=demand.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='PENDING',
+                )
+                messages.success(request, 'Update request submitted for admin review.')
+            return redirect('supply_chain:monthly_demand')
+    else:
+        form = StockDemandForm(instance=demand)
+    return render(request, 'supply_chain/monthly_demand_edit.html', {'demand': demand, 'form': form})
+
+
+@supply_chain_required
+def monthly_demand_delete(request, pk):
+    demand = get_object_or_404(StockDemand.objects.filter(is_active=True), pk=pk)
+    if request.method == 'POST':
+        if is_supply_chain_admin(request.user):
+            demand.is_active = False
+            demand.save(update_fields=['is_active'])
+            ChangeRequest.objects.create(
+                model_name='StockDemand',
+                action='DELETE',
+                target_id=demand.pk,
+                proposed_data={},
+                requested_by=request.user,
+                status='APPROVED',
+                reviewed_by=request.user,
+                reviewed_at=timezone.now(),
+            )
+            messages.success(request, 'Monthly demand entry archived.')
+        else:
+            ChangeRequest.objects.create(
+                model_name='StockDemand',
+                action='DELETE',
+                target_id=demand.pk,
+                proposed_data={},
+                requested_by=request.user,
+                status='PENDING',
+            )
+            messages.success(request, 'Deletion request submitted for admin review.')
+        return redirect('supply_chain:monthly_demand')
+    return render(request, 'supply_chain/confirm_delete.html', {
+        'object': demand,
+        'title': 'Delete Monthly Demand',
+        'back_url': reverse('supply_chain:monthly_demand')
+    })
+
+
+@supply_chain_required
+def transaction_edit(request, pk):
+    txn = get_object_or_404(StockTransaction.objects.filter(is_active=True), pk=pk)
+    page_key_map = {'OPENING': 'opening', 'RECEIVING': 'receiving', 'ISSUANCE': 'issuance', 'ADJUSTMENT': 'adjustment'}
+    page_key = page_key_map.get(txn.transaction_type, 'dashboard')
+
+    if request.method == 'POST':
+        form = StockTransactionForm(request.POST, instance=txn)
+        if form.is_valid():
+            if is_supply_chain_admin(request.user):
+                form.save()
+                ChangeRequest.objects.create(
+                    model_name='StockTransaction',
+                    action='UPDATE',
+                    target_id=txn.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='APPROVED',
+                    reviewed_by=request.user,
+                    reviewed_at=timezone.now(),
+                )
+                messages.success(request, 'Transaction entry updated.')
+            else:
+                ChangeRequest.objects.create(
+                    model_name='StockTransaction',
+                    action='UPDATE',
+                    target_id=txn.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='PENDING',
+                )
+                messages.success(request, 'Update request submitted for admin review.')
+            return redirect('supply_chain:' + page_key)
+    else:
+        form = StockTransactionForm(instance=txn)
+    return render(request, 'supply_chain/transaction_edit.html', {
+        'transaction': txn,
+        'form': form,
+        'back_url': reverse('supply_chain:' + page_key)
+    })
+
+
+@supply_chain_required
+def transaction_delete(request, pk):
+    txn = get_object_or_404(StockTransaction.objects.filter(is_active=True), pk=pk)
+    page_key_map = {'OPENING': 'opening', 'RECEIVING': 'receiving', 'ISSUANCE': 'issuance', 'ADJUSTMENT': 'adjustment'}
+    page_key = page_key_map.get(txn.transaction_type, 'dashboard')
+
+    if request.method == 'POST':
+        if is_supply_chain_admin(request.user):
+            txn.is_active = False
+            txn.save(update_fields=['is_active'])
+            ChangeRequest.objects.create(
+                model_name='StockTransaction',
+                action='DELETE',
+                target_id=txn.pk,
+                proposed_data={},
+                requested_by=request.user,
+                status='APPROVED',
+                reviewed_by=request.user,
+                reviewed_at=timezone.now(),
+            )
+            messages.success(request, 'Transaction archived.')
+        else:
+            ChangeRequest.objects.create(
+                model_name='StockTransaction',
+                action='DELETE',
+                target_id=txn.pk,
+                proposed_data={},
+                requested_by=request.user,
+                status='PENDING',
+            )
+            messages.success(request, 'Deletion request submitted for admin review.')
+        return redirect('supply_chain:' + page_key)
+    return render(request, 'supply_chain/confirm_delete.html', {
+        'object': txn,
+        'title': 'Delete Transaction',
+        'back_url': reverse('supply_chain:' + page_key)
+    })
+
+
+@supply_chain_required
+def physical_count_edit(request, pk):
+    pc = get_object_or_404(PhysicalStockCount.objects.filter(is_active=True), pk=pk)
+    if request.method == 'POST':
+        form = PhysicalStockCountForm(request.POST, instance=pc)
+        if form.is_valid():
+            if is_supply_chain_admin(request.user):
+                accuracy = compute_inventory_accuracy(form.cleaned_data['physical_sheet_qty'], pc.system_sheet_qty)
+                instance = form.save(commit=False)
+                instance.accuracy_percent = accuracy
+                instance.save()
+                ChangeRequest.objects.create(
+                    model_name='PhysicalStockCount',
+                    action='UPDATE',
+                    target_id=pc.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='APPROVED',
+                    reviewed_by=request.user,
+                    reviewed_at=timezone.now(),
+                )
+                messages.success(request, 'Physical stock count updated.')
+            else:
+                ChangeRequest.objects.create(
+                    model_name='PhysicalStockCount',
+                    action='UPDATE',
+                    target_id=pc.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='PENDING',
+                )
+                messages.success(request, 'Update request submitted for admin review.')
+            return redirect('supply_chain:physical_counts')
+    else:
+        form = PhysicalStockCountForm(instance=pc)
+    return render(request, 'supply_chain/physical_count_edit.html', {'pc': pc, 'form': form})
+
+
+@supply_chain_required
+def physical_count_delete(request, pk):
+    pc = get_object_or_404(PhysicalStockCount.objects.filter(is_active=True), pk=pk)
+    if request.method == 'POST':
+        if is_supply_chain_admin(request.user):
+            pc.is_active = False
+            pc.save(update_fields=['is_active'])
+            ChangeRequest.objects.create(
+                model_name='PhysicalStockCount',
+                action='DELETE',
+                target_id=pc.pk,
+                proposed_data={},
+                requested_by=request.user,
+                status='APPROVED',
+                reviewed_by=request.user,
+                reviewed_at=timezone.now(),
+            )
+            messages.success(request, 'Physical stock count entry archived.')
+        else:
+            ChangeRequest.objects.create(
+                model_name='PhysicalStockCount',
+                action='DELETE',
+                target_id=pc.pk,
+                proposed_data={},
+                requested_by=request.user,
+                status='PENDING',
+            )
+            messages.success(request, 'Deletion request submitted for admin review.')
+        return redirect('supply_chain:physical_counts')
+    return render(request, 'supply_chain/confirm_delete.html', {
+        'object': pc,
+        'title': 'Delete Physical Count',
+        'back_url': reverse('supply_chain:physical_counts')
+    })
+
+
+@supply_chain_required
+def item_delete(request, pk):
+    item = get_object_or_404(RawMaterialSku.objects.filter(is_active=True), pk=pk)
+    if request.method == 'POST':
+        if is_supply_chain_admin(request.user):
+            item.is_active = False
+            item.save(update_fields=['is_active'])
+            ChangeRequest.objects.create(
+                model_name='RawMaterialSku',
+                action='DELETE',
+                target_id=item.pk,
+                proposed_data={},
+                requested_by=request.user,
+                status='APPROVED',
+                reviewed_by=request.user,
+                reviewed_at=timezone.now(),
+            )
+            messages.success(request, f'Raw Material SKU {item.sku} archived.')
+        else:
+            ChangeRequest.objects.create(
+                model_name='RawMaterialSku',
+                action='DELETE',
+                target_id=item.pk,
+                proposed_data={},
+                requested_by=request.user,
+                status='PENDING',
+            )
+            messages.success(request, 'Deletion request submitted for admin review.')
+        return redirect('supply_chain:items')
+    return render(request, 'supply_chain/confirm_delete.html', {
+        'object': item,
+        'title': 'Delete Raw Material SKU',
+        'back_url': reverse('supply_chain:items')
     })

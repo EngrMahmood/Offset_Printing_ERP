@@ -340,3 +340,84 @@ class TransactionImportDedupeTests(TestCase):
             ).count(),
             1,
         )
+
+
+class ChangeManagementTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.admin = User.objects.create_superuser(username='admin', password='password')
+        self.user = User.objects.create_user(username='user', password='password')
+        
+        # Setup roles using UserProfile
+        from core.models import UserProfile
+        admin_profile = self.admin.profile
+        admin_profile.role = 'admin'
+        admin_profile.save()
+
+        user_profile = self.user.profile
+        user_profile.role = 'supply_chain'
+        user_profile.save()
+        
+        self.material = Material.objects.create(name='Taffeta')
+        self.item = _create_raw_sku(self.material, 'RM-TAF-2536', purchase_sheet_size='25x36')
+        
+    def test_admin_direct_create(self):
+        # Admin can create a demand directly, and it logs an approved ChangeRequest
+        from supply_chain.models import ChangeRequest
+        self.client.force_login(self.admin)
+        response = self.client.post('/supply-chain/monthly-demand/', {
+            'raw_material_sku': self.item.pk,
+            'month_str': 'July 2026',
+            'sheet_qty_pcs': 200,
+            'pkt_rim_qty': 0
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(StockDemand.objects.count(), 1)
+        self.assertEqual(ChangeRequest.objects.count(), 1)
+        req = ChangeRequest.objects.first()
+        self.assertEqual(req.status, 'APPROVED')
+        self.assertEqual(req.action, 'CREATE')
+        
+    def test_user_request_create(self):
+        # User cannot create directly, creates a pending ChangeRequest instead
+        from supply_chain.models import ChangeRequest
+        self.client.force_login(self.user)
+        response = self.client.post('/supply-chain/monthly-demand/', {
+            'raw_material_sku': self.item.pk,
+            'month_str': 'July 2026',
+            'sheet_qty_pcs': 200,
+            'pkt_rim_qty': 0
+        })
+        self.assertEqual(response.status_code, 302)
+        # Check that no demand is created in database directly
+        self.assertEqual(StockDemand.objects.count(), 0)
+        # Check that a pending change request is created
+        self.assertEqual(ChangeRequest.objects.count(), 1)
+        req = ChangeRequest.objects.first()
+        self.assertEqual(req.status, 'PENDING')
+        self.assertEqual(req.action, 'CREATE')
+        
+    def test_admin_approve_create_request(self):
+        from supply_chain.models import ChangeRequest
+        req = ChangeRequest.objects.create(
+            model_name='StockDemand',
+            action='CREATE',
+            proposed_data={
+                'raw_material_sku_id': self.item.pk,
+                'month_str': 'August 2026',
+                'sheet_qty_pcs': 500,
+                'pkt_rim_qty': 1
+            },
+            requested_by=self.user,
+            status='PENDING'
+        )
+        self.client.force_login(self.admin)
+        response = self.client.post(f'/supply-chain/change-requests/{req.pk}/approve/')
+        self.assertEqual(response.status_code, 302)
+        req.refresh_from_db()
+        self.assertEqual(req.status, 'APPROVED')
+        self.assertEqual(StockDemand.objects.count(), 1)
+        demand = StockDemand.objects.first()
+        self.assertEqual(demand.month_str, 'August 2026')
+        self.assertEqual(demand.sheet_qty_pcs, 500)
+

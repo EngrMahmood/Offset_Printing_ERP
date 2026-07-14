@@ -1,0 +1,157 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Change Request Details — Supply Chain{% endblock %}
+{% block header_title %}Change Request Details{% endblock %}
+{% block header_subtitle %}Request #{{ req.id }} ({{ req.get_action_display }} {{ req.get_model_name_display }}){% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:change_requests' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-arrow-left"></i> Back to Requests</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <!-- Request Status & Requester info -->
+        <section class="erp-section-shell">
+            <div class="grid grid-cols-4 gap-6 p-4 bg-white rounded-lg shadow-sm border border-gray-100">
+                <div>
+                    <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Status</span>
+                    {% if req.status == 'PENDING' %}
+                        <span class="erp-badge erp-badge-draft text-sm">Pending Admin Review</span>
+                    {% elif req.status == 'APPROVED' %}
+                        <span class="erp-badge erp-badge-completed text-sm">Approved & Applied</span>
+                    {% else %}
+                        <span class="erp-badge erp-badge-short-closed text-sm">Rejected</span>
+                    {% endif %}
+                </div>
+                <div>
+                    <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Requested By</span>
+                    <strong class="text-gray-800">{{ req.requested_by.username }}</strong>
+                </div>
+                <div>
+                    <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Date Requested</span>
+                    <span class="text-gray-700">{{ req.requested_at|date:"Y-m-d H:i:s" }}</span>
+                </div>
+                {% if req.reviewed_by %}
+                <div>
+                    <span class="text-xs font-semibold text-gray-400 uppercase tracking-wider block mb-1">Reviewed By</span>
+                    <strong class="text-gray-800">{{ req.reviewed_by.username }}</strong>
+                    <span class="text-xs text-gray-500 block">{{ req.reviewed_at|date:"Y-m-d H:i" }}</span>
+                </div>
+                {% endif %}
+            </div>
+            
+            {% if req.status == 'REJECTED' and req.rejection_reason %}
+            <div class="mt-4 p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded-r-lg">
+                <h4 class="font-bold mb-1">Rejection Reason:</h4>
+                <p>{{ req.rejection_reason }}</p>
+            </div>
+            {% endif %}
+        </section>
+
+        <!-- Proposed Changes details -->
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Proposed Data Changes</h3>
+                    <p class="erp-section-desc">Review the specific values requested below.</p>
+                </div>
+            </div>
+
+            {% if req.action == 'CREATE' %}
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th class="w-1/3">Field / Property</th>
+                                <th>Proposed Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for field in proposed_fields %}
+                            <tr>
+                                <td><strong>{{ field.label }}</strong></td>
+                                <td class="text-green-600 font-semibold">{{ field.value }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+            {% elif req.action == 'UPDATE' %}
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th>Field / Property</th>
+                                <th>Current (Old) Value</th>
+                                <th>Proposed (New) Value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for field in old_and_new %}
+                            <tr>
+                                <td class="w-1/3"><strong>{{ field.label }}</strong></td>
+                                <td class="text-gray-500 line-through">{{ field.old }}</td>
+                                <td class="text-green-600 font-semibold">{{ field.new }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+            {% elif req.action == 'DELETE' %}
+                <div class="p-6 bg-yellow-50 border border-yellow-200 text-yellow-800 rounded-lg text-center">
+                    <i class="fas fa-exclamation-triangle text-3xl mb-3 text-yellow-600 block"></i>
+                    <h4 class="font-bold text-lg mb-2">Request to Delete / Archive Record</h4>
+                    <p class="mb-4">Standard user requested the deletion of the following record:</p>
+                    <div class="p-3 bg-white rounded shadow-sm border border-yellow-100 max-w-lg mx-auto font-mono text-sm">
+                        {{ req.target_object }}
+                    </div>
+                </div>
+            {% endif %}
+        </section>
+
+        <!-- Admin Actions -->
+        {% if req.status == 'PENDING' and is_admin %}
+        <section class="erp-section-shell">
+            <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <form action="{% url 'supply_chain:change_request_approve' req.pk %}" method="post" class="m-0">
+                    {% csrf_token %}
+                    <button type="submit" class="erp-btn erp-btn-primary bg-green-600 hover:bg-green-700">
+                        <i class="fas fa-check-circle"></i> Approve & Apply Changes
+                    </button>
+                </form>
+
+                <button type="button" class="erp-btn erp-btn-secondary text-red-600 hover:bg-red-50" onclick="showRejectionForm()">
+                    <i class="fas fa-times-circle"></i> Reject Request
+                </button>
+            </div>
+
+            <!-- Rejection Reason Form (Hidden by default) -->
+            <div id="rejection-form-container" class="hidden mt-4 p-4 bg-white rounded-lg border border-gray-200 shadow-sm max-w-xl">
+                <form action="{% url 'supply_chain:change_request_reject' req.pk %}" method="post" class="m-0">
+                    {% csrf_token %}
+                    <div class="erp-input-group mb-3">
+                        <label class="erp-input-label" for="rejection_reason">Reason for Rejection</label>
+                        <textarea id="rejection_reason" name="rejection_reason" class="erp-input w-full p-2 border rounded" rows="3" placeholder="Please specify why this request is rejected..." required></textarea>
+                    </div>
+                    <div class="flex gap-2">
+                        <button type="submit" class="erp-btn erp-btn-primary bg-red-600 hover:bg-red-700">Confirm Reject</button>
+                        <button type="button" class="erp-btn erp-btn-secondary" onclick="hideRejectionForm()">Cancel</button>
+                    </div>
+                </form>
+            </div>
+        </section>
+        {% endif %}
+    </div>
+
+    <script>
+        function showRejectionForm() {
+            document.getElementById('rejection-form-container').classList.remove('hidden');
+            document.getElementById('rejection_reason').focus();
+        }
+        function hideRejectionForm() {
+            document.getElementById('rejection-form-container').classList.add('hidden');
+        }
+    </script>
+{% endblock %}

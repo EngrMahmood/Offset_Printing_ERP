@@ -30,7 +30,7 @@ def build_physical_count_rows(items=None):
     rows = []
     for item in items:
         stock = get_item_system_stock(item)
-        latest = item.physical_counts.order_by('-count_date', '-id').first()
+        latest = item.physical_counts.filter(is_active=True).order_by('-count_date', '-id').first()
         rows.append({
             'item': item,
             'system_sheet_qty': stock['system_sheet_qty'],
@@ -58,6 +58,7 @@ def save_physical_count(item, count_date, physical_sheet_qty, physical_pkt_rim_q
 def physical_count_history(limit=200):
     return (
         PhysicalStockCount.objects
+        .filter(is_active=True)
         .select_related('raw_material_sku', 'raw_material_sku__material')
         .order_by('-count_date', '-id')[:limit]
     )
@@ -65,7 +66,7 @@ def physical_count_history(limit=200):
 
 def latest_accuracy_by_item():
     result = {}
-    for count in PhysicalStockCount.objects.order_by('raw_material_sku_id', '-count_date', '-id'):
+    for count in PhysicalStockCount.objects.filter(is_active=True).order_by('raw_material_sku_id', '-count_date', '-id'):
         if count.raw_material_sku_id not in result:
             result[count.raw_material_sku_id] = count
     return result

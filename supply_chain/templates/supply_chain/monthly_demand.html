@@ -58,6 +58,7 @@
                             <th>Sheet Packing/Pcs</th>
                             <th>Sheet Qty/Pcs</th>
                             <th>Pkt/Rim Qty</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -71,9 +72,15 @@
                             <td>{{ demand.raw_material_sku.sheet_packing_pcs|default:'—' }}</td>
                             <td>{{ demand.sheet_qty_pcs }}</td>
                             <td>{{ demand.pkt_rim_qty }}</td>
+                            <td>
+                                <div class="flex gap-1">
+                                    <a href="{% url 'supply_chain:monthly_demand_edit' demand.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                                    <a href="{% url 'supply_chain:monthly_demand_delete' demand.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
+                                </div>
+                            </td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="7">No monthly demand records yet.</td></tr>
+                        <tr><td colspan="9">No monthly demand records yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

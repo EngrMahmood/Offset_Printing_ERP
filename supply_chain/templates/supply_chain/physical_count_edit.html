@@ -1,0 +1,30 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Edit Physical Count — Supply Chain{% endblock %}
+{% block header_title %}Edit Physical Count{% endblock %}
+{% block header_subtitle %}{{ pc }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:physical_counts' %}" class="erp-btn erp-btn-secondary">Back to List</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack" style="max-width: 600px; margin: 0 auto;">
+        <section class="erp-section-shell p-6 bg-white rounded-lg shadow-sm border border-gray-100">
+            <form method="post" class="erp-form-grid" style="grid-template-columns: 1fr; gap: 16px;">
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="erp-form-field">
+                    <label for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="erp-form-error">{{ field.errors.0 }}</div>{% endif %}
+                </div>
+                {% endfor %}
+                <div class="erp-form-field erp-form-grid__actions">
+                    <button type="submit" class="erp-btn erp-btn-primary">Save Changes</button>
+                    <a href="{% url 'supply_chain:physical_counts' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </section>
+    </div>
+{% endblock %}

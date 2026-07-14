@@ -2,6 +2,8 @@ import re
 
 from django.db import models
 from django.utils import timezone
+from django.contrib.auth.models import User
+
 
 
 # Width × height: "10.5 x 15", "10.5X15", "10.5*15", "10.5 × 15" → "10.5*15"
@@ -147,6 +149,7 @@ class StockTransaction(models.Model):
     gin_jc = models.CharField(max_length=50, blank=True, null=True, verbose_name='GIN / JC')
     sheet_qty_pcs = models.IntegerField(default=0, verbose_name='Sheet Qty/Pcs')
     pkt_rim_qty = models.IntegerField(default=0, verbose_name='Pkt/Rim Qty')
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -173,6 +176,7 @@ class StockDemand(models.Model):
     month_str = models.CharField(max_length=20, blank=True, null=True, verbose_name='Month')
     sheet_qty_pcs = models.IntegerField(default=0, verbose_name='Sheet Qty/Pcs')
     pkt_rim_qty = models.IntegerField(default=0, verbose_name='Pkt/Rim Qty')
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -208,6 +212,7 @@ class PhysicalStockCount(models.Model):
         verbose_name='Inventory Accuracy %',
     )
     notes = models.CharField(max_length=255, blank=True, default='')
+    is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -221,3 +226,176 @@ class PhysicalStockCount(models.Model):
     @property
     def variance(self):
         return self.physical_sheet_qty - self.system_sheet_qty
+
+
+class ChangeRequest(models.Model):
+    MODEL_CHOICES = [
+        ('RawMaterialSku', 'Raw Material SKU'),
+        ('StockDemand', 'Monthly Demand'),
+        ('StockTransaction', 'Stock Transaction'),
+        ('PhysicalStockCount', 'Physical Stock Count'),
+    ]
+
+    ACTION_CHOICES = [
+        ('CREATE', 'Create'),
+        ('UPDATE', 'Update'),
+        ('DELETE', 'Delete'),
+    ]
+
+    STATUS_CHOICES = [
+        ('PENDING', 'Pending Review'),
+        ('APPROVED', 'Approved'),
+        ('REJECTED', 'Rejected'),
+    ]
+
+    model_name = models.CharField(max_length=50, choices=MODEL_CHOICES)
+    action = models.CharField(max_length=10, choices=ACTION_CHOICES)
+    target_id = models.PositiveIntegerField(null=True, blank=True)
+    proposed_data = models.JSONField(help_text="Proposed field values serialized to JSON", default=dict, blank=True)
+
+    requested_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='supply_chain_change_requests')
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    status = models.CharField(max_length=10, choices=STATUS_CHOICES, default='PENDING')
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_supply_chain_change_requests')
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, default='')
+
+    class Meta:
+        ordering = ['-requested_at']
+
+    def __str__(self):
+        return f"{self.get_action_display()} {self.get_model_name_display()} - {self.get_status_display()}"
+
+    @property
+    def target_object(self):
+        if not self.target_id:
+            return None
+        from django.apps import apps
+        try:
+            model_class = apps.get_model('supply_chain', self.model_name)
+            return model_class.objects.get(pk=self.target_id)
+        except Exception:
+            return None
+
+    def get_old_and_new_values(self):
+        if self.action != 'UPDATE':
+            return []
+        target = self.target_object
+        if not target:
+            return []
+        changes = []
+        from django.apps import apps
+        model_class = apps.get_model('supply_chain', self.model_name)
+        for field_name, new_val in self.proposed_data.items():
+            is_fk = False
+            actual_field_name = field_name
+            if field_name.endswith('_id'):
+                is_fk = True
+                actual_field_name = field_name[:-3]
+            try:
+                field = model_class._meta.get_field(actual_field_name)
+                label = field.verbose_name or actual_field_name.replace('_', ' ').title()
+            except Exception:
+                label = actual_field_name.replace('_', ' ').title()
+
+            if is_fk:
+                old_id = getattr(target, field_name)
+                old_val = '-'
+                if old_id:
+                    try:
+                        related_model = field.related_model
+                        old_val = str(related_model.objects.get(pk=old_id))
+                    except Exception:
+                        old_val = f"ID: {old_id}"
+                new_val_str = '-'
+                if new_val:
+                    try:
+                        related_model = field.related_model
+                        new_val_str = str(related_model.objects.get(pk=new_val))
+                    except Exception:
+                        new_val_str = f"ID: {new_val}"
+                changes.append({
+                    'field': actual_field_name,
+                    'label': label,
+                    'old': old_val,
+                    'new': new_val_str
+                })
+            else:
+                old_val = getattr(target, actual_field_name)
+                if isinstance(old_val, bool):
+                    old_val = 'Yes' if old_val else 'No'
+                if isinstance(new_val, bool):
+                    new_val = 'Yes' if new_val else 'No'
+                changes.append({
+                    'field': actual_field_name,
+                    'label': label,
+                    'old': old_val if old_val is not None else '-',
+                    'new': new_val if new_val is not None else '-'
+                })
+        return changes
+
+    def get_proposed_fields(self):
+        from django.apps import apps
+        try:
+            model_class = apps.get_model('supply_chain', self.model_name)
+        except Exception:
+            return []
+        fields = []
+        for field_name, val in self.proposed_data.items():
+            is_fk = False
+            actual_field_name = field_name
+            if field_name.endswith('_id'):
+                is_fk = True
+                actual_field_name = field_name[:-3]
+            try:
+                field = model_class._meta.get_field(actual_field_name)
+                label = field.verbose_name or actual_field_name.replace('_', ' ').title()
+            except Exception:
+                label = actual_field_name.replace('_', ' ').title()
+
+            if is_fk:
+                val_str = '-'
+                if val:
+                    try:
+                        related_model = field.related_model
+                        val_str = str(related_model.objects.get(pk=val))
+                    except Exception:
+                        val_str = f"ID: {val}"
+                fields.append({'label': label, 'value': val_str})
+            else:
+                if isinstance(val, bool):
+                    val = 'Yes' if val else 'No'
+                fields.append({'label': label, 'value': val if val is not None else '-'})
+        return fields
+
+    def apply(self, user):
+        from django.apps import apps
+        model_class = apps.get_model('supply_chain', self.model_name)
+        if self.action == 'CREATE':
+            if self.model_name == 'RawMaterialSku' and 'material_name' in self.proposed_data:
+                from .raw_material_sku import upsert_raw_material_sku_row
+                obj, errors, _ = upsert_raw_material_sku_row(self.proposed_data)
+                if errors:
+                    raise Exception('; '.join(errors))
+                self.target_id = obj.pk
+            else:
+                instance = model_class(**self.proposed_data)
+                instance.save()
+                self.target_id = instance.pk
+        elif self.action == 'UPDATE':
+            instance = model_class.objects.get(pk=self.target_id)
+            for k, v in self.proposed_data.items():
+                setattr(instance, k, v)
+            instance.save()
+        elif self.action == 'DELETE':
+            instance = model_class.objects.get(pk=self.target_id)
+            # Soft delete!
+            instance.is_active = False
+            instance.save(update_fields=['is_active'])
+
+        self.status = 'APPROVED'
+        self.reviewed_by = user
+        self.reviewed_at = timezone.now()
+        self.save()
+

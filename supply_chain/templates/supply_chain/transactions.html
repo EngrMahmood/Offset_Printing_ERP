@@ -83,6 +83,7 @@
                             <th>Sheet Packing/Pcs</th>
                             <th>Sheet Qty/Pcs</th>
                             <th>Pkt/Rim Qty</th>
+                            <th>Actions</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -111,9 +112,15 @@
                             <td>{{ txn.raw_material_sku.sheet_packing_pcs|default:'—' }}</td>
                             <td>{{ txn.sheet_qty_pcs }}</td>
                             <td>{{ txn.pkt_rim_qty }}</td>
+                            <td>
+                                <div class="flex gap-1">
+                                    <a href="{% url 'supply_chain:transaction_edit' txn.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                                    <a href="{% url 'supply_chain:transaction_delete' txn.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
+                                </div>
+                            </td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="10">No records yet.</td></tr>
+                        <tr><td colspan="12">No records yet.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
