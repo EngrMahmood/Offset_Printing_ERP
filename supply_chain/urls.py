@@ -13,6 +13,7 @@ urlpatterns = [
     path('change-requests/<int:pk>/', views.change_request_detail, name='change_request_detail'),
     path('change-requests/<int:pk>/approve/', views.change_request_approve, name='change_request_approve'),
     path('change-requests/<int:pk>/reject/', views.change_request_reject, name='change_request_reject'),
+    path('bulk-delete/', views.bulk_delete, name='bulk_delete'),
 
     path('items/', views.item_list, name='items'),
     path('items/<int:pk>/edit/', views.item_edit, name='item_edit'),

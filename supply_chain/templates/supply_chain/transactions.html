@@ -68,63 +68,93 @@
                 </form>
             </div>
 
-            <div class="erp-table-wrap erp-table-dense">
-                <table class="erp-table">
-                    <thead>
-                        <tr>
-                            <th>Source</th>
-                            <th>Month</th>
-                            <th>Date</th>
-                            <th>GIN / JC</th>
-                            <th>Raw Material SKU</th>
-                            <th>Material</th>
-                            <th>Purchase Size</th>
-                            <th>UOM</th>
-                            <th>Sheet Packing/Pcs</th>
-                            <th>Sheet Qty/Pcs</th>
-                            <th>Pkt/Rim Qty</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for txn in transactions %}
-                        <tr>
-                            <td>
-                                {% if txn.source == 'JOB_CARD' %}
-                                    <span class="erp-badge erp-badge-approved" title="Auto-linked from job card">JC</span>
-                                {% else %}
-                                    <span class="erp-badge erp-badge-draft">Manual</span>
-                                {% endif %}
-                            </td>
-                            <td>{{ txn.month_str|default:'—' }}</td>
-                            <td>{{ txn.date|date:'Y-m-d' }}</td>
-                            <td>
-                                {% if txn.job_card_id %}
-                                    <strong>{{ txn.gin_jc }}</strong>
-                                {% else %}
-                                    {{ txn.gin_jc|default:'—' }}
-                                {% endif %}
-                            </td>
-                            <td>{{ txn.raw_material_sku.sku|default:'—' }}</td>
-                            <td>{{ txn.raw_material_sku.material.name|default:'—' }}</td>
-                            <td>{{ txn.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
-                            <td>{{ txn.raw_material_sku.uom|default:'—' }}</td>
-                            <td>{{ txn.raw_material_sku.sheet_packing_pcs|default:'—' }}</td>
-                            <td>{{ txn.sheet_qty_pcs }}</td>
-                            <td>{{ txn.pkt_rim_qty }}</td>
-                            <td>
-                                <div class="flex gap-1">
-                                    <a href="{% url 'supply_chain:transaction_edit' txn.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
-                                    <a href="{% url 'supply_chain:transaction_delete' txn.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
-                                </div>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="12">No records yet.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            <form method="post" action="{% url 'supply_chain:bulk_delete' %}">
+                {% csrf_token %}
+                <input type="hidden" name="model_name" value="StockTransaction">
+                <input type="hidden" name="redirect_url" value="{{ request.get_full_path }}">
+                
+                <div class="flex justify-between items-center mb-3 px-4">
+                    <div></div>
+                    <button type="submit" class="erp-btn erp-btn-secondary text-red-600 hover:bg-red-50 sm" onclick="return confirm('Are you sure you want to delete the selected transactions?');">
+                        <i class="fas fa-trash-alt"></i> Delete Selected
+                    </button>
+                </div>
+
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th class="w-12 text-center" style="width: 48px;">
+                                    <input type="checkbox" onclick="toggleSelectAll(this, 'txn-checkbox')">
+                                </th>
+                                <th>Source</th>
+                                <th>Month</th>
+                                <th>Date</th>
+                                <th>GIN / JC</th>
+                                <th>Raw Material SKU</th>
+                                <th>Material</th>
+                                <th>Purchase Size</th>
+                                <th>UOM</th>
+                                <th>Sheet Packing/Pcs</th>
+                                <th>Sheet Qty/Pcs</th>
+                                <th>Pkt/Rim Qty</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for txn in transactions %}
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" name="selected_ids" value="{{ txn.pk }}" class="txn-checkbox">
+                                </td>
+                                <td>
+                                    {% if txn.source == 'JOB_CARD' %}
+                                        <span class="erp-badge erp-badge-approved" title="Auto-linked from job card">JC</span>
+                                    {% else %}
+                                        <span class="erp-badge erp-badge-draft">Manual</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ txn.month_str|default:'—' }}</td>
+                                <td>{{ txn.date|date:'Y-m-d' }}</td>
+                                <td>
+                                    {% if txn.job_card_id %}
+                                        <strong>{{ txn.gin_jc }}</strong>
+                                    {% else %}
+                                        {{ txn.gin_jc|default:'—' }}
+                                    {% endif %}
+                                </td>
+                                <td>{{ txn.raw_material_sku.sku|default:'—' }}</td>
+                                <td>{{ txn.raw_material_sku.material.name|default:'—' }}</td>
+                                <td>{{ txn.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
+                                <td>{{ txn.raw_material_sku.uom|default:'—' }}</td>
+                                <td>{{ txn.raw_material_sku.sheet_packing_pcs|default:'—' }}</td>
+                                <td>{{ txn.sheet_qty_pcs }}</td>
+                                <td>{{ txn.pkt_rim_qty }}</td>
+                                <td>
+                                    <div class="flex gap-1">
+                                        <a href="{% url 'supply_chain:transaction_edit' txn.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                                        <a href="{% url 'supply_chain:transaction_delete' txn.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="14">No records yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
         </section>
     </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script>
+        function toggleSelectAll(master, className) {
+            const checkboxes = document.getElementsByClassName(className);
+            for (let cb of checkboxes) {
+                cb.checked = master.checked;
+            }
+        }
+    </script>
 {% endblock %}

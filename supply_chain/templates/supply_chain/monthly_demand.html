@@ -46,45 +46,75 @@
                 </form>
             </div>
 
-            <div class="erp-table-wrap erp-table-dense">
-                <table class="erp-table">
-                    <thead>
-                        <tr>
-                            <th>Month</th>
-                            <th>Raw Material SKU</th>
-                            <th>Material</th>
-                            <th>Purchase Size</th>
-                            <th>UOM</th>
-                            <th>Sheet Packing/Pcs</th>
-                            <th>Sheet Qty/Pcs</th>
-                            <th>Pkt/Rim Qty</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for demand in demands %}
-                        <tr>
-                            <td>{{ demand.month_str|default:'—' }}</td>
-                            <td>{{ demand.raw_material_sku.sku|default:'—' }}</td>
-                            <td>{{ demand.raw_material_sku.material.name|default:'—' }}</td>
-                            <td>{{ demand.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
-                            <td>{{ demand.raw_material_sku.uom|default:'—' }}</td>
-                            <td>{{ demand.raw_material_sku.sheet_packing_pcs|default:'—' }}</td>
-                            <td>{{ demand.sheet_qty_pcs }}</td>
-                            <td>{{ demand.pkt_rim_qty }}</td>
-                            <td>
-                                <div class="flex gap-1">
-                                    <a href="{% url 'supply_chain:monthly_demand_edit' demand.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
-                                    <a href="{% url 'supply_chain:monthly_demand_delete' demand.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
-                                </div>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="9">No monthly demand records yet.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            <form method="post" action="{% url 'supply_chain:bulk_delete' %}">
+                {% csrf_token %}
+                <input type="hidden" name="model_name" value="StockDemand">
+                <input type="hidden" name="redirect_url" value="{{ request.get_full_path }}">
+                
+                <div class="flex justify-between items-center mb-3 px-4">
+                    <div></div>
+                    <button type="submit" class="erp-btn erp-btn-secondary text-red-600 hover:bg-red-50 sm" onclick="return confirm('Are you sure you want to delete the selected demands?');">
+                        <i class="fas fa-trash-alt"></i> Delete Selected
+                    </button>
+                </div>
+
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th class="w-12 text-center" style="width: 48px;">
+                                    <input type="checkbox" onclick="toggleSelectAll(this, 'demand-checkbox')">
+                                </th>
+                                <th>Month</th>
+                                <th>Raw Material SKU</th>
+                                <th>Material</th>
+                                <th>Purchase Size</th>
+                                <th>UOM</th>
+                                <th>Sheet Packing/Pcs</th>
+                                <th>Sheet Qty/Pcs</th>
+                                <th>Pkt/Rim Qty</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for demand in demands %}
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" name="selected_ids" value="{{ demand.pk }}" class="demand-checkbox">
+                                </td>
+                                <td>{{ demand.month_str|default:'—' }}</td>
+                                <td>{{ demand.raw_material_sku.sku|default:'—' }}</td>
+                                <td>{{ demand.raw_material_sku.material.name|default:'—' }}</td>
+                                <td>{{ demand.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
+                                <td>{{ demand.raw_material_sku.uom|default:'—' }}</td>
+                                <td>{{ demand.raw_material_sku.sheet_packing_pcs|default:'—' }}</td>
+                                <td>{{ demand.sheet_qty_pcs }}</td>
+                                <td>{{ demand.pkt_rim_qty }}</td>
+                                <td>
+                                    <div class="flex gap-1">
+                                        <a href="{% url 'supply_chain:monthly_demand_edit' demand.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                                        <a href="{% url 'supply_chain:monthly_demand_delete' demand.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="10">No monthly demand records yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
         </section>
     </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script>
+        function toggleSelectAll(master, className) {
+            const checkboxes = document.getElementsByClassName(className);
+            for (let cb of checkboxes) {
+                cb.checked = master.checked;
+            }
+        }
+    </script>
 {% endblock %}

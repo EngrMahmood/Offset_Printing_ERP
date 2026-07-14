@@ -113,51 +113,81 @@
                     <h3 class="erp-section-title">Count History</h3>
                 </div>
             </div>
-            <div class="erp-table-wrap erp-table-dense">
-                <table class="erp-table">
-                    <thead>
-                        <tr>
-                            <th>Date</th>
-                            <th>Raw Material SKU</th>
-                            <th>Material</th>
-                            <th>Purchase Size</th>
-                            <th>Physical</th>
-                            <th>System</th>
-                            <th>Variance</th>
-                            <th>Accuracy %</th>
-                            <th>Notes</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for count in history %}
-                        <tr>
-                            <td>{{ count.count_date|date:'Y-m-d' }}</td>
-                            <td>{{ count.raw_material_sku.sku|default:'—' }}</td>
-                            <td>{{ count.raw_material_sku.material.name|default:'—' }}</td>
-                            <td>{{ count.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
-                            <td>{{ count.physical_sheet_qty }}</td>
-                            <td>{{ count.system_sheet_qty }}</td>
-                            <td>{{ count.variance }}</td>
-                            <td>
-                                <span class="erp-badge {% if count.accuracy_percent >= 95 %}erp-badge-approved{% elif count.accuracy_percent >= 85 %}erp-badge-pending{% else %}erp-badge-rejected{% endif %}">
-                                    {{ count.accuracy_percent }}%
-                                </span>
-                            </td>
-                            <td>{{ count.notes|default:'—' }}</td>
-                            <td>
-                                <div class="flex gap-1">
-                                    <a href="{% url 'supply_chain:physical_count_edit' count.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
-                                    <a href="{% url 'supply_chain:physical_count_delete' count.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
-                                </div>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr><td colspan="10">No physical counts recorded yet.</td></tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            <form method="post" action="{% url 'supply_chain:bulk_delete' %}">
+                {% csrf_token %}
+                <input type="hidden" name="model_name" value="PhysicalStockCount">
+                <input type="hidden" name="redirect_url" value="{{ request.get_full_path }}">
+                
+                <div class="flex justify-between items-center mb-3 px-4">
+                    <div></div>
+                    <button type="submit" class="erp-btn erp-btn-secondary text-red-600 hover:bg-red-50 sm" onclick="return confirm('Are you sure you want to delete the selected counts?');">
+                        <i class="fas fa-trash-alt"></i> Delete Selected
+                    </button>
+                </div>
+
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th class="w-12 text-center" style="width: 48px;">
+                                    <input type="checkbox" onclick="toggleSelectAll(this, 'count-checkbox')">
+                                </th>
+                                <th>Date</th>
+                                <th>Raw Material SKU</th>
+                                <th>Material</th>
+                                <th>Purchase Size</th>
+                                <th>Physical</th>
+                                <th>System</th>
+                                <th>Variance</th>
+                                <th>Accuracy %</th>
+                                <th>Notes</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for count in history %}
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" name="selected_ids" value="{{ count.pk }}" class="count-checkbox">
+                                </td>
+                                <td>{{ count.count_date|date:'Y-m-d' }}</td>
+                                <td>{{ count.raw_material_sku.sku|default:'—' }}</td>
+                                <td>{{ count.raw_material_sku.material.name|default:'—' }}</td>
+                                <td>{{ count.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
+                                <td>{{ count.physical_sheet_qty }}</td>
+                                <td>{{ count.system_sheet_qty }}</td>
+                                <td>{{ count.variance }}</td>
+                                <td>
+                                    <span class="erp-badge {% if count.accuracy_percent >= 95 %}erp-badge-approved{% elif count.accuracy_percent >= 85 %}erp-badge-pending{% else %}erp-badge-rejected{% endif %}">
+                                        {{ count.accuracy_percent }}%
+                                    </span>
+                                </td>
+                                <td>{{ count.notes|default:'—' }}</td>
+                                <td>
+                                    <div class="flex gap-1">
+                                        <a href="{% url 'supply_chain:physical_count_edit' count.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                                        <a href="{% url 'supply_chain:physical_count_delete' count.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="11">No physical counts recorded yet.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
         </section>
     </div>
+{% endblock %}
+
+{% block extra_js %}
+    <script>
+        function toggleSelectAll(master, className) {
+            const checkboxes = document.getElementsByClassName(className);
+            for (let cb of checkboxes) {
+                cb.checked = master.checked;
+            }
+        }
+    </script>
 {% endblock %}

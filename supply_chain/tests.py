@@ -421,3 +421,45 @@ class ChangeManagementTests(TestCase):
         self.assertEqual(demand.month_str, 'August 2026')
         self.assertEqual(demand.sheet_qty_pcs, 500)
 
+    def test_admin_bulk_delete(self):
+        from supply_chain.models import ChangeRequest
+        demand1 = StockDemand.objects.create(raw_material_sku=self.item, month_str='June 2026', sheet_qty_pcs=100)
+        demand2 = StockDemand.objects.create(raw_material_sku=self.item, month_str='July 2026', sheet_qty_pcs=200)
+
+        self.client.force_login(self.admin)
+        response = self.client.post('/supply-chain/bulk-delete/', {
+            'model_name': 'StockDemand',
+            'selected_ids': [demand1.pk, demand2.pk],
+            'redirect_url': '/supply-chain/monthly-demand/'
+        })
+        self.assertEqual(response.status_code, 302)
+        # Verify both are soft-deleted (is_active = False)
+        demand1.refresh_from_db()
+        demand2.refresh_from_db()
+        self.assertFalse(demand1.is_active)
+        self.assertFalse(demand2.is_active)
+        
+        # Verify approved ChangeRequests are logged
+        self.assertEqual(ChangeRequest.objects.filter(status='APPROVED', action='DELETE').count(), 2)
+
+    def test_user_bulk_delete_request(self):
+        from supply_chain.models import ChangeRequest
+        demand1 = StockDemand.objects.create(raw_material_sku=self.item, month_str='June 2026', sheet_qty_pcs=100)
+        demand2 = StockDemand.objects.create(raw_material_sku=self.item, month_str='July 2026', sheet_qty_pcs=200)
+
+        self.client.force_login(self.user)
+        response = self.client.post('/supply-chain/bulk-delete/', {
+            'model_name': 'StockDemand',
+            'selected_ids': [demand1.pk, demand2.pk],
+            'redirect_url': '/supply-chain/monthly-demand/'
+        })
+        self.assertEqual(response.status_code, 302)
+        # Verify they are NOT soft-deleted
+        demand1.refresh_from_db()
+        demand2.refresh_from_db()
+        self.assertTrue(demand1.is_active)
+        self.assertTrue(demand2.is_active)
+        
+        # Verify pending ChangeRequests are logged
+        self.assertEqual(ChangeRequest.objects.filter(status='PENDING', action='DELETE').count(), 2)
+

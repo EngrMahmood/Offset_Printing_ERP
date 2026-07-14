@@ -52,43 +52,62 @@
         {% include 'supply_chain/includes/import_export_panel.html' with import_action='import' import_label='Import Raw Material SKUs' %}
 
         <section class="erp-section-shell">
-            <div class="erp-table-wrap erp-table-dense">
-                <table class="erp-table">
-                    <thead>
-                        <tr>
-                            <th>Raw Material SKU</th>
-                            <th>Material</th>
-                            <th>Purchase Sheet Size</th>
-                            <th>UOM</th>
-                            <th>Unit Cost</th>
-                            <th>Safety Stock</th>
-                            <th>Active</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for item in items %}
-                        <tr>
-                            <td><strong>{{ item.sku }}</strong></td>
-                            <td>{{ item.material.name }}</td>
-                            <td>{{ item.purchase_sheet_size }}</td>
-                            <td>{{ item.uom }}</td>
-                            <td>{{ item.unit_cost }}</td>
-                            <td>{{ item.safety_stock }}</td>
-                            <td>{% if item.is_active %}Yes{% else %}No{% endif %}</td>
-                            <td class="flex gap-1">
-                                <a href="{% url 'supply_chain:item_edit' item.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
-                                <a href="{% url 'supply_chain:item_delete' item.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="8">No raw material SKUs yet. Download the template or use quick add above.</td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
+            <form method="post" action="{% url 'supply_chain:bulk_delete' %}">
+                {% csrf_token %}
+                <input type="hidden" name="model_name" value="RawMaterialSku">
+                <input type="hidden" name="redirect_url" value="{{ request.get_full_path }}">
+                
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="erp-section-title">SKU Inventory List</h3>
+                    <button type="submit" class="erp-btn erp-btn-secondary text-red-600 hover:bg-red-50 sm" onclick="return confirm('Are you sure you want to delete the selected SKUs?');">
+                        <i class="fas fa-trash-alt"></i> Delete Selected
+                    </button>
+                </div>
+
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th class="w-12 text-center" style="width: 48px;">
+                                    <input type="checkbox" onclick="toggleSelectAll(this, 'sku-checkbox')">
+                                </th>
+                                <th>Raw Material SKU</th>
+                                <th>Material</th>
+                                <th>Purchase Sheet Size</th>
+                                <th>UOM</th>
+                                <th>Unit Cost</th>
+                                <th>Safety Stock</th>
+                                <th>Active</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for item in items %}
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" name="selected_ids" value="{{ item.pk }}" class="sku-checkbox">
+                                </td>
+                                <td><strong>{{ item.sku }}</strong></td>
+                                <td>{{ item.material.name }}</td>
+                                <td>{{ item.purchase_sheet_size }}</td>
+                                <td>{{ item.uom }}</td>
+                                <td>{{ item.unit_cost }}</td>
+                                <td>{{ item.safety_stock }}</td>
+                                <td>{% if item.is_active %}Yes{% else %}No{% endif %}</td>
+                                <td class="flex gap-1">
+                                    <a href="{% url 'supply_chain:item_edit' item.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                                    <a href="{% url 'supply_chain:item_delete' item.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="9">No raw material SKUs yet. Download the template or use quick add above.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
         </section>
     </div>
 
@@ -121,6 +140,12 @@
                 }
             })
             .catch(() => alert('An error occurred while adding material.'));
+        }
+        function toggleSelectAll(master, className) {
+            const checkboxes = document.getElementsByClassName(className);
+            for (let cb of checkboxes) {
+                cb.checked = master.checked;
+            }
         }
     </script>
 {% endblock %}

@@ -998,3 +998,65 @@ def item_delete(request, pk):
         'title': 'Delete Raw Material SKU',
         'back_url': reverse('supply_chain:items')
     })
+
+
+@supply_chain_required
+@require_POST
+def bulk_delete(request):
+    model_name = request.POST.get('model_name')
+    redirect_url = request.POST.get('redirect_url') or 'supply_chain:dashboard'
+    selected_ids = request.POST.getlist('selected_ids')
+
+    ALLOWED_MODELS = {'RawMaterialSku', 'StockDemand', 'StockTransaction', 'PhysicalStockCount'}
+    if model_name not in ALLOWED_MODELS:
+        messages.error(request, "Invalid model specified for deletion.")
+        return redirect(redirect_url)
+
+    if not selected_ids:
+        messages.warning(request, "No items were selected for deletion.")
+        return redirect(redirect_url)
+
+    from django.apps import apps
+    model_class = apps.get_model('supply_chain', model_name)
+
+    is_admin = is_supply_chain_admin(request.user)
+    processed = 0
+
+    for pk in selected_ids:
+        try:
+            instance = model_class.objects.get(pk=pk, is_active=True)
+            if is_admin:
+                instance.is_active = False
+                instance.save(update_fields=['is_active'])
+                ChangeRequest.objects.create(
+                    model_name=model_name,
+                    action='DELETE',
+                    target_id=instance.pk,
+                    proposed_data={},
+                    requested_by=request.user,
+                    reviewed_by=request.user,
+                    reviewed_at=timezone.now(),
+                    status='APPROVED',
+                )
+            else:
+                ChangeRequest.objects.create(
+                    model_name=model_name,
+                    action='DELETE',
+                    target_id=instance.pk,
+                    proposed_data={},
+                    requested_by=request.user,
+                    status='PENDING',
+                )
+            processed += 1
+        except model_class.DoesNotExist:
+            continue
+
+    if processed > 0:
+        if is_admin:
+            messages.success(request, f"Successfully archived {processed} record(s).")
+        else:
+            messages.success(request, f"Submitted deletion requests for {processed} record(s) for admin review.")
+    else:
+        messages.error(request, "No valid records were processed for deletion.")
+
+    return redirect(redirect_url)
