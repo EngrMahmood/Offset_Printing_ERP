@@ -13,6 +13,15 @@ from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
 import io
 
+def _machine_display(value, fallback='-'):
+    """Return a safe string representation for machine values."""
+    if value is None:
+        return fallback
+    if isinstance(value, str):
+        return value
+    return str(value)
+
+
 def get_audit_data():
     """
     Scans the database in real-time to find gaps/missing entries.
@@ -95,7 +104,7 @@ def get_audit_data():
             'sku': p.job_card.SKU,
             'gap_type': 'info',
             'gaps': f"Printing Entry (ID: {p.id}, Date: {p.date}) missing {', '.join(missing)}.",
-            'machine': p.machine or p.job_card.machine_name_display or '-',
+            'machine': _machine_display(p.machine, p.job_card.machine_name_display or '-'),
             'status': p.job_card.workflow_status_label,
         })
 
@@ -132,7 +141,7 @@ def get_audit_data():
             'job_card_no': p.job_card.job_card_no,
             'sku': p.job_card.SKU,
             'gaps': f"Packing Entry (ID: {p.id}, Date: {p.date}) missing Sorter assignment.",
-            'machine': p.machine or p.job_card.machine_name_display or '-',
+            'machine': _machine_display(p.machine, p.job_card.machine_name_display or '-'),
             'status': p.job_card.workflow_status_label,
         })
 
