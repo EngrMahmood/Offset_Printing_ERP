@@ -15,6 +15,7 @@ GUIDE_NAV_ROLES = {
     'admin', 'manager', 'planner', 'qc', 'production_manager', 'production', 'dispatch', 'finance', 'operator'
 }
 SUPPLY_CHAIN_NAV_ROLES = {'admin', 'manager', 'supply_chain'}
+AUDIT_NAV_ROLES = {'admin', 'manager', 'planner', 'production_manager', 'production', 'qc', 'dispatch'}
 
 
 def _role_from_request(request: Any) -> str:
@@ -49,4 +50,6 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_access_printing_plates': _allow(PRINTING_PLATES_NAV_ROLES),
         'can_access_guides': _allow(GUIDE_NAV_ROLES),
         'can_access_supply_chain': _allow(SUPPLY_CHAIN_NAV_ROLES),
+        'can_access_audit': _allow(AUDIT_NAV_ROLES),
+        'can_access_tasks': is_authenticated,
     }

@@ -67,6 +67,18 @@
                 Dispatch
             </a>
             {% endif %}
+            {% if nav.can_access_audit %}
+            <a href="{% url 'audit:dashboard' %}"
+               class="erp-topnav-module {% if app == 'audit' %}is-active{% endif %}">
+                Audit
+            </a>
+            {% endif %}
+            {% if nav.can_access_tasks %}
+            <a href="{% url 'tasks:dashboard' %}"
+               class="erp-topnav-module {% if app == 'tasks' %}is-active{% endif %}">
+                Tasks
+            </a>
+            {% endif %}
             {% if nav.can_access_migration %}
             <a href="{% url 'migration:dashboard' %}"
                class="erp-topnav-module {% if app == 'migration' %}is-active{% endif %}">
@@ -330,6 +342,30 @@
         <a href="{% url 'printing_plates:request_add' %}"
            class="erp-subnav-link {% if url == 'request_add' %}is-active{% endif %}">
             New Request
+        </a>
+    </div>
+
+    {% elif app == 'audit' and nav.can_access_audit %}
+    <div class="erp-subnav">
+        <a href="{% url 'audit:dashboard' %}?tab=audit"
+           class="erp-subnav-link {% if request.GET.tab == 'audit' or not request.GET.tab %}is-active{% endif %}">
+            Audit Portal
+        </a>
+        <a href="{% url 'audit:dashboard' %}?tab=pending"
+           class="erp-subnav-link {% if request.GET.tab == 'pending' %}is-active{% endif %}">
+            Pending Work
+        </a>
+    </div>
+
+    {% elif app == 'tasks' and nav.can_access_tasks %}
+    <div class="erp-subnav">
+        <a href="{% url 'tasks:dashboard' %}"
+           class="erp-subnav-link {% if url == 'dashboard' or url == 'detail' or url == 'create' or url == 'edit' %}is-active{% endif %}">
+            Tasks Dashboard
+        </a>
+        <a href="{% url 'tasks:teams' %}"
+           class="erp-subnav-link {% if url == 'teams' %}is-active{% endif %}">
+            Manage Teams
         </a>
     </div>
 
