@@ -30,6 +30,8 @@
             <a href="{% url 'qc:qc_home' %}" class="erp-nav-link {% if request.resolver_match.app_name == 'qc' %}active{% endif %}"><i class="fas fa-clipboard-check"></i><span>QC</span></a>
             <a href="{% url 'production_dashboard' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'production_dashboard' %}active{% endif %}"><i class="fas fa-industry"></i><span>Production</span></a>
             <a href="{% url 'dispatch_records' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'dispatch_records' %}active{% endif %}"><i class="fas fa-truck"></i><span>Dispatch</span></a>
+            <a href="{% url 'audit:dashboard' %}" class="erp-nav-link {% if request.resolver_match.app_name == 'audit' %}active{% endif %}"><i class="fas fa-search-dollar"></i><span>Audit & Pending</span></a>
+            <a href="{% url 'tasks:dashboard' %}" class="erp-nav-link {% if request.resolver_match.app_name == 'tasks' %}active{% endif %}"><i class="fas fa-tasks"></i><span>Tasks & Leaderboard</span></a>
 
             <div class="erp-sidebar-group-title">Master & Reports</div>
             <a href="{% url 'master_data' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'master_data' or request.resolver_match.url_name == 'machine_master_tools' %}active{% endif %}"><i class="fas fa-cogs"></i><span>Master Data</span></a>
@@ -98,7 +100,10 @@
                             </div>
                         </div>
 
+                        <a href="{% url 'audit:dashboard' %}" class="{% if request.resolver_match.app_name == 'audit' %}is-active{% endif %}">Audit</a>
+                        <a href="{% url 'tasks:dashboard' %}" class="{% if request.resolver_match.app_name == 'tasks' %}is-active{% endif %}">Tasks</a>
                         <a href="{% url 'erp_readme' %}" class="{% if request.resolver_match.url_name == 'erp_readme' %}is-active{% endif %}">Guides</a>
+
                     </nav>
                     <div class="erp-header-actions">
                         {% block header_actions %}

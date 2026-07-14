@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}Task: {{ task.title }} — Offset ERP{% endblock %}
+
+{% block header_title %}Task Details{% endblock %}
+{% block header_subtitle %}Track progress, add updates, and grade task completion{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'tasks:dashboard' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-arrow-left"></i> Back to Tasks</a>
+{% if can_edit %}
+<a href="{% url 'tasks:edit' task.pk %}" class="erp-btn erp-btn-info"><i class="fas fa-edit"></i> Edit Task</a>
+<a href="{% url 'tasks:delete' task.pk %}" class="erp-btn erp-btn-danger"><i class="fas fa-trash-alt"></i> Delete</a>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <!-- TASK SPECIFICS (Left 2 Columns) -->
+        <div class="lg:col-span-2 space-y-6">
+            <!-- Details Card -->
+            <div class="erp-card bg-white relative overflow-hidden">
+                <!-- Priority Border Accent -->
+                <div class="absolute left-0 top-0 bottom-0 w-1.5 
+                    {% if task.priority == 'critical' %}bg-rose-500{% elif task.priority == 'high' %}bg-orange-500{% elif task.priority == 'medium' %}bg-blue-500{% else %}bg-slate-400{% endif %}">
+                </div>
+                
+                <div class="pl-2 space-y-4">
+                    <div class="flex justify-between items-start gap-4">
+                        <h2 class="text-xl font-bold text-slate-800">{{ task.title }}</h2>
+                        <div class="flex gap-2">
+                            {% if task.priority == 'critical' %}
+                                <span class="bg-rose-50 text-rose-700 font-bold border border-rose-200 px-2 py-0.5 rounded text-[10px] uppercase">Critical Priority</span>
+                            {% elif task.priority == 'high' %}
+                                <span class="bg-orange-50 text-orange-700 font-semibold border border-orange-200 px-2 py-0.5 rounded text-[10px] uppercase">High Priority</span>
+                            {% elif task.priority == 'medium' %}
+                                <span class="bg-blue-50 text-blue-700 font-semibold border border-blue-200 px-2 py-0.5 rounded text-[10px] uppercase">Medium Priority</span>
+                            {% else %}
+                                <span class="bg-slate-100 text-slate-600 border border-slate-200 px-2 py-0.5 rounded text-[10px] uppercase">Low Priority</span>
+                            {% endif %}
+                            
+                            {% if task.status == 'verified' %}
+                                <span class="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded text-[10px] uppercase font-bold"><i class="fas fa-check-double mr-1"></i> Verified</span>
+                            {% elif task.status == 'completed' %}
+                                <span class="bg-emerald-50 text-emerald-700 border border-emerald-100 px-2 py-0.5 rounded text-[10px] uppercase font-semibold"><i class="fas fa-check mr-1"></i> Completed</span>
+                            {% elif task.status == 'in_progress' %}
+                                <span class="bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded text-[10px] uppercase font-semibold"><i class="fas fa-spinner fa-spin mr-1"></i> In Progress</span>
+                            {% elif task.status == 'cancelled' %}
+                                <span class="bg-rose-50 text-rose-700 border border-rose-100 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">Cancelled</span>
+                            {% else %}
+                                <span class="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded text-[10px] uppercase font-semibold">Pending</span>
+                            {% endif %}
+                        </div>
+                    </div>
+
+                    <div class="text-sm text-slate-600 whitespace-pre-line leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-100">
+                        {{ task.description }}
+                    </div>
+
+                    <!-- Meta Grid -->
+                    <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs pt-2">
+                        <div>
+                            <span class="text-slate-400 block font-semibold uppercase tracking-wider text-[10px] mb-1">Created By</span>
+                            <span class="font-medium text-slate-700">{{ task.created_by.username }}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 block font-semibold uppercase tracking-wider text-[10px] mb-1">Assigned To</span>
+                            {% if task.assignee %}
+                                <span class="font-medium text-slate-700"><i class="far fa-user mr-1 text-slate-400"></i> {{ task.assignee.username }}</span>
+                            {% else %}
+                                <span class="font-medium text-slate-400">No individual assignee</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <span class="text-slate-400 block font-semibold uppercase tracking-wider text-[10px] mb-1">Assigned Team</span>
+                            {% if task.assigned_team %}
+                                <span class="bg-purple-50 text-purple-700 font-bold px-2 py-0.5 rounded text-[10px]">{{ task.assigned_team.name }}</span>
+                            {% else %}
+                                <span class="font-medium text-slate-400">No team assignee</span>
+                            {% endif %}
+                        </div>
+                        <div>
+                            <span class="text-slate-400 block font-semibold uppercase tracking-wider text-[10px] mb-1">Due Date</span>
+                            <span class="font-bold {% if task.status != 'completed' and task.status != 'verified' and task.due_date < today %}text-rose-600{% else %}text-slate-700{% endif %}">
+                                {{ task.due_date|date:"d M Y" }}
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Comment Log -->
+            <div class="erp-card bg-white p-4">
+                <h3 class="font-bold text-slate-800 text-sm mb-4 border-b border-slate-100 pb-2"><i class="far fa-comments text-blue-500 mr-1"></i> Comments & Updates</h3>
+                
+                <div class="space-y-4 max-h-[300px] overflow-y-auto pr-1 mb-4">
+                    {% for c in comments %}
+                    <div class="bg-slate-50/50 p-3 rounded-lg border border-slate-100 flex gap-3">
+                        <div class="w-8 h-8 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center font-bold text-xs">
+                            {{ c.user.username|slice:":2"|upper }}
+                        </div>
+                        <div class="flex-1 min-w-0">
+                            <div class="flex justify-between items-center mb-1">
+                                <span class="font-bold text-slate-700 text-xs">{{ c.user.username }}</span>
+                                <span class="text-[10px] text-slate-400">{{ c.created_at|date:"d M H:i" }}</span>
+                            </div>
+                            <p class="text-xs text-slate-600 whitespace-pre-line leading-relaxed">{{ c.comment }}</p>
+                        </div>
+                    </div>
+                    {% empty %}
+                    <div class="text-center py-6 text-slate-400 text-xs">No comments posted yet. Make the first update!</div>
+                    {% endfor %}
+                </div>
+
+                <!-- Add Comment Form -->
+                <form method="post" class="mt-4 pt-2 border-t border-slate-100">
+                    {% csrf_token %}
+                    <div class="flex gap-2 items-end">
+                        <div class="flex-1">
+                            <textarea name="comment" rows="2" class="erp-input text-xs" placeholder="Write an update or comment..." required></textarea>
+                        </div>
+                        <button type="submit" class="erp-btn erp-btn-primary min-h-[36px] px-4">Post</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+
+        <!-- ACTION PANELS (Right 1 Column) -->
+        <div class="space-y-6">
+            <!-- Score Card (If graded) -->
+            {% if task.score is not None %}
+            <div class="erp-card bg-gradient-to-br from-emerald-500 to-teal-600 text-white shadow-md">
+                <h3 class="font-bold text-xs uppercase tracking-wider text-emerald-100 mb-2"><i class="fas fa-award mr-1"></i> Task Performance Score</h3>
+                <div class="flex items-baseline gap-2">
+                    <span class="text-4xl font-black">{{ task.score }}</span>
+                    <span class="text-sm text-emerald-100">/ 100</span>
+                </div>
+                {% if task.score_remarks %}
+                    <div class="mt-3 text-xs bg-black/15 p-2 rounded text-emerald-50 leading-relaxed italic border border-white/5">
+                        "{{ task.score_remarks }}"
+                    </div>
+                {% endif %}
+                <div class="mt-3 text-[10px] text-emerald-200">
+                    Graded by <span class="font-bold">{{ task.scored_by.username }}</span> on {{ task.updated_at|date:"d M Y" }}
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Assignee Status Panel -->
+            {% if is_assignee or can_edit %}
+            <div class="erp-card bg-white">
+                <h3 class="font-bold text-slate-800 text-sm mb-3 pb-2 border-b border-slate-100"><i class="fas fa-cog text-slate-500 mr-1"></i> Progress Control</h3>
+                
+                <div class="space-y-3">
+                    {% if task.status == 'pending' %}
+                        <form action="{% url 'tasks:update_status' task.pk %}" method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="status" value="in_progress">
+                            <button type="submit" class="erp-btn erp-btn-primary w-100 justify-center"><i class="fas fa-play mr-1"></i> Start Working</button>
+                        </form>
+                    {% endif %}
+                    
+                    {% if task.status == 'pending' or task.status == 'in_progress' %}
+                        <form action="{% url 'tasks:update_status' task.pk %}" method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="status" value="completed">
+                            <button type="submit" class="erp-btn erp-btn-success w-100 justify-center"><i class="fas fa-check-circle mr-1"></i> Mark as Completed</button>
+                        </form>
+                    {% endif %}
+
+                    {% if can_edit and task.status != 'cancelled' %}
+                        <form action="{% url 'tasks:update_status' task.pk %}" method="post">
+                            {% csrf_token %}
+                            <input type="hidden" name="status" value="cancelled">
+                            <button type="submit" class="erp-btn erp-btn-danger w-100 justify-center"><i class="fas fa-times-circle mr-1"></i> Cancel Task</button>
+                        </form>
+                    {% endif %}
+                    
+                    <div class="text-[10px] text-slate-400 text-center mt-2 leading-relaxed">
+                        {% if is_assignee %}
+                            You are assigned to this task.
+                        {% else %}
+                            You are the task creator/manager.
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <!-- Scoring / Grading Panel (For managers/creators) -->
+            {% if can_grade and task.status != 'cancelled' %}
+            <div class="erp-card bg-white">
+                <h3 class="font-bold text-slate-800 text-sm mb-3 pb-2 border-b border-slate-100"><i class="fas fa-star text-amber-500 mr-1"></i> Task Evaluation</h3>
+                
+                <form action="{% url 'tasks:score' task.pk %}" method="post" class="space-y-3">
+                    {% csrf_token %}
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">Score (0 - 100)</label>
+                        <input type="number" name="score" min="0" max="100" class="erp-input text-sm" 
+                            value="{% if task.score is not None %}{{ task.score }}{% else %}100{% endif %}" required>
+                        
+                        <!-- Auto-Score Suggestion Hint -->
+                        {% if task.status == 'completed' or task.status == 'verified' %}
+                            <span class="text-[10px] text-slate-400 block mt-1">
+                                Scheduled Auto-Score: <strong>{{ task.calculate_auto_score }}</strong>
+                            </span>
+                        {% endif %}
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">Remarks / Feedback</label>
+                        <textarea name="score_remarks" rows="3" class="erp-input text-xs" placeholder="Enter evaluation comments...">{{ task.score_remarks }}</textarea>
+                    </div>
+                    
+                    <button type="submit" class="erp-btn erp-btn-warning w-100 justify-center font-bold">
+                        <i class="fas fa-save mr-1"></i> {% if task.score is not None %}Update Evaluation{% else %}Verify & Grade Task{% endif %}
+                    </button>
+                </form>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

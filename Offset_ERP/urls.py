@@ -18,6 +18,8 @@ urlpatterns = [
     path('qc/', include('qc.urls', namespace='qc')),
     path('manual-working/', include('manual_working.urls', namespace='manual_working')),
     path('supply-chain/', include('supply_chain.urls', namespace='supply_chain')),
+    path('audit/', include('audit.urls', namespace='audit')),
+    path('tasks/', include('tasks.urls', namespace='tasks')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),
 

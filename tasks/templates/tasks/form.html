@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% load static %}
+
+{% block title %}{{ title }} — Offset ERP{% endblock %}
+
+{% block header_title %}{{ title }}{% endblock %}
+{% block header_subtitle %}
+    {% if task %}
+        Modify details for task '{{ task.title }}'
+    {% else %}
+        Assign a new administrative or supporting operational task
+    {% endif %}
+{% endblock %}
+
+{% block header_actions %}
+<a href="{% if task %}{% url 'tasks:detail' task.pk %}{% else %}{% url 'tasks:dashboard' %}{% endif %}" class="erp-btn erp-btn-secondary"><i class="fas fa-times"></i> Cancel</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack max-w-2xl mx-auto">
+    <div class="erp-card bg-white">
+        <form method="post" class="space-y-4">
+            {% csrf_token %}
+            
+            {% if form.non_field_errors %}
+                <div class="erp-alert erp-alert-danger">
+                    {% for error in form.non_field_errors %}
+                        <div>{{ error }}</div>
+                    {% endfor %}
+                </div>
+            {% endif %}
+
+            <!-- Title -->
+            <div class="space-y-1">
+                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Task Title</label>
+                {{ form.title }}
+                {% if form.title.errors %}
+                    <span class="text-xs text-rose-500 block">{{ form.title.errors.0 }}</span>
+                {% endif %}
+            </div>
+
+            <!-- Description -->
+            <div class="space-y-1">
+                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Description / Instructions</label>
+                {{ form.description }}
+                {% if form.description.errors %}
+                    <span class="text-xs text-rose-500 block">{{ form.description.errors.0 }}</span>
+                {% endif %}
+            </div>
+
+            <!-- Assignee Selection (Two Column Grid) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Assign to Individual</label>
+                    {{ form.assignee }}
+                    {% if form.assignee.errors %}
+                        <span class="text-xs text-rose-500 block">{{ form.assignee.errors.0 }}</span>
+                    {% endif %}
+                    <span class="text-[10px] text-slate-400">Select an employee to execute the task.</span>
+                </div>
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Assign to Team</label>
+                    {{ form.assigned_team }}
+                    {% if form.assigned_team.errors %}
+                        <span class="text-xs text-rose-500 block">{{ form.assigned_team.errors.0 }}</span>
+                    {% endif %}
+                    <span class="text-[10px] text-slate-400">Assign to an entire team (e.g. QC, Store).</span>
+                </div>
+            </div>
+
+            <!-- Priority & Due Date (Two Column Grid) -->
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Priority Level</label>
+                    {{ form.priority }}
+                    {% if form.priority.errors %}
+                        <span class="text-xs text-rose-500 block">{{ form.priority.errors.0 }}</span>
+                    {% endif %}
+                </div>
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Due Date</label>
+                    {{ form.due_date }}
+                    {% if form.due_date.errors %}
+                        <span class="text-xs text-rose-500 block">{{ form.due_date.errors.0 }}</span>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="pt-4 border-t border-slate-100 flex justify-end gap-2">
+                <a href="{% if task %}{% url 'tasks:detail' task.pk %}{% else %}{% url 'tasks:dashboard' %}{% endif %}" class="erp-btn erp-btn-secondary px-4 py-2 text-xs">Cancel</a>
+                <button type="submit" class="erp-btn erp-btn-primary px-5 py-2 text-xs font-bold"><i class="fas fa-save mr-1"></i> Save Task</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
