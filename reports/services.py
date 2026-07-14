@@ -64,6 +64,12 @@ REPORT_CATALOG = [
         'description': 'Material cutting requirements for released jobs, including sheet sizes and quantities.',
         'focus': 'Execution',
     },
+    {
+        'key': 'wastage-report',
+        'title': 'Wastage Report',
+        'description': 'Process-wise wastage analysis including printing, sorting, and dispatch gaps (tentative vs finalized).',
+        'focus': 'Execution',
+    },
 ]
 
 
@@ -101,6 +107,13 @@ def _parse_period_filter(request, default_period='month'):
     """Resolve dashboard period presets or explicit date range."""
     today = timezone.localdate()
     period = (request.GET.get('period') or default_period).strip().lower()
+
+    if period == 'all':
+        start = None
+        end = None
+        label = 'All Time'
+        return start, end, period, label, '', ''
+
     date_from_raw = (request.GET.get('date_from') or '').strip()
     date_to_raw = (request.GET.get('date_to') or '').strip()
 
@@ -131,16 +144,22 @@ def _parse_period_filter(request, default_period='month'):
         end = today
         start = end - timedelta(days=days - 1)
         label = f'Last {days} days'
+    elif period == 'all':
+        start = None
+        end = None
+        label = 'All Time'
     else:
         start = today.replace(day=1)
         end = today
         period = 'month'
         label = 'This Month'
 
-    return start, end, period, label, start.isoformat(), end.isoformat()
+    return start, end, period, label, start.isoformat() if start else '', end.isoformat() if end else ''
 
 
 def _filter_planning_jobs_by_period(queryset, start, end):
+    if start is None or end is None:
+        return queryset
     return queryset.filter(
         Q(plan_date__range=(start, end))
         | (Q(plan_date__isnull=True) & Q(created_at__date__range=(start, end)))
@@ -148,6 +167,8 @@ def _filter_planning_jobs_by_period(queryset, start, end):
 
 
 def _filter_job_cards_by_period(queryset, start, end):
+    if start is None or end is None:
+        return queryset
     return queryset.filter(
         Q(planning_job__plan_date__range=(start, end))
         | (
@@ -920,6 +941,294 @@ def build_raw_material_cutting_context(request):
     }
 
 
+def build_wastage_report_context(request):
+    start, end, period, period_label, date_from, date_to = _parse_period_filter(request)
+    year = _get_year(request)
+    search_value = (request.GET.get('q') or '').strip()
+    status_filter = (request.GET.get('status') or '').strip()
+    sku_filter = (request.GET.get('sku') or '').strip()
+    po_filter = (request.GET.get('po') or '').strip()
+    job_card_filter = (request.GET.get('job_card') or '').strip()
+    machine_filter = (request.GET.get('machine') or '').strip()
+    wastage_status_filter = (request.GET.get('wastage_status') or '').strip().lower()
+    high_wastage_filter = request.GET.get('high_wastage') == 'true'
+
+    job_cards = JobCard.objects.filter(is_active=True)
+
+    # Apply date window filter if set
+    if start and end:
+        job_cards = _filter_job_cards_by_period(job_cards, start, end)
+
+    # Universal search filter
+    if search_value:
+        job_cards = job_cards.filter(
+            Q(job_card_no__icontains=search_value)
+            | Q(PO_No__icontains=search_value)
+            | Q(SKU__icontains=search_value)
+        )
+
+    # Individual filters
+    if status_filter:
+        job_cards = job_cards.filter(status=status_filter)
+    if sku_filter:
+        job_cards = job_cards.filter(SKU__icontains=sku_filter)
+    if po_filter:
+        job_cards = job_cards.filter(PO_No__icontains=po_filter)
+    if job_card_filter:
+        job_cards = job_cards.filter(job_card_no__icontains=job_card_filter)
+    if machine_filter:
+        job_cards = job_cards.filter(machine_name__name__icontains=machine_filter)
+
+    # Prefetch related data to avoid N+1 queries
+    job_cards = job_cards.select_related('planning_job', 'machine_name').prefetch_related(
+        Prefetch('productions', queryset=Production.objects.filter(is_active=True)),
+        Prefetch('dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
+    )
+
+    # Order chronologically (first data first / oldest first)
+    job_cards = job_cards.order_by(
+        F('planning_job__plan_date').asc(nulls_last=True),
+        F('po_date').asc(nulls_last=True),
+        'created_at'
+    )
+
+    wastage_rows = []
+    
+    # Summary KPI totals
+    total_plan_qty = 0
+    total_dispatch_qty = 0
+    total_printing_waste_pcs = 0
+    total_sorting_waste_pcs = 0
+    total_dispatch_gap_pcs = 0
+    total_wastage_pcs = 0
+    total_finalized_waste_pcs = 0
+    total_tentative_waste_pcs = 0
+
+    s_no_counter = 0
+
+    for job in job_cards:
+        ups = job.ups or 1
+        plan_qty_pcs = int(job.total_sheets_planned * ups)
+
+        # Python-level summation of prefetched relations to avoid N+1 queries
+        dispatch_qty_pcs = sum(d.dispatch_qty for d in job.dispatch_set.all())
+        printing_waste_sheets = sum(p.waste_sheets for p in job.productions.all() if p.entry_type == 'printing')
+        printing_waste_pcs = printing_waste_sheets * ups
+        sorting_waste_pcs = sum(p.sorting_waste_qty for p in job.productions.all() if p.entry_type == 'packing')
+
+        # Dispatch Gap (Pcs): Plan Qty (Pcs) - Dispatch Qty
+        # Clamped to 0 minimum as per discussion
+        dispatch_gap_pcs = max(plan_qty_pcs - dispatch_qty_pcs, 0)
+
+        # Status of Wastage (Tentative vs Finalized)
+        is_completed = (job.status in ('completed', 'closed') or job.job_status == 'Completed')
+        wastage_status = "Finalized" if is_completed else "Tentative"
+
+        # Apply wastage_status filter in Python to ensure consistency
+        if wastage_status_filter == 'finalized' and not is_completed:
+            continue
+        if wastage_status_filter == 'tentative' and is_completed:
+            continue
+
+        # Extract plan date and plan month
+        # Priority: planning_job.plan_date (set to po_doc.created_at at upload) →
+        #           planning_job.po_approval_date (user-specified fallback) →
+        #           job.created_at.date() (auto-generated, always present)
+        _pj = job.planning_job
+        if _pj and _pj.plan_date:
+            plan_date = _pj.plan_date.strftime('%Y-%m-%d')
+        elif _pj and _pj.po_approval_date:
+            plan_date = _pj.po_approval_date.strftime('%Y-%m-%d')
+        elif job.created_at:
+            plan_date = job.created_at.date().strftime('%Y-%m-%d')
+        else:
+            plan_date = ''
+        # plan_month: prefer stored label, otherwise derive from the resolved plan_date
+        if _pj and _pj.plan_month:
+            plan_month = _pj.plan_month
+        elif job.month:
+            plan_month = job.month
+        elif plan_date:
+            plan_month = datetime.strptime(plan_date, '%Y-%m-%d').strftime('%B')
+        else:
+            plan_month = ''
+
+        # Total Wastage (Pcs)
+        job_total_waste_pcs = printing_waste_pcs + sorting_waste_pcs + dispatch_gap_pcs
+
+        # Percentages based on plan_qty_pcs
+        printing_waste_pct = round((printing_waste_pcs / plan_qty_pcs * 100), 2) if plan_qty_pcs > 0 else 0.0
+        sorting_waste_pct = round((sorting_waste_pcs / plan_qty_pcs * 100), 2) if plan_qty_pcs > 0 else 0.0
+        dispatch_gap_pct = round((dispatch_gap_pcs / plan_qty_pcs * 100), 2) if plan_qty_pcs > 0 else 0.0
+        total_waste_pct = round((job_total_waste_pcs / plan_qty_pcs * 100), 2) if plan_qty_pcs > 0 else 0.0
+
+        # Apply high_wastage filter (>5%)
+        if high_wastage_filter and total_waste_pct <= 5.0:
+            continue
+
+        s_no_counter += 1
+
+        row = {
+            's_no': s_no_counter,
+            'job_card_no': job.job_card_no,
+            'sku': job.SKU,
+            'plan_date': plan_date,
+            'plan_month': plan_month,
+            'plan_qty': plan_qty_pcs,
+            'dispatch_qty': dispatch_qty_pcs,
+            'printing_waste_sheets': printing_waste_sheets,
+            'printing_waste_pcs': printing_waste_pcs,
+            'printing_waste_pct': f"{printing_waste_pct}%",
+            'sorting_waste_pcs': sorting_waste_pcs,
+            'sorting_waste_pct': f"{sorting_waste_pct}%",
+            'difference_pcs': dispatch_gap_pcs,
+            'difference_pct': f"{dispatch_gap_pct}%",
+            'wastage_status': wastage_status,
+            'total_wastage_pcs': job_total_waste_pcs,
+            'total_wastage_pct': f"{total_waste_pct}%",
+        }
+        wastage_rows.append(row)
+
+        # Accumulate totals for KPIs
+        total_plan_qty += plan_qty_pcs
+        total_dispatch_qty += dispatch_qty_pcs
+        total_printing_waste_pcs += printing_waste_pcs
+        total_sorting_waste_pcs += sorting_waste_pcs
+        total_dispatch_gap_pcs += dispatch_gap_pcs
+        total_wastage_pcs += job_total_waste_pcs
+
+        if is_completed:
+            total_finalized_waste_pcs += job_total_waste_pcs
+        else:
+            total_tentative_waste_pcs += job_total_waste_pcs
+
+    overall_wastage_pct = round((total_wastage_pcs / total_plan_qty * 100), 2) if total_plan_qty > 0 else 0.0
+
+    summary = {
+        'total_plan_qty': total_plan_qty,
+        'total_dispatch_qty': total_dispatch_qty,
+        'printing_waste_pcs': total_printing_waste_pcs,
+        'sorting_waste_pcs': total_sorting_waste_pcs,
+        'dispatch_gap_pcs': total_dispatch_gap_pcs,
+        'total_wastage_pcs': total_wastage_pcs,
+        'overall_wastage_pct': overall_wastage_pct,
+        'finalized_wastage_pcs': total_finalized_waste_pcs,
+        'tentative_wastage_pcs': total_tentative_waste_pcs,
+    }
+
+    headers = [
+        's_no',
+        'job_card_no',
+        'sku',
+        'plan_date',
+        'plan_month',
+        'plan_qty',
+        'dispatch_qty',
+        'printing_waste_sheets',
+        'printing_waste_pcs',
+        'printing_waste_pct',
+        'sorting_waste_pcs',
+        'sorting_waste_pct',
+        'difference_pcs',
+        'difference_pct',
+        'wastage_status',
+        'total_wastage_pcs',
+        'total_wastage_pct',
+    ]
+
+    header_labels = {
+        's_no': 'S.No.',
+        'job_card_no': 'Job Card No',
+        'sku': 'SKU',
+        'plan_date': 'Plan Date',
+        'plan_month': 'Plan Month',
+        'plan_qty': 'Plan Qty (Pcs)',
+        'dispatch_qty': 'Dispatched Qty (Pcs)',
+        'printing_waste_sheets': 'Printing Waste (Sheets)',
+        'printing_waste_pcs': 'Printing Waste (Pcs)',
+        'printing_waste_pct': 'Printing Waste %',
+        'sorting_waste_pcs': 'Sorting Waste (Pcs)',
+        'sorting_waste_pct': 'Sorting Waste %',
+        'difference_pcs': 'Dispatch Gap (Pcs)',
+        'difference_pct': 'Dispatch Gap %',
+        'wastage_status': 'Wastage Status',
+        'total_wastage_pcs': 'Total Wastage (Pcs)',
+        'total_wastage_pct': 'Total Wastage %',
+    }
+
+    # Extract min/max dates from rows to show data range bounds
+    all_dates = [row['plan_date'] for row in wastage_rows if row['plan_date']]
+    sorted_dates = sorted(all_dates)
+    min_date = sorted_dates[0] if sorted_dates else ''
+    # Extract min/max dates from rows to show data range bounds
+    all_dates = [row['plan_date'] for row in wastage_rows if row['plan_date']]
+    sorted_dates = sorted(all_dates)
+    min_date = sorted_dates[0] if sorted_dates else ''
+    max_date = sorted_dates[-1] if sorted_dates else ''
+
+    # Pagination logic (100 entries per page)
+    is_export = request.GET.get('_export') == 'true'
+    total_rows = len(wastage_rows)
+    page_size = 100
+    total_pages = max(1, (total_rows + page_size - 1) // page_size)
+
+    try:
+        current_page = int(request.GET.get('page') or 1)
+    except ValueError:
+        current_page = 1
+
+    if current_page < 1:
+        current_page = 1
+    elif current_page > total_pages:
+        current_page = total_pages
+
+    if not is_export:
+        start_idx = (current_page - 1) * page_size
+        end_idx = start_idx + page_size
+        wastage_rows_paginated = wastage_rows[start_idx:end_idx]
+    else:
+        wastage_rows_paginated = wastage_rows
+
+    pagination_data = {
+        'current_page': current_page,
+        'total_pages': total_pages,
+        'total_rows': total_rows,
+        'page_size': page_size,
+        'has_next': current_page < total_pages,
+        'has_prev': current_page > 1,
+    }
+
+    return {
+        'report': next(item for item in REPORT_CATALOG if item['key'] == 'wastage-report'),
+        'filters': {
+            'q': search_value,
+            'status': status_filter,
+            'sku': sku_filter,
+            'po': po_filter,
+            'job_card': job_card_filter,
+            'machine': machine_filter,
+            'wastage_status': wastage_status_filter,
+            'high_wastage': 'true' if high_wastage_filter else '',
+            'page': current_page,
+            'period': period,
+            'period_label': period_label,
+            'date_from': date_from,
+            'date_to': date_to,
+            'start': start,
+            'end': end,
+            'year': year,
+        },
+        'summary': summary,
+        'wastage_rows': wastage_rows_paginated,
+        'pagination': pagination_data,
+        'status_choices': JobCard._meta.get_field('status').choices,
+        'headers': headers,
+        'header_labels': header_labels,
+        'start_date': min_date,
+        'end_date': max_date,
+    }
+
+
 def build_report_context(report_type, request):
     builders = {
         'machine-planning': build_machine_planning_context,
@@ -929,6 +1238,7 @@ def build_report_context(report_type, request):
         'qc-approvals': build_qc_approvals_context,
         'dispatch-tracking': build_dispatch_tracking_context,
         'raw-material-cutting-request': build_raw_material_cutting_context,
+        'wastage-report': build_wastage_report_context,
     }
     builder = builders.get(report_type)
     if builder is None:

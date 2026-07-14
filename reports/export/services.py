@@ -20,6 +20,7 @@ def _rowset_from_payload(payload: dict) -> list[dict[str, Any]]:
 
     # Prefer common tabular keys from report contexts.
     for key in (
+        'wastage_rows',
         'machine_rows',
         'actual_rows',
         'status_rows',
@@ -63,10 +64,10 @@ def export_as_csv(payload: dict) -> bytes:
         writer.writerow(['message', 'No tabular rows available for export'])
         return output.getvalue().encode('utf-8-sig')
 
-    headers = payload.get('headers')
+    headers = payload.get('headers') or (payload.get('data') or {}).get('headers')
     if not headers:
         headers = sorted({key for row in rows for key in row.keys()})
-    labels = payload.get('header_labels') or {}
+    labels = payload.get('header_labels') or (payload.get('data') or {}).get('header_labels') or {}
     writer.writerow([labels.get(header, header) for header in headers])
     for row in rows:
         writer.writerow([_json_primitive(row.get(header)) for header in headers])
@@ -92,10 +93,10 @@ def export_as_xlsx(payload: dict) -> bytes:
     if not rows:
         sheet.append(['message', 'No tabular rows available for export'])
     else:
-        headers = payload.get('headers')
+        headers = payload.get('headers') or (payload.get('data') or {}).get('headers')
         if not headers:
             headers = sorted({key for row in rows for key in row.keys()})
-        labels = payload.get('header_labels') or {}
+        labels = payload.get('header_labels') or (payload.get('data') or {}).get('header_labels') or {}
         sheet.append([labels.get(header, header) for header in headers])
         for row in rows:
             sheet.append([_json_primitive(row.get(header)) for header in headers])
@@ -145,10 +146,10 @@ def export_as_pdf(payload: dict) -> bytes:
         doc.build(story)
         return buffer.getvalue()
 
-    headers = payload.get('headers')
+    headers = payload.get('headers') or (payload.get('data') or {}).get('headers')
     if not headers:
         headers = sorted({key for row in rows for key in row.keys()})
-    labels = payload.get('header_labels') or {}
+    labels = payload.get('header_labels') or (payload.get('data') or {}).get('header_labels') or {}
 
     header_style = ParagraphStyle(
         'header',

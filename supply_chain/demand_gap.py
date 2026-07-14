@@ -360,6 +360,42 @@ def build_job_demand_row(
     process_type = _process_type_for_job(planning_job, recipe)
     process_labels = dict(PlanningJob.JOB_PROCESS_TYPE_CHOICES)
 
+    # Expose UPS factors so the template can render unit-conversion hints
+    purchase_sheet_ups = _purchase_sheet_ups_for_job(planning_job, recipe)
+    ups_value = planning_job.ups
+    if ups_value is None and recipe and recipe.ups is not None:
+        ups_value = recipe.ups
+
+    # Pre-compute Purchase-Sheet equivalents for display (avoids template arithmetic)
+    # consumed_print_sheets → PS equivalent: print_sheets / purchase_sheet_ups
+    consumed_print_sheets = int(demand.get('consumed_print_sheets') or 0)
+    packed_pcs = int(demand.get('packed_pcs') or 0)
+    dispatched_pcs = int(demand.get('dispatched_pcs') or 0)
+    order_qty = int(demand.get('order_qty') or 0)
+    purchase_sheets_planning = int(demand.get('purchase_sheets_planning') or 0) if demand.get('purchase_sheets_planning') is not None else None
+
+    # pcs_per_purchase_sheet: how many pieces fit in one purchase sheet
+    pcs_per_purchase_sheet = None
+    if ups_value and purchase_sheet_ups:
+        pcs_per_purchase_sheet = int(ups_value) * int(purchase_sheet_ups)
+    elif ups_value:
+        pcs_per_purchase_sheet = int(ups_value)
+
+    def _ps_equiv_print(sheets):
+        """Convert print sheets → purchase sheets."""
+        if not sheets:
+            return None
+        if purchase_sheet_ups and int(purchase_sheet_ups) > 0:
+            return math.ceil(sheets / int(purchase_sheet_ups))
+        return sheets
+
+    def _ps_equiv_pcs(pcs):
+        """Convert pieces → purchase sheets (proportional, rounded)."""
+        if not pcs or not purchase_sheets_planning or not order_qty:
+            return None
+        val = Decimal(purchase_sheets_planning) * Decimal(pcs) / Decimal(order_qty)
+        return int(val.quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+
     return {
         'planning_job': planning_job,
         'job_card': job_card,
@@ -375,6 +411,13 @@ def build_job_demand_row(
         'raw_material_sku': raw_sku,
         'supply_chain_item': raw_sku,
         'is_mapped': bool(raw_sku),
+        'purchase_sheet_ups': purchase_sheet_ups,           # 1 purchase sheet = N print sheets
+        'print_ups': ups_value,                              # 1 print sheet = N pcs
+        'pcs_per_purchase_sheet': pcs_per_purchase_sheet,  # convenience: pcs in 1 purchase sheet
+        # PS-equivalent of raw values (for parenthetical display in template)
+        'consumed_print_sheets_ps': _ps_equiv_print(consumed_print_sheets),
+        'packed_pcs_ps': _ps_equiv_pcs(packed_pcs),
+        'dispatched_pcs_ps': _ps_equiv_pcs(dispatched_pcs),
         **demand,
     }
 
@@ -386,6 +429,7 @@ def parse_gap_filters(request_get):
         'process_type': (request_get.get('process_type') or '').strip(),
         'material_q': (request_get.get('material_q') or '').strip().lower(),
         'shortages_only': request_get.get('shortages_only') == '1',
+        'exclude_zero_demand': request_get.get('exclude_zero_demand') == '1',
     }
 
 
@@ -440,6 +484,8 @@ def _matches_job_filters(row, filters):
         haystack = f"{row['material_name']} {row.get('purchase_sheet_size', '')}".lower()
         if needle not in haystack:
             return False
+    if filters.get('exclude_zero_demand') and int(row.get('job_demand_sheets') or 0) == 0:
+        return False
     return True
 
 

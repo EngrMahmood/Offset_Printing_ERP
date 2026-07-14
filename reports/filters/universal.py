@@ -20,4 +20,8 @@ def parse_universal_filters(request) -> dict:
         'production_line': (request.GET.get('production_line') or '').strip(),
         'product_category': (request.GET.get('product_category') or '').strip(),
         'approval_status': (request.GET.get('approval_status') or '').strip(),
+        'wastage_status': (request.GET.get('wastage_status') or '').strip(),
+        'period': (request.GET.get('period') or '').strip(),
+        'page': (request.GET.get('page') or '').strip(),
+        'high_wastage': (request.GET.get('high_wastage') or '').strip(),
     }

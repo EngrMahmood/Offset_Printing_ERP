@@ -50,6 +50,12 @@ def run_report_api(request, slug):
 @require_GET
 def export_report_api(request, slug):
     export_type = (request.GET.get('type') or 'csv').strip().lower()
+    
+    # Inject _export=true to bypass pagination/limits in the executor
+    q_params = request.GET.copy()
+    q_params['_export'] = 'true'
+    request.GET = q_params
+
     try:
         payload = run_report(slug, request)
     except KeyError:

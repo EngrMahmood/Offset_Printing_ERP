@@ -8,6 +8,7 @@ from reports.services import (
     build_production_insights_context,
     build_qc_approvals_context,
     build_raw_material_cutting_context,
+    build_wastage_report_context,
 )
 from reports.report_registry.metadata import ReportDefinition
 from reports.report_registry.registry import registry
@@ -39,6 +40,10 @@ def _qc_approvals_executor(request, filters):
 
 def _raw_material_cutting_executor(request, filters):
     return build_raw_material_cutting_context(request)
+
+
+def _wastage_report_executor(request, filters):
+    return build_wastage_report_context(request)
 
 
 registry.register(
@@ -171,5 +176,24 @@ registry.register(
         category='execution',
         navigation_group='operations',
         executor=_raw_material_cutting_executor,
+    )
+)
+
+registry.register(
+    ReportDefinition(
+        slug='wastage-report',
+        title='Wastage Report',
+        description='Process-wise wastage analysis including printing, sorting, and dispatch gaps (tentative vs finalized).',
+        department='production',
+        permissions=('core.view_reports',),
+        filters=('date_range', 'status', 'po', 'job_card', 'sku', 'machine', 'wastage_status', 'high_wastage'),
+        supported_exports=('csv', 'xlsx', 'pdf'),
+        supported_charts=('bar', 'donut', 'line', 'top_n'),
+        drilldown_support=True,
+        cache_timeout=300,
+        icon='fa-trash-alt',
+        category='execution',
+        navigation_group='operations',
+        executor=_wastage_report_executor,
     )
 )

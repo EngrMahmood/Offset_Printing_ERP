@@ -55,6 +55,12 @@
                         Shortages only
                     </label>
                 </div>
+                <div class="erp-filter-group erp-filter-group--checkbox">
+                    <label>
+                        <input type="checkbox" name="exclude_zero_demand" value="1" {% if filters.exclude_zero_demand %}checked{% endif %}>
+                        Exclude zero demand
+                    </label>
+                </div>
                 <button type="submit" class="erp-btn erp-btn-primary">Apply Filters</button>
                 <a href="{% url 'supply_chain:demand_gap' %}" class="erp-btn erp-btn-secondary">Reset</a>
             </form>
@@ -98,6 +104,15 @@
                         Demand uses planning purchase sheets. Print + Pack jobs adjust by print entries, pack qty, and dispatch.
                         Cut &amp; Pack jobs adjust by pack qty and dispatch only.
                     </p>
+                    <p class="erp-section-desc" style="margin-top:4px;">
+                        <strong>Unit key:</strong>
+                        <em>Purchase Sheets (PS)</em> = raw paper sheets stored in the warehouse &nbsp;·&nbsp;
+                        <em>Print Sheets</em> = sheets after printing (may differ from PS by the PS UPS factor) &nbsp;·&nbsp;
+                        <em>Pcs</em> = individual finished pieces.<br>
+                        All Demand, Gap, and Planning figures are in <strong>Purchase Sheets</strong>.
+                        Values in parentheses <code>(≈ N PS)</code> inside the job breakdown show the
+                        Purchase-Sheet equivalent used in the demand formula.
+                    </p>
                 </div>
             </div>
             <div class="erp-table-wrap erp-table-dense">
@@ -107,13 +122,13 @@
                             <th>Material</th>
                             <th>Purchase Size</th>
                             <th>Raw Material SKU</th>
-                            <th>On Hand</th>
-                            <th>Total Demand</th>
-                            <th>Gap</th>
+                            <th>On Hand<br><small style="font-weight:normal;opacity:.7">(Purchase Sheets)</small></th>
+                            <th>Total Demand<br><small style="font-weight:normal;opacity:.7">(Purchase Sheets)</small></th>
+                            <th>Gap<br><small style="font-weight:normal;opacity:.7">(Purchase Sheets)</small></th>
                             <th>Status</th>
-                            <th>Print</th>
-                            <th>Cut &amp; Pack</th>
-                            <th>Jobs</th>
+                            <th>Print Jobs</th>
+                            <th>Cut &amp; Pack Jobs</th>
+                            <th>Total Jobs</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -157,18 +172,56 @@
                             <td colspan="10" class="erp-table-nested">
                                 <details>
                                     <summary>View {{ row.job_count }} job contribution(s)</summary>
+
+                                    {# ── Conversion legend ──────────────────────────────────── #}
+                                    <div style="
+                                        background: var(--color-surface-raised, #f4f6fa);
+                                        border: 1px solid var(--color-border, #e0e4ec);
+                                        border-radius: 6px;
+                                        padding: 8px 14px;
+                                        margin: 10px 0 8px;
+                                        font-size: .78rem;
+                                        color: var(--color-text-secondary, #64748b);
+                                        line-height: 1.7;
+                                    ">
+                                        <strong>How to read this table:</strong>
+                                        All demand signals are converted to <strong>Purchase Sheets (PS)</strong> before comparison.
+                                        Raw values (Print Sheets or Pcs) are shown first; their PS equivalent appears in
+                                        <em>(≈ N PS)</em> parentheses — this is what gets subtracted from Planning Sheets.<br>
+                                        <strong>Formula:</strong>
+                                        Demand = <code>min(Planning − PrintUsed<sub>PS</sub>,
+                                        Proportional(Planning, Packed<sub>PS</sub>),
+                                        Proportional(Planning, Dispatched<sub>PS</sub>))</code>
+                                        — the most-progressed signal drives the demand figure.
+                                    </div>
+
                                     <table class="erp-table erp-table-compact">
                                         <thead>
                                             <tr>
                                                 <th>JC</th>
                                                 <th>Status</th>
                                                 <th>Process</th>
-                                                <th>Planning Sheets</th>
-                                                <th>Purchase Size</th>
-                                                <th>Demand</th>
-                                                <th>Print Used</th>
-                                                <th>Packed</th>
-                                                <th>Dispatched</th>
+                                                <th title="Planned purchase sheets required for this job (warehouse unit)">
+                                                    Planning Sheets<br><small style="font-weight:normal;opacity:.8">(PS)</small>
+                                                </th>
+                                                <th title="How many print sheets make one purchase sheet">
+                                                    PS&nbsp;UPS<br><small style="font-weight:normal;opacity:.8">Print Sheets / PS</small>
+                                                </th>
+                                                <th title="How many finished pieces fit on one print sheet">
+                                                    Print&nbsp;UPS<br><small style="font-weight:normal;opacity:.8">Pcs / Print Sheet</small>
+                                                </th>
+                                                <th title="Remaining purchase-sheet demand. Formula: min(from-print, from-pack, from-dispatch).">
+                                                    <strong>Demand</strong><br><small style="font-weight:normal;opacity:.8">(PS)</small>
+                                                </th>
+                                                <th title="Print sheets consumed (raw). Value in parentheses = PS equivalent = Print Sheets ÷ PS UPS.">
+                                                    Print Used<br><small style="font-weight:normal;opacity:.8">Print Sheets (≈ PS)</small>
+                                                </th>
+                                                <th title="Pieces packed (raw). Value in parentheses = PS equivalent used in the proportional formula.">
+                                                    Packed<br><small style="font-weight:normal;opacity:.8">Pcs (≈ PS)</small>
+                                                </th>
+                                                <th title="Pieces dispatched (raw). Value in parentheses = PS equivalent used in the proportional formula.">
+                                                    Dispatched<br><small style="font-weight:normal;opacity:.8">Pcs (≈ PS)</small>
+                                                </th>
                                             </tr>
                                         </thead>
                                         <tbody>
@@ -178,11 +231,69 @@
                                                 <td>{{ job.status_label }}</td>
                                                 <td>{{ job.process_label }}</td>
                                                 <td>{{ job.purchase_sheets_planning }}</td>
-                                                <td>{{ job.purchase_sheet_size }}</td>
+
+                                                {# PS UPS: how many print sheets per purchase sheet #}
+                                                <td>
+                                                    {% if job.purchase_sheet_ups %}
+                                                        {{ job.purchase_sheet_ups }}
+                                                    {% else %}
+                                                        <span title="Not set — treated as 1:1">—</span>
+                                                    {% endif %}
+                                                </td>
+
+                                                {# Print UPS: pieces per print sheet #}
+                                                <td>
+                                                    {% if job.print_ups %}
+                                                        {{ job.print_ups }}
+                                                    {% else %}
+                                                        <span title="Not set">—</span>
+                                                    {% endif %}
+                                                </td>
+
+                                                {# Demand (Purchase Sheets) — the final figure #}
                                                 <td><strong>{{ job.job_demand_sheets }}</strong></td>
-                                                <td>{{ job.consumed_print_sheets }}</td>
-                                                <td>{{ job.packed_pcs }}</td>
-                                                <td>{{ job.dispatched_pcs }}</td>
+
+                                                {# Print Used: raw print sheets + pre-computed PS equivalent #}
+                                                <td>
+                                                    {% if job.consumed_print_sheets %}
+                                                        {{ job.consumed_print_sheets }}
+                                                        {% if job.consumed_print_sheets_ps is not None %}
+                                                            <span style="color:var(--color-text-secondary,#64748b);font-size:.85em;">
+                                                                (≈&nbsp;{{ job.consumed_print_sheets_ps }}&nbsp;PS)
+                                                            </span>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        0
+                                                    {% endif %}
+                                                </td>
+
+                                                {# Packed Pcs + pre-computed PS equivalent #}
+                                                <td>
+                                                    {% if job.packed_pcs %}
+                                                        {{ job.packed_pcs }}
+                                                        {% if job.packed_pcs_ps is not None %}
+                                                            <span style="color:var(--color-text-secondary,#64748b);font-size:.85em;">
+                                                                (≈&nbsp;{{ job.packed_pcs_ps }}&nbsp;PS)
+                                                            </span>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        0
+                                                    {% endif %}
+                                                </td>
+
+                                                {# Dispatched Pcs + pre-computed PS equivalent #}
+                                                <td>
+                                                    {% if job.dispatched_pcs %}
+                                                        {{ job.dispatched_pcs }}
+                                                        {% if job.dispatched_pcs_ps is not None %}
+                                                            <span style="color:var(--color-text-secondary,#64748b);font-size:.85em;">
+                                                                (≈&nbsp;{{ job.dispatched_pcs_ps }}&nbsp;PS)
+                                                            </span>
+                                                        {% endif %}
+                                                    {% else %}
+                                                        0
+                                                    {% endif %}
+                                                </td>
                                             </tr>
                                             {% endfor %}
                                         </tbody>

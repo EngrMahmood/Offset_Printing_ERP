@@ -563,7 +563,7 @@
                         <td><strong><a href="{% url 'planning:job_detail' job.id %}">{{ job.jc_number }}</a></strong></td>
                         <td>{{ job.po_number|default:'-' }}</td>
                         <td>{{ job.sku|default:'-' }}</td>
-                        <td><span class="erp-badge is-{{ job.workflow_status }}">{{ job.workflow_status_label }}</span></td>
+                        <td><span class="erp-badge is-{{ job.effective_status }}">{{ job.effective_status_label }}</span></td>
                         <td class="erp-muted">{{ job.master_sync_requested_at|date:'d M Y H:i' }}{% if job.master_sync_requested_by %} by {{ job.master_sync_requested_by.username }}{% endif %}</td>
                         <td><span class="erp-badge erp-badge-warning" title="{{ job.master_sync_reason|default:'No reason provided' }}">{{ job.master_sync_reason|truncatechars:32|default:'Master sync requested' }}</span></td>
                         <td>{{ job.master_data_diffs|length }} field(s)</td>

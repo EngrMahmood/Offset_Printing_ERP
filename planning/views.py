@@ -287,58 +287,11 @@ def _get_active_job_card_layout():
 
 
 def _effective_planning_status(job):
-    status_rank = {
-        'draft': 0,
-        'pending_qc': 1,
-        'qc_approved': 2,
-        'released': 3,
-        'in_production': 4,
-        'completed': 5,
-    }
-    planning_status = _normalize_status(job.status)
-    job_card_status = None
-    card_status = None
-    if hasattr(job, 'job_card'):
-        try:
-            card_status = (job.job_card.workflow_status or '').strip().lower()
-        except Exception:
-            card_status = None
-        if card_status in {'planning_approved', 'pending_qc'}:
-            job_card_status = 'pending_qc'
-        elif card_status == 'qc_approved':
-            job_card_status = 'qc_approved'
-        elif card_status in {'pending_pm_approval', 'production_approved', 'released', 'in_production', 'completed', 'closed'}:
-            job_card_status = 'released'
-        elif card_status in status_rank:
-            job_card_status = card_status
-
-    if planning_status == 'draft':
-        return 'draft'
-    if card_status in {'qc_rejected', 'pm_rejected'}:
-        return 'draft'
-    if planning_status not in status_rank:
-        return job_card_status or planning_status or 'draft'
-    if not job_card_status:
-        return planning_status
-
-    return planning_status if status_rank[planning_status] >= status_rank[job_card_status] else job_card_status
+    return job.effective_status
 
 
 def _effective_planning_status_label(job, effective_status):
-    if effective_status == 'released' and hasattr(job, 'job_card'):
-        try:
-            card_status = (job.job_card.workflow_status or '').strip().lower()
-        except Exception:
-            card_status = ''
-        if card_status == 'production_approved':
-            return 'Production Approved'
-        if card_status == 'pending_pm_approval':
-            return 'Pending PM Approval'
-        if card_status == 'qc_approved':
-            return 'QC Approved'
-        if card_status in {'released', 'in_production', 'completed', 'closed'}:
-            return 'Released'
-    return PLANNING_STATUS_LABELS.get(effective_status, effective_status.replace('_', ' ').title())
+    return job.effective_status_label
 
 
 def _repair_rejected_job_status(job):
@@ -1383,8 +1336,6 @@ def planning_home(request):
         else:
             job.plan_date_display = job.plan_date or (job.created_at.date() if job.created_at else None)
 
-        job.effective_status = _effective_planning_status(job)
-        job.effective_status_label = _effective_planning_status_label(job, job.effective_status)
         job.can_submit_qc = True
         job.submit_qc_block_reason = ''
         if job.effective_status == 'draft':

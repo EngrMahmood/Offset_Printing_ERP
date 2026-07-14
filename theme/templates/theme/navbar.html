@@ -201,6 +201,10 @@
            class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'production-insights' %}is-active{% endif %}">
             Production Insights
         </a>
+        <a href="{% url 'reports:detail' 'wastage-report' %}"
+           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'wastage-report' %}is-active{% endif %}">
+            Wastage Report
+        </a>
     </div>
 
     {% elif app == 'qc' and nav.can_access_qc %}

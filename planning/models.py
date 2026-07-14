@@ -244,6 +244,68 @@ class PlanningJob(models.Model):
         return status_labels.get(normalized_status, normalized_status.replace('_', ' ').title())
 
     @property
+    def effective_status(self):
+        status_rank = {
+            'draft': 0,
+            'pending_qc': 1,
+            'qc_approved': 2,
+            'released': 3,
+            'in_production': 4,
+            'completed': 5,
+        }
+        raw_status = (self.status or '').strip().lower()
+        planning_status = PLANNING_STATUS_ALIASES.get(raw_status, raw_status or 'draft')
+        if planning_status not in dict(PLANNING_STATUS_CHOICES):
+            planning_status = 'draft'
+
+        job_card_status = None
+        card_status = None
+        if hasattr(self, 'job_card') and self.job_card:
+            try:
+                card_status = (self.job_card.workflow_status or '').strip().lower()
+            except Exception:
+                card_status = None
+
+            if card_status in {'planning_approved', 'pending_qc'}:
+                job_card_status = 'pending_qc'
+            elif card_status == 'qc_approved':
+                job_card_status = 'qc_approved'
+            elif card_status in {'pending_pm_approval', 'production_approved', 'released', 'in_production', 'completed', 'closed'}:
+                job_card_status = 'released'
+            elif card_status in status_rank:
+                job_card_status = card_status
+
+        if planning_status == 'draft':
+            return 'draft'
+        if card_status in {'qc_rejected', 'pm_rejected'}:
+            return 'draft'
+        if planning_status not in status_rank:
+            return job_card_status or planning_status or 'draft'
+        if not job_card_status:
+            return planning_status
+
+        return planning_status if status_rank[planning_status] >= status_rank[job_card_status] else job_card_status
+
+    @property
+    def effective_status_label(self):
+        eff_status = self.effective_status
+        if eff_status == 'released' and hasattr(self, 'job_card') and self.job_card:
+            try:
+                card_status = (self.job_card.workflow_status or '').strip().lower()
+            except Exception:
+                card_status = ''
+            if card_status == 'production_approved':
+                return 'Production Approved'
+            if card_status == 'pending_pm_approval':
+                return 'Pending PM Approval'
+            if card_status == 'qc_approved':
+                return 'QC Approved'
+            if card_status in {'released', 'in_production', 'completed', 'closed'}:
+                return 'Released'
+        status_labels = dict(PLANNING_STATUS_CHOICES)
+        return status_labels.get(eff_status, eff_status.replace('_', ' ').title())
+
+    @property
     def total_sheet_quantity(self):
         return self.calculated_sheets_required
 

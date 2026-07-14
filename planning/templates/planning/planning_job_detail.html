@@ -4,7 +4,7 @@
 {% block title %}Job {{ job.jc_number }} - Offset Printing ERP{% endblock %}
 {% block header_title %}Job Detail - {{ job.jc_number }}{% endblock %}
 {% block header_subtitle %}
-<span class="erp-badge is-{{ job.workflow_status }}">{{ job.workflow_status_label }}</span>
+<span class="erp-badge is-{{ job.effective_status }}">{{ job.effective_status_label }}</span>
 {% if job.planning_stage %}
 |
 {% if job.planning_stage == 'new_plate_making' %}<span class="erp-badge erp-badge-info">New Plate Making</span>
@@ -90,7 +90,7 @@
             <div class="erp-info-item"><div class="erp-info-item__label">Job Name</div><div class="erp-info-item__value">{{ job.job_name|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Order Quantity</div><div class="erp-info-item__value">{{ job.order_qty|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">Status</div><div class="erp-info-item__value"><span class="erp-badge is-{{ job.workflow_status }}">{{ job.workflow_status_label }}</span></div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">Status</div><div class="erp-info-item__value"><span class="erp-badge is-{{ job.effective_status }}">{{ job.effective_status_label }}</span></div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Repeat Flag</div><div class="erp-info-item__value">{{ job.repeat_flag|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Planning Stage</div><div class="erp-info-item__value">{{ job.get_planning_stage_display|default:'-' }}</div></div>
             {% if latest_cancelled_plate %}

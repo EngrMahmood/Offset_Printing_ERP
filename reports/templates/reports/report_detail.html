@@ -30,13 +30,57 @@
 <div class="erp-page-stack">
     <section class="erp-section-shell">
         <div class="bi-toolbar">
-            <form id="bi-filter-form" method="get" class="erp-form-grid" style="grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px; margin:0;">
-                <input type="date" name="date_from" value="{{ request.GET.date_from }}">
-                <input type="date" name="date_to" value="{{ request.GET.date_to }}">
-                <input type="text" name="department" placeholder="Department" value="{{ request.GET.department }}">
-                <input type="text" name="machine" placeholder="Machine" value="{{ request.GET.machine }}">
-                <input type="text" name="status" placeholder="Status" value="{{ request.GET.status }}">
-                <button type="submit" class="erp-btn erp-btn-primary">Run</button>
+            <form id="bi-filter-form" method="get" class="erp-form-grid" style="grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)) auto; gap: 8px; margin: 0; width: 100%; align-items: center;">
+                {% if 'date_range' in report.filters %}
+                <select name="period" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px; background: white;">
+                    <option value="month" {% if request.GET.period == 'month' or not request.GET.period %}selected{% endif %}>This Month</option>
+                    <option value="today" {% if request.GET.period == 'today' %}selected{% endif %}>Today</option>
+                    <option value="week" {% if request.GET.period == 'week' %}selected{% endif %}>This Week</option>
+                    <option value="days" {% if request.GET.period == 'days' %}selected{% endif %}>Last 30 Days</option>
+                    <option value="all" {% if request.GET.period == 'all' %}selected{% endif %}>All Time</option>
+                </select>
+                <input type="date" name="date_from" value="{{ request.GET.date_from }}" title="From Date" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                <input type="date" name="date_to" value="{{ request.GET.date_to }}" title="To Date" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                {% endif %}
+                {% if 'department' in report.filters %}
+                <input type="text" name="department" placeholder="Department" value="{{ request.GET.department }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                {% endif %}
+                {% if 'machine' in report.filters %}
+                <input type="text" name="machine" placeholder="Machine" value="{{ request.GET.machine }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                {% endif %}
+                {% if 'status' in report.filters %}
+                <input type="text" name="status" placeholder="Status" value="{{ request.GET.status }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                {% endif %}
+                {% if 'po' in report.filters %}
+                <input type="text" name="po" placeholder="PO Number" value="{{ request.GET.po }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                {% endif %}
+                {% if 'job_card' in report.filters %}
+                <input type="text" name="job_card" placeholder="Job Card" value="{{ request.GET.job_card }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                {% endif %}
+                {% if 'sku' in report.filters %}
+                <input type="text" name="sku" placeholder="SKU" value="{{ request.GET.sku }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                {% endif %}
+                {% if 'customer' in report.filters %}
+                <input type="text" name="customer" placeholder="Customer" value="{{ request.GET.customer }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                {% endif %}
+                {% if 'approval_status' in report.filters %}
+                <input type="text" name="approval_status" placeholder="Approval Status" value="{{ request.GET.approval_status }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                {% endif %}
+                {% if 'wastage_status' in report.filters %}
+                <select name="wastage_status" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px; background: white;">
+                    <option value="">Wastage Status (All)</option>
+                    <option value="tentative" {% if request.GET.wastage_status == 'tentative' %}selected{% endif %}>Tentative</option>
+                    <option value="finalized" {% if request.GET.wastage_status == 'finalized' %}selected{% endif %}>Finalized</option>
+                </select>
+                {% endif %}
+                {% if 'high_wastage' in report.filters %}
+                <select name="high_wastage" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px; background: white;">
+                    <option value="">Wastage Level (All)</option>
+                    <option value="true" {% if request.GET.high_wastage == 'true' %}selected{% endif %}>Wastage > 5%</option>
+                </select>
+                {% endif %}
+                <input type="hidden" name="page" id="form-pag-page" value="1">
+                <button type="submit" class="erp-btn erp-btn-primary" style="padding: 6px 16px; font-size: 13px; min-height: 34px;">Run</button>
             </form>
             <div class="actions">
                 <a id="btn-export-csv" class="erp-btn erp-btn-secondary" href="#">CSV</a>
@@ -63,11 +107,24 @@
         </div>
 
         <div style="height:12px;"></div>
+        <div id="report-period-info" style="font-size: 13px; color: #475569; margin-bottom: 8px; font-weight: 500; display: none;"></div>
         <div class="bi-table-wrap">
             <table class="bi-table" id="data-table">
                 <thead id="data-head"></thead>
                 <tbody id="data-body"></tbody>
             </table>
+        </div>
+        <div id="bi-pagination-container" style="display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding: 12px 16px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 13px; color: #475569; display: none;">
+            <div>
+                Showing <span id="pag-start" style="font-weight: 600; color: #0f172a;">0</span> to <span id="pag-end" style="font-weight: 600; color: #0f172a;">0</span> of <span id="pag-total" style="font-weight: 600; color: #0f172a;">0</span> entries
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button id="btn-pag-prev" class="erp-btn erp-btn-secondary" style="padding: 4px 12px; font-size: 13px; min-height: 28px;" type="button">Previous</button>
+                <span style="font-weight: 500;">Page <span id="pag-current">1</span> of <span id="pag-pages">1</span></span>
+                <input type="number" id="input-pag-page" min="1" style="width: 50px; padding: 4px 6px; border: 1px solid #cbd5e1; border-radius: 4px; font-size: 13px; min-height: 28px; text-align: center;" value="1">
+                <button id="btn-pag-go" class="erp-btn erp-btn-primary" style="padding: 4px 10px; font-size: 13px; min-height: 28px;" type="button">Go</button>
+                <button id="btn-pag-next" class="erp-btn erp-btn-secondary" style="padding: 4px 12px; font-size: 13px; min-height: 28px;" type="button">Next</button>
+            </div>
         </div>
     </section>
 </div>
@@ -77,23 +134,41 @@
     const runBase = "{% url 'reports:reports_api:run_report' report.slug %}";
     const exportBase = "{% url 'reports:reports_api:export_report' report.slug %}";
 
+    // Handle interactive behavior between date preset select and manual date inputs
+    const periodSelect = document.querySelector('select[name="period"]');
+    const dateFromInput = document.querySelector('input[name="date_from"]');
+    const dateToInput = document.querySelector('input[name="date_to"]');
+    if (periodSelect && dateFromInput && dateToInput) {
+        periodSelect.addEventListener('change', function() {
+            if (this.value !== '') {
+                dateFromInput.value = '';
+                dateToInput.value = '';
+            }
+        });
+        dateFromInput.addEventListener('change', function() {
+            if (this.value) {
+                periodSelect.value = '';
+            }
+        });
+        dateToInput.addEventListener('change', function() {
+            if (this.value) {
+                periodSelect.value = '';
+            }
+        });
+    }
+
     function currentQuery() {
         const form = document.getElementById('bi-filter-form');
         const data = new URLSearchParams(new FormData(form));
         return data.toString();
     }
 
-    function wireExportButtons() {
-        const qs = currentQuery();
-        document.getElementById('btn-export-csv').href = exportBase + '?type=csv&' + qs;
-        document.getElementById('btn-export-xlsx').href = exportBase + '?type=xlsx&' + qs;
-        document.getElementById('btn-export-pdf').href = exportBase + '?type=pdf&' + qs;
-    }
+
 
     function firstRowset(data) {
         if (!data || typeof data !== 'object') return [];
         const preferred = [
-            'machine_rows', 'actual_rows', 'status_rows', 'by_machine', 'by_shift',
+            'wastage_rows', 'machine_rows', 'actual_rows', 'status_rows', 'by_machine', 'by_shift',
             'by_date', 'by_dc', 'cutting_request_rows', 'recent_dispatches',
             'pending_qc_jobs', 'approved_recent', 'rejected_jobs',
             'overdue_jobs', 'due_soon_jobs', 'missing_readiness',
@@ -122,7 +197,7 @@
         });
     }
 
-    function renderTable(rows) {
+    function renderTable(rows, customHeaders = null, customLabels = null) {
         const head = document.getElementById('data-head');
         const body = document.getElementById('data-body');
         head.innerHTML = '';
@@ -131,8 +206,9 @@
             body.innerHTML = '<tr><td>No tabular data available.</td></tr>';
             return;
         }
-        const headers = Array.from(new Set(rows.flatMap(r => Object.keys(r))));
-        head.innerHTML = '<tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr>';
+        const headers = customHeaders || Array.from(new Set(rows.flatMap(r => Object.keys(r))));
+        const labels = customLabels || {};
+        head.innerHTML = '<tr>' + headers.map(h => `<th>${(labels[h] || h).toUpperCase().replaceAll('_', ' ')}</th>`).join('') + '</tr>';
         body.innerHTML = rows.slice(0, 200).map(r => '<tr>' + headers.map(h => `<td>${r[h] ?? ''}</td>`).join('') + '</tr>').join('');
     }
 
@@ -175,7 +251,6 @@
     }
 
     async function loadReport() {
-        wireExportButtons();
         const url = runBase + '?' + currentQuery();
         const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
         const json = await res.json();
@@ -189,14 +264,86 @@
         const summary = data.summary || {};
         const rows = firstRowset(data);
 
+        // Display retrieved start and end dates if present
+        const periodInfo = document.getElementById('report-period-info');
+        if (periodInfo) {
+            if (data.start_date && data.end_date) {
+                periodInfo.style.display = 'block';
+                periodInfo.innerHTML = `Showing data from <span style="color: #0f172a; font-weight: 600;">${data.start_date}</span> to <span style="color: #0f172a; font-weight: 600;">${data.end_date}</span>`;
+            } else {
+                periodInfo.style.display = 'none';
+                periodInfo.innerHTML = '';
+            }
+        }
+
+        // Render pagination controls
+        const paginationContainer = document.getElementById('bi-pagination-container');
+        if (paginationContainer && data.pagination) {
+            paginationContainer.style.display = 'flex';
+            const pag = data.pagination;
+            document.getElementById('pag-current').innerText = pag.current_page;
+            document.getElementById('pag-pages').innerText = pag.total_pages;
+            document.getElementById('pag-total').innerText = pag.total_rows;
+            document.getElementById('input-pag-page').value = pag.current_page;
+            document.getElementById('input-pag-page').max = pag.total_pages;
+
+            const startIdx = pag.total_rows > 0 ? (pag.current_page - 1) * pag.page_size + 1 : 0;
+            const endIdx = Math.min(pag.current_page * pag.page_size, pag.total_rows);
+            document.getElementById('pag-start').innerText = startIdx;
+            document.getElementById('pag-end').innerText = endIdx;
+
+            const btnPrev = document.getElementById('btn-pag-prev');
+            const btnNext = document.getElementById('btn-pag-next');
+            btnPrev.disabled = !pag.has_prev;
+            btnNext.disabled = !pag.has_next;
+        } else if (paginationContainer) {
+            paginationContainer.style.display = 'none';
+        }
+
         renderKPIs(summary);
-        renderTable(rows);
+        renderTable(rows, data.headers, data.header_labels);
         renderCharts(summary);
     }
 
+    const hiddenPageInput = document.getElementById('form-pag-page');
+
+    document.getElementById('btn-pag-prev').addEventListener('click', function() {
+        const cur = parseInt(hiddenPageInput.value) || 1;
+        if (cur > 1) {
+            hiddenPageInput.value = cur - 1;
+            loadReport();
+        }
+    });
+
+    document.getElementById('btn-pag-next').addEventListener('click', function() {
+        const cur = parseInt(hiddenPageInput.value) || 1;
+        hiddenPageInput.value = cur + 1;
+        loadReport();
+    });
+
+    document.getElementById('btn-pag-go').addEventListener('click', function() {
+        const inputVal = parseInt(document.getElementById('input-pag-page').value) || 1;
+        hiddenPageInput.value = inputVal;
+        loadReport();
+    });
+
     document.getElementById('bi-filter-form').addEventListener('submit', function (e) {
         e.preventDefault();
+        hiddenPageInput.value = 1; // Reset to page 1 on new filter execution
         loadReport();
+    });
+
+    document.getElementById('btn-export-csv').addEventListener('click', function(e) {
+        e.preventDefault();
+        window.location.href = exportBase + '?type=csv&' + currentQuery();
+    });
+    document.getElementById('btn-export-xlsx').addEventListener('click', function(e) {
+        e.preventDefault();
+        window.location.href = exportBase + '?type=xlsx&' + currentQuery();
+    });
+    document.getElementById('btn-export-pdf').addEventListener('click', function(e) {
+        e.preventDefault();
+        window.location.href = exportBase + '?type=pdf&' + currentQuery();
     });
 
     loadReport();
