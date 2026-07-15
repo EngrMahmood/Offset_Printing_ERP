@@ -1146,6 +1146,8 @@ def planning_home(request):
         )
     if status_filter:
         queryset = queryset.filter(status__in=_planning_status_filter_values(status_filter))
+    else:
+        queryset = queryset.exclude(status='completed')
     if stage_filter:
         if stage_filter == 'planning_done':
             queryset = queryset.filter(

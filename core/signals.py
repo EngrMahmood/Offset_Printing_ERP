@@ -69,6 +69,38 @@ def trigger_dispatch_notifications(sender, instance, created, **kwargs):
         from core.notifications import notify_event
         actor = getattr(instance, 'created_by', None)
         notify_event('dispatch.created', instance=instance, actor=actor)
+    
+    # Auto-sync JobCard status based on dispatch completion ratio
+    job_card = instance.job_card
+    if job_card:
+        _sync_job_card_dispatch_status(job_card)
+
+
+from django.db.models.signals import post_delete
+
+@receiver(post_delete, sender='core.Dispatch')
+def sync_job_card_status_on_dispatch_delete(sender, instance, **kwargs):
+    job_card = instance.job_card
+    if job_card:
+        _sync_job_card_dispatch_status(job_card)
+
+
+def _sync_job_card_dispatch_status(job_card):
+    dispatch_ratio = job_card.dispatch_completion_percent
+    if dispatch_ratio >= 95:
+        if job_card.status == 'in_production':
+            from core.jobcard_service import transition_job_card_status
+            try:
+                transition_job_card_status(job_card, 'completed', reason='System: Dispatch completion reached >= 95%')
+            except Exception:
+                pass
+    else:
+        if job_card.status == 'completed':
+            from core.jobcard_service import transition_job_card_status
+            try:
+                transition_job_card_status(job_card, 'in_production', reason='System: Dispatch completion fell below 95%')
+            except Exception:
+                pass
 
 
 @receiver(post_save, sender='core.EditOverrideRequest')

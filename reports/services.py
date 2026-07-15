@@ -485,7 +485,7 @@ def build_machine_planning_context(request):
     search_value = (request.GET.get('q') or '').strip()
     status_value = (request.GET.get('status') or '').strip()
 
-    jobs = PlanningJob.objects.filter(is_active=True, plan_date__year=year)
+    jobs = PlanningJob.objects.filter(is_active=True, plan_date__year=year).exclude(status='completed')
     jobs = _search_jobs(jobs, search_value)
     if status_value:
         jobs = jobs.filter(status=status_value)
@@ -576,7 +576,7 @@ def build_job_planning_context(request):
     status_value = (request.GET.get('status') or '').strip()
     department_value = (request.GET.get('department') or '').strip()
 
-    jobs = PlanningJob.objects.filter(is_active=True, plan_date__year=year)
+    jobs = PlanningJob.objects.filter(is_active=True, plan_date__year=year).exclude(status='completed')
     jobs = _search_jobs(jobs, search_value)
     if status_value:
         jobs = jobs.filter(status=status_value)
@@ -633,7 +633,7 @@ def build_plates_planning_context(request):
     status_value = (request.GET.get('status') or '').strip()
     plate_state = (request.GET.get('plate_state') or '').strip()
 
-    jobs = PlanningJob.objects.filter(is_active=True)
+    jobs = PlanningJob.objects.filter(is_active=True).exclude(status='completed')
     jobs = _search_jobs(jobs, search_value)
     if status_value:
         jobs = jobs.filter(status=status_value)
@@ -777,7 +777,7 @@ def build_qc_approvals_context(request):
     search_value = (request.GET.get('q') or '').strip()
     status_value = (request.GET.get('status') or '').strip()
 
-    job_cards = JobCard.objects.filter(is_active=True, created_at__year=year)
+    job_cards = JobCard.objects.filter(is_active=True, created_at__year=year).exclude(status='completed')
     if search_value:
         job_cards = job_cards.filter(
             Q(job_card_no__icontains=search_value)
@@ -894,10 +894,9 @@ def build_raw_material_cutting_context(request):
     year = _get_year(request)
     search_value = (request.GET.get('q') or '').strip()
 
-    # Get jobs that are released for production
     jobs = PlanningJob.objects.filter(
         is_active=True,
-        status__in=['released', 'in_production', 'completed'],
+        status__in=['released', 'in_production'],
         plan_date__year=year,
     ).order_by('plan_date', 'jc_number')
     
