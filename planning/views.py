@@ -2210,6 +2210,30 @@ def planning_job_status_update(request, job_id):
 
 
 @login_required
+@permission_required('can_plan')
+def planning_job_priority_update(request, job_id):
+    from django.http import JsonResponse
+    if request.method != 'POST':
+        return JsonResponse({'ok': False, 'error': 'POST request required'}, status=405)
+
+    job = get_object_or_404(PlanningJob, id=job_id)
+    try:
+        priority_val = int(request.POST.get('priority', 1))
+        if priority_val in [choice[0] for choice in PlanningJob.PRIORITY_CHOICES]:
+            job.priority = priority_val
+            job.save(update_fields=['priority', 'updated_at'])
+            return JsonResponse({
+                'ok': True,
+                'priority': priority_val,
+                'priority_display': job.get_priority_display()
+            })
+        else:
+            return JsonResponse({'ok': False, 'error': 'Invalid priority value'}, status=400)
+    except Exception as e:
+        return JsonResponse({'ok': False, 'error': str(e)}, status=400)
+
+
+@login_required
 @permission_required('can_edit_jobcard')
 def planning_job_card_print(request, job_id):
     job = get_object_or_404(

@@ -175,6 +175,14 @@ class PlanningJob(models.Model):
     aging_days = models.PositiveIntegerField(null=True, blank=True)
 
     issued_to_production = models.BooleanField(default=False)
+    PRIORITY_CHOICES = [
+        (0, 'Low'),
+        (1, 'Normal'),
+        (2, 'Medium'),
+        (3, 'High'),
+        (4, 'Urgent'),
+    ]
+    priority = models.IntegerField(choices=PRIORITY_CHOICES, default=1, db_index=True)
     is_active = models.BooleanField(default=True)
     is_on_hold = models.BooleanField(default=False)
     hold_reason = models.TextField(blank=True)
@@ -369,9 +377,12 @@ class PlanningJob(models.Model):
 
     @property
     def sku_recipe(self):
+        if hasattr(self, '_cached_sku_recipe'):
+            return self._cached_sku_recipe
         if not (self.sku or '').strip():
             return None
-        return SkuRecipe.objects.filter(sku__iexact=self.sku).order_by('-updated_at').first()
+        self._cached_sku_recipe = SkuRecipe.objects.filter(sku__iexact=self.sku).order_by('-updated_at').first()
+        return self._cached_sku_recipe
 
     @property
     def approved_sku_recipe(self):

@@ -2232,6 +2232,58 @@ class PlanningJobsQueueFilterTests(TestCase):
 		alert_idx = headers.index('SKU Alert')
 		combine_idx = headers.index('Can Combine')
 		data_rows = list(sheet.iter_rows(min_row=5, values_only=True))
-		self.assertTrue(data_rows)
 		self.assertEqual(data_rows[0][alert_idx], 'Duplicate SKU · Combine')
 		self.assertEqual(data_rows[0][combine_idx], 'Yes')
+
+
+class PlanningJobPriorityUpdateTests(TestCase):
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(username='priority_planner', password='testpass123')
+		profile, _ = UserProfile.objects.get_or_create(user=self.user)
+		profile.role = 'planner'
+		profile.save()
+
+		self.non_planner = get_user_model().objects.create_user(username='other_user', password='testpass123')
+
+		self.job = PlanningJob.objects.create(
+			jc_number='JC-PRIORITY-TEST',
+			sku='SKU-PRIORITY-1',
+			status='draft',
+			priority=1,
+		)
+
+	def test_priority_update_success(self):
+		self.client.force_login(self.user)
+		response = self.client.post(
+			reverse('planning:job_priority_update', args=[self.job.id]),
+			{'priority': 3}
+		)
+		self.assertEqual(response.status_code, 200)
+		self.assertTrue(response.json()['ok'])
+		self.job.refresh_from_db()
+		self.assertEqual(self.job.priority, 3)
+
+	def test_priority_update_requires_post(self):
+		self.client.force_login(self.user)
+		response = self.client.get(
+			reverse('planning:job_priority_update', args=[self.job.id])
+		)
+		self.assertEqual(response.status_code, 405)
+
+	def test_priority_update_invalid_value(self):
+		self.client.force_login(self.user)
+		response = self.client.post(
+			reverse('planning:job_priority_update', args=[self.job.id]),
+			{'priority': 99}
+		)
+		self.assertEqual(response.status_code, 400)
+		self.assertFalse(response.json()['ok'])
+
+	def test_priority_update_permission_required(self):
+		self.client.force_login(self.non_planner)
+		response = self.client.post(
+			reverse('planning:job_priority_update', args=[self.job.id]),
+			{'priority': 3}
+		)
+		self.assertEqual(response.status_code, 302)
+

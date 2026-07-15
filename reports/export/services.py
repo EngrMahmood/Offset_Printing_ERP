@@ -53,6 +53,9 @@ def _rowset_from_payload(payload: dict) -> list[dict[str, Any]]:
 def export_as_csv(payload: dict) -> bytes:
     rows = _rowset_from_payload(payload)
     report_title = (payload.get('report') or {}).get('title') or 'Report'
+    machine_filter = (payload.get('filters') or {}).get('machine')
+    if machine_filter:
+        report_title = f"{report_title} - {machine_filter}"
 
     output = io.StringIO()
     writer = csv.writer(output)
@@ -82,6 +85,9 @@ def export_as_xlsx(payload: dict) -> bytes:
 
     rows = _rowset_from_payload(payload)
     report_title = (payload.get('report') or {}).get('title') or 'Report'
+    machine_filter = (payload.get('filters') or {}).get('machine')
+    if machine_filter:
+        report_title = f"{report_title} - {machine_filter}"
 
     workbook = Workbook()
     sheet = workbook.active
@@ -119,6 +125,9 @@ def export_as_pdf(payload: dict) -> bytes:
     rows = _rowset_from_payload(payload)
     report = payload.get('report') or {}
     report_title = report.get('title') or 'Report'
+    machine_filter = (payload.get('filters') or {}).get('machine')
+    if machine_filter:
+        report_title = f"{report_title} - {machine_filter}"
     generated_at = payload.get('generated_at', '')
     row_count = len(rows)
 
@@ -186,9 +195,42 @@ def export_as_pdf(payload: dict) -> bytes:
                 for header in chunk_headers
             ])
 
-        column_count = len(chunk_headers)
-        column_width = usable_width / max(column_count, 1)
-        col_widths = [column_width] * column_count
+        # Dynamically set proportional column widths to prevent excessive wrapping of text fields
+        widths_map = {
+            'sequence': 0.05,        # 5% of usable width
+            'po_count': 0.04,        # 4%
+            'po_age_days': 0.04,     # 4%
+            'ai_score': 0.04,        # 4%
+            'colors': 0.04,          # 4%
+            'ups': 0.04,             # 4%
+            'status': 0.06,          # 6%
+            'priority_display': 0.07, # 7%
+            'machine_name': 0.06,    # 6%
+            'material': 0.08,        # 8%
+            'print_sheet_size': 0.08, # 8%
+            'print_sheet_quantity': 0.06, # 6%
+            'finish_quantity': 0.07,  # 7%
+            'sku': 0.11,             # 11%
+            'po_numbers': 0.11,      # 11%
+            'job_card_numbers': 0.11, # 11%
+        }
+        
+        col_widths = []
+        total_mapped = 0.0
+        unmapped_count = 0
+        for h in chunk_headers:
+            if h in widths_map:
+                total_mapped += widths_map[h]
+            else:
+                unmapped_count += 1
+        
+        # Distribute remaining width to unmapped columns
+        remaining_ratio = max(0.0, 1.0 - total_mapped)
+        unmapped_ratio = remaining_ratio / max(unmapped_count, 1)
+        
+        for h in chunk_headers:
+            ratio = widths_map.get(h, unmapped_ratio)
+            col_widths.append(ratio * usable_width)
 
         table = Table(table_data, colWidths=col_widths, repeatRows=1)
         table_style = TableStyle([

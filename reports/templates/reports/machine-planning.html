@@ -1,0 +1,372 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}{{ report.title }} — Smart Production Planner{% endblock %}
+{% block header_title %}{{ report.title }}{% endblock %}
+{% block header_subtitle %}AI-powered production sequencing. Console optimized for shop floor supervisors.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .machine-tabs {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 20px;
+        border-bottom: 2px solid #e2e8f0;
+        padding-bottom: 8px;
+    }
+    .machine-tab-btn {
+        padding: 8px 16px;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 14px;
+        cursor: pointer;
+        background: transparent;
+        border: none;
+        color: #64748b;
+        transition: all 0.2s ease;
+    }
+    .machine-tab-btn:hover {
+        background: #f1f5f9;
+        color: #334155;
+    }
+    .machine-tab-btn.is-active {
+        background: #2563eb;
+        color: white;
+    }
+    
+    /* Summary Grid */
+    .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+    .summary-card {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        padding: 16px;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+    }
+    .summary-card-header {
+        font-size: 11px;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #64748b;
+        letter-spacing: 0.05em;
+        margin-bottom: 6px;
+    }
+    .summary-card-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .summary-card-sub {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-top: 4px;
+    }
+
+    /* Table styling */
+    .table-container {
+        background: white;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        overflow: hidden;
+        box-shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+    }
+    .planner-table {
+        width: 100%;
+        border-collapse: collapse;
+        text-align: left;
+        font-size: 12px;
+    }
+    .planner-table th {
+        background: #f8fafc;
+        color: #475569;
+        font-weight: 600;
+        padding: 12px 10px;
+        border-bottom: 1px solid #cbd5e1;
+        text-transform: uppercase;
+        font-size: 10px;
+        letter-spacing: 0.05em;
+    }
+    .planner-table td {
+        padding: 12px 10px;
+        border-bottom: 1px solid #f1f5f9;
+        color: #334155;
+        vertical-align: middle;
+    }
+    
+    /* Highlighting merged SKU runs */
+    .merged-sku-row {
+        background-color: #fdf2f8 !important; /* Soft Pink tint for consolidated runs */
+        border-left: 4px solid #ec4899 !important; /* Bold pink border */
+    }
+
+    /* Status indicator lights */
+    .status-indicator {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 700;
+        font-size: 11px;
+        text-transform: uppercase;
+    }
+    .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        display: inline-block;
+    }
+    .dot-safe { background-color: #10b981; }
+    .dot-attention { background-color: #eab308; }
+    .dot-duesoon { background-color: #f97316; }
+    .dot-overdue { background-color: #ef4444; }
+
+    /* Priority Selection Dropdown */
+    .priority-select {
+        padding: 4px 8px;
+        border-radius: 6px;
+        font-size: 11px;
+        font-weight: 600;
+        border: 1px solid #cbd5e1;
+        background: white;
+        cursor: pointer;
+        outline: none;
+    }
+    .priority-0 { background: #f1f5f9; color: #475569; }
+    .priority-1 { background: #dbeafe; color: #1e40af; }
+    .priority-2 { background: #fef3c7; color: #92400e; }
+    .priority-3 { background: #ffedd5; color: #c2410c; }
+    .priority-4 { background: #fee2e2; color: #991b1b; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% csrf_token %}
+<div class="erp-page-stack">
+    <!-- Search / Filter bar -->
+    <div style="background: white; padding: 16px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+        <form method="get" class="erp-form-grid" style="display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 0;">
+            <input type="text" name="q" placeholder="Search PO, SKU, JC..." value="{{ request.GET.q|default:'' }}" style="padding: 6px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-width: 260px; min-height: 36px;">
+            <button type="submit" class="erp-btn erp-btn-primary" style="padding: 6px 16px; font-size: 13px; min-height: 36px;">Filter Schedule</button>
+            <a href="." class="erp-btn erp-btn-secondary" style="padding: 6px 16px; font-size: 13px; min-height: 36px; display: inline-flex; align-items: center;">Reset</a>
+        </form>
+        <div style="display: flex; gap: 8px;">
+            <a class="erp-btn erp-btn-secondary" href="{% url 'reports:reports_api:export_report' report.slug %}?type=xlsx&q={{ request.GET.q|default:'' }}&status={{ request.GET.status|default:'' }}" style="min-height: 36px; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fa fa-file-excel"></i> Export All Excel
+            </a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'reports:reports_api:export_report' report.slug %}?type=pdf&q={{ request.GET.q|default:'' }}&status={{ request.GET.status|default:'' }}" style="min-height: 36px; display: inline-flex; align-items: center; gap: 6px;">
+                <i class="fa fa-file-pdf"></i> Export All PDF
+            </a>
+        </div>
+    </div>
+
+    <!-- MACHINE SELECTION TABS -->
+    <div class="machine-tabs">
+        {% for machine_name, payload in data.machine_reports.items %}
+            <button class="machine-tab-btn {% if forloop.first %}is-active{% endif %}" data-target="tab-{{ forloop.counter }}">
+                <i class="fa fa-industry"></i> {{ machine_name }}
+            </button>
+        {% endfor %}
+    </div>
+
+    <!-- MACHINE SCHEDULES -->
+    {% for machine_name, payload in data.machine_reports.items %}
+        <div id="tab-{{ forloop.counter }}" class="machine-tab-content" style="{% if not forloop.first %}display: none;{% endif %}">
+            
+            <!-- Machine specific exports -->
+            <div style="margin-bottom: 14px; display: flex; gap: 8px; justify-content: flex-end;">
+                <a class="erp-btn erp-btn-secondary" href="{% url 'reports:reports_api:export_report' report.slug %}?type=xlsx&machine={{ machine_name }}&q={{ request.GET.q|default:'' }}&status={{ request.GET.status|default:'' }}" style="padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+                    <i class="fa fa-file-excel"></i> Export Excel ({{ machine_name }})
+                </a>
+                <a class="erp-btn erp-btn-secondary" href="{% url 'reports:reports_api:export_report' report.slug %}?type=pdf&machine={{ machine_name }}&q={{ request.GET.q|default:'' }}&status={{ request.GET.status|default:'' }}" style="padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+                    <i class="fa fa-file-pdf"></i> Export PDF ({{ machine_name }})
+                </a>
+            </div>
+
+            <!-- MACHINE SUMMARY CARDS -->
+            <div class="summary-grid">
+                <!-- Score & Utilization -->
+                <div class="summary-card" style="border-top: 4px solid #2563eb;">
+                    <div class="summary-card-header">Machine Performance</div>
+                    <div class="summary-card-value" style="display: flex; justify-content: space-between; align-items: baseline;">
+                        <span>{{ payload.summary.ai_planning_score }} <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">AI Score</span></span>
+                        <span style="color: #2563eb;">{{ payload.summary.machine_utilization }}% <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">Util.</span></span>
+                    </div>
+                    <div class="summary-card-sub">Expected Complete: {{ payload.summary.expected_completion_time }}</div>
+                </div>
+
+                <!-- Job Counts -->
+                <div class="summary-card" style="border-top: 4px solid #ec4899;">
+                    <div class="summary-card-header">Job Queue Mix</div>
+                    <div class="summary-card-value">
+                        {{ payload.summary.total_planned_jobs }} <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">Runs</span>
+                    </div>
+                    <div class="summary-card-sub">
+                        {{ payload.summary.merged_runs }} Merged Runs | {{ payload.summary.individual_runs }} Individual
+                    </div>
+                </div>
+
+                <!-- Total Capacities -->
+                <div class="summary-card" style="border-top: 4px solid #10b981;">
+                    <div class="summary-card-header">Total load</div>
+                    <div class="summary-card-value">
+                        {{ payload.summary.total_print_sheets }} <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">Sheets</span>
+                    </div>
+                    <div class="summary-card-sub">
+                        Across {{ payload.summary.total_pos }} POs &amp; {{ payload.summary.total_job_cards }} Job Cards
+                    </div>
+                </div>
+
+                <!-- Estimated Runtime -->
+                <div class="summary-card" style="border-top: 4px solid #eab308;">
+                    <div class="summary-card-header">Time &amp; Setup Savings</div>
+                    <div class="summary-card-value" style="display: flex; justify-content: space-between; align-items: baseline;">
+                        <span>{{ payload.summary.estimated_runtime }}h <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">Run</span></span>
+                        <span style="color: #10b981;">-{{ payload.summary.setup_time_saved }}h <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">Saved</span></span>
+                    </div>
+                    <div class="summary-card-sub">Saved {{ payload.summary.setup_changes_saved }} set changes via consolidation</div>
+                </div>
+
+                <!-- SLA Risks -->
+                {% if payload.summary.jobs_at_sla_risk > 0 %}
+                    <div class="summary-card" style="border-top: 4px solid #ef4444; background: #fff5f5;">
+                        <div class="summary-card-header" style="color: #991b1b;">SLA WARNING</div>
+                        <div class="summary-card-value" style="color: #ef4444;">
+                            {{ payload.summary.jobs_at_sla_risk }} <span style="font-size: 12px; color: #991b1b; font-weight: normal;">Risk Jobs</span>
+                        </div>
+                        <div class="summary-card-sub" style="color: #b91c1c;">These orders are nearing the 14-day SLA deadline.</div>
+                    </div>
+                {% endif %}
+            </div>
+
+            <!-- PLANNING REPORT SHEET -->
+            <div class="table-container">
+                <table class="planner-table">
+                    <thead>
+                        <tr>
+                            <th style="width: 35px; text-align: center;">Seq</th>
+                            <th style="width: 120px;">PO Numbers</th>
+                            <th style="width: 120px;">Job Cards</th>
+                            <th style="min-width: 190px;">SKU</th>
+                            <th style="width: 45px; text-align: center;">PO Count</th>
+                            <th style="width: 45px; text-align: center;">Age</th>
+                            <th style="width: 70px;">Status</th>
+                            <th style="width: 110px;">Priority</th>
+                            <th style="width: 45px; text-align: center;">AI Score</th>
+                            <th style="width: 160px;">AI Sequence Reason</th>
+                            <th style="width: 80px;">Material</th>
+                            <th style="width: 50px;">Colors</th>
+                            <th style="width: 40px; text-align: center;">Ups</th>
+                            <th style="width: 70px;">Size</th>
+                            <th style="width: 60px;">Sheets</th>
+                            <th style="width: 70px;">Finish Qty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in payload.rows %}
+                            <tr class="{% if row.po_count > 1 %}merged-sku-row{% endif %}">
+                                <td style="font-weight: 700; text-align: center; font-size: 13px;">{{ row.sequence }}</td>
+                                <td style="color: #475569; font-size: 11px; font-weight: 500; max-width: 120px; word-wrap: break-word;">{{ row.po_numbers }}</td>
+                                <td style="color: #475569; font-size: 11px; font-weight: 500; max-width: 120px; word-wrap: break-word;">{{ row.job_card_numbers }}</td>
+                                <td style="font-weight: 700; font-size: 13px; color: #0f172a; word-break: break-all;">{{ row.sku }}</td>
+                                <td style="font-weight: 700; text-align: center;">{{ row.po_count }}</td>
+                                <td style="text-align: center;">{{ row.po_age_days }}d</td>
+                                <td>
+                                    <span class="status-indicator">
+                                        {% if row.status == 'Overdue' %}
+                                            <span class="dot dot-overdue"></span> <span style="color:#ef4444;">Overdue</span>
+                                        {% elif row.status == 'Due Soon' %}
+                                            <span class="dot dot-duesoon"></span> <span style="color:#f97316;">Due Soon</span>
+                                        {% elif row.status == 'Attention' %}
+                                            <span class="dot dot-attention"></span> <span style="color:#eab308;">Attention</span>
+                                        {% else %}
+                                            <span class="dot dot-safe"></span> <span style="color:#10b981;">Safe</span>
+                                        {% endif %}
+                                    </span>
+                                </td>
+                                <td>
+                                    <select class="priority-select priority-{{ row.priority }}" data-job-id="{{ row.id }}" style="width: 100%;">
+                                        {% for val, label in data.priority_choices %}
+                                            <option value="{{ val }}" {% if row.priority == val %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td style="font-weight: 700; color: #2563eb; font-size: 13px; text-align: center;">{{ row.ai_score }}</td>
+                                <td style="font-style: italic; color: #64748b; font-size: 11px; max-width: 160px; line-height: 1.2;">{{ row.ai_reason }}</td>
+                                <td>{{ row.material }}</td>
+                                <td>{{ row.colors }}</td>
+                                <td style="text-align: center; font-weight: 600;">{{ row.ups }}</td>
+                                <td>{{ row.print_sheet_size }}</td>
+                                <td>{{ row.print_sheet_quantity }}</td>
+                                <td>{{ row.finish_quantity }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    {% endfor %}
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. Tab Navigation
+    const tabs = document.querySelectorAll('.machine-tab-btn');
+    const contents = document.querySelectorAll('.machine-tab-content');
+
+    tabs.forEach(btn => {
+        btn.addEventListener('click', function() {
+            tabs.forEach(b => b.classList.remove('is-active'));
+            contents.forEach(c => c.style.display = 'none');
+
+            this.classList.add('is-active');
+            const targetId = this.getAttribute('data-target');
+            document.getElementById(targetId).style.display = 'block';
+        });
+    });
+
+    // 2. AJAX Priority Changer (with full page reload to trigger scoring, sorting, and summary metrics recalculations)
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    const selects = document.querySelectorAll('.priority-select');
+
+    selects.forEach(select => {
+        select.addEventListener('change', function() {
+            const jobId = this.getAttribute('data-job-id');
+            const newPriority = this.value;
+            const selectElement = this;
+
+            selectElement.className = 'priority-select priority-' + newPriority;
+
+            const formData = new FormData();
+            formData.append('priority', newPriority);
+            formData.append('csrfmiddlewaretoken', csrfToken);
+
+            fetch(`/planning/job/${jobId}/priority/`, {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.ok) {
+                    // Score recalculation requires sorting and summary cards updating.
+                    // A quick reload makes sure the entire sheet reorganizes smoothly!
+                    window.location.reload();
+                } else {
+                    alert('Error: ' + (data.error || 'Failed to update priority'));
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('An error occurred while updating priority.');
+            });
+        });
+    });
+});
+</script>
+{% endblock %}

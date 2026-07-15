@@ -4,7 +4,9 @@ from hashlib import sha256
 
 from django.core.cache import cache
 from django.core.exceptions import PermissionDenied
+from django.http import Http404
 from django.utils import timezone
+import zoneinfo
 
 from reports.filters import parse_universal_filters
 from reports.report_engine.serializer import to_json_safe
@@ -25,16 +27,18 @@ def _cache_key(slug: str, user_id: int | None, filters: dict) -> str:
     return f'reports:engine:{sha256(key_input.encode("utf-8")).hexdigest()}'
 
 
-def run_report(slug: str, request) -> dict:
+def run_report(slug: str, request, filters: dict | None = None) -> dict:
     definition = registry.get(slug)
     if definition is None:
-        raise KeyError(f'Report not found: {slug}')
+        raise Http404('Report not found')
 
     if not _has_access(request, definition.permissions):
-        raise PermissionDenied('You do not have permission to view this report.')
+        raise PermissionDenied('Access denied to this report')
 
-    filters = parse_universal_filters(request)
-    key = _cache_key(definition.slug, getattr(getattr(request, 'user', None), 'id', None), filters)
+    if filters is None:
+        filters = parse_universal_filters(request)
+
+    key = _cache_key(slug, getattr(request.user, 'id', None) if request.user.is_authenticated else None, filters)
     cached = cache.get(key)
     if cached is not None:
         return cached
@@ -55,7 +59,7 @@ def run_report(slug: str, request) -> dict:
             'icon': definition.icon,
         },
         'filters': filters,
-        'generated_at': timezone.now().isoformat(),
+        'generated_at': timezone.now().astimezone(zoneinfo.ZoneInfo('Asia/Karachi')).strftime('%Y-%m-%d %I:%M:%S %p PKT'),
         'data': to_json_safe(raw_data),
     }
     cache.set(key, payload, timeout=max(30, int(definition.cache_timeout or 300)))

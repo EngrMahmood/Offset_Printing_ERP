@@ -480,15 +480,33 @@ def build_overview_context(request):
 
 
 def build_machine_planning_context(request):
+    from django.utils import timezone
+    from collections import Counter
+    from datetime import date, datetime, timedelta
+
     start, end, days = _date_window(request, default_days=45)
     year = _get_year(request)
     search_value = (request.GET.get('q') or '').strip()
     status_value = (request.GET.get('status') or '').strip()
 
-    jobs = PlanningJob.objects.filter(is_active=True, plan_date__year=year).exclude(status='completed')
+    # Get all pending printing jobs (excluding cut_and_pack and completed)
+    jobs = PlanningJob.objects.filter(is_active=True).exclude(status='completed').exclude(job_process_type='cut_and_pack').select_related('job_card')
     jobs = _search_jobs(jobs, search_value)
     if status_value:
         jobs = jobs.filter(status=status_value)
+
+    # Prefetch SkuRecipes to avoid N+1 queries in loops
+    from planning.models import SkuRecipe
+    recipes = SkuRecipe.objects.filter(is_active=True).order_by('-updated_at')
+    recipe_dict = {}
+    for r in recipes:
+        s_val = (r.sku or '').lower().strip()
+        if s_val and s_val not in recipe_dict:
+            recipe_dict[s_val] = r
+
+    for job in jobs:
+        s_val = (job.sku or '').lower().strip()
+        job._cached_sku_recipe = recipe_dict.get(s_val)
 
     planned_window = jobs.filter(Q(plan_date__range=(start, end)) | Q(plan_date__isnull=True))
     machine_rows = list(
@@ -548,6 +566,255 @@ def build_machine_planning_context(request):
             1,
         ) if machine else None
 
+    # Group all pending printing jobs by (machine, SKU) to consolidate same-SKU runs
+    sku_groups = {}
+    today_date = timezone.localdate()
+
+    for job in jobs:
+        m_name = (job.machine_name or 'Unassigned').strip()
+        sku_val = (job.sku or 'Unknown SKU').strip()
+        key = (m_name, sku_val)
+        if key not in sku_groups:
+            sku_groups[key] = []
+        sku_groups[key].append(job)
+
+    # Pre-calculate dominant attributes per machine for similarity clustering scoring
+    machine_dominant_attrs = {}
+    for (m_name, sku_val), job_list in sku_groups.items():
+        if m_name not in machine_dominant_attrs:
+            machine_dominant_attrs[m_name] = {'materials': [], 'sizes': [], 'colors': []}
+        for job in job_list:
+            if job.material_display:
+                machine_dominant_attrs[m_name]['materials'].append(job.material_display)
+            if job.print_sheet_size_display:
+                machine_dominant_attrs[m_name]['sizes'].append(job.print_sheet_size_display)
+            if job.color_spec_display:
+                machine_dominant_attrs[m_name]['colors'].append(job.color_spec_display)
+
+    dominant_values = {}
+    for m_name, attrs in machine_dominant_attrs.items():
+        dominant_values[m_name] = {
+            'material': Counter(attrs['materials']).most_common(1)[0][0] if attrs['materials'] else None,
+            'size': Counter(attrs['sizes']).most_common(1)[0][0] if attrs['sizes'] else None,
+            'color': Counter(attrs['colors']).most_common(1)[0][0] if attrs['colors'] else None,
+        }
+
+    # Process and score each merged SKU group
+    all_merged_rows = []
+    for (m_name, sku_val), group_jobs in sku_groups.items():
+        first_job = group_jobs[0]
+        
+        # Aggregations
+        finish_qty = sum(j.order_qty or 0 for j in group_jobs)
+        print_sheet_qty = sum(j.actual_sheet_required_display or 0 for j in group_jobs)
+        jc_numbers = sorted(list({j.jc_number for j in group_jobs if j.jc_number}))
+        po_numbers = sorted(list({j.po_number for j in group_jobs if j.po_number}))
+        po_count = len(po_numbers)
+        
+        # Max priority
+        max_priority = max(j.priority for j in group_jobs)
+        
+        # Oldest PO date for aging
+        dates = []
+        for j in group_jobs:
+            d_val = j.po_approval_date or j.plan_date
+            if d_val:
+                dates.append(d_val)
+            elif j.created_at:
+                dates.append(j.created_at.date())
+        oldest_date = min(dates) if dates else today_date
+        po_age_days = (today_date - oldest_date).days
+
+        # Determine dominant features of this machine
+        m_dominants = dominant_values.get(m_name, {'material': None, 'size': None, 'color': None})
+        
+        # 1. Business Priority (30% weight)
+        priority_weights = {4: 100, 3: 75, 2: 50, 1: 25, 0: 10}
+        priority_points = priority_weights.get(max_priority, 25)
+        priority_score = priority_points * 0.30
+
+        # 2. PO Aging (25% weight)
+        aging_points = min(po_age_days, 14) / 14 * 100
+        aging_score = aging_points * 0.25
+
+        # 3. Same SKU Merge Benefit (20% weight)
+        merge_points = 100 if po_count > 1 else 0
+        merge_score = merge_points * 0.20
+
+        # 4. Same Material (10% weight)
+        mat_display = first_job.material_display
+        material_points = 100 if m_dominants['material'] and mat_display == m_dominants['material'] else 20
+        material_score = material_points * 0.10
+
+        # 5. Same Color Setup (7% weight)
+        col_display = first_job.color_spec_display
+        color_points = 100 if m_dominants['color'] and col_display == m_dominants['color'] else 20
+        color_score = color_points * 0.07
+
+        # 6. Same Print Sheet Size (5% weight)
+        size_display = first_job.print_sheet_size_display
+        size_points = 100 if m_dominants['size'] and size_display == m_dominants['size'] else 20
+        size_score = size_points * 0.05
+
+        # 7. Machine Load Balance (3% weight)
+        load_score = 50 * 0.03  # Baseline load balance score
+
+        ai_score = round(priority_score + aging_score + merge_score + material_score + color_score + size_score + load_score, 1)
+
+        # AI Reason generation
+        reasons = []
+        if max_priority == 4:
+            reasons.append("Critical business priority")
+        elif max_priority == 3:
+            reasons.append("High business priority")
+
+        if po_age_days >= 14:
+            reasons.append("PO overdue (exceeds 14-day SLA)")
+        elif po_age_days >= 11:
+            reasons.append("SLA Risk: Due soon")
+
+        if po_count > 1:
+            reasons.append(f"Same SKU merged from {po_count} POs")
+
+        if m_dominants['material'] and mat_display == m_dominants['material']:
+            reasons.append("Optimizes machine material transitions")
+        if m_dominants['size'] and size_display == m_dominants['size']:
+            reasons.append("Minimizes size layout setup changes")
+        if m_dominants['color'] and col_display == m_dominants['color']:
+            reasons.append("Avoids printing color wash-up")
+
+        ai_reason = " | ".join(reasons) if reasons else "Optimized sequence queue"
+
+        # Determine SLA Status
+        if po_age_days >= 14:
+            status_pill = "Overdue"  # Red
+        elif po_age_days >= 11:
+            status_pill = "Due Soon"  # Orange
+        elif po_age_days >= 7:
+            status_pill = "Attention"  # Yellow
+        else:
+            status_pill = "Safe"  # Green
+
+        row = {
+            'id': first_job.id,
+            'machine_name': m_name,
+            'sku': sku_val,
+            'sku_description': first_job.job_name or '-',
+            'material': mat_display or '-',
+            'colors': col_display or '-',
+            'ups': first_job.ups_display or 0,
+            'print_sheet_size': size_display or '-',
+            'print_sheet_quantity': print_sheet_qty,
+            'finish_quantity': finish_qty,
+            'po_age_days': po_age_days,
+            'po_count': po_count,
+            'po_numbers': ", ".join(po_numbers),
+            'job_card_numbers': ", ".join(jc_numbers),
+            'priority': max_priority,
+            'priority_display': first_job.get_priority_display(),
+            'ai_score': ai_score,
+            'ai_reason': ai_reason,
+            'status': status_pill,
+            'job_ids': [j.id for j in group_jobs],
+        }
+        all_merged_rows.append(row)
+
+    # Group rows by machine and sort each machine's rows by AI Score descending
+    machine_reports = {}
+    unique_machines = sorted(list({row['machine_name'] for row in all_merged_rows}))
+
+    for m_name in unique_machines:
+        m_rows = [row for row in all_merged_rows if row['machine_name'] == m_name]
+        m_rows.sort(key=lambda x: x['ai_score'], reverse=True)
+        
+        # Add sequence numbers
+        for idx, row in enumerate(m_rows, 1):
+            row['sequence'] = idx
+
+        # Machine settings
+        machine = machine_map.get(m_name.lower())
+        speed = machine.standard_impressions_per_hour if machine and machine.standard_impressions_per_hour else 5000
+        setup_minutes = machine.standard_setup_minutes_per_color if machine and machine.standard_setup_minutes_per_color else 30
+
+        total_print_sheets = sum(r['print_sheet_quantity'] for r in m_rows)
+        total_job_cards = sum(len(r['job_ids']) for r in m_rows)
+        total_planned_jobs = len(m_rows)
+
+        # Runtime and Setup calculations
+        est_runtime_hours = round(total_print_sheets / max(speed, 1000), 2)
+        est_setup_time_hours = round((total_planned_jobs * setup_minutes) / 60, 2)
+        
+        # Setup Saved calculations (merging savings)
+        setup_changes_saved = max(total_job_cards - total_planned_jobs, 0)
+        setup_time_saved_hours = round((setup_changes_saved * setup_minutes) / 60, 2)
+
+        # SLA risks
+        sla_risks_count = sum(1 for r in m_rows if r['po_age_days'] >= 11)
+
+        # Utilization (estimate based on a standard 22 available hours per day capacity)
+        total_load_hours = est_runtime_hours + est_setup_time_hours
+        utilization_pct = min(round((total_load_hours * 100) / 22, 1), 100.0)
+
+        # Average AI Score
+        avg_score = round(sum(r['ai_score'] for r in m_rows) / max(total_planned_jobs, 1), 1)
+
+        # Completion Time calculation
+        completion_time = datetime.now() + timedelta(hours=total_load_hours)
+
+        machine_reports[m_name] = {
+            'rows': m_rows,
+            'summary': {
+                'machine_name': m_name,
+                'ai_planning_score': avg_score,
+                'machine_utilization': utilization_pct,
+                'total_planned_jobs': total_planned_jobs,
+                'merged_runs': sum(1 for r in m_rows if r['po_count'] > 1),
+                'individual_runs': sum(1 for r in m_rows if r['po_count'] == 1),
+                'total_pos': sum(r['po_count'] for r in m_rows),
+                'total_job_cards': total_job_cards,
+                'total_print_sheets': total_print_sheets,
+                'estimated_runtime': est_runtime_hours,
+                'estimated_setup_time': est_setup_time_hours,
+                'setup_changes_saved': setup_changes_saved,
+                'setup_time_saved': setup_time_saved_hours,
+                'jobs_at_sla_risk': sla_risks_count,
+                'expected_completion_time': completion_time.strftime('%Y-%m-%d %I:%M %p'),
+            }
+        }
+
+    # For exports, return detailed sequenced planning rows instead of aggregate counts
+    export_machine = request.GET.get('machine')
+    detailed_rows = []
+    if export_machine and export_machine in machine_reports:
+        detailed_rows = machine_reports[export_machine]['rows']
+    else:
+        for m_name in unique_machines:
+            detailed_rows.extend(machine_reports[m_name]['rows'])
+
+    headers = [
+        'sequence', 'po_numbers', 'job_card_numbers', 'sku', 'po_count',
+        'po_age_days', 'status', 'priority_display', 'ai_score', 'machine_name',
+        'material', 'colors', 'ups', 'print_sheet_size', 'print_sheet_quantity', 'finish_quantity'
+    ]
+    header_labels = {
+        'sequence': 'Sequence',
+        'po_numbers': 'PO Numbers',
+        'job_card_numbers': 'Job Card Numbers',
+        'sku': 'SKU',
+        'po_count': 'PO Count',
+        'po_age_days': 'PO Age (Days)',
+        'status': 'Status',
+        'priority_display': 'Business Priority',
+        'ai_score': 'AI Score',
+        'machine_name': 'Machine',
+        'material': 'Material',
+        'colors': 'Colors',
+        'ups': 'Ups',
+        'print_sheet_size': 'Print Sheet Size',
+        'print_sheet_quantity': 'Print Sheet Qty',
+        'finish_quantity': 'Finish Qty',
+    }
+
     return {
         'report': next(item for item in REPORT_CATALOG if item['key'] == 'machine-planning'),
         'filters': {
@@ -557,15 +824,20 @@ def build_machine_planning_context(request):
             'start': start,
             'end': end,
             'year': year,
+            'machine': export_machine,
         },
         'summary': summary,
         'status_rows': status_rows,
-        'machine_rows': machine_rows,
+        'machine_rows': detailed_rows,
         'actual_rows': actual_rows,
         'unassigned_jobs': unassigned_jobs,
         'urgent_jobs': urgent_jobs,
         'status_choices': PlanningJob._meta.get_field('status').choices,
         'machine_choices': Machine.objects.filter(is_active=True).order_by('name').values_list('name', flat=True),
+        'priority_choices': PlanningJob.PRIORITY_CHOICES,
+        'machine_reports': machine_reports,
+        'headers': headers,
+        'header_labels': header_labels,
     }
 
 

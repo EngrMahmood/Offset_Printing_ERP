@@ -2,9 +2,15 @@ from django.db import migrations
 
 
 def repair_plate_making_stages(apps, schema_editor):
-    from planning.sku_classification import repair_inconsistent_plate_making_stages
-
-    repair_inconsistent_plate_making_stages()
+    PlanningJob = apps.get_model('planning', 'PlanningJob')
+    PLATE_MAKING_STAGES = {'new_plate_making', 'repeat_plate_making'}
+    qs = PlanningJob.objects.filter(planning_stage__in=PLATE_MAKING_STAGES)
+    for job in qs:
+        stage = (job.planning_stage or '').strip()
+        expected = 'new_plate_making' if (job.repeat_flag or '').strip() == 'New' else 'repeat_plate_making'
+        if stage != expected:
+            job.planning_stage = expected
+            job.save(update_fields=['planning_stage'])
 
 
 class Migration(migrations.Migration):
