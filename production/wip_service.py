@@ -32,6 +32,14 @@ def get_system_calculated_status_name(job_card):
 
     # 3. Printing check
     printing_records = Production.objects.filter(job_card=job_card, is_active=True, entry_type='printing')
+    
+    from production.printing_pass_helpers import get_job_card_pass_count
+    total_passes = get_job_card_pass_count(job_card)
+    final_pass_exists = printing_records.filter(print_pass_number=total_passes, output_sheets__gt=0).exists()
+    
+    if final_pass_exists:
+        return 'Printing Completed'
+
     if printing_records.exists() or job_card.workflow_status == 'released':
         return 'Printing'
 

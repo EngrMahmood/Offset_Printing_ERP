@@ -26,6 +26,7 @@ class WipAutomationTests(TestCase):
             machine_name=self.machine.name,
             front_pass=1,
             back_pass=0,
+            print_passes=1,
         )
         
         self.job_card = JobCard.objects.create(
@@ -45,7 +46,13 @@ class WipAutomationTests(TestCase):
 
     def test_calculated_vs_manual_status(self):
         """Dynamic system status correctly computes from logs without overwriting manual status."""
-        # 1. Start printing
+        # Setup multi-pass
+        self.planning_job.print_passes = 2
+        self.planning_job.save()
+        self.job_card.total_impressions_required = 2000
+        self.job_card.save()
+
+        # 1. Start printing (intermediate pass, output_sheets=0 is mandatory)
         Production.objects.create(
             entry_type='printing',
             job_card=self.job_card,
@@ -54,7 +61,7 @@ class WipAutomationTests(TestCase):
             shift='A',
             date=date(2026, 1, 1),
             impressions=100,
-            output_sheets=100,
+            output_sheets=0,
             print_pass_number=1,
             created_by=self.user
         )
@@ -78,7 +85,13 @@ class WipAutomationTests(TestCase):
         self.assertEqual(get_system_calculated_status_name(self.job_card), 'Printing')
 
     def test_printing_production_transition(self):
-        """Creating a printing production record transitions WIP status to Printing."""
+        """Creating an intermediate printing production record transitions WIP status to Printing."""
+        # Setup multi-pass
+        self.planning_job.print_passes = 2
+        self.planning_job.save()
+        self.job_card.total_impressions_required = 2000
+        self.job_card.save()
+
         prod = Production.objects.create(
             entry_type='printing',
             job_card=self.job_card,
@@ -87,7 +100,7 @@ class WipAutomationTests(TestCase):
             shift='A',
             date=date(2026, 1, 1),
             impressions=100,
-            output_sheets=100,
+            output_sheets=0,
             print_pass_number=1,
             created_by=self.user
         )
@@ -97,9 +110,47 @@ class WipAutomationTests(TestCase):
         self.assertEqual(wip_status.status.name, 'Printing')
         self.assertFalse(wip_status.is_manual)
 
+    def test_printing_completed_transition(self):
+        """Logging the final print pass transitions WIP to Printing Completed."""
+        # Setup multi-pass
+        self.planning_job.print_passes = 2
+        self.planning_job.save()
+        self.job_card.total_impressions_required = 2000
+        self.job_card.save()
+
+        # Log first pass (intermediate, output_sheets=0)
+        Production.objects.create(
+            entry_type='printing',
+            job_card=self.job_card,
+            machine=self.machine,
+            operator=self.operator,
+            shift='A',
+            date=date(2026, 1, 1),
+            impressions=1000,
+            output_sheets=0,
+            print_pass_number=1,
+            created_by=self.user
+        )
+        self.assertEqual(get_system_calculated_status_name(self.job_card), 'Printing')
+
+        # Log second pass (final, output_sheets > 0 allowed)
+        Production.objects.create(
+            entry_type='printing',
+            job_card=self.job_card,
+            machine=self.machine,
+            operator=self.operator,
+            shift='A',
+            date=date(2026, 1, 1),
+            impressions=1000,
+            output_sheets=1000,
+            print_pass_number=2,
+            created_by=self.user
+        )
+        self.assertEqual(get_system_calculated_status_name(self.job_card), 'Printing Completed')
+
     def test_packing_production_transition(self):
         """Creating a packing record transitions WIP to Sorting / Packing."""
-        # Print first so there is a packing limit allowance
+        # Print first (1 pass is final, output_sheets > 0 is allowed)
         Production.objects.create(
             entry_type='printing',
             job_card=self.job_card,
@@ -130,7 +181,7 @@ class WipAutomationTests(TestCase):
 
     def test_packing_completed_transition(self):
         """When packed quantity >= order quantity, status becomes Ready for Dispatch."""
-        # Print first so there is a packing limit allowance
+        # Print first
         Production.objects.create(
             entry_type='printing',
             job_card=self.job_card,
@@ -161,7 +212,7 @@ class WipAutomationTests(TestCase):
 
     def test_dispatch_transitions(self):
         """Dispatch logs trigger transition to Partial Dispatch and then Completed."""
-        # Print first so there is a packing limit allowance
+        # Print first
         Production.objects.create(
             entry_type='printing',
             job_card=self.job_card,
@@ -175,7 +226,7 @@ class WipAutomationTests(TestCase):
             created_by=self.user
         )
         
-        # Setup packing first to allow dispatching up to order qty
+        # Setup packing first
         Production.objects.create(
             entry_type='packing',
             job_card=self.job_card,

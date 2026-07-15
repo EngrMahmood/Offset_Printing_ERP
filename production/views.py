@@ -756,7 +756,7 @@ def production_wip(request):
         messages.error(request, '❌ You do not have permission to access this feature.')
         return redirect('planning:home')
 
-    default_status_names = ['Printing', 'Sorting / Packing', 'Ready for Dispatch', 'Partial Dispatch', 'Completed']
+    default_status_names = ['Printing', 'Printing Completed', 'Sorting / Packing', 'Ready for Dispatch', 'Partial Dispatch', 'Completed']
     for status_name in default_status_names:
         ProductionWipStatus.objects.get_or_create(
             name=status_name,

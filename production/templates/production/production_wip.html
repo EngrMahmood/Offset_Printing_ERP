@@ -86,6 +86,7 @@
                         <select id="calculated_status" name="calculated_status" class="erp-select">
                             <option value="">All Calculated Statuses</option>
                             <option value="Printing" {% if calculated_status_filter == 'Printing' %}selected{% endif %}>Printing</option>
+                            <option value="Printing Completed" {% if calculated_status_filter == 'Printing Completed' %}selected{% endif %}>Printing Completed</option>
                             <option value="Sorting / Packing" {% if calculated_status_filter == 'Sorting / Packing' %}selected{% endif %}>Sorting / Packing</option>
                             <option value="Ready for Dispatch" {% if calculated_status_filter == 'Ready for Dispatch' %}selected{% endif %}>Ready for Dispatch</option>
                             <option value="Partial Dispatch" {% if calculated_status_filter == 'Partial Dispatch' %}selected{% endif %}>Partial Dispatch</option>
@@ -164,6 +165,8 @@
                                 <td>
                                     {% if job.calculated_status == 'Printing' %}
                                         <span class="erp-badge" style="background-color: #e3f2fd; color: #0d47a1;">Printing</span>
+                                    {% elif job.calculated_status == 'Printing Completed' %}
+                                        <span class="erp-badge" style="background-color: #e0f2f1; color: #004d40;">Printing Completed</span>
                                     {% elif job.calculated_status == 'Sorting / Packing' %}
                                         <span class="erp-badge" style="background-color: #f3e5f5; color: #4a148c;">Sorting / Packing</span>
                                     {% elif job.calculated_status == 'Ready for Dispatch' %}
