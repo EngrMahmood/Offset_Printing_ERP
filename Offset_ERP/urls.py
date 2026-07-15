@@ -20,6 +20,7 @@ urlpatterns = [
     path('supply-chain/', include('supply_chain.urls', namespace='supply_chain')),
     path('audit/', include('audit.urls', namespace='audit')),
     path('tasks/', include('tasks.urls', namespace='tasks')),
+    path('backup/', include('backup.urls', namespace='backup')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),
 

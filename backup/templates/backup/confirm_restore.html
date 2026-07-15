@@ -1,0 +1,86 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}Confirm Database Restore | Offset ERP{% endblock %}
+
+{% block header_title %}Restore Database Recovery{% endblock %}
+{% block header_subtitle %}Overwrite active operational database with selected backup archive{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack" style="max-width: 600px; margin: 0 auto;">
+    <div class="erp-page-intro">
+        <a href="{% url 'backup:dashboard' %}" class="erp-btn erp-btn-secondary">
+            <i class="fas fa-arrow-left"></i> Cancel and Return
+        </a>
+    </div>
+
+    <div class="erp-section-shell" style="border-color: var(--erp-danger);">
+        <h3 class="erp-section-title" style="color: var(--erp-danger); margin-bottom: 16px;">
+            <i class="fas fa-exclamation-triangle"></i> DANGER: Irreversible Database Overwrite
+        </h3>
+        
+        <div class="erp-alert erp-alert-danger" style="margin-bottom: 20px;">
+            <strong>Warning:</strong> Restoring the database will overwrite the current live database file. Any data added since this backup was created will be permanently lost. Ensure all users are offline and no active processes are running.
+        </div>
+
+        <!-- Backup properties -->
+        <div class="erp-cluster-card" style="margin-bottom: 20px; background: var(--erp-bg-soft);">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--erp-text-muted); font-weight:700;">Selected Backup Properties</div>
+            <div style="margin-top: 8px; font-size:13px; line-height: 1.6;">
+                <div><strong>ID:</strong> #{{ backup.id }}</div>
+                <div><strong>File:</strong> <code>{{ backup.file_name }}</code></div>
+                <div><strong>Created On:</strong> {{ backup.start_time|date:"Y-m-d H:i:s" }}</div>
+                <div><strong>Backup Type:</strong> {{ backup.get_backup_type_display }}</div>
+                <div><strong>Checksum:</strong> <code style="font-size: 11px;">{{ backup.sha256_checksum }}</code></div>
+            </div>
+        </div>
+
+        <!-- Verification simulation results -->
+        <div class="erp-cluster-card" style="margin-bottom: 24px;">
+            <div style="font-size: 11px; text-transform: uppercase; color: var(--erp-text-muted); font-weight:700; margin-bottom:8px;">Restore Simulation & Dry Run Verification</div>
+            
+            {% if sim.is_valid %}
+            <div style="display:flex; align-items:center; gap:8px; color: var(--erp-success); font-weight:600; font-size:13px;">
+                <i class="fas fa-check-circle" style="font-size:16px;"></i> Simulation Passed Successfully
+            </div>
+            <div style="margin-top: 8px; font-size:12px; color: var(--erp-text);">
+                <div><strong>Extracted Database File Size:</strong> {{ sim.db_size|filesizeformat }}</div>
+                <div><strong>Total Compressed Items inside ZIP:</strong> {{ sim.file_count }} files</div>
+                <div style="margin-top:6px; color: var(--erp-text-muted);">{{ sim.message }}</div>
+            </div>
+            {% else %}
+            <div style="display:flex; align-items:center; gap:8px; color: var(--erp-danger); font-weight:600; font-size:13px;">
+                <i class="fas fa-times-circle" style="font-size:16px;"></i> Simulation Failed
+            </div>
+            <div style="margin-top: 8px; font-size:12px; color: var(--erp-danger);">
+                {{ sim.message }}
+            </div>
+            {% endif %}
+        </div>
+
+        {% if sim.is_valid %}
+        <form method="post">
+            {% csrf_token %}
+            <div style="margin-bottom: 24px;">
+                <label class="erp-eyebrow" style="margin-bottom: 8px; display: block; color: var(--erp-text);">
+                    To confirm database restore, type <strong>RESTORE</strong> below:
+                </label>
+                <input type="text" name="confirm_restore" placeholder="RESTORE" required class="erp-input" autocomplete="off" style="text-align: center; font-weight: 700; letter-spacing: 0.1em; border-color: var(--erp-danger);">
+            </div>
+
+            <div style="text-align: right;">
+                <button type="submit" class="erp-btn erp-btn-danger" style="padding: 10px 24px; font-size:12px;">
+                    <i class="fas fa-undo"></i> Restore Database Now
+                </button>
+            </div>
+        </form>
+        {% else %}
+        <div style="text-align: center; margin-top: 20px;">
+            <button class="erp-btn erp-btn-secondary" disabled style="cursor: not-allowed; opacity: 0.5;">
+                <i class="fas fa-ban"></i> Cannot Restore (Simulation Failed)
+            </button>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

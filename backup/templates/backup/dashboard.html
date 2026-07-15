@@ -1,0 +1,225 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Database Backup & Restore | Offset ERP{% endblock %}
+
+{% block header_title %}Database Backups & Recovery{% endblock %}
+{% block header_subtitle %}Automated recovery, local storage, and cloud synchronizations{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <!-- Action buttons -->
+    <div class="erp-page-intro">
+        <div>
+            <span class="erp-status-chip {% if setting.backup_enabled %}success{% else %}warning{% endif %}">
+                <span class="erp-status-dot"></span>
+                Scheduler: {% if setting.backup_enabled %}Active{% else %}Suspended{% endif %}
+            </span>
+            <span class="erp-status-chip info" style="margin-left: 8px;">
+                Engine: {{ db_engine }}
+            </span>
+        </div>
+        <div class="erp-actions">
+            <form action="{% url 'backup:run_manual_backup' %}" method="post" style="display:inline;">
+                {% csrf_token %}
+                <button type="submit" class="erp-btn erp-btn-success">
+                    <i class="fas fa-play"></i> Create Backup Now
+                </button>
+            </form>
+            <a href="{% url 'backup:settings' %}" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-cog"></i> Settings Configuration
+            </a>
+        </div>
+    </div>
+
+    <!-- KPI Grid -->
+    <div class="erp-kpi-grid">
+        <div class="erp-kpi-card">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Last Successful Backup</div>
+                    <div class="erp-kpi-value" style="font-size: 15px; margin-top: 12px; font-weight: 600;">
+                        {% if last_backup %}
+                            {{ last_backup.finish_time|date:"Y-m-d H:i" }}
+                        {% else %}
+                            Never
+                        {% endif %}
+                    </div>
+                    {% if last_backup %}
+                    <span style="font-size: 11px; color: var(--erp-text-muted);">
+                        Size: {{ last_backup.file_size|filesizeformat }}
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-history"></i></div>
+            </div>
+        </div>
+
+        <div class="erp-kpi-card">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Next Scheduled Backup</div>
+                    <div class="erp-kpi-value" style="font-size: 15px; margin-top: 12px; font-weight: 600;">
+                        {% if next_backup %}
+                            {{ next_backup|date:"Y-m-d H:i" }}
+                        {% else %}
+                            Disabled
+                        {% endif %}
+                    </div>
+                    <span style="font-size: 11px; color: var(--erp-text-muted);">
+                        Freq: {{ setting.get_frequency_display }} @ {{ setting.backup_time|time:"H:i" }}
+                    </span>
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-clock"></i></div>
+            </div>
+        </div>
+
+        <div class="erp-kpi-card">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Total Backups & Storage</div>
+                    <div class="erp-kpi-value" style="font-size: 24px; font-weight: 800;">
+                        {{ storage_used_mb }} <span style="font-size:14px; font-weight:500; color:var(--erp-text-muted)">MB</span>
+                    </div>
+                    <span style="font-size: 11px; color: var(--erp-text-muted);">
+                        Total Count: {{ total_backups }} archived
+                    </span>
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-hdd"></i></div>
+            </div>
+        </div>
+
+        <div class="erp-kpi-card">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Cloud Sync Location</div>
+                    <div class="erp-kpi-value" style="font-size: 13px; margin-top: 12px; font-weight: 600; line-height: 1.2;">
+                        {% if setting.cloud_onedrive_folder %}
+                            <i class="fab fa-windows text-blue-500"></i> OneDrive Sync
+                        {% elif setting.cloud_gdrive_folder %}
+                            <i class="fab fa-google text-green-500"></i> Google Drive Sync
+                        {% else %}
+                            Local Disk Only
+                        {% endif %}
+                    </div>
+                    <span style="font-size: 11px; color: var(--erp-text-muted);">
+                        {% if setting.cloud_onedrive_folder or setting.cloud_gdrive_folder %}Sync is Configured{% else %}Cloud storage disabled{% endif %}
+                    </span>
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-cloud"></i></div>
+            </div>
+        </div>
+
+        <div class="erp-kpi-card">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Job Success Rate</div>
+                    <div class="erp-kpi-value" style="font-size: 24px; font-weight: 800; color: {% if success_rate > 90 %}var(--erp-success){% else %}var(--erp-warning){% endif %};">
+                        {{ success_rate }}%
+                    </div>
+                    <span style="font-size: 11px; color: var(--erp-text-muted);">
+                        Last Restore: {{ last_restore_date|date:"Y-m-d H:i"|default:"Never" }}
+                    </span>
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-check-circle"></i></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Alert details if any recent backup failed -->
+    {% if recent_errors %}
+    <div class="erp-alert erp-alert-danger">
+        <h4 style="margin:0 0 6px 0; font-weight:700;"><i class="fas fa-exclamation-triangle"></i> Recent Backup Failures Detected</h4>
+        <ul style="margin: 0; padding-left: 20px; font-size:11px;">
+            {% for err in recent_errors %}
+            <li><strong>{{ err.start_time|date:"Y-m-d H:i" }}</strong>: {{ err.error_message }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Backup History Table -->
+    <div class="erp-section-shell">
+        <div class="erp-card-header" style="margin-bottom:12px;">
+            <div class="erp-card-title-stack">
+                <h3 class="erp-section-title">Archived Backup History Logs</h3>
+                <p class="erp-card-subtitle">Showing recent manual and automated operations. Secure downloads and safe rollback operations.</p>
+            </div>
+        </div>
+
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Type</th>
+                        <th>Run Date/Time</th>
+                        <th>Duration</th>
+                        <th>File Name / Location</th>
+                        <th>File Size</th>
+                        <th>SHA-256 Checksum</th>
+                        <th>Status</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for item in history_list %}
+                    <tr>
+                        <td><strong>#{{ item.id }}</strong></td>
+                        <td>
+                            {% if item.backup_type == 'AUTO' %}
+                            <span class="erp-badge erp-badge-released">Auto</span>
+                            {% else %}
+                            <span class="erp-badge erp-badge-production">Manual</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ item.start_time|date:"Y-m-d H:i:s" }}</td>
+                        <td>{{ item.duration_seconds|default:"--" }}s</td>
+                        <td>
+                            <div style="font-weight: 500; word-break: break-all;">{{ item.file_name|default:"--" }}</div>
+                            <div style="font-size: 10px; color: var(--erp-text-muted); word-break: break-all;">{{ item.backup_location|default:"--" }}</div>
+                        </td>
+                        <td>{{ item.file_size|filesizeformat }}</td>
+                        <td><code style="font-size:10px;">{{ item.sha256_checksum|slice:":12" }}...</code></td>
+                        <td>
+                            {% if item.status == 'SUCCESS' %}
+                            <span class="erp-badge erp-badge-approved">Success</span>
+                            {% elif item.status == 'FAILED' %}
+                            <span class="erp-badge erp-badge-rejected" title="{{ item.error_message }}">Failed</span>
+                            {% else %}
+                            <span class="erp-badge erp-badge-pending">Pending</span>
+                            {% endif %}
+                        </td>
+                        <td class="text-right">
+                            <div class="erp-actions erp-actions-right">
+                                {% if item.status == 'SUCCESS' %}
+                                <a href="{% url 'backup:download_backup' item.id %}" class="erp-btn erp-btn-secondary" title="Download ZIP File">
+                                    <i class="fas fa-download"></i> Download
+                                </a>
+                                <a href="{% url 'backup:restore_backup' item.id %}" class="erp-btn erp-btn-warning" title="Restore ERP Database to this state">
+                                    <i class="fas fa-undo"></i> Restore
+                                </a>
+                                {% endif %}
+                                <form action="{% url 'backup:delete_backup' item.id %}" method="post" style="display:inline;" onsubmit="return confirm('Are you sure you want to permanently delete this backup history record and physical files?');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="erp-btn erp-btn-danger" title="Delete Archive">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="9" class="text-center" style="padding: 24px; color: var(--erp-text-muted);">
+                            No database backups found in archive logs. Trigger a backup above to verify setup.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

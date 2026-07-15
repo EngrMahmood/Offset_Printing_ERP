@@ -38,6 +38,7 @@
             <a href="{% url 'production_records' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'production_records' %}active{% endif %}"><i class="fas fa-history"></i><span>Production Records</span></a>
             <a href="{% url 'erp_readme' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'erp_readme' %}active{% endif %}"><i class="fas fa-book"></i><span>Guides</span></a>
             {% if request.user.profile.role == 'admin' or request.user.profile.role == 'manager' %}
+            <a href="{% url 'backup:dashboard' %}" class="erp-nav-link {% if request.resolver_match.app_name == 'backup' %}active{% endif %}"><i class="fas fa-database"></i><span>Backup & Restore</span></a>
             <a href="{% url 'notification_settings_home' %}" class="erp-nav-link {% if request.resolver_match.url_name == 'notification_settings_home' %}active{% endif %}"><i class="fas fa-sliders-h"></i><span>Settings</span></a>
             {% endif %}
 
@@ -102,6 +103,9 @@
 
                         <a href="{% url 'audit:dashboard' %}" class="{% if request.resolver_match.app_name == 'audit' %}is-active{% endif %}">Audit</a>
                         <a href="{% url 'tasks:dashboard' %}" class="{% if request.resolver_match.app_name == 'tasks' %}is-active{% endif %}">Tasks</a>
+                        {% if request.user.profile.role == 'admin' or request.user.profile.role == 'manager' or request.user.is_superuser %}
+                        <a href="{% url 'backup:dashboard' %}" class="{% if request.resolver_match.app_name == 'backup' %}is-active{% endif %}">Backup</a>
+                        {% endif %}
                         <a href="{% url 'erp_readme' %}" class="{% if request.resolver_match.url_name == 'erp_readme' %}is-active{% endif %}">Guides</a>
 
                     </nav>

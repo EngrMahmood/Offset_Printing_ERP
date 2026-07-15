@@ -42,3 +42,4 @@ planning/docs/*_verification.json
 migration_reports/
 missing_product_type_skus.csv
 supply_chain_backup.json
+backups/

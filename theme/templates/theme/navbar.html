@@ -104,6 +104,10 @@
             </a>
             {% endif %}
             {% if request.user.is_authenticated and request.user.profile.role == 'admin' or request.user.profile.role == 'manager' %}
+            <a href="{% url 'backup:dashboard' %}"
+               class="erp-topnav-module {% if app == 'backup' %}is-active{% endif %}">
+                Backup
+            </a>
             <a href="{% url 'notification_settings_home' %}"
                class="erp-topnav-module {% if url == 'notification_settings_home' %}is-active{% endif %}">
                 Settings
@@ -386,6 +390,17 @@
         <a href="{% url 'planning:planning_readme' %}"
            class="erp-subnav-link {% if app == 'planning' and url == 'planning_readme' %}is-active{% endif %}">
             Planning Guide
+        </a>
+    </div>
+    {% elif app == 'backup' %}
+    <div class="erp-subnav">
+        <a href="{% url 'backup:dashboard' %}"
+           class="erp-subnav-link {% if url == 'dashboard' or url == 'run_manual_backup' or url == 'restore_backup' %}is-active{% endif %}">
+            Backup Dashboard
+        </a>
+        <a href="{% url 'backup:settings' %}"
+           class="erp-subnav-link {% if url == 'settings' %}is-active{% endif %}">
+            Backup Settings
         </a>
     </div>
     {% endif %}
