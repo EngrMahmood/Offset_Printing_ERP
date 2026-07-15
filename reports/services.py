@@ -169,13 +169,20 @@ def _filter_planning_jobs_by_period(queryset, start, end):
 def _filter_job_cards_by_period(queryset, start, end):
     if start is None or end is None:
         return queryset
+    # Filter on created_at (system-entry date) which is what we display as Plan Date.
+    # Fall back to planning_job__po_approval_date or planning_job__plan_date only
+    # when created_at is somehow absent (practically never happens on JobCard).
     return queryset.filter(
-        Q(planning_job__plan_date__range=(start, end))
+        Q(created_at__date__range=(start, end))
         | (
-            Q(planning_job__plan_date__isnull=True)
-            & Q(created_at__date__range=(start, end))
+            Q(created_at__isnull=True)
+            & Q(planning_job__po_approval_date__range=(start, end))
         )
-        | Q(planning_job__isnull=True, created_at__date__range=(start, end))
+        | (
+            Q(created_at__isnull=True)
+            & Q(planning_job__po_approval_date__isnull=True)
+            & Q(planning_job__plan_date__range=(start, end))
+        )
     )
 
 
@@ -985,12 +992,8 @@ def build_wastage_report_context(request):
         Prefetch('dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
     )
 
-    # Order chronologically (first data first / oldest first)
-    job_cards = job_cards.order_by(
-        F('planning_job__plan_date').asc(nulls_last=True),
-        F('po_date').asc(nulls_last=True),
-        'created_at'
-    )
+    # Order chronologically by system-entry date (= created_at, same as displayed Plan Date)
+    job_cards = job_cards.order_by('created_at')
 
     wastage_rows = []
     
@@ -1030,26 +1033,28 @@ def build_wastage_report_context(request):
         if wastage_status_filter == 'tentative' and is_completed:
             continue
 
-        # Extract plan date and plan month
-        # Priority: planning_job.plan_date (set to po_doc.created_at at upload) →
-        #           planning_job.po_approval_date (user-specified fallback) →
-        #           job.created_at.date() (auto-generated, always present)
+        # Extract plan date (= when the job entered the system, NOT the scheduled production date)
+        # Priority:
+        #   1. job.created_at.date()     — JobCard creation timestamp (actual system-entry date)
+        #   2. planning_job.po_approval_date — PO approval date (user-specified fallback)
+        #   3. planning_job.plan_date    — last resort; may hold a future scheduled date from CSV import
         _pj = job.planning_job
-        if _pj and _pj.plan_date:
-            plan_date = _pj.plan_date.strftime('%Y-%m-%d')
+        if job.created_at:
+            plan_date = job.created_at.date().strftime('%Y-%m-%d')
         elif _pj and _pj.po_approval_date:
             plan_date = _pj.po_approval_date.strftime('%Y-%m-%d')
-        elif job.created_at:
-            plan_date = job.created_at.date().strftime('%Y-%m-%d')
+        elif _pj and _pj.plan_date:
+            plan_date = _pj.plan_date.strftime('%Y-%m-%d')
         else:
             plan_date = ''
-        # plan_month: prefer stored label, otherwise derive from the resolved plan_date
-        if _pj and _pj.plan_month:
+        # plan_month: derive from the resolved plan_date (not from stored labels which may
+        # be based on the CSV scheduled month — e.g. "August" — rather than system-entry month)
+        if plan_date:
+            plan_month = datetime.strptime(plan_date, '%Y-%m-%d').strftime('%B')
+        elif _pj and _pj.plan_month:
             plan_month = _pj.plan_month
         elif job.month:
             plan_month = job.month
-        elif plan_date:
-            plan_month = datetime.strptime(plan_date, '%Y-%m-%d').strftime('%B')
         else:
             plan_month = ''
 
@@ -1156,15 +1161,18 @@ def build_wastage_report_context(request):
         'total_wastage_pct': 'Total Wastage %',
     }
 
-    # Extract min/max dates from rows to show data range bounds
-    all_dates = [row['plan_date'] for row in wastage_rows if row['plan_date']]
-    sorted_dates = sorted(all_dates)
-    min_date = sorted_dates[0] if sorted_dates else ''
-    # Extract min/max dates from rows to show data range bounds
-    all_dates = [row['plan_date'] for row in wastage_rows if row['plan_date']]
-    sorted_dates = sorted(all_dates)
-    min_date = sorted_dates[0] if sorted_dates else ''
-    max_date = sorted_dates[-1] if sorted_dates else ''
+    # Determine the date range to display in the report subtitle.
+    # If the user has selected a specific date range, show that range.
+    # Otherwise (all time / no filter), show the actual min/max from the data.
+    if start and end:
+        # User has an active date filter — show exactly what they selected
+        display_start_date = start.strftime('%Y-%m-%d')
+        display_end_date = end.strftime('%Y-%m-%d')
+    else:
+        # All-time or no date bounds — compute from actual data rows
+        all_dates = sorted(row['plan_date'] for row in wastage_rows if row['plan_date'])
+        display_start_date = all_dates[0] if all_dates else ''
+        display_end_date = all_dates[-1] if all_dates else ''
 
     # Pagination logic (100 entries per page)
     is_export = request.GET.get('_export') == 'true'
@@ -1224,8 +1232,8 @@ def build_wastage_report_context(request):
         'status_choices': JobCard._meta.get_field('status').choices,
         'headers': headers,
         'header_labels': header_labels,
-        'start_date': min_date,
-        'end_date': max_date,
+        'start_date': display_start_date,
+        'end_date': display_end_date,
     }
 
 

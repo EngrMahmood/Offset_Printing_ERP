@@ -122,6 +122,12 @@ class ReportsAppTests(TestCase):
             machine_name=machine,
             total_impressions_required=1000
         )
+        # Update created_at to yesterday to simulate PO intake timing for plan_date logic
+        from django.utils import timezone
+        JobCard.objects.filter(pk=jc.pk).update(
+            created_at=timezone.now() - datetime.timedelta(days=1)
+        )
+        jc.refresh_from_db()
 
         # Create printing production waste
         Production.objects.create(
@@ -172,7 +178,7 @@ class ReportsAppTests(TestCase):
         self.assertEqual(row['job_card_no'], 'JC-TEST-WASTE-1')
         self.assertEqual(row['sku'], 'SKU-TEST-1')
         self.assertEqual(row['plan_date'], (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
-        self.assertEqual(row['plan_month'], 'July 2026')
+        self.assertEqual(row['plan_month'], 'July')
         self.assertEqual(row['plan_qty'], 1000) # total_sheet_quantity (500) * ups (2) = 1000
         self.assertEqual(row['dispatch_qty'], 750)
         self.assertEqual(row['printing_waste_sheets'], 50)

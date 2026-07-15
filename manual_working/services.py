@@ -183,7 +183,7 @@ def get_manual_working_queryset(filters: dict[str, str]):
     if release_date_from or release_date_to:
         queryset = _filter_by_release_date(queryset, release_date_from, release_date_to)
 
-    return queryset.order_by('-plan_date', '-jc_number')
+    return queryset.order_by('-created_at', '-jc_number')
 
 
 def get_manual_working_page(filters: dict[str, str], page_number):
@@ -392,13 +392,25 @@ def _po_approval_date(job: PlanningJob, approval_map: dict[int, object]):
 
 
 def _month_label_for_job(job: PlanningJob, po_approval_date):
-    month_text = (job.plan_month or '').strip()
-    if month_text:
-        return _format_month(month_text)
-    fallback = job.plan_date or po_approval_date
-    if not fallback and job.created_at:
-        fallback = timezone.localtime(job.created_at).date()
-    return _format_month('', fallback_date=fallback)
+    """Derive the month label from the system-entry date (created_at).
+
+    plan_month and plan_date on PlanningJob can hold scheduled/future dates from
+    CSV imports (e.g. the 'Month' and 'Date' columns in the planning sheet), so
+    they must NOT be used as the primary source for this label.
+    Priority: created_at → po_approval_date → plan_date (last resort).
+    """
+    # 1. Prefer the actual system-entry timestamp
+    if job.created_at:
+        entry_date = timezone.localtime(job.created_at).date()
+        return _format_month('', fallback_date=entry_date)
+    # 2. PO approval date
+    if po_approval_date:
+        return _format_month('', fallback_date=po_approval_date)
+    # 3. Last resort: stored plan_date (may be a future CSV-imported date)
+    fallback = job.plan_date
+    if fallback:
+        return _format_month('', fallback_date=fallback)
+    return ''
 
 
 def _wip_status_for_job(job: PlanningJob) -> str:
