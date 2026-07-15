@@ -118,8 +118,15 @@
                     <div class="erp-kpi-value" style="font-size: 24px; font-weight: 800; color: {% if success_rate > 90 %}var(--erp-success){% else %}var(--erp-warning){% endif %};">
                         {{ success_rate }}%
                     </div>
-                    <span style="font-size: 11px; color: var(--erp-text-muted);">
-                        Last Restore: {{ last_restore_date|date:"Y-m-d H:i"|default:"Never" }}
+                    <span style="font-size: 11px; color: var(--erp-text-muted); display: block; margin-top: 4px; line-height: 1.3;">
+                        {% if last_restore_record %}
+                            Last Restore: {{ last_restore_date|date:"Y-m-d H:i" }}<br>
+                            <span style="color: var(--erp-warning); font-weight: 600;">
+                                Restored Backup #{{ last_restore_record.backup.id }}
+                            </span>
+                        {% else %}
+                            Last Restore: Never
+                        {% endif %}
                     </span>
                 </div>
                 <div class="erp-kpi-icon"><i class="fas fa-check-circle"></i></div>

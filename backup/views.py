@@ -84,7 +84,7 @@ def backup_dashboard(request):
     last_backup = success_backups.first()
     next_backup = get_next_backup_time(setting)
     
-    last_restore_record = RestoreHistory.objects.filter(status='SUCCESS').first()
+    last_restore_record = RestoreHistory.objects.filter(status='SUCCESS').select_related('backup').first()
     last_restore_date = last_restore_record.timestamp if last_restore_record else None
     
     # Recent errors
@@ -100,6 +100,7 @@ def backup_dashboard(request):
         'total_backups': total_backups,
         'storage_used_mb': storage_used_mb,
         'last_restore_date': last_restore_date,
+        'last_restore_record': last_restore_record,
         'success_rate': success_rate,
         'recent_errors': recent_errors,
         'history_list': history_list,
