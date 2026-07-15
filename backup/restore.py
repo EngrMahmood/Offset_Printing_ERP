@@ -181,9 +181,29 @@ def perform_restore(backup_record_id, user=None):
                         os.makedirs(os.path.dirname(dest_file), exist_ok=True)
                         shutil.copy2(src_file, dest_file)
                         
-        # Mark restore history record as successful
-        restore_record.status = 'SUCCESS'
-        restore_record.save()
+        # Re-create the RestoreHistory record in the newly restored database
+        RestoreHistory.objects.create(
+            backup_id=backup_record_id,
+            timestamp=timezone.now(),
+            status='SUCCESS',
+            executed_by=user
+        )
+        
+        # Also ensure that the restored backup history record itself is marked as SUCCESS
+        # and has its metadata preserved in the restored database
+        try:
+            restored_backup, created = BackupHistory.objects.get_or_create(id=backup_record_id)
+            restored_backup.status = 'SUCCESS'
+            restored_backup.file_name = backup.file_name
+            restored_backup.file_size = backup.file_size
+            restored_backup.backup_location = backup.backup_location
+            restored_backup.sha256_checksum = backup.sha256_checksum
+            restored_backup.finish_time = backup.finish_time
+            restored_backup.duration_seconds = backup.duration_seconds
+            restored_backup.save()
+        except Exception as ex:
+            logger.error(f"Could not update restored backup record: {str(ex)}")
+            
         logger.info(f"Database successfully restored from backup ID {backup_record_id}")
         return True
         
