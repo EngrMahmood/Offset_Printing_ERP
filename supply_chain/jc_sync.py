@@ -61,6 +61,48 @@ def sync_issuance_from_production(production):
     return txn
 
 
+def sync_fallback_for_job_card(job_card):
+    """If no production logs with sheets exist, generate a pending fallback transaction based on planned sheets."""
+    has_real_txns = StockTransaction.objects.filter(
+        job_card=job_card,
+        production__isnull=False,
+        is_active=True
+    ).exists()
+
+    if has_real_txns:
+        # Delete fallback if actual production runs exist to prevent double counting
+        StockTransaction.objects.filter(job_card=job_card, production__isnull=True).delete()
+        return False
+
+    raw_sku = get_raw_material_sku_for_job_card(job_card)
+    if not raw_sku or not (job_card.total_sheet_quantity and int(job_card.total_sheet_quantity) > 0):
+        # Delete fallback if SKU or quantity is invalid/zero
+        StockTransaction.objects.filter(job_card=job_card, production__isnull=True).delete()
+        return False
+
+    existing = StockTransaction.objects.filter(job_card=job_card, production__isnull=True).first()
+    is_approved = False
+    if existing:
+        is_approved = existing.is_approved
+
+    StockTransaction.objects.update_or_create(
+        job_card=job_card,
+        production=None,
+        defaults={
+            'raw_material_sku': raw_sku,
+            'transaction_type': 'ISSUANCE',
+            'source': 'JOB_CARD',
+            'month_str': _month_label(job_card.po_date or timezone.now().date()),
+            'date': job_card.po_date or timezone.now().date(),
+            'gin_jc': job_card.job_card_no,
+            'sheet_qty_pcs': int(job_card.total_sheet_quantity),
+            'pkt_rim_qty': 0,
+            'is_approved': is_approved,
+        }
+    )
+    return True
+
+
 @transaction.atomic
 def sync_issuance_for_job_card(job_card):
     """Sync issuance rows for all active production records on a job card."""
@@ -73,12 +115,17 @@ def sync_issuance_for_job_card(job_card):
             synced += 1
         else:
             skipped += 1
+            
+    # Apply fallback sync if applicable
+    if sync_fallback_for_job_card(job_card):
+        synced += 1
+        
     return synced, skipped
 
 
 @transaction.atomic
 def sync_all_job_card_issuances():
-    from core.models import Production
+    from core.models import Production, JobCard
 
     synced = 0
     skipped = 0
@@ -94,6 +141,12 @@ def sync_all_job_card_issuances():
             synced += 1
         else:
             skipped += 1
+            
+    # Apply fallback sync for all active job cards
+    for job_card in JobCard.objects.filter(is_active=True).select_related('material', 'planning_job'):
+        if sync_fallback_for_job_card(job_card):
+            synced += 1
+            
     return synced, skipped
 
 

@@ -574,4 +574,45 @@ class IssuanceQueueAndApprovalTests(TestCase):
         row = build_dashboard_data([self.item])[0]
         self.assertEqual(row['issuance'], 160)
 
+    def test_fallback_sync_when_no_productions(self):
+        # JC has 500 total_sheet_quantity but 0 production runs.
+        # It should generate a fallback stock transaction for 500 sheets.
+        from supply_chain.jc_sync import sync_all_job_card_issuances
+        
+        # Make sure no transaction exists yet
+        self.assertEqual(StockTransaction.objects.filter(job_card=self.job_card).count(), 0)
+        
+        # Run full sync
+        synced, skipped = sync_all_job_card_issuances()
+        
+        # Verify fallback transaction created
+        txns = StockTransaction.objects.filter(job_card=self.job_card)
+        self.assertEqual(txns.count(), 1)
+        fallback = txns.first()
+        self.assertIsNone(fallback.production)
+        self.assertEqual(fallback.sheet_qty_pcs, 500)
+        self.assertFalse(fallback.is_approved)
+
+        # Now add an actual production run and sync again
+        production = Production.objects.create(
+            job_card=self.job_card,
+            date=date(2026, 6, 15),
+            shift='A',
+            machine=self.job_card.machine_name,
+            output_sheets=120,
+            waste_sheets=10,
+            impressions=120,
+            planned_time=60,
+            run_time=55,
+        )
+        
+        sync_all_job_card_issuances()
+        
+        # Fallback should be deleted and replaced with actual production sync transaction
+        txns = StockTransaction.objects.filter(job_card=self.job_card)
+        self.assertEqual(txns.count(), 1)
+        self.assertEqual(txns.first().production, production)
+        self.assertEqual(txns.first().sheet_qty_pcs, 130)
+
+
 
