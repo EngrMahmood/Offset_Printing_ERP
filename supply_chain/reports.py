@@ -24,7 +24,7 @@ def _effective_month(txn):
 def _issuance_queryset(month_filter=None, from_date=None, to_date=None):
     qs = (
         StockTransaction.objects
-        .filter(transaction_type='ISSUANCE')
+        .filter(is_active=True, is_approved=True, transaction_type='ISSUANCE')
         .select_related('raw_material_sku', 'raw_material_sku__material')
         .order_by('date', 'id')
     )

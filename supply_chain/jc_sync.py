@@ -38,6 +38,11 @@ def sync_issuance_from_production(production):
         StockTransaction.objects.filter(production=production, source='JOB_CARD').delete()
         return None
 
+    existing = StockTransaction.objects.filter(production=production, source='JOB_CARD').first()
+    is_approved = False
+    if existing:
+        is_approved = existing.is_approved
+
     txn, _created = StockTransaction.objects.update_or_create(
         production=production,
         defaults={
@@ -50,6 +55,7 @@ def sync_issuance_from_production(production):
             'gin_jc': job_card.job_card_no,
             'sheet_qty_pcs': consumed_sheets,
             'pkt_rim_qty': 0,
+            'is_approved': is_approved,
         },
     )
     return txn

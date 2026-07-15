@@ -403,6 +403,15 @@ def transaction_page(request, page_key):
     else:
         form = StockTransactionForm()
 
+    pending_transactions = []
+    if page_key == 'issuance':
+        pending_transactions = (
+            StockTransaction.objects
+            .filter(is_active=True, is_approved=False, transaction_type='ISSUANCE')
+            .select_related('raw_material_sku', 'raw_material_sku__material', 'job_card', 'production')
+            .order_by('-date', '-id')
+        )
+
     if request.GET.get('export') == 'xlsx':
         return export_transactions(transaction_type, transactions, config['export_name'])
 
@@ -411,6 +420,7 @@ def transaction_page(request, page_key):
         'page_url': reverse('supply_chain:' + page_key),
         'config': config,
         'transactions': transactions,
+        'pending_transactions': pending_transactions,
         'form': form,
         'upload_form': ExcelUploadForm(),
         'month_filter': month_filter,
@@ -1060,3 +1070,28 @@ def bulk_delete(request):
         messages.error(request, "No valid records were processed for deletion.")
 
     return redirect(redirect_url)
+
+
+@supply_chain_required
+def issuance_approve(request, pk):
+    txn = get_object_or_404(StockTransaction.objects.filter(is_active=True), pk=pk, transaction_type='ISSUANCE', is_approved=False)
+    txn.is_approved = True
+    txn.save(update_fields=['is_approved'])
+    messages.success(request, f"Approved issuance for {txn.raw_material_sku.sku if txn.raw_material_sku else 'N/A'}")
+    return redirect('supply_chain:issuance')
+
+
+@supply_chain_required
+@require_POST
+def issuance_bulk_approve(request):
+    selected_ids = request.POST.getlist('selected_ids')
+    if not selected_ids:
+        messages.warning(request, "No entries selected.")
+        return redirect('supply_chain:issuance')
+    
+    txns = StockTransaction.objects.filter(pk__in=selected_ids, transaction_type='ISSUANCE', is_approved=False, is_active=True)
+    count = txns.count()
+    txns.update(is_approved=True)
+    messages.success(request, f"Successfully approved {count} issuance(s).")
+    return redirect('supply_chain:issuance')
+

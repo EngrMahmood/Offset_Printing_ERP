@@ -53,6 +53,91 @@
         </section>
         {% endif %}
 
+        {% if page_key == 'issuance' %}
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <div class="erp-eyebrow">Queue</div>
+                    <h3 class="erp-section-title">Pending Issuance Queue</h3>
+                    <p class="erp-section-desc">Review and approve stock issuances generated from production logs before they deduct from inventory.</p>
+                </div>
+            </div>
+
+            <form method="post" action="{% url 'supply_chain:issuance_bulk_approve' %}">
+                {% csrf_token %}
+                
+                <div class="flex justify-between items-center mb-3 px-4">
+                    <div>
+                        <span class="text-sm text-gray-500 font-medium">{{ pending_transactions|length }} pending item(s)</span>
+                    </div>
+                    {% if pending_transactions %}
+                    <button type="submit" class="erp-btn erp-btn-primary sm">
+                        <i class="fas fa-check"></i> Approve Selected
+                    </button>
+                    {% endif %}
+                </div>
+
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                <th class="w-12 text-center" style="width: 48px;">
+                                    <input type="checkbox" onclick="toggleSelectAll(this, 'pending-checkbox')">
+                                </th>
+                                <th>Source</th>
+                                <th>Date</th>
+                                <th>GIN / JC</th>
+                                <th>Raw Material SKU</th>
+                                <th>Material</th>
+                                <th>Purchase Size</th>
+                                <th>UOM</th>
+                                <th>Sheet Qty/Pcs</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for txn in pending_transactions %}
+                            <tr>
+                                <td class="text-center">
+                                    <input type="checkbox" name="selected_ids" value="{{ txn.pk }}" class="pending-checkbox">
+                                </td>
+                                <td>
+                                    {% if txn.source == 'JOB_CARD' %}
+                                        <span class="erp-badge erp-badge-draft" style="background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;">Pending JC</span>
+                                    {% else %}
+                                        <span class="erp-badge erp-badge-draft">Pending Manual</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ txn.date|date:'Y-m-d' }}</td>
+                                <td>
+                                    {% if txn.job_card_id %}
+                                        <strong>{{ txn.gin_jc }}</strong>
+                                    {% else %}
+                                        {{ txn.gin_jc|default:'—' }}
+                                    {% endif %}
+                                </td>
+                                <td>{{ txn.raw_material_sku.sku|default:'—' }}</td>
+                                <td>{{ txn.raw_material_sku.material.name|default:'—' }}</td>
+                                <td>{{ txn.raw_material_sku.purchase_sheet_size|default:'—' }}</td>
+                                <td>{{ txn.raw_material_sku.uom|default:'—' }}</td>
+                                <td>{{ txn.sheet_qty_pcs }}</td>
+                                <td>
+                                    <div class="flex gap-1">
+                                        <a href="{% url 'supply_chain:issuance_approve' txn.pk %}" class="erp-btn erp-btn-primary sm" style="padding: 2px 8px; font-size: 11px;">Approve</a>
+                                        <a href="{% url 'supply_chain:transaction_delete' txn.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50" style="padding: 2px 8px; font-size: 11px;">Reject</a>
+                                    </div>
+                                </td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="10">No pending issuances in the queue.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
+        </section>
+        {% endif %}
+
         <section class="erp-section-shell">
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">

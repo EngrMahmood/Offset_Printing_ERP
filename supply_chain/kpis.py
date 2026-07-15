@@ -5,7 +5,7 @@ from django.utils import timezone
 def _annual_issuance_value(item):
     total_qty = (
         item.transactions
-        .filter(transaction_type='ISSUANCE')
+        .filter(is_active=True, is_approved=True, transaction_type='ISSUANCE')
         .aggregate(total=Sum('sheet_qty_pcs'))['total'] or 0
     )
     return float(total_qty) * float(item.unit_cost)
@@ -62,7 +62,7 @@ def _days_since(date_value, today):
 def _last_transaction_date(item, transaction_type):
     return (
         item.transactions
-        .filter(transaction_type=transaction_type)
+        .filter(is_active=True, is_approved=True, transaction_type=transaction_type)
         .aggregate(last=Max('date'))['last']
     )
 

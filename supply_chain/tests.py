@@ -463,3 +463,115 @@ class ChangeManagementTests(TestCase):
         # Verify pending ChangeRequests are logged
         self.assertEqual(ChangeRequest.objects.filter(status='PENDING', action='DELETE').count(), 2)
 
+
+class IssuanceQueueAndApprovalTests(TestCase):
+    def setUp(self):
+        from django.contrib.auth.models import User
+        self.admin = User.objects.create_superuser(username='admin', password='password')
+        
+        # Setup roles using UserProfile
+        from core.models import UserProfile
+        admin_profile = self.admin.profile
+        admin_profile.role = 'admin'
+        admin_profile.save()
+
+        material = Material.objects.create(name='Offset Paper 75')
+        self.item = _create_raw_sku(material, 'ITM-0012', uom='Rim')
+        machine = Machine.objects.create(name='KBA 1')
+        self.job_card = JobCard.objects.create(
+            job_card_no='JC-1001',
+            SKU='SKU-1',
+            material=material,
+            purchase_sheet_size='25x36',
+            order_qty=1000,
+            total_impressions_required=1000,
+            total_sheet_quantity=500,
+            total_colors=4,
+            plate_set_no='PS-1',
+            po_date=date(2026, 6, 1),
+            status='released',
+            machine_name=machine,
+        )
+
+    def test_production_sync_creates_pending_transaction(self):
+        production = Production.objects.create(
+            job_card=self.job_card,
+            date=date(2026, 6, 15),
+            shift='A',
+            machine=self.job_card.machine_name,
+            output_sheets=120,
+            waste_sheets=10,
+            impressions=120,
+            planned_time=60,
+            run_time=55,
+        )
+
+        txn = sync_issuance_from_production(production)
+        self.assertIsNotNone(txn)
+        self.assertEqual(txn.transaction_type, 'ISSUANCE')
+        self.assertEqual(txn.source, 'JOB_CARD')
+        self.assertFalse(txn.is_approved)  # Should default to False
+
+        # Verify it is not factored into stock levels
+        row = build_dashboard_data([self.item])[0]
+        self.assertEqual(row['issuance'], 0)
+        self.assertEqual(row['closing'], 0)
+
+        # Approve single transaction
+        self.client.force_login(self.admin)
+        response = self.client.get(f'/supply-chain/issuance/{txn.pk}/approve/')
+        self.assertEqual(response.status_code, 302)
+
+        txn.refresh_from_db()
+        self.assertTrue(txn.is_approved)
+
+        # Verify it is now factored into stock levels
+        row = build_dashboard_data([self.item])[0]
+        self.assertEqual(row['issuance'], 130)
+        self.assertEqual(row['closing'], -130)
+
+    def test_bulk_approval(self):
+        production1 = Production.objects.create(
+            job_card=self.job_card,
+            date=date(2026, 6, 15),
+            shift='A',
+            machine=self.job_card.machine_name,
+            output_sheets=50,
+            waste_sheets=0,
+            impressions=50,
+            planned_time=60,
+            run_time=55,
+        )
+        production2 = Production.objects.create(
+            job_card=self.job_card,
+            date=date(2026, 6, 16),
+            shift='B',
+            machine=self.job_card.machine_name,
+            output_sheets=100,
+            waste_sheets=10,
+            impressions=100,
+            planned_time=60,
+            run_time=55,
+        )
+
+        txn1 = sync_issuance_from_production(production1)
+        txn2 = sync_issuance_from_production(production2)
+
+        self.assertFalse(txn1.is_approved)
+        self.assertFalse(txn2.is_approved)
+
+        self.client.force_login(self.admin)
+        response = self.client.post('/supply-chain/issuance/bulk-approve/', {
+            'selected_ids': [txn1.pk, txn2.pk]
+        })
+        self.assertEqual(response.status_code, 302)
+
+        txn1.refresh_from_db()
+        txn2.refresh_from_db()
+        self.assertTrue(txn1.is_approved)
+        self.assertTrue(txn2.is_approved)
+
+        row = build_dashboard_data([self.item])[0]
+        self.assertEqual(row['issuance'], 160)
+
+

@@ -150,6 +150,7 @@ class StockTransaction(models.Model):
     sheet_qty_pcs = models.IntegerField(default=0, verbose_name='Sheet Qty/Pcs')
     pkt_rim_qty = models.IntegerField(default=0, verbose_name='Pkt/Rim Qty')
     is_active = models.BooleanField(default=True, db_index=True)
+    is_approved = models.BooleanField(default=True, db_index=True, verbose_name='Is Approved')
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

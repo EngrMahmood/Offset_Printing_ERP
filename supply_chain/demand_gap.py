@@ -525,7 +525,7 @@ def _on_hand_by_sku(sku_ids):
 
     rows = (
         StockTransaction.objects
-        .filter(raw_material_sku_id__in=sku_ids)
+        .filter(is_active=True, is_approved=True, raw_material_sku_id__in=sku_ids)
         .values('raw_material_sku_id')
         .annotate(
             opening=Sum(

@@ -10,10 +10,10 @@ def build_dashboard_data(items=None):
 
     dashboard_data = []
     for item in items:
-        opening = item.transactions.filter(is_active=True, transaction_type='OPENING').aggregate(t=Sum('sheet_qty_pcs'))['t'] or 0
-        receiving = item.transactions.filter(is_active=True, transaction_type='RECEIVING').aggregate(t=Sum('sheet_qty_pcs'))['t'] or 0
-        issuance = item.transactions.filter(is_active=True, transaction_type='ISSUANCE').aggregate(t=Sum('sheet_qty_pcs'))['t'] or 0
-        adjustment = item.transactions.filter(is_active=True, transaction_type='ADJUSTMENT').aggregate(t=Sum('sheet_qty_pcs'))['t'] or 0
+        opening = item.transactions.filter(is_active=True, is_approved=True, transaction_type='OPENING').aggregate(t=Sum('sheet_qty_pcs'))['t'] or 0
+        receiving = item.transactions.filter(is_active=True, is_approved=True, transaction_type='RECEIVING').aggregate(t=Sum('sheet_qty_pcs'))['t'] or 0
+        issuance = item.transactions.filter(is_active=True, is_approved=True, transaction_type='ISSUANCE').aggregate(t=Sum('sheet_qty_pcs'))['t'] or 0
+        adjustment = item.transactions.filter(is_active=True, is_approved=True, transaction_type='ADJUSTMENT').aggregate(t=Sum('sheet_qty_pcs'))['t'] or 0
 
         monthly_demand = item.demands.filter(is_active=True).aggregate(t=Sum('sheet_qty_pcs'))['t'] or 0
 
@@ -49,7 +49,7 @@ def build_dashboard_data(items=None):
 def transaction_queryset(transaction_type, month_filter=None):
     qs = (
         StockTransaction.objects
-        .filter(is_active=True, transaction_type=transaction_type)
+        .filter(is_active=True, is_approved=True, transaction_type=transaction_type)
         .select_related('raw_material_sku', 'raw_material_sku__material', 'job_card', 'production')
         .order_by('-date', '-id')
     )
