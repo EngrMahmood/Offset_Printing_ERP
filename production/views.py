@@ -1,5 +1,5 @@
 from django.shortcuts import render, get_object_or_404, redirect
-from django.http import JsonResponse, Http404
+from django.http import JsonResponse, Http404, HttpResponse
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
@@ -756,7 +756,7 @@ def production_wip(request):
         messages.error(request, '❌ You do not have permission to access this feature.')
         return redirect('planning:home')
 
-    default_status_names = ['Printing', 'Dispatch']
+    default_status_names = ['Printing', 'Sorting / Packing', 'Ready for Dispatch', 'Partial Dispatch', 'Completed']
     for status_name in default_status_names:
         ProductionWipStatus.objects.get_or_create(
             name=status_name,
@@ -793,49 +793,120 @@ def production_wip(request):
                 status__in=['released', 'in_production'],
             )
             status = get_object_or_404(ProductionWipStatus, id=status_id, is_active=True)
-            JobCardWipStatus.objects.update_or_create(
-                job_card=job_card,
-                defaults={
-                    'status': status,
-                    'updated_by': request.user,
-                },
-            )
-            add_unique_message(request, messages.SUCCESS, f"{job_card.job_card_no} set to {status.name}.")
+            from production.wip_service import update_wip_status_for_job
+            update_wip_status_for_job(job_card, status.name, user=request.user, is_manual=True, force=True)
+            add_unique_message(request, messages.SUCCESS, f"{job_card.job_card_no} set to {status.name} (Manual Override).")
             return redirect('production_wip')
 
     query = (request.GET.get('q') or '').strip()
     status_filter = (request.GET.get('wip_status') or '').strip()
+    wip_mode_filter = (request.GET.get('wip_mode') or '').strip()
+    calculated_status_filter = (request.GET.get('calculated_status') or '').strip()
+    machine_filter = (request.GET.get('machine_id') or '').strip()
 
-    printing_status = ProductionWipStatus.objects.filter(name='Printing', is_active=True).first()
-    job_cards = JobCard.objects.filter(is_active=True, status__in=['released', 'in_production']).select_related('planning_job')
-    if printing_status:
-        for job_card in job_cards.filter(production_wip_status__isnull=True, status='released'):
-            JobCardWipStatus.objects.update_or_create(
-                job_card=job_card,
-                defaults={
-                    'status': printing_status,
-                    'updated_by': request.user,
-                },
-            )
+    job_cards_qs = JobCard.objects.filter(is_active=True, status__in=['released', 'in_production']).select_related(
+        'planning_job', 'machine_name', 'production_wip_status__status'
+    )
+    from production.wip_service import evaluate_and_update_job_wip_status, get_system_calculated_status_name
+    for job_card in job_cards_qs.filter(production_wip_status__isnull=True):
+        evaluate_and_update_job_wip_status(job_card, user=request.user)
 
     if status_filter:
-        job_cards = job_cards.filter(production_wip_status__status_id=status_filter)
+        job_cards_qs = job_cards_qs.filter(production_wip_status__status_id=status_filter)
+
+    if machine_filter:
+        job_cards_qs = job_cards_qs.filter(machine_name_id=machine_filter)
 
     if query:
-        job_cards = job_cards.filter(
+        job_cards_qs = job_cards_qs.filter(
             Q(job_card_no__icontains=query) |
             Q(PO_No__icontains=query) |
             Q(SKU__icontains=query) |
             Q(planning_job__job_name__icontains=query)
         )
 
+    filtered_job_cards = []
+    for job in job_cards_qs:
+        calc_status = get_system_calculated_status_name(job)
+        job.calculated_status = calc_status
+
+        if calculated_status_filter and calc_status != calculated_status_filter:
+            continue
+
+        is_manual = getattr(job.production_wip_status, 'is_manual', False)
+        if wip_mode_filter == 'manual' and not is_manual:
+            continue
+        if wip_mode_filter == 'auto' and is_manual:
+            continue
+
+        filtered_job_cards.append(job)
+
+    export_type = (request.GET.get('export') or '').strip().lower()
+    if export_type in ('xlsx', 'pdf'):
+        from reports.export.services import export_as_pdf, export_as_xlsx
+        export_rows = []
+        for idx, job in enumerate(filtered_job_cards, start=1):
+            export_rows.append({
+                'row_number': idx,
+                'job_card_no': job.job_card_no,
+                'po_number': job.PO_No or '-',
+                'sku': job.SKU or '-',
+                'job_name': getattr(job.planning_job, 'job_name', '-') or '-',
+                'machine_name': job.machine_name_display or '-',
+                'order_qty': job.order_qty,
+                'production_status': job.workflow_status_label,
+                'wip_status': job.wip_status_name,
+                'wip_mode': 'Manual' if getattr(job.production_wip_status, 'is_manual', False) else 'Auto',
+                'calculated_status': job.calculated_status,
+            })
+        payload = {
+            'report': {'title': 'Production WIP Status Report'},
+            'generated_at': timezone.localtime().strftime('%Y-%m-%d %H:%M:%S'),
+            'data': export_rows,
+            'headers': ['row_number', 'job_card_no', 'po_number', 'sku', 'job_name', 'machine_name', 'order_qty', 'production_status', 'wip_status', 'wip_mode', 'calculated_status'],
+            'header_labels': {
+                'row_number': '#',
+                'job_card_no': 'Job Card No',
+                'po_number': 'PO Number',
+                'sku': 'SKU',
+                'job_name': 'Job Name',
+                'machine_name': 'Machine',
+                'order_qty': 'Order Qty',
+                'production_status': 'Production Status',
+                'wip_status': 'Supervisor WIP Status',
+                'wip_mode': 'Mode',
+                'calculated_status': 'System Calculated Status',
+            }
+        }
+        if export_type == 'xlsx':
+            content = export_as_xlsx(payload)
+            response = HttpResponse(content, content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            response['Content-Disposition'] = 'attachment; filename="production-wip.xlsx"'
+            return response
+        else:
+            content = export_as_pdf(payload)
+            response = HttpResponse(content, content_type='application/pdf')
+            response['Content-Disposition'] = 'attachment; filename="production-wip.pdf"'
+            return response
+
     statuses = ProductionWipStatus.objects.filter(is_active=True).order_by('name')
+    from core.models import Machine
+    machines = Machine.objects.filter(is_active=True).order_by('name')
+
+    params = request.GET.copy()
+    params.pop('export', None)
+    export_query = params.urlencode()
 
     context = {
         'statuses': statuses,
-        'job_cards': job_cards,
+        'machines': machines,
+        'job_cards': filtered_job_cards,
         'q': query,
         'status_filter': status_filter,
+        'wip_mode_filter': wip_mode_filter,
+        'calculated_status_filter': calculated_status_filter,
+        'machine_filter': machine_filter,
+        'export_query': export_query,
     }
     return render(request, 'production/production_wip.html', context)
 

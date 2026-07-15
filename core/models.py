@@ -942,6 +942,8 @@ class Production(models.Model):
         try:
             with transaction.atomic():
                 super().save(*args, **kwargs)
+                from production.wip_service import evaluate_and_update_job_wip_status
+                evaluate_and_update_job_wip_status(self.job_card, user=self.created_by)
         except IntegrityError:
             raise ValidationError("DB error while saving Production")
 
@@ -1107,6 +1109,7 @@ class JobCardWipStatus(models.Model):
         on_delete=models.PROTECT,
         related_name='job_card_wip_statuses',
     )
+    is_manual = models.BooleanField(default=False, help_text="Set to True if manually overridden by a user")
     updated_by = models.ForeignKey(
         User,
         on_delete=models.SET_NULL,
@@ -1224,6 +1227,8 @@ class Dispatch(models.Model):
     def save(self, *args, **kwargs):
         self.full_clean()   # runs clean() + field validation
         super().save(*args, **kwargs)
+        from production.wip_service import evaluate_and_update_job_wip_status
+        evaluate_and_update_job_wip_status(self.job_card, user=self.created_by)
 
     def __str__(self):
         return f"{self.job_card.job_card_no} - {self.dispatch_date}"

@@ -438,6 +438,9 @@ def archive_record(entity_type, record, user, reason):
     record.is_active = False
     record.save(update_fields=['is_active'])
     log_change(entity_type, record, before_snapshot, user, 'delete', reason)
+    if entity_type in ('production', 'dispatch'):
+        from production.wip_service import evaluate_and_update_job_wip_status
+        evaluate_and_update_job_wip_status(record.job_card, user=user)
 
 
 def restore_record_state(entity_type, record, user, reason):
@@ -445,6 +448,9 @@ def restore_record_state(entity_type, record, user, reason):
     record.is_active = True
     record.save(update_fields=['is_active'])
     log_change(entity_type, record, before_snapshot, user, 'restore', reason)
+    if entity_type in ('production', 'dispatch'):
+        from production.wip_service import evaluate_and_update_job_wip_status
+        evaluate_and_update_job_wip_status(record.job_card, user=user)
 
 
 def run_bulk_archive(request, entity_type, record_ids):
@@ -512,7 +518,11 @@ def run_bulk_permanent_delete(request, entity_type, record_ids):
             validate_delete_allowed(entity_type, record)
             before_snapshot = build_audit_snapshot(entity_type, record)
             log_change(entity_type, record, before_snapshot, request.user, 'delete', 'Permanent delete by admin (bulk)')
+            job_card = record.job_card if entity_type in ('production', 'dispatch') else None
             record.delete()
+            if job_card:
+                from production.wip_service import evaluate_and_update_job_wip_status
+                evaluate_and_update_job_wip_status(job_card, user=request.user)
             deleted_count += 1
         except Exception as exc:
             message = str(exc)

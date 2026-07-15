@@ -6,11 +6,19 @@
 {% block header_title %}Production WIP{% endblock %}
 {% block header_subtitle %}Work-in-progress view for released production jobs and dispatch handover tracking.{% endblock %}
 {% block header_actions %}
-    {% if user.profile.role == 'admin' %}
-    <button type="button" id="wip-add-status-button" class="erp-btn erp-btn-primary wip-toggle-status-panel">
-        <i class="fas fa-plus"></i> Add Status
-    </button>
-    {% endif %}
+    <div class="erp-header-buttons" style="display: flex; gap: 8px;">
+        <a href="?{{ export_query }}&export=xlsx" class="erp-btn erp-btn-secondary">
+            <i class="fas fa-file-excel" style="color: #2e7d32; margin-right: 4px;"></i> Export to Excel
+        </a>
+        <a href="?{{ export_query }}&export=pdf" class="erp-btn erp-btn-secondary">
+            <i class="fas fa-file-pdf" style="color: #c62828; margin-right: 4px;"></i> Export to PDF
+        </a>
+        {% if user.profile.role == 'admin' %}
+        <button type="button" id="wip-add-status-button" class="erp-btn erp-btn-primary wip-toggle-status-panel">
+            <i class="fas fa-plus"></i> Add Status
+        </button>
+        {% endif %}
+    </div>
 {% endblock %}
 
 {% block content %}
@@ -20,7 +28,7 @@
             <div class="erp-card-title-stack">
                 <div class="erp-eyebrow">Production WIP</div>
                 <h1 class="erp-section-title">WIP Job Cards</h1>
-                <p class="erp-card-subtitle">Track released production jobs and manage WIP status labels from printing to dispatch.</p>
+                <p class="erp-card-subtitle">Track released production jobs and compare manual supervisor checks with automated system calculations.</p>
             </div>
         </div>
 
@@ -31,7 +39,7 @@
         {% endif %}
 
         {% if user.profile.role == 'admin' %}
-        <div id="add-status-panel" class="erp-section-shell erp-box is-hidden">
+        <div id="add-status-panel" class="erp-section-shell erp-box is-hidden" style="margin-bottom: 20px;">
             <div class="erp-card-header">
                 <div class="erp-card-title-stack">
                     <div class="erp-eyebrow">Status Management</div>
@@ -65,7 +73,7 @@
                         <input id="q" name="q" value="{{ q }}" placeholder="Job Card / PO / SKU / Job Name" class="erp-input">
                     </div>
                     <div class="erp-filter-group">
-                        <label for="wip_status" class="erp-field-label">WIP Status</label>
+                        <label for="wip_status" class="erp-field-label">Supervisor Status</label>
                         <select id="wip_status" name="wip_status" class="erp-select">
                             <option value="">All Statuses</option>
                             {% for status in statuses %}
@@ -73,9 +81,37 @@
                             {% endfor %}
                         </select>
                     </div>
+                    <div class="erp-filter-group">
+                        <label for="calculated_status" class="erp-field-label">Calculated Status</label>
+                        <select id="calculated_status" name="calculated_status" class="erp-select">
+                            <option value="">All Calculated Statuses</option>
+                            <option value="Printing" {% if calculated_status_filter == 'Printing' %}selected{% endif %}>Printing</option>
+                            <option value="Sorting / Packing" {% if calculated_status_filter == 'Sorting / Packing' %}selected{% endif %}>Sorting / Packing</option>
+                            <option value="Ready for Dispatch" {% if calculated_status_filter == 'Ready for Dispatch' %}selected{% endif %}>Ready for Dispatch</option>
+                            <option value="Partial Dispatch" {% if calculated_status_filter == 'Partial Dispatch' %}selected{% endif %}>Partial Dispatch</option>
+                            <option value="Completed" {% if calculated_status_filter == 'Completed' %}selected{% endif %}>Completed</option>
+                        </select>
+                    </div>
+                    <div class="erp-filter-group">
+                        <label for="wip_mode" class="erp-field-label">WIP Mode</label>
+                        <select id="wip_mode" name="wip_mode" class="erp-select">
+                            <option value="">All Modes</option>
+                            <option value="manual" {% if wip_mode_filter == 'manual' %}selected{% endif %}>Manual Overrides</option>
+                            <option value="auto" {% if wip_mode_filter == 'auto' %}selected{% endif %}>Automated Fallbacks</option>
+                        </select>
+                    </div>
+                    <div class="erp-filter-group">
+                        <label for="machine_id" class="erp-field-label">Machine</label>
+                        <select id="machine_id" name="machine_id" class="erp-select">
+                            <option value="">All Machines</option>
+                            {% for m in machines %}
+                            <option value="{{ m.id }}" {% if machine_filter == m.id|stringformat:'s' %}selected{% endif %}>{{ m.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
                     <div class="erp-filter-actions">
                         <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
-                        {% if q or status_filter %}
+                        {% if q or status_filter or wip_mode_filter or calculated_status_filter or machine_filter %}
                         <a href="{% url 'production_wip' %}" class="erp-btn erp-btn-secondary">Clear</a>
                         {% endif %}
                     </div>
@@ -99,8 +135,9 @@
                                 <th class="col-job-name">Job Name</th>
                                 <th>Machine</th>
                                 <th>Order Qty</th>
-                                <th>Production Status</th>
-                                <th>WIP Status</th>
+                                <th>Workflow</th>
+                                <th>Supervisor Status</th>
+                                <th>Calculated Status</th>
                                 <th>Update Status</th>
                             </tr>
                         </thead>
@@ -114,7 +151,31 @@
                                 <td>{{ job.machine_name_display|default:'-' }}</td>
                                 <td>{{ job.order_qty }}</td>
                                 <td>{{ job.workflow_status_label }}</td>
-                                <td>{{ job.wip_status_name }}</td>
+                                <td>
+                                    {{ job.wip_status_name }}
+                                    {% if job.production_wip_status %}
+                                        {% if job.production_wip_status.is_manual %}
+                                            <span class="erp-badge erp-badge-warning" style="margin-left: 6px; font-size: 0.75rem; padding: 2px 6px;">Manual</span>
+                                        {% else %}
+                                            <span class="erp-badge erp-badge-info" style="margin-left: 6px; font-size: 0.75rem; padding: 2px 6px;">Auto</span>
+                                        {% endif %}
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if job.calculated_status == 'Printing' %}
+                                        <span class="erp-badge" style="background-color: #e3f2fd; color: #0d47a1;">Printing</span>
+                                    {% elif job.calculated_status == 'Sorting / Packing' %}
+                                        <span class="erp-badge" style="background-color: #f3e5f5; color: #4a148c;">Sorting / Packing</span>
+                                    {% elif job.calculated_status == 'Ready for Dispatch' %}
+                                        <span class="erp-badge" style="background-color: #e8f5e9; color: #1b5e20;">Ready for Dispatch</span>
+                                    {% elif job.calculated_status == 'Partial Dispatch' %}
+                                        <span class="erp-badge" style="background-color: #fff3e0; color: #e65100;">Partial Dispatch</span>
+                                    {% elif job.calculated_status == 'Completed' %}
+                                        <span class="erp-badge" style="background-color: #efebe9; color: #3e2723;">Completed</span>
+                                    {% else %}
+                                        <span class="erp-badge erp-badge-secondary">Not Set</span>
+                                    {% endif %}
+                                </td>
                                 <td class="records-actions-cell">
                                     <form method="post" action="{% url 'production_wip' %}" class="erp-inline-form">
                                         {% csrf_token %}
@@ -130,7 +191,7 @@
                                 </td>
                             </tr>
                             {% empty %}
-                            <tr><td colspan="9" class="erp-table-meta-text">No production job cards are released yet.</td></tr>
+                            <tr><td colspan="10" class="erp-table-meta-text">No production job cards found matching the criteria.</td></tr>
                             {% endfor %}
                         </tbody>
                     </table>

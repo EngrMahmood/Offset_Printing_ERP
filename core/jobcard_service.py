@@ -125,7 +125,7 @@ def ensure_job_card_from_planning_job(planning_job, actor=None):
             'planning_job': planning_job,
             'job_card_no': planning_job.jc_number,
             'month': planning_job.plan_date.strftime('%B') if planning_job.plan_date else (planning_job.plan_month or ''),
-            'po_date': planning_job.po_received_date,
+            'po_date': planning_job.po_approval_date or planning_job.po_received_date,
             'PO_No': planning_job.po_number,
             'SKU': planning_job.sku,
             'material': material,
