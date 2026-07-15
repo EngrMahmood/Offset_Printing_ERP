@@ -58,6 +58,13 @@ def get_next_backup_time(setting):
 @login_required
 @user_passes_test(is_admin_user)
 def backup_dashboard(request):
+    # Auto-resolve stale pending backups (older than 5 minutes)
+    stale_limit = timezone.now() - datetime.timedelta(minutes=5)
+    BackupHistory.objects.filter(status='PENDING', start_time__lt=stale_limit).update(
+        status='FAILED',
+        error_message="Backup process was interrupted or terminated prematurely (e.g. server restarted)."
+    )
+
     setting = BackupSetting.get_settings()
     
     # Backup stats
