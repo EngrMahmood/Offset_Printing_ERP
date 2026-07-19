@@ -1,0 +1,93 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Maintenance Records{% endblock %}
+{% block header_title %}Maintenance Records{% endblock %}
+{% block header_subtitle %}All logged maintenance activity.{% endblock %}
+{% block header_actions %}
+    <a href="?{{ request.GET.urlencode }}&export=xlsx" class="erp-btn erp-btn-secondary">Export Excel</a>
+    <a href="{% url 'maintenance:record_create' %}" class="erp-btn erp-btn-primary">New Maintenance Record</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(4,1fr); gap:12px; align-items:end;">
+            <div class="erp-input-group">
+                <label class="erp-input-label">Status</label>
+                <select name="status" class="erp-select">
+                    <option value="">All</option>
+                    {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Type</label>
+                <select name="maintenance_type" class="erp-select">
+                    <option value="">All</option>
+                    {% for value, label in type_choices %}
+                    <option value="{{ value }}" {% if request.GET.maintenance_type == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Priority</label>
+                <select name="priority" class="erp-select">
+                    <option value="">All</option>
+                    {% for value, label in priority_choices %}
+                    <option value="{{ value }}" {% if request.GET.priority == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-actions">
+                <button type="submit" class="erp-btn erp-btn-secondary">Filter</button>
+                <a href="{% url 'maintenance:record_list' %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <form method="post" action="{% url 'maintenance:bulk_delete' %}" onsubmit="return confirm('Delete the selected maintenance record(s)? This cannot be undone from the UI.');">
+            {% csrf_token %}
+            {% if is_superuser %}
+            <div class="erp-actions mb-2" style="display:flex; gap:8px; align-items:center;">
+                <input type="text" name="reason" class="erp-input" placeholder="Delete reason" style="max-width:220px;">
+                <button type="submit" class="erp-btn erp-btn-secondary text-red-600">Delete Selected</button>
+            </div>
+            {% endif %}
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            {% if is_superuser %}<th></th>{% endif %}
+                            <th>Record No.</th>
+                            <th>Machine</th>
+                            <th>Reported</th>
+                            <th>Type</th>
+                            <th>Priority</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for record in records %}
+                        <tr>
+                            {% if is_superuser %}
+                            <td><input type="checkbox" name="selected_ids" value="{{ record.pk }}"></td>
+                            {% endif %}
+                            <td><a href="{% url 'maintenance:record_detail' record.pk %}">{{ record.record_no }}</a></td>
+                            <td>{{ record.machine }}</td>
+                            <td>{{ record.reported_date }}</td>
+                            <td>{{ record.get_maintenance_type_display }}</td>
+                            <td>{{ record.get_priority_display }}</td>
+                            <td>{{ record.get_status_display }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="7">No maintenance records found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

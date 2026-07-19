@@ -23,6 +23,7 @@ urlpatterns = [
     path('audit/', include('audit.urls', namespace='audit')),
     path('tasks/', include('tasks.urls', namespace='tasks')),
     path('backup/', include('backup.urls', namespace='backup')),
+    path('maintenance/', include('maintenance.urls', namespace='maintenance')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),
 

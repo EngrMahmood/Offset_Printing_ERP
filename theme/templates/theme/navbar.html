@@ -319,6 +319,18 @@
            class="erp-subnav-link {% if url == 'downtime_list' %}is-active{% endif %}">
             Downtime
         </a>
+        <a href="{% url 'maintenance:approval_queue' %}"
+           class="erp-subnav-link {% if url == 'approval_queue' %}is-active{% endif %}">
+            Approval Queue
+        </a>
+        <a href="{% url 'maintenance:pm_plan_list' %}"
+           class="erp-subnav-link {% if url == 'pm_plan_list' or url == 'pm_plan_create' %}is-active{% endif %}">
+            PM Plans
+        </a>
+        <a href="{% url 'maintenance:reports' %}"
+           class="erp-subnav-link {% if url == 'reports' %}is-active{% endif %}">
+            Reports
+        </a>
     </div>
 
     {% elif app == 'supply_chain' and nav.can_access_item_request %}

@@ -1,0 +1,43 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Preventive Maintenance Plans{% endblock %}
+{% block header_title %}Preventive Maintenance Plans{% endblock %}
+{% block header_subtitle %}Recurring PM schedules per machine.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'maintenance:pm_plan_create' %}" class="erp-btn erp-btn-primary">New PM Plan</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Machine</th>
+                        <th>Title</th>
+                        <th>Interval</th>
+                        <th>Last Done</th>
+                        <th>Next Due</th>
+                        <th>Active</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for plan in plans %}
+                    <tr>
+                        <td>{{ plan.machine }}</td>
+                        <td>{{ plan.title }}</td>
+                        <td>{{ plan.interval_value }} {{ plan.get_interval_type_display }}</td>
+                        <td>{{ plan.last_done_at|default:'—' }}</td>
+                        <td>{{ plan.next_due_at|default:'—' }}</td>
+                        <td>{{ plan.is_active|yesno:'Yes,No' }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6">No PM plans configured.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

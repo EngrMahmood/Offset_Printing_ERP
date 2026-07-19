@@ -1,0 +1,44 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Maintenance Reports{% endblock %}
+{% block header_title %}Maintenance KPIs{% endblock %}
+{% block header_subtitle %}Breakdown frequency, MTTR, and cost per machine.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div style="display:flex; gap:24px;">
+            <div><strong>{{ open_count }}</strong> open records</div>
+            <div><strong>{{ closed_count }}</strong> closed records</div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Top Failing Machines</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Machine</th>
+                        <th>Breakdown Count</th>
+                        <th>MTTR (minutes)</th>
+                        <th>Total Maintenance Cost</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in by_machine %}
+                    <tr>
+                        <td>{{ row.machine }}</td>
+                        <td>{{ row.breakdown_count }}</td>
+                        <td>{{ row.mttr_minutes|floatformat:1|default:'—' }}</td>
+                        <td>{{ row.total_cost|floatformat:2 }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4">No downtime data yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

@@ -20,6 +20,7 @@ ITEM_REQUEST_NAV_ROLES = {
     'admin', 'manager', 'supply_chain', 'planner', 'production_manager', 'production',
     'graphics_designer', 'operator', 'dispatch', 'qc', 'storekeeper', 'finance',
 }
+MAINTENANCE_NAV_ROLES = {'admin', 'manager', 'maintenance_engineer', 'production_manager'}
 
 
 def _role_from_request(request: Any) -> str:
@@ -56,5 +57,6 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_access_supply_chain': _allow(SUPPLY_CHAIN_NAV_ROLES),
         'can_access_audit': _allow(AUDIT_NAV_ROLES),
         'can_access_item_request': _allow(ITEM_REQUEST_NAV_ROLES),
+        'can_access_maintenance': _allow(MAINTENANCE_NAV_ROLES),
         'can_access_tasks': is_authenticated,
     }

@@ -56,6 +56,7 @@ INSTALLED_APPS = [
     'audit',
     'tasks',
     'backup',
+    'maintenance',
 ]
 
 MIDDLEWARE = [

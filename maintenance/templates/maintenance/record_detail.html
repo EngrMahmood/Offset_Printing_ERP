@@ -1,0 +1,235 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}{{ record.record_no }}{% endblock %}
+{% block header_title %}{{ record.record_no }} — {{ record.machine }}{% endblock %}
+{% block header_subtitle %}{{ record.get_maintenance_type_display }} · {{ record.get_priority_display }} priority · {{ record.get_status_display }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'maintenance:record_list' %}" class="erp-btn erp-btn-secondary">Back to List</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <h3>Fault Details</h3>
+        <p><strong>Fault types:</strong> {% for ft in record.fault_types.all %}{{ ft.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+        <p><strong>Description:</strong> {{ record.fault_description }}</p>
+        {% if record.proposed_solution %}<p><strong>Proposed solution:</strong> {{ record.proposed_solution }}</p>{% endif %}
+        <p><strong>Execution type:</strong> {{ record.get_execution_type_display }}</p>
+        {% if record.repair_needed %}<p><strong>Repair details:</strong> {{ record.repair_details }}</p>{% endif %}
+        {% if record.assigned_to %}<p><strong>Assigned to:</strong> {{ record.assigned_to }}</p>{% endif %}
+        {% if record.remarks %}<p><strong>Remarks:</strong> {{ record.remarks }}</p>{% endif %}
+    </section>
+
+    {% if can_review %}
+    <section class="erp-section-shell">
+        <h3>Manager Approval Required</h3>
+        <p>This record is pending approval before work can begin.</p>
+        <form method="post" action="{% url 'maintenance:record_review' record.pk %}" style="display:flex; gap:8px; align-items:end;">
+            {% csrf_token %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">Comment</label>
+                <input type="text" name="comment" class="erp-input">
+            </div>
+            <button type="submit" name="action" value="APPROVE" class="erp-btn erp-btn-primary">Approve</button>
+            <button type="submit" name="action" value="REJECT" class="erp-btn erp-btn-secondary">Reject</button>
+        </form>
+    </section>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <h3>Status</h3>
+        <p>Current: <strong>{{ record.get_status_display }}</strong></p>
+        {% if next_statuses %}
+        <form method="post" action="{% url 'maintenance:record_transition' record.pk %}" class="erp-form-grid" style="grid-template-columns:1fr 1fr auto; gap:12px; align-items:end;">
+            {% csrf_token %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">Move to</label>
+                <select name="to_status" class="erp-select">
+                    {% for status in next_statuses %}
+                    <option value="{{ status }}">{{ status }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Note</label>
+                <input type="text" name="note" class="erp-input">
+            </div>
+            <button type="submit" class="erp-btn erp-btn-primary">Update Status</button>
+        </form>
+        {% endif %}
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Spare Parts</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr><th>Description</th><th>Qty</th><th>UOM</th><th>Item Request</th></tr>
+                </thead>
+                <tbody>
+                    {% for line in spare_parts %}
+                    <tr>
+                        <td>{{ line.description }}</td>
+                        <td>{{ line.quantity }}</td>
+                        <td>{{ line.uom }}</td>
+                        <td>{% if line.item_request %}{{ line.item_request.request_no }} ({{ line.item_request.get_status_display }}){% else %}Not raised{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4">No spare part lines.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <form method="post" action="{% url 'maintenance:spare_part_add' record.pk %}" class="erp-form-grid" style="grid-template-columns:2fr 1fr 1fr 2fr auto; gap:12px; align-items:end; margin-top:12px;">
+            {% csrf_token %}
+            {% for field in spare_part_form %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">{{ field.label }}</label>
+                {{ field }}
+            </div>
+            {% endfor %}
+            <button type="submit" class="erp-btn erp-btn-secondary">Add Line</button>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Service Jobs (Outsource)</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr><th>Vendor</th><th>Scope</th><th>Item Request</th></tr>
+                </thead>
+                <tbody>
+                    {% for job in service_jobs %}
+                    <tr>
+                        <td>{{ job.vendor }}</td>
+                        <td>{{ job.scope }}</td>
+                        <td>{% if job.item_request %}{{ job.item_request.request_no }} ({{ job.item_request.get_status_display }}){% else %}Not raised{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3">No service jobs.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <form method="post" action="{% url 'maintenance:service_job_add' record.pk %}" class="erp-form-grid" style="grid-template-columns:1fr 2fr auto; gap:12px; align-items:end; margin-top:12px;">
+            {% csrf_token %}
+            {% for field in service_job_form %}
+                {% if field.name != 'sent_out_date' and field.name != 'returned_date' %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label">{{ field.label }}</label>
+                    {{ field }}
+                </div>
+                {% endif %}
+            {% endfor %}
+            <button type="submit" class="erp-btn erp-btn-secondary">Add Service Job</button>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <form method="post" action="{% url 'maintenance:raise_demand' record.pk %}">
+            {% csrf_token %}
+            <button type="submit" class="erp-btn erp-btn-primary">Raise Demand (Item Requests) for Pending Lines</button>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Downtime</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Start</th><th>End</th><th>Reason</th></tr></thead>
+                <tbody>
+                    {% for interval in downtime_intervals %}
+                    <tr>
+                        <td>{{ interval.start_at }}</td>
+                        <td>{{ interval.end_at|default:'Ongoing' }}</td>
+                        <td>{{ interval.get_reason_display }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="3">No downtime logged.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Cost Rollup</h3>
+        <p>Spares: {{ record.spares_cost|floatformat:2 }} · Service: {{ record.service_cost|floatformat:2 }} · Labour ({{ record.labour_hours }}h): {{ record.labour_cost|floatformat:2 }}</p>
+        <p><strong>Total: {{ record.total_cost|floatformat:2 }}</strong></p>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Attachments</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>File</th><th>Caption</th><th>Uploaded By</th><th>Uploaded At</th></tr></thead>
+                <tbody>
+                    {% for attachment in attachments %}
+                    <tr>
+                        <td><a href="{{ attachment.file.url }}" target="_blank">{{ attachment.file.name }}</a></td>
+                        <td>{{ attachment.caption }}</td>
+                        <td>{{ attachment.uploaded_by }}</td>
+                        <td>{{ attachment.uploaded_at }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4">No attachments.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <form method="post" action="{% url 'maintenance:attachment_add' record.pk %}" enctype="multipart/form-data" class="erp-form-grid" style="grid-template-columns:2fr 2fr auto; gap:12px; align-items:end; margin-top:12px;">
+            {% csrf_token %}
+            {% for field in attachment_form %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">{{ field.label }}</label>
+                {{ field }}
+            </div>
+            {% endfor %}
+            <button type="submit" class="erp-btn erp-btn-secondary">Upload</button>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Approvals</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Comment</th></tr></thead>
+                <tbody>
+                    {% for approval in approvals %}
+                    <tr>
+                        <td>{{ approval.created_at }}</td>
+                        <td>{{ approval.actor }}</td>
+                        <td>{{ approval.get_action_display }}</td>
+                        <td>{{ approval.comment }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4">No approval activity yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Activity Log</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Note</th></tr></thead>
+                <tbody>
+                    {% for log in activity_log %}
+                    <tr>
+                        <td>{{ log.created_at }}</td>
+                        <td>{{ log.actor }}</td>
+                        <td>{{ log.action }}{% if log.from_status %} ({{ log.from_status }} → {{ log.to_status }}){% endif %}</td>
+                        <td>{{ log.note }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4">No activity yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

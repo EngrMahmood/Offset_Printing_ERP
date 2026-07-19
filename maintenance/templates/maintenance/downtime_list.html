@@ -1,0 +1,40 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Machine Downtime{% endblock %}
+{% block header_title %}Machine Downtime{% endblock %}
+{% block header_subtitle %}Downtime intervals logged across all machines.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Machine</th>
+                        <th>Start</th>
+                        <th>End</th>
+                        <th>Reason</th>
+                        <th>Minutes Lost (Scheduled)</th>
+                        <th>Record</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for interval in intervals %}
+                    <tr>
+                        <td>{{ interval.machine }}</td>
+                        <td>{{ interval.start_at }}</td>
+                        <td>{{ interval.end_at|default:'Ongoing' }}</td>
+                        <td>{{ interval.get_reason_display }}</td>
+                        <td>{{ interval.scheduled_minutes_lost }}</td>
+                        <td>{% if interval.record %}<a href="{% url 'maintenance:record_detail' interval.record.pk %}">{{ interval.record.record_no }}</a>{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6">No downtime intervals logged.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

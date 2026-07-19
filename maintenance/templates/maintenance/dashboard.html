@@ -1,0 +1,70 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Maintenance Dashboard{% endblock %}
+{% block header_title %}Maintenance Dashboard{% endblock %}
+{% block header_subtitle %}Open faults, machines currently down, and quick access to logging.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'maintenance:record_create' %}" class="erp-btn erp-btn-primary">New Maintenance Record</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <h3>Open Records ({{ open_count }})</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Record No.</th>
+                        <th>Machine</th>
+                        <th>Type</th>
+                        <th>Priority</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for record in open_records %}
+                    <tr>
+                        <td><a href="{% url 'maintenance:record_detail' record.pk %}">{{ record.record_no }}</a></td>
+                        <td>{{ record.machine }}</td>
+                        <td>{{ record.get_maintenance_type_display }}</td>
+                        <td>{{ record.get_priority_display }}</td>
+                        <td>{{ record.get_status_display }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5">No open maintenance records.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Machines Currently Down</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Machine</th>
+                        <th>Since</th>
+                        <th>Reason</th>
+                        <th>Record</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for interval in machines_down %}
+                    <tr>
+                        <td>{{ interval.machine }}</td>
+                        <td>{{ interval.start_at }}</td>
+                        <td>{{ interval.get_reason_display }}</td>
+                        <td>{% if interval.record %}<a href="{% url 'maintenance:record_detail' interval.record.pk %}">{{ interval.record.record_no }}</a>{% endif %}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4">No machines currently down.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

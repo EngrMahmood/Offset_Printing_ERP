@@ -1393,6 +1393,7 @@ class UserProfile(models.Model):
         ('storekeeper', 'Store Keeper — Material & inventory management'),
         ('finance', 'Finance Viewer — Read-only analytics & reports'),
         ('supply_chain', 'Supply Chain — Manage supply chain dashboard & stock'),
+        ('maintenance_engineer', 'Maintenance Engineer — Log faults, raise spares/service demand, track downtime'),
     ]
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
