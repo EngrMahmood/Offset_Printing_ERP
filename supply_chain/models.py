@@ -235,6 +235,7 @@ class ChangeRequest(models.Model):
         ('StockDemand', 'Monthly Demand'),
         ('StockTransaction', 'Stock Transaction'),
         ('PhysicalStockCount', 'Physical Stock Count'),
+        ('ItemRequest', 'Item Request'),
     ]
 
     ACTION_CHOICES = [
@@ -399,4 +400,198 @@ class ChangeRequest(models.Model):
         self.reviewed_by = user
         self.reviewed_at = timezone.now()
         self.save()
+
+
+class ItemRequestType(models.Model):
+    name = models.CharField(max_length=50, unique=True)
+    code = models.CharField(max_length=4, help_text='Short prefix used in the IR-ID, e.g. RM, CON, MNT')
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Item Request Type'
+        verbose_name_plural = 'Item Request Types'
+
+    def __str__(self):
+        return self.name
+
+
+class ItemRequestDepartment(models.Model):
+    """Department lookup dedicated to the Item Request module (separate from core.Department)."""
+
+    name = models.CharField(max_length=100, unique=True)
+    is_active = models.BooleanField(default=True, db_index=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Item Request Department'
+        verbose_name_plural = 'Item Request Departments'
+
+    def __str__(self):
+        return self.name
+
+
+class ItemRequest(models.Model):
+    LOCAL_IMPORT_CHOICES = [
+        ('LOCAL', 'Local'),
+        ('IMPORT', 'Import'),
+    ]
+
+    STATUS_CHOICES = [
+        ('SUBMITTED', 'Submitted'),
+        ('MGR_REVIEW', 'Manager Review'),
+        ('SC_REVIEW', 'Supply Chain Review'),
+        ('APPROVED', 'Approved'),
+        ('IN_PROCUREMENT', 'In Procurement'),
+        ('RECEIVED', 'Received'),
+        ('CLOSED', 'Closed'),
+        ('REJECTED', 'Rejected'),
+        ('NEEDS_REVISION', 'Needs Revision'),
+    ]
+
+    OPEN_STATUSES = {'SUBMITTED', 'MGR_REVIEW', 'SC_REVIEW', 'APPROVED', 'IN_PROCUREMENT', 'NEEDS_REVISION'}
+
+    request_no = models.CharField(max_length=30, unique=True, blank=True, null=True, verbose_name='IR-ID')
+    request_type = models.ForeignKey(ItemRequestType, on_delete=models.PROTECT, related_name='requests')
+    request_date = models.DateField(default=timezone.now)
+
+    item_title = models.CharField(max_length=255, verbose_name='Item Title')
+    machine = models.ForeignKey('core.Machine', on_delete=models.SET_NULL, null=True, blank=True, related_name='item_requests')
+    machine_other = models.CharField(max_length=150, blank=True, default='', verbose_name='Machine (if not in list)')
+
+    uom = models.CharField(max_length=30, verbose_name='Unit of Measure')
+    specifications = models.TextField(verbose_name='Specifications / Technical Details')
+    description = models.TextField(blank=True, default='', verbose_name='Description / Purpose of Use')
+    dimensions = models.CharField(max_length=100, blank=True, default='', verbose_name='Dimensions (if applicable)')
+    local_import = models.CharField(max_length=10, choices=LOCAL_IMPORT_CHOICES, blank=True, default='')
+    part_number = models.CharField(max_length=100, blank=True, default='', verbose_name='Part Number')
+    required_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name='Required Quantity')
+
+    department = models.ForeignKey(ItemRequestDepartment, on_delete=models.PROTECT, related_name='item_requests')
+    existing_sku = models.ForeignKey(RawMaterialSku, on_delete=models.SET_NULL, null=True, blank=True, related_name='item_requests')
+    estimated_unit_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    cost_centre = models.CharField(max_length=50, blank=True, default='', verbose_name='Budget / Cost Centre')
+    attachment = models.FileField(upload_to='item_requests/%Y/%m/', null=True, blank=True)
+
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='SUBMITTED', db_index=True)
+    raised_by = models.ForeignKey(User, on_delete=models.CASCADE, related_name='item_requests')
+    is_active = models.BooleanField(default=True, db_index=True)
+    deleted_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='item_requests_deleted')
+    deleted_at = models.DateTimeField(null=True, blank=True)
+
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = 'Item Request'
+        verbose_name_plural = 'Item Requests'
+
+    def __str__(self):
+        return self.request_no or f'IR-DRAFT-{self.pk}'
+
+    @property
+    def machine_display(self):
+        if self.machine_id:
+            return self.machine.name
+        return self.machine_other or '-'
+
+    @property
+    def is_open(self):
+        return self.status in self.OPEN_STATUSES
+
+    @classmethod
+    def find_open_duplicates(cls, item_title, department_id, exclude_pk=None):
+        """Fuzzy match: open requests for the same department with a similar item title."""
+        key = normalize_material_name(item_title)
+        if not key:
+            return cls.objects.none()
+        qs = cls.objects.filter(
+            is_active=True,
+            department_id=department_id,
+            status__in=cls.OPEN_STATUSES,
+        )
+        if exclude_pk:
+            qs = qs.exclude(pk=exclude_pk)
+        matches = [r.pk for r in qs.only('pk', 'item_title') if normalize_material_name(r.item_title) == key]
+        return cls.objects.filter(pk__in=matches)
+
+
+class ItemRequestApproval(models.Model):
+    ACTION_CHOICES = [
+        ('SUBMIT', 'Submit'),
+        ('APPROVE', 'Approve'),
+        ('REJECT', 'Reject'),
+        ('REVISE', 'Needs Revision'),
+        ('RESUBMIT', 'Resubmit'),
+        ('EDIT', 'Edited (post-approval)'),
+        ('EDIT_REQUESTED', 'Edit Requested (pending change review)'),
+        ('DELETE', 'Deleted'),
+    ]
+    STAGE_CHOICES = [
+        ('REQUESTER', 'Requester'),
+        ('MANAGER', 'Manager'),
+        ('SUPPLY_CHAIN', 'Supply Chain'),
+    ]
+
+    request = models.ForeignKey(ItemRequest, on_delete=models.CASCADE, related_name='approvals')
+    actor = models.ForeignKey(User, on_delete=models.CASCADE, related_name='item_request_approvals')
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES)
+    stage = models.CharField(max_length=20, choices=STAGE_CHOICES)
+    comment = models.TextField(blank=True, default='')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['created_at']
+        verbose_name = 'Item Request Approval'
+        verbose_name_plural = 'Item Request Approvals'
+
+    def __str__(self):
+        return f'{self.get_action_display()} — {self.request} by {self.actor}'
+
+
+class ItemProcurementTimeline(models.Model):
+    request = models.OneToOneField(ItemRequest, on_delete=models.CASCADE, related_name='procurement')
+
+    item_code = models.CharField(max_length=50, blank=True, default='')
+    code_opened_date = models.DateField(null=True, blank=True)
+    indent_pr_no = models.CharField(max_length=50, blank=True, default='')
+    pr_date = models.DateField(null=True, blank=True)
+    po_no = models.CharField(max_length=50, blank=True, default='')
+    po_date = models.DateField(null=True, blank=True)
+    supplier = models.CharField(max_length=150, blank=True, default='')
+    received_date = models.DateField(null=True, blank=True)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    received_qty = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    remarks = models.TextField(blank=True, default='')
+
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='item_procurement_updates')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = 'Item Procurement Timeline'
+        verbose_name_plural = 'Item Procurement Timelines'
+
+    def __str__(self):
+        return f'Procurement — {self.request}'
+
+
+class ItemRequestQuote(models.Model):
+    """Supplier quote attached to a procurement timeline to justify PO price."""
+
+    procurement = models.ForeignKey(ItemProcurementTimeline, on_delete=models.CASCADE, related_name='quotes')
+    supplier = models.CharField(max_length=150)
+    quoted_price = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
+    file = models.FileField(upload_to='item_requests/quotes/%Y/%m/')
+    notes = models.CharField(max_length=255, blank=True, default='')
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='item_request_quotes')
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-uploaded_at']
+        verbose_name = 'Item Request Quote'
+        verbose_name_plural = 'Item Request Quotes'
+
+    def __str__(self):
+        return f'{self.supplier} quote — {self.procurement.request}'
 

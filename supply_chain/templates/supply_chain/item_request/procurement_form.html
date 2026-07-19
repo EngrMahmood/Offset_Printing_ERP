@@ -1,0 +1,76 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Procurement Timeline — {{ item_request.request_no }}{% endblock %}
+{% block header_title %}Procurement Timeline — {{ item_request.request_no }}{% endblock %}
+{% block header_subtitle %}{{ item_request.item_title }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:item_request_detail' item_request.pk %}" class="erp-btn erp-btn-secondary">Back to Request</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <form method="post" class="erp-form-grid" style="grid-template-columns:1fr 1fr; gap:16px; max-width:720px;">
+                {% csrf_token %}
+                {% for field in form %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="erp-alert erp-alert-danger">{{ field.errors|striptags }}</div>{% endif %}
+                </div>
+                {% endfor %}
+                <div class="erp-actions" style="grid-column:1 / -1;">
+                    <button type="submit" class="erp-btn erp-btn-primary">Save Timeline</button>
+                    <a href="{% url 'supply_chain:item_request_detail' item_request.pk %}" class="erp-btn erp-btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4">
+                <h3 class="erp-section-title">Supplier Quotes</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr><th>Supplier</th><th>Quoted Price</th><th>Notes</th><th>Uploaded By</th><th>File</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        {% for q in quotes %}
+                        <tr>
+                            <td>{{ q.supplier }}</td>
+                            <td>{{ q.quoted_price|default:'—' }}</td>
+                            <td>{{ q.notes|default:'—' }}</td>
+                            <td>{{ q.uploaded_by.username }}</td>
+                            <td><a href="{{ q.file.url }}" target="_blank">View</a></td>
+                            <td>
+                                <form method="post" action="{% url 'supply_chain:item_request_quote_delete' item_request.pk q.pk %}" onsubmit="return confirm('Remove this quote?');" style="display:inline;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="erp-btn erp-btn-secondary text-red-600">Remove</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6">No supplier quotes uploaded yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <form method="post" action="{% url 'supply_chain:item_request_quote_add' item_request.pk %}" enctype="multipart/form-data" class="erp-form-grid mt-4" style="grid-template-columns:repeat(4,1fr); gap:12px; align-items:end;">
+                {% csrf_token %}
+                {% for field in quote_form %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                    {{ field }}
+                    {% if field.errors %}<div class="erp-alert erp-alert-danger">{{ field.errors|striptags }}</div>{% endif %}
+                </div>
+                {% endfor %}
+                <div class="erp-actions">
+                    <button type="submit" class="erp-btn erp-btn-primary">Add Quote</button>
+                </div>
+            </form>
+        </section>
+    </div>
+{% endblock %}

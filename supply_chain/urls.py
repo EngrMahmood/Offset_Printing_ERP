@@ -42,4 +42,21 @@ urlpatterns = [
     path('physical-counts/<int:pk>/delete/', views.physical_count_delete, name='physical_count_delete'),
 
     path('demand-gap/', views.demand_gap, name='demand_gap'),
+
+    # Item Request Module
+    path('item-requests/', views.item_request_list, name='item_request_list'),
+    path('item-requests/new/', views.item_request_create, name='item_request_create'),
+    path('item-requests/<int:pk>/', views.item_request_detail, name='item_request_detail'),
+    path('item-requests/<int:pk>/review/', views.item_request_review, name='item_request_review'),
+    path('item-requests/<int:pk>/resubmit/', views.item_request_resubmit, name='item_request_resubmit'),
+    path('item-requests/<int:pk>/procurement/', views.item_request_procurement, name='item_request_procurement'),
+    path('item-requests/type/add/', views.item_request_type_add, name='item_request_type_add'),
+    path('item-requests/department/add/', views.item_request_department_add, name='item_request_department_add'),
+    path('item-requests/kpis/', views.item_request_kpi_dashboard, name='item_request_kpi_dashboard'),
+    path('item-requests/<int:pk>/print/', views.item_request_print, name='item_request_print'),
+    path('item-requests/<int:pk>/delete/', views.item_request_delete, name='item_request_delete'),
+    path('item-requests/bulk-delete/', views.item_request_bulk_delete, name='item_request_bulk_delete'),
+    path('item-requests/<int:pk>/change-edit/', views.item_request_change_edit, name='item_request_change_edit'),
+    path('item-requests/<int:pk>/quotes/add/', views.item_request_quote_add, name='item_request_quote_add'),
+    path('item-requests/<int:pk>/quotes/<int:quote_id>/delete/', views.item_request_quote_delete, name='item_request_quote_delete'),
 ]

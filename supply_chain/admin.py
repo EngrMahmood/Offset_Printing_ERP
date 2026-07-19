@@ -1,6 +1,18 @@
 from django.contrib import admin
 
-from .models import PhysicalStockCount, RawMaterialSku, StockDemand, StockTransaction, SupplyChainItem
+from .models import (
+    ItemProcurementTimeline,
+    ItemRequest,
+    ItemRequestApproval,
+    ItemRequestDepartment,
+    ItemRequestQuote,
+    ItemRequestType,
+    PhysicalStockCount,
+    RawMaterialSku,
+    StockDemand,
+    StockTransaction,
+    SupplyChainItem,
+)
 
 
 @admin.register(RawMaterialSku)
@@ -37,3 +49,40 @@ class PhysicalStockCountAdmin(admin.ModelAdmin):
     )
     list_filter = ('count_date',)
     search_fields = ('raw_material_sku__sku', 'notes')
+
+
+@admin.register(ItemRequestType)
+class ItemRequestTypeAdmin(admin.ModelAdmin):
+    list_display = ('name', 'code', 'is_active')
+    search_fields = ('name', 'code')
+
+
+@admin.register(ItemRequestDepartment)
+class ItemRequestDepartmentAdmin(admin.ModelAdmin):
+    list_display = ('name', 'is_active')
+    search_fields = ('name',)
+
+
+@admin.register(ItemRequest)
+class ItemRequestAdmin(admin.ModelAdmin):
+    list_display = ('request_no', 'item_title', 'request_type', 'department', 'status', 'raised_by', 'request_date', 'is_active')
+    list_filter = ('status', 'request_type', 'department', 'is_active')
+    search_fields = ('request_no', 'item_title', 'part_number')
+
+
+@admin.register(ItemRequestApproval)
+class ItemRequestApprovalAdmin(admin.ModelAdmin):
+    list_display = ('request', 'action', 'stage', 'actor', 'created_at')
+    list_filter = ('action', 'stage')
+
+
+@admin.register(ItemProcurementTimeline)
+class ItemProcurementTimelineAdmin(admin.ModelAdmin):
+    list_display = ('request', 'item_code', 'po_no', 'received_date', 'unit_price')
+    search_fields = ('request__request_no', 'item_code', 'po_no')
+
+
+@admin.register(ItemRequestQuote)
+class ItemRequestQuoteAdmin(admin.ModelAdmin):
+    list_display = ('procurement', 'supplier', 'quoted_price', 'uploaded_by', 'uploaded_at')
+    search_fields = ('supplier', 'procurement__request__request_no')

@@ -1,0 +1,125 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Item Requests{% endblock %}
+{% block header_title %}Item Requests{% endblock %}
+{% block header_subtitle %}Raise, track, and approve item requests from any department.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:item_request_kpi_dashboard' %}" class="erp-btn erp-btn-secondary">KPI Dashboard</a>
+    <a href="?{{ filters.urlencode }}&export=xlsx" class="erp-btn erp-btn-secondary">Export Excel</a>
+    <a href="{% url 'supply_chain:item_request_create' %}" class="erp-btn erp-btn-primary">New Item Request</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(4,1fr); gap:12px; align-items:end;">
+                <div class="erp-input-group">
+                    <label class="erp-input-label">Status</label>
+                    <select name="status" class="erp-select">
+                        <option value="">All</option>
+                        {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-input-group">
+                    <label class="erp-input-label">Type</label>
+                    <select name="type" class="erp-select">
+                        <option value="">All</option>
+                        {% for t in types %}
+                        <option value="{{ t.id }}" {% if filters.type == t.id|stringformat:'s' %}selected{% endif %}>{{ t.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-input-group">
+                    <label class="erp-input-label">Department</label>
+                    <select name="department" class="erp-select">
+                        <option value="">All</option>
+                        {% for d in departments %}
+                        <option value="{{ d.id }}" {% if filters.department == d.id|stringformat:'s' %}selected{% endif %}>{{ d.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-actions">
+                    <button type="submit" class="erp-btn erp-btn-secondary">Filter</button>
+                    <a href="{% url 'supply_chain:item_request_list' %}" class="erp-btn erp-btn-secondary">Reset</a>
+                </div>
+            </form>
+        </section>
+
+        <section class="erp-section-shell">
+            <form method="post" action="{% url 'supply_chain:item_request_bulk_delete' %}" id="bulk-delete-form" onsubmit="return confirm('Delete the selected item request(s)? This cannot be undone from the UI.');">
+                {% csrf_token %}
+                {% if is_superuser %}
+                <div class="erp-actions mb-2">
+                    <button type="submit" class="erp-btn erp-btn-secondary text-red-600">Delete Selected</button>
+                </div>
+                {% endif %}
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr>
+                                {% if is_superuser %}<th><input type="checkbox" id="select-all"></th>{% endif %}
+                                <th>IR-ID</th>
+                                <th>Item Title</th>
+                                <th>Type</th>
+                                <th>Department</th>
+                                <th>Machine</th>
+                                <th>Status</th>
+                                <th>SLA</th>
+                                <th>Raised By</th>
+                                <th>Date</th>
+                                {% if is_superuser %}<th>Actions</th>{% endif %}
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in rows %}
+                            {% with r=row.request %}
+                            <tr>
+                                {% if is_superuser %}
+                                <td><input type="checkbox" name="selected_ids" value="{{ r.pk }}" class="row-checkbox"></td>
+                                {% endif %}
+                                <td><a href="{% url 'supply_chain:item_request_detail' r.pk %}">{{ r.request_no|default:'—' }}</a></td>
+                                <td>{{ r.item_title }}</td>
+                                <td>{{ r.request_type.name }}</td>
+                                <td>{{ r.department.name }}</td>
+                                <td>{{ r.machine_display }}</td>
+                                <td><span class="erp-badge">{{ r.get_status_display }}</span></td>
+                                <td>
+                                    {% if row.sla_breached %}
+                                    <span class="erp-badge erp-badge-danger" title="{{ row.days_in_stage }}d in stage, limit {{ row.sla_limit }}d">Overdue</span>
+                                    {% elif row.sla_limit %}
+                                    <span class="erp-badge">{{ row.days_in_stage }}/{{ row.sla_limit }}d</span>
+                                    {% else %}—{% endif %}
+                                </td>
+                                <td>{{ r.raised_by.username }}</td>
+                                <td>{{ r.request_date }}</td>
+                                {% if is_superuser %}
+                                <td>
+                                    <button type="submit" formaction="{% url 'supply_chain:item_request_delete' r.pk %}" formnovalidate class="erp-btn erp-btn-secondary text-red-600" onclick="return confirm('Delete item request {{ r.request_no|default:r.pk }}? This cannot be undone from the UI.');">Delete</button>
+                                </td>
+                                {% endif %}
+                            </tr>
+                            {% endwith %}
+                            {% empty %}
+                            <tr><td colspan="10">No item requests found.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </form>
+        </section>
+    </div>
+    <script>
+        (function () {
+            const selectAll = document.getElementById('select-all');
+            if (!selectAll) return;
+            selectAll.addEventListener('change', function () {
+                document.querySelectorAll('.row-checkbox').forEach(function (cb) {
+                    cb.checked = selectAll.checked;
+                });
+            });
+        })();
+    </script>
+{% endblock %}

@@ -1,0 +1,128 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Item Request KPIs{% endblock %}
+{% block header_title %}Item Request KPIs{% endblock %}
+{% block header_subtitle %}Cycle times, on-time delivery, price variance and aging across all requests.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:item_request_list' %}" class="erp-btn erp-btn-secondary">Back to Requests</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:12px; align-items:end;">
+                <div class="erp-input-group">
+                    <label class="erp-input-label">Type</label>
+                    <select name="type" class="erp-select">
+                        <option value="">All</option>
+                        {% for t in types %}
+                        <option value="{{ t.id }}" {% if filters.type == t.id|stringformat:'s' %}selected{% endif %}>{{ t.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-input-group">
+                    <label class="erp-input-label">Department</label>
+                    <select name="department" class="erp-select">
+                        <option value="">All</option>
+                        {% for d in departments %}
+                        <option value="{{ d.id }}" {% if filters.department == d.id|stringformat:'s' %}selected{% endif %}>{{ d.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="erp-actions">
+                    <button type="submit" class="erp-btn erp-btn-secondary">Filter</button>
+                    <a href="{% url 'supply_chain:item_request_kpi_dashboard' %}" class="erp-btn erp-btn-secondary">Reset</a>
+                </div>
+            </form>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-info-grid">
+                <div class="erp-info-item"><span class="erp-input-label">Total Requests</span><strong>{{ kpi_summary.total }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Open</span><strong>{{ kpi_summary.open_count }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Closed</span><strong>{{ kpi_summary.closed_count }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Received</span><strong>{{ kpi_summary.received_count }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">SLA Breaches (open)</span><strong>{{ kpi_summary.sla_breached_count }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Avg Approval Cycle (days)</span><strong>{{ kpi_summary.avg_approval_cycle_days|default:'—' }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Avg Code-Opening Lead (days)</span><strong>{{ kpi_summary.avg_code_opening_lead_days|default:'—' }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Avg PR Turnaround (days)</span><strong>{{ kpi_summary.avg_pr_turnaround_days|default:'—' }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Avg PR→PO Cycle (days)</span><strong>{{ kpi_summary.avg_pr_po_cycle_days|default:'—' }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Avg PO→Receipt Lead (days)</span><strong>{{ kpi_summary.avg_po_receipt_lead_days|default:'—' }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Avg Total Fulfilment (days)</span><strong>{{ kpi_summary.avg_total_fulfilment_days|default:'—' }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">Avg Price Variance</span><strong>{{ kpi_summary.avg_price_variance|default:'—' }}</strong></div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4"><h3 class="erp-section-title">Aging (open requests)</h3></div>
+            <div class="erp-info-grid">
+                <div class="erp-info-item"><span class="erp-input-label">0–7 days</span><strong>{{ kpi_summary.aging_buckets.0_7 }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">8–14 days</span><strong>{{ kpi_summary.aging_buckets.8_14 }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">15–30 days</span><strong>{{ kpi_summary.aging_buckets.15_30 }}</strong></div>
+                <div class="erp-info-item"><span class="erp-input-label">30+ days</span><strong>{{ kpi_summary.aging_buckets.30_plus }}</strong></div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4"><h3 class="erp-section-title">By Type</h3></div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Type</th><th>Count</th></tr></thead>
+                    <tbody>
+                        {% for row in kpi_summary.by_type %}
+                        <tr><td>{{ row.request_type__name }}</td><td>{{ row.count }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4"><h3 class="erp-section-title">By Department</h3></div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Department</th><th>Count</th></tr></thead>
+                    <tbody>
+                        {% for row in kpi_summary.by_department %}
+                        <tr><td>{{ row.department__name }}</td><td>{{ row.count }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4"><h3 class="erp-section-title">Per-Request Detail</h3></div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>IR-ID</th><th>Status</th><th>Approval Cycle</th><th>Code Opening Lead</th>
+                            <th>PR Turnaround</th><th>PR→PO</th><th>PO→Receipt</th><th>Total Fulfilment</th>
+                            <th>Price Variance</th><th>Age (open)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in kpi_rows %}
+                        <tr>
+                            <td><a href="{% url 'supply_chain:item_request_detail' row.request.pk %}">{{ row.request.request_no|default:'—' }}</a></td>
+                            <td>{{ row.request.get_status_display }}</td>
+                            <td>{{ row.approval_cycle_days|default:'—' }}</td>
+                            <td>{{ row.code_opening_lead_days|default:'—' }}</td>
+                            <td>{{ row.pr_turnaround_days|default:'—' }}</td>
+                            <td>{{ row.pr_po_cycle_days|default:'—' }}</td>
+                            <td>{{ row.po_receipt_lead_days|default:'—' }}</td>
+                            <td>{{ row.total_fulfilment_days|default:'—' }}</td>
+                            <td>{{ row.price_variance|default:'—' }}</td>
+                            <td>{{ row.age_days|default:'—' }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="10">No item requests found.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

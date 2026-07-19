@@ -15,3 +15,14 @@ def supply_chain_required(view_func):
         return view_func(request, *args, **kwargs)
 
     return _wrapped
+
+
+def item_request_access_required(view_func):
+    @login_required
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        if not get_nav_permissions(request).get('can_access_item_request'):
+            raise PermissionDenied
+        return view_func(request, *args, **kwargs)
+
+    return _wrapped

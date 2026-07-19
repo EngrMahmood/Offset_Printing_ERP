@@ -1,4 +1,5 @@
 from django.contrib import messages
+from django.core.exceptions import PermissionDenied
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -6,9 +7,9 @@ from django.views.decorators.http import require_POST
 from django.utils import timezone
 
 
-from core.models import JobCard
+from core.models import JobCard, Machine
 
-from .decorators import supply_chain_required
+from .decorators import item_request_access_required, supply_chain_required
 from .demand_gap import (
     available_plan_months,
     build_demand_gap_report,
@@ -18,6 +19,7 @@ from .excel_io import (
     export_demands,
     export_demand_gap_jobs,
     export_demand_gap_materials,
+    export_item_requests,
     export_item_wise_consumption,
     export_items,
     export_kpi_dashboard,
@@ -31,20 +33,40 @@ from .excel_io import (
 )
 from .forms import (
     BulkPhysicalCountForm,
+    DepartmentQuickForm,
     ExcelUploadForm,
+    ItemProcurementTimelineForm,
+    ItemRequestForm,
+    ItemRequestQuoteForm,
+    ItemRequestReviewForm,
+    ItemRequestTypeQuickForm,
     PhysicalStockCountForm,
     QuickRawMaterialSkuForm,
     RawMaterialSkuForm,
     StockDemandForm,
     StockTransactionForm,
 )
+from .item_request_kpis import build_item_request_kpi_data
+from .item_request_service import resubmit_request, review_request, submit_request
+from .item_request_sla import sla_status
 from .jc_sync import (
     build_job_card_link_rows,
     sync_all_job_card_issuances,
     sync_issuance_for_job_card,
 )
 from .kpis import build_kpi_dashboard_data
-from .models import PhysicalStockCount, RawMaterialSku, StockDemand, StockTransaction, ChangeRequest
+from .models import (
+    ChangeRequest,
+    ItemRequest,
+    ItemRequestApproval,
+    ItemRequestDepartment,
+    ItemRequestQuote,
+    ItemRequestType,
+    PhysicalStockCount,
+    RawMaterialSku,
+    StockDemand,
+    StockTransaction,
+)
 from .physical_count import (
     build_physical_count_rows,
     physical_count_history,
@@ -1094,4 +1116,393 @@ def issuance_bulk_approve(request):
     txns.update(is_approved=True)
     messages.success(request, f"Successfully approved {count} issuance(s).")
     return redirect('supply_chain:issuance')
+
+
+# ---------------------------------------------------------------------------
+# Item Request module
+# ---------------------------------------------------------------------------
+
+def _item_request_role(user):
+    if user.is_superuser:
+        return 'admin'
+    profile = getattr(user, 'profile', None)
+    return (getattr(profile, 'role', '') or '').strip().lower()
+
+
+def _is_manager(user):
+    return _item_request_role(user) in ('admin', 'manager')
+
+
+def _is_supply_chain(user):
+    return _item_request_role(user) in ('admin', 'supply_chain')
+
+
+@item_request_access_required
+def item_request_list(request):
+    requests_qs = (
+        ItemRequest.objects.filter(is_active=True)
+        .select_related('request_type', 'department', 'machine', 'raised_by')
+        .prefetch_related('approvals')
+        .order_by('-created_at')
+    )
+
+    status = request.GET.get('status')
+    if status:
+        requests_qs = requests_qs.filter(status=status)
+    req_type = request.GET.get('type')
+    if req_type:
+        requests_qs = requests_qs.filter(request_type_id=req_type)
+    department = request.GET.get('department')
+    if department:
+        requests_qs = requests_qs.filter(department_id=department)
+    if request.GET.get('mine') == '1':
+        requests_qs = requests_qs.filter(raised_by=request.user)
+
+    if request.GET.get('export') == 'xlsx':
+        return export_item_requests(requests_qs, filename='item_requests.xlsx')
+
+    rows = []
+    for req in requests_qs:
+        days_in_stage, sla_limit, breached = sla_status(req, req.approvals.all())
+        rows.append({'request': req, 'sla_breached': breached, 'days_in_stage': days_in_stage, 'sla_limit': sla_limit})
+
+    return render(request, 'supply_chain/item_request/list.html', {
+        'rows': rows,
+        'types': ItemRequestType.objects.filter(is_active=True),
+        'departments': ItemRequestDepartment.objects.filter(is_active=True),
+        'status_choices': ItemRequest.STATUS_CHOICES,
+        'filters': request.GET,
+        'is_superuser': request.user.is_superuser,
+    })
+
+
+@item_request_access_required
+def item_request_create(request):
+    duplicates = []
+    if request.method == 'POST':
+        form = ItemRequestForm(request.POST, request.FILES)
+        if form.is_valid():
+            department = form.cleaned_data['department']
+            duplicates = ItemRequest.objects.filter(
+                pk__in=ItemRequest.find_open_duplicates(form.cleaned_data['item_title'], department.id).values_list('pk', flat=True)
+            ).select_related('request_type') if request.POST.get('confirm_duplicate') != '1' else []
+
+            if duplicates:
+                messages.warning(
+                    request,
+                    'A similar open item request already exists for this department. '
+                    'Review it below, or tick "Submit anyway" to proceed.',
+                )
+            else:
+                item_request = form.save(commit=False)
+                item_request.raised_by = request.user
+                item_request.save()
+                submit_request(item_request, request.user)
+                messages.success(request, f'Item request "{item_request.item_title}" submitted for manager review.')
+                return redirect('supply_chain:item_request_detail', pk=item_request.pk)
+    else:
+        form = ItemRequestForm()
+
+    return render(request, 'supply_chain/item_request/form.html', {
+        'form': form,
+        'is_create': True,
+        'duplicates': duplicates,
+    })
+
+
+@item_request_access_required
+def item_request_detail(request, pk):
+    item_request = get_object_or_404(
+        ItemRequest.objects.filter(is_active=True).select_related('request_type', 'department', 'machine', 'raised_by'),
+        pk=pk,
+    )
+    approvals = item_request.approvals.select_related('actor').all()
+    procurement = getattr(item_request, 'procurement', None)
+
+    can_review_manager = item_request.status == 'MGR_REVIEW' and _is_manager(request.user)
+    can_review_sc = item_request.status == 'SC_REVIEW' and _is_supply_chain(request.user)
+    can_resubmit = item_request.status in ('NEEDS_REVISION',) and item_request.raised_by_id == request.user.id
+    can_edit_procurement = item_request.status in ('IN_PROCUREMENT', 'RECEIVED', 'CLOSED') and _is_supply_chain(request.user)
+    can_change_edit = item_request.status in ('APPROVED', 'IN_PROCUREMENT', 'RECEIVED', 'CLOSED')
+
+    days_in_stage, sla_limit, breached = sla_status(item_request, approvals)
+
+    return render(request, 'supply_chain/item_request/detail.html', {
+        'item_request': item_request,
+        'approvals': approvals,
+        'procurement': procurement,
+        'review_form': ItemRequestReviewForm(),
+        'can_review_manager': can_review_manager,
+        'can_review_sc': can_review_sc,
+        'can_resubmit': can_resubmit,
+        'can_edit_procurement': can_edit_procurement,
+        'can_change_edit': can_change_edit,
+        'is_superuser': request.user.is_superuser,
+        'sla_days_in_stage': days_in_stage,
+        'sla_limit': sla_limit,
+        'sla_breached': breached,
+    })
+
+
+@item_request_access_required
+@require_POST
+def item_request_review(request, pk):
+    item_request = get_object_or_404(ItemRequest, pk=pk)
+
+    if item_request.status == 'MGR_REVIEW' and _is_manager(request.user):
+        stage = 'MANAGER'
+    elif item_request.status == 'SC_REVIEW' and _is_supply_chain(request.user):
+        stage = 'SUPPLY_CHAIN'
+    else:
+        raise PermissionDenied
+
+    form = ItemRequestReviewForm(request.POST)
+    if form.is_valid():
+        review_request(
+            item_request,
+            request.user,
+            stage=stage,
+            action=form.cleaned_data['action'],
+            comment=form.cleaned_data['comment'],
+        )
+        messages.success(request, f'Request {item_request.request_no or item_request.pk} updated.')
+    else:
+        messages.error(request, 'Please provide a comment for this decision.')
+
+    return redirect('supply_chain:item_request_detail', pk=pk)
+
+
+@item_request_access_required
+def item_request_resubmit(request, pk):
+    item_request = get_object_or_404(ItemRequest, pk=pk, raised_by=request.user)
+    if item_request.status not in ('NEEDS_REVISION',):
+        raise PermissionDenied
+
+    if request.method == 'POST':
+        form = ItemRequestForm(request.POST, request.FILES, instance=item_request)
+        if form.is_valid():
+            form.save()
+            resubmit_request(item_request, request.user)
+            messages.success(request, f'Request {item_request.request_no or item_request.pk} resubmitted.')
+            return redirect('supply_chain:item_request_detail', pk=item_request.pk)
+    else:
+        form = ItemRequestForm(instance=item_request)
+
+    return render(request, 'supply_chain/item_request/form.html', {
+        'form': form,
+        'is_create': False,
+        'item_request': item_request,
+    })
+
+
+@item_request_access_required
+def item_request_procurement(request, pk):
+    item_request = get_object_or_404(ItemRequest, pk=pk)
+    if not _is_supply_chain(request.user):
+        raise PermissionDenied
+    procurement = getattr(item_request, 'procurement', None)
+    if procurement is None:
+        raise PermissionDenied
+
+    if request.method == 'POST':
+        form = ItemProcurementTimelineForm(request.POST, instance=procurement)
+        if form.is_valid():
+            timeline = form.save(commit=False)
+            timeline.updated_by = request.user
+            timeline.save()
+            if timeline.received_date and item_request.status == 'IN_PROCUREMENT':
+                item_request.status = 'RECEIVED'
+                item_request.save(update_fields=['status'])
+            messages.success(request, 'Procurement timeline updated.')
+            return redirect('supply_chain:item_request_detail', pk=pk)
+    else:
+        form = ItemProcurementTimelineForm(instance=procurement)
+
+    return render(request, 'supply_chain/item_request/procurement_form.html', {
+        'form': form,
+        'item_request': item_request,
+        'quotes': procurement.quotes.all(),
+        'quote_form': ItemRequestQuoteForm(),
+    })
+
+
+@item_request_access_required
+@require_POST
+def item_request_quote_add(request, pk):
+    item_request = get_object_or_404(ItemRequest, pk=pk)
+    if not _is_supply_chain(request.user):
+        raise PermissionDenied
+    procurement = getattr(item_request, 'procurement', None)
+    if procurement is None:
+        raise PermissionDenied
+
+    form = ItemRequestQuoteForm(request.POST, request.FILES)
+    if form.is_valid():
+        quote = form.save(commit=False)
+        quote.procurement = procurement
+        quote.uploaded_by = request.user
+        quote.save()
+        messages.success(request, f'Quote from {quote.supplier} added.')
+    else:
+        messages.error(request, 'Please correct the errors in the quote form.')
+    return redirect('supply_chain:item_request_procurement', pk=pk)
+
+
+@item_request_access_required
+@require_POST
+def item_request_quote_delete(request, pk, quote_id):
+    item_request = get_object_or_404(ItemRequest, pk=pk)
+    if not _is_supply_chain(request.user):
+        raise PermissionDenied
+    quote = get_object_or_404(ItemRequestQuote, pk=quote_id, procurement__request=item_request)
+    quote.delete()
+    messages.success(request, 'Quote removed.')
+    return redirect('supply_chain:item_request_procurement', pk=pk)
+
+
+@item_request_access_required
+@require_POST
+def item_request_type_add(request):
+    form = ItemRequestTypeQuickForm(request.POST)
+    if form.is_valid():
+        obj = form.save()
+        return JsonResponse({'ok': True, 'id': obj.id, 'name': obj.name})
+    return JsonResponse({'ok': False, 'errors': form.errors}, status=400)
+
+
+@item_request_access_required
+@require_POST
+def item_request_department_add(request):
+    form = DepartmentQuickForm(request.POST)
+    if form.is_valid():
+        obj = form.save()
+        return JsonResponse({'ok': True, 'id': obj.id, 'name': obj.name})
+    return JsonResponse({'ok': False, 'errors': form.errors}, status=400)
+
+
+@item_request_access_required
+def item_request_kpi_dashboard(request):
+    requests_qs = ItemRequest.objects.filter(is_active=True).select_related('request_type', 'department')
+
+    req_type = request.GET.get('type')
+    if req_type:
+        requests_qs = requests_qs.filter(request_type_id=req_type)
+    department = request.GET.get('department')
+    if department:
+        requests_qs = requests_qs.filter(department_id=department)
+
+    rows, summary = build_item_request_kpi_data(requests_qs)
+    summary['sla_breached_count'] = sum(
+        1 for r in requests_qs if r.is_open and sla_status(r)[2]
+    )
+
+    return render(request, 'supply_chain/item_request/kpi_dashboard.html', {
+        'kpi_rows': rows,
+        'kpi_summary': summary,
+        'types': ItemRequestType.objects.filter(is_active=True),
+        'departments': ItemRequestDepartment.objects.filter(is_active=True),
+        'filters': request.GET,
+    })
+
+
+@item_request_access_required
+def item_request_print(request, pk):
+    item_request = get_object_or_404(
+        ItemRequest.objects.select_related('request_type', 'department', 'machine', 'raised_by'),
+        pk=pk,
+    )
+    return render(request, 'supply_chain/item_request/print.html', {
+        'item_request': item_request,
+    })
+
+
+@item_request_access_required
+@require_POST
+def item_request_delete(request, pk):
+    if not request.user.is_superuser:
+        raise PermissionDenied
+    item_request = get_object_or_404(ItemRequest, pk=pk, is_active=True)
+    _soft_delete_item_request(item_request, request.user, request.POST.get('reason', ''))
+    messages.success(request, f'Item request {item_request.request_no or item_request.pk} deleted.')
+    return redirect('supply_chain:item_request_list')
+
+
+def _soft_delete_item_request(item_request, user, reason=''):
+    item_request.is_active = False
+    item_request.deleted_by = user
+    item_request.deleted_at = timezone.now()
+    item_request.save(update_fields=['is_active', 'deleted_by', 'deleted_at'])
+    ItemRequestApproval.objects.create(
+        request=item_request, actor=user, action='DELETE', stage='SUPPLY_CHAIN', comment=reason,
+    )
+
+
+@item_request_access_required
+@require_POST
+def item_request_bulk_delete(request):
+    if not request.user.is_superuser:
+        raise PermissionDenied
+    selected_ids = request.POST.getlist('selected_ids')
+    if not selected_ids:
+        messages.warning(request, 'No item requests selected.')
+        return redirect('supply_chain:item_request_list')
+
+    reason = request.POST.get('reason', '')
+    requests_qs = ItemRequest.objects.filter(pk__in=selected_ids, is_active=True)
+    count = 0
+    for item_request in requests_qs:
+        _soft_delete_item_request(item_request, request.user, reason)
+        count += 1
+    messages.success(request, f'Deleted {count} item request(s).')
+    return redirect('supply_chain:item_request_list')
+
+
+@item_request_access_required
+def item_request_change_edit(request, pk):
+    """Post-approval edit of an item request, routed through change management for non-admins."""
+    item_request = get_object_or_404(ItemRequest, pk=pk, is_active=True)
+    if item_request.status not in ('APPROVED', 'IN_PROCUREMENT', 'RECEIVED', 'CLOSED'):
+        raise PermissionDenied
+
+    if request.method == 'POST':
+        form = ItemRequestForm(request.POST, request.FILES, instance=item_request)
+        if form.is_valid():
+            if is_supply_chain_admin(request.user):
+                form.save()
+                ChangeRequest.objects.create(
+                    model_name='ItemRequest',
+                    action='UPDATE',
+                    target_id=item_request.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                    status='APPROVED',
+                    reviewed_by=request.user,
+                    reviewed_at=timezone.now(),
+                )
+                ItemRequestApproval.objects.create(
+                    request=item_request, actor=request.user, action='EDIT', stage='SUPPLY_CHAIN',
+                )
+                messages.success(request, f'Updated {item_request.request_no or item_request.pk}.')
+            else:
+                ChangeRequest.objects.create(
+                    model_name='ItemRequest',
+                    action='UPDATE',
+                    target_id=item_request.pk,
+                    proposed_data=serialize_cleaned_data(form.cleaned_data),
+                    requested_by=request.user,
+                )
+                ItemRequestApproval.objects.create(
+                    request=item_request, actor=request.user, action='EDIT_REQUESTED', stage='SUPPLY_CHAIN',
+                )
+                messages.info(request, 'Change submitted for admin review.')
+            return redirect('supply_chain:item_request_detail', pk=pk)
+    else:
+        form = ItemRequestForm(instance=item_request)
+
+    return render(request, 'supply_chain/item_request/form.html', {
+        'form': form,
+        'is_create': False,
+        'is_change_edit': True,
+        'item_request': item_request,
+    })
 

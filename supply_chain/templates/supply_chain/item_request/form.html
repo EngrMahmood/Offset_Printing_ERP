@@ -1,0 +1,144 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}{% if is_create %}New Item Request{% else %}Resubmit Item Request{% endif %}{% endblock %}
+{% block header_title %}{% if is_create %}New Item Request{% else %}Resubmit Item Request — {{ item_request.request_no|default:item_request.pk }}{% endif %}{% endblock %}
+{% block header_subtitle %}Fill in the item details for manager and supply-chain approval.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:item_request_list' %}" class="erp-btn erp-btn-secondary">Back to List</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            {% if not is_create %}
+            <div class="erp-alert erp-alert-warning">
+                Last decision: {{ item_request.approvals.last.get_action_display }} — {{ item_request.approvals.last.comment }}
+            </div>
+            {% endif %}
+            {% if duplicates %}
+            <div class="erp-alert erp-alert-warning">
+                <strong>Possible duplicate request(s) already open for this department:</strong>
+                <ul>
+                    {% for dup in duplicates %}
+                    <li><a href="{% url 'supply_chain:item_request_detail' dup.pk %}" target="_blank">{{ dup.request_no|default:dup.pk }} — {{ dup.item_title }} ({{ dup.get_status_display }})</a></li>
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endif %}
+            <form method="post" enctype="multipart/form-data" class="erp-form-grid" style="grid-template-columns:1fr 1fr; gap:16px; max-width:900px;">
+                {% csrf_token %}
+                {% if duplicates %}
+                <input type="hidden" name="confirm_duplicate" value="1">
+                {% endif %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="{{ form.request_type.id_for_label }}">Item Request Type</label>
+                    <div style="display:flex; gap:8px;">
+                        {{ form.request_type }}
+                        <button type="button" class="erp-btn erp-btn-secondary" onclick="document.getElementById('quick-add-type').classList.toggle('hidden')">＋</button>
+                    </div>
+                    {% if form.request_type.errors %}<div class="erp-alert erp-alert-danger">{{ form.request_type.errors|striptags }}</div>{% endif %}
+                    <div id="quick-add-type" class="hidden" style="margin-top:8px; display:flex; gap:8px;">
+                        <input type="text" id="new-type-name" class="erp-input" placeholder="Name (e.g. Spare Part)">
+                        <input type="text" id="new-type-code" class="erp-input" placeholder="Code (e.g. SPR)" maxlength="4" style="max-width:100px;">
+                        <button type="button" class="erp-btn erp-btn-primary" onclick="addRequestType()">Add</button>
+                    </div>
+                </div>
+
+                <div class="erp-input-group">
+                    <label class="erp-input-label" for="{{ form.department.id_for_label }}">Department</label>
+                    <div style="display:flex; gap:8px;">
+                        {{ form.department }}
+                        <button type="button" class="erp-btn erp-btn-secondary" onclick="document.getElementById('quick-add-dept').classList.toggle('hidden')">＋</button>
+                    </div>
+                    {% if form.department.errors %}<div class="erp-alert erp-alert-danger">{{ form.department.errors|striptags }}</div>{% endif %}
+                    <div id="quick-add-dept" class="hidden" style="margin-top:8px; display:flex; gap:8px;">
+                        <input type="text" id="new-dept-name" class="erp-input" placeholder="Department name">
+                        <button type="button" class="erp-btn erp-btn-primary" onclick="addDepartment()">Add</button>
+                    </div>
+                </div>
+
+                {% for field in form %}
+                    {% if field.name != 'request_type' and field.name != 'department' %}
+                    <div class="erp-input-group">
+                        <label class="erp-input-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                        {% if field.name == 'existing_sku' %}
+                        <input type="text" id="existing_sku_search" class="erp-input" placeholder="Search SKU / material name…" autocomplete="off" style="margin-bottom:6px;">
+                        {% endif %}
+                        {{ field }}
+                        {% if field.errors %}<div class="erp-alert erp-alert-danger">{{ field.errors|striptags }}</div>{% endif %}
+                    </div>
+                    {% endif %}
+                {% endfor %}
+
+                <div class="erp-actions" style="grid-column:1 / -1;">
+                    <button type="submit" class="erp-btn erp-btn-primary">{% if duplicates %}Submit Anyway{% elif is_create %}Submit Request{% else %}Resubmit Request{% endif %}</button>
+                    <a href="{% url 'supply_chain:item_request_list' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </section>
+    </div>
+
+    <script>
+        (function () {
+            const searchInput = document.getElementById('existing_sku_search');
+            const skuSelect = document.getElementById('{{ form.existing_sku.id_for_label }}');
+            if (!searchInput || !skuSelect) return;
+
+            const allOptions = Array.from(skuSelect.options);
+
+            searchInput.addEventListener('input', function () {
+                const term = searchInput.value.trim().toLowerCase();
+                skuSelect.innerHTML = '';
+                allOptions
+                    .filter(function (opt) {
+                        return !term || opt.text.toLowerCase().includes(term) || !opt.value;
+                    })
+                    .forEach(function (opt) {
+                        skuSelect.appendChild(opt);
+                    });
+            });
+        })();
+
+        function csrfToken() {
+            return document.querySelector('[name=csrfmiddlewaretoken]').value;
+        }
+        function addRequestType() {
+            const name = document.getElementById('new-type-name').value;
+            const code = document.getElementById('new-type-code').value;
+            fetch("{% url 'supply_chain:item_request_type_add' %}", {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken()},
+                body: `name=${encodeURIComponent(name)}&code=${encodeURIComponent(code)}`,
+            }).then(r => r.json()).then(data => {
+                if (data.ok) {
+                    const select = document.getElementById('{{ form.request_type.id_for_label }}');
+                    const opt = document.createElement('option');
+                    opt.value = data.id; opt.textContent = data.name; opt.selected = true;
+                    select.appendChild(opt);
+                    document.getElementById('quick-add-type').classList.add('hidden');
+                } else {
+                    alert('Could not add type: ' + JSON.stringify(data.errors));
+                }
+            });
+        }
+        function addDepartment() {
+            const name = document.getElementById('new-dept-name').value;
+            fetch("{% url 'supply_chain:item_request_department_add' %}", {
+                method: 'POST',
+                headers: {'Content-Type': 'application/x-www-form-urlencoded', 'X-CSRFToken': csrfToken()},
+                body: `name=${encodeURIComponent(name)}`,
+            }).then(r => r.json()).then(data => {
+                if (data.ok) {
+                    const select = document.getElementById('{{ form.department.id_for_label }}');
+                    const opt = document.createElement('option');
+                    opt.value = data.id; opt.textContent = data.name; opt.selected = true;
+                    select.appendChild(opt);
+                    document.getElementById('quick-add-dept').classList.add('hidden');
+                } else {
+                    alert('Could not add department: ' + JSON.stringify(data.errors));
+                }
+            });
+        }
+    </script>
+{% endblock %}

@@ -1,0 +1,77 @@
+<!doctype html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Item Request {{ item_request.request_no|default:item_request.pk }}</title>
+    <style>
+        body { font-family: Arial, Helvetica, sans-serif; color: #111; margin: 32px; }
+        .print-header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #333; padding-bottom: 12px; margin-bottom: 20px; }
+        .print-header h1 { font-size: 20px; margin: 0; }
+        .print-header .ir-id { font-size: 16px; font-weight: bold; }
+        table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+        td, th { border: 1px solid #999; padding: 6px 10px; font-size: 13px; text-align: left; vertical-align: top; }
+        th { background: #f0f0f0; width: 220px; }
+        .section-title { font-size: 14px; font-weight: bold; margin: 18px 0 6px; }
+        .signature-row { display: flex; justify-content: space-between; margin-top: 60px; }
+        .signature-box { width: 30%; border-top: 1px solid #333; padding-top: 6px; text-align: center; font-size: 12px; }
+        .no-print { margin-bottom: 16px; }
+        @media print {
+            .no-print { display: none; }
+            body { margin: 0.5in; }
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print">
+        <button onclick="window.print()">Print / Save as PDF</button>
+    </div>
+
+    <div class="print-header">
+        <h1>Utopia Printing &amp; Packaging — Item Request Form</h1>
+        <div class="ir-id">{{ item_request.request_no|default:'DRAFT' }}</div>
+    </div>
+
+    <div class="section-title">Request Details</div>
+    <table>
+        <tr><th>Item Request Type</th><td>{{ item_request.request_type.name }}</td></tr>
+        <tr><th>Request Date</th><td>{{ item_request.request_date }}</td></tr>
+        <tr><th>Item Title</th><td>{{ item_request.item_title }}</td></tr>
+        <tr><th>Machine Name / Model</th><td>{{ item_request.machine_display }}</td></tr>
+        <tr><th>Unit of Measure (UOM)</th><td>{{ item_request.uom }}</td></tr>
+        <tr><th>Specifications / Technical Details</th><td>{{ item_request.specifications }}</td></tr>
+        <tr><th>Description / Purpose of Use</th><td>{{ item_request.description|default:'—' }}</td></tr>
+        <tr><th>Dimensions (if applicable)</th><td>{{ item_request.dimensions|default:'—' }}</td></tr>
+        <tr><th>Local / Import</th><td>{{ item_request.get_local_import_display|default:'—' }}</td></tr>
+        <tr><th>Part Number</th><td>{{ item_request.part_number|default:'—' }}</td></tr>
+        <tr><th>Required Quantity</th><td>{{ item_request.required_quantity }}</td></tr>
+        <tr><th>Department</th><td>{{ item_request.department.name }}</td></tr>
+        <tr><th>Budget / Cost Centre</th><td>{{ item_request.cost_centre|default:'—' }}</td></tr>
+        <tr><th>Existing SKU</th><td>{{ item_request.existing_sku|default:'—' }}</td></tr>
+        <tr><th>Estimated Unit Price</th><td>{{ item_request.estimated_unit_price|default:'—' }}</td></tr>
+        <tr><th>Request by</th><td>{{ item_request.raised_by.get_full_name|default:item_request.raised_by.username }}</td></tr>
+        <tr><th>Status</th><td>{{ item_request.get_status_display }}</td></tr>
+    </table>
+
+    {% if item_request.approvals.all %}
+    <div class="section-title">Approval Log</div>
+    <table>
+        <tr><th>Date</th><th>Stage</th><th>Action</th><th>By</th><th>Comment</th></tr>
+        {% for a in item_request.approvals.all %}
+        <tr>
+            <td>{{ a.created_at|date:'Y-m-d H:i' }}</td>
+            <td>{{ a.get_stage_display }}</td>
+            <td>{{ a.get_action_display }}</td>
+            <td>{{ a.actor.username }}</td>
+            <td>{{ a.comment|default:'—' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+
+    <div class="signature-row">
+        <div class="signature-box">Requested By</div>
+        <div class="signature-box">Manager Approval</div>
+        <div class="signature-box">Supply Chain Approval</div>
+    </div>
+</body>
+</html>

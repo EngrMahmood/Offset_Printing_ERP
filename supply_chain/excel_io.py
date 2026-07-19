@@ -57,6 +57,23 @@ RAW_MATERIAL_SKU_HEADERS = [
 
 ITEM_HEADERS = RAW_MATERIAL_SKU_HEADERS
 
+ITEM_REQUEST_HEADERS = [
+    'IR-ID',
+    'Status',
+    'Type',
+    'Department',
+    'Item Title',
+    'Machine',
+    'UOM',
+    'Required Quantity',
+    'Local/Import',
+    'Part Number',
+    'Estimated Unit Price',
+    'Cost Centre',
+    'Raised By',
+    'Request Date',
+]
+
 ITEM_WISE_CONSUMPTION_HEADERS = [
     'Raw Material SKU',
     'Material Name',
@@ -305,6 +322,28 @@ def export_items(queryset, filename):
             'Yes' if item.is_active else 'No',
         ])
     return _write_workbook(filename, RAW_MATERIAL_SKU_HEADERS, rows)
+
+
+def export_item_requests(queryset, filename='item_requests.xlsx'):
+    rows = []
+    for req in queryset:
+        rows.append([
+            req.request_no or '',
+            req.get_status_display(),
+            req.request_type.name,
+            req.department.name,
+            req.item_title,
+            req.machine_display,
+            req.uom,
+            float(req.required_quantity),
+            req.get_local_import_display(),
+            req.part_number,
+            float(req.estimated_unit_price) if req.estimated_unit_price is not None else '',
+            req.cost_centre,
+            req.raised_by.username,
+            req.request_date.isoformat() if req.request_date else '',
+        ])
+    return _write_workbook(filename, ITEM_REQUEST_HEADERS, rows)
 
 
 def export_raw_material_sku_template(filename='raw_material_sku_template.xlsx'):

@@ -1,0 +1,169 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Item Request {{ item_request.request_no|default:item_request.pk }}{% endblock %}
+{% block header_title %}Item Request — {{ item_request.request_no|default:'Draft' }}{% endblock %}
+{% block header_subtitle %}{{ item_request.item_title }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:item_request_list' %}" class="erp-btn erp-btn-secondary">Back to List</a>
+    <a href="{% url 'supply_chain:item_request_print' item_request.pk %}" class="erp-btn erp-btn-secondary" target="_blank">Print / PDF</a>
+    {% if can_resubmit %}
+    <a href="{% url 'supply_chain:item_request_resubmit' item_request.pk %}" class="erp-btn erp-btn-primary">Edit & Resubmit</a>
+    {% endif %}
+    {% if can_change_edit %}
+    <a href="{% url 'supply_chain:item_request_change_edit' item_request.pk %}" class="erp-btn erp-btn-primary">Edit Request</a>
+    {% endif %}
+    {% if is_superuser %}
+    <form method="post" action="{% url 'supply_chain:item_request_delete' item_request.pk %}" onsubmit="return confirm('Delete this item request? This cannot be undone from the UI.');" style="display:inline;">
+        {% csrf_token %}
+        <button type="submit" class="erp-btn erp-btn-secondary text-red-600">Delete</button>
+    </form>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="grid grid-cols-4 gap-6">
+                <div><span class="erp-input-label">Status</span><br><span class="erp-badge">{{ item_request.get_status_display }}</span></div>
+                <div><span class="erp-input-label">Type</span><br>{{ item_request.request_type.name }}</div>
+                <div><span class="erp-input-label">Department</span><br>{{ item_request.department.name }}</div>
+                <div><span class="erp-input-label">Raised By</span><br>{{ item_request.raised_by.username }} on {{ item_request.request_date }}</div>
+            </div>
+            {% if sla_days_in_stage is not None %}
+            <div class="mt-4">
+                <span class="erp-input-label">SLA</span><br>
+                {% if sla_breached %}
+                <span class="erp-badge erp-badge-danger">Overdue — {{ sla_days_in_stage }}d in stage (limit {{ sla_limit }}d)</span>
+                {% else %}
+                <span class="erp-badge">On track — {{ sla_days_in_stage }}/{{ sla_limit }}d in stage</span>
+                {% endif %}
+            </div>
+            {% endif %}
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Request Details</h3>
+                </div>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <tbody>
+                        <tr><td><strong>Item Title</strong></td><td>{{ item_request.item_title }}</td></tr>
+                        <tr><td><strong>Machine</strong></td><td>{{ item_request.machine_display }}</td></tr>
+                        <tr><td><strong>UOM</strong></td><td>{{ item_request.uom }}</td></tr>
+                        <tr><td><strong>Specifications</strong></td><td>{{ item_request.specifications }}</td></tr>
+                        <tr><td><strong>Description</strong></td><td>{{ item_request.description|default:'—' }}</td></tr>
+                        <tr><td><strong>Dimensions</strong></td><td>{{ item_request.dimensions|default:'—' }}</td></tr>
+                        <tr><td><strong>Local / Import</strong></td><td>{{ item_request.get_local_import_display|default:'—' }}</td></tr>
+                        <tr><td><strong>Part Number</strong></td><td>{{ item_request.part_number|default:'—' }}</td></tr>
+                        <tr><td><strong>Required Quantity</strong></td><td>{{ item_request.required_quantity }}</td></tr>
+                        <tr><td><strong>Existing SKU</strong></td><td>{{ item_request.existing_sku|default:'—' }}</td></tr>
+                        <tr><td><strong>Estimated Unit Price</strong></td><td>{{ item_request.estimated_unit_price|default:'—' }}</td></tr>
+                        <tr><td><strong>Budget / Cost Centre</strong></td><td>{{ item_request.cost_centre|default:'—' }}</td></tr>
+                        <tr><td><strong>Attachment</strong></td><td>{% if item_request.attachment %}<a href="{{ item_request.attachment.url }}" target="_blank">View file</a>{% else %}—{% endif %}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        {% if can_review_manager or can_review_sc %}
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4">
+                <h3 class="erp-section-title">{% if can_review_manager %}Manager Review{% else %}Supply Chain Review{% endif %}</h3>
+            </div>
+            <form method="post" action="{% url 'supply_chain:item_request_review' item_request.pk %}">
+                {% csrf_token %}
+                <div class="erp-input-group">
+                    {% for radio in review_form.action %}
+                    <label style="margin-right:16px;">{{ radio.tag }} {{ radio.choice_label }}</label>
+                    {% endfor %}
+                </div>
+                <div class="erp-input-group">
+                    <label class="erp-input-label">Comment</label>
+                    {{ review_form.comment }}
+                </div>
+                <div class="erp-actions">
+                    <button type="submit" class="erp-btn erp-btn-primary">Submit Decision</button>
+                </div>
+            </form>
+        </section>
+        {% endif %}
+
+        {% if procurement %}
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4">
+                <h3 class="erp-section-title">Procurement Timeline</h3>
+                {% if can_edit_procurement %}
+                <a href="{% url 'supply_chain:item_request_procurement' item_request.pk %}" class="erp-btn erp-btn-secondary">Update Timeline</a>
+                {% endif %}
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <tbody>
+                        <tr><td><strong>Item Code</strong></td><td>{{ procurement.item_code|default:'—' }}</td></tr>
+                        <tr><td><strong>Code Opened Date</strong></td><td>{{ procurement.code_opened_date|default:'—' }}</td></tr>
+                        <tr><td><strong>Indent / PR No.</strong></td><td>{{ procurement.indent_pr_no|default:'—' }}</td></tr>
+                        <tr><td><strong>PR Date</strong></td><td>{{ procurement.pr_date|default:'—' }}</td></tr>
+                        <tr><td><strong>PO No.</strong></td><td>{{ procurement.po_no|default:'—' }}</td></tr>
+                        <tr><td><strong>PO Date</strong></td><td>{{ procurement.po_date|default:'—' }}</td></tr>
+                        <tr><td><strong>Supplier</strong></td><td>{{ procurement.supplier|default:'—' }}</td></tr>
+                        <tr><td><strong>Received Date</strong></td><td>{{ procurement.received_date|default:'—' }}</td></tr>
+                        <tr><td><strong>Unit Price</strong></td><td>{{ procurement.unit_price|default:'—' }}</td></tr>
+                        <tr><td><strong>Received Qty</strong></td><td>{{ procurement.received_qty|default:'—' }}</td></tr>
+                        <tr><td><strong>Remarks</strong></td><td>{{ procurement.remarks|default:'—' }}</td></tr>
+                    </tbody>
+                </table>
+            </div>
+            {% if procurement.quotes.all %}
+            <div class="erp-card-header mb-4 mt-4">
+                <h3 class="erp-section-title">Supplier Quotes</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Supplier</th><th>Quoted Price</th><th>Notes</th><th>File</th></tr></thead>
+                    <tbody>
+                        {% for q in procurement.quotes.all %}
+                        <tr>
+                            <td>{{ q.supplier }}</td>
+                            <td>{{ q.quoted_price|default:'—' }}</td>
+                            <td>{{ q.notes|default:'—' }}</td>
+                            <td><a href="{{ q.file.url }}" target="_blank">View</a></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </section>
+        {% endif %}
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header mb-4">
+                <h3 class="erp-section-title">Approval Log</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr><th>Date</th><th>Stage</th><th>Action</th><th>By</th><th>Comment</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for a in approvals %}
+                        <tr>
+                            <td>{{ a.created_at|date:'Y-m-d H:i' }}</td>
+                            <td>{{ a.get_stage_display }}</td>
+                            <td>{{ a.get_action_display }}</td>
+                            <td>{{ a.actor.username }}</td>
+                            <td>{{ a.comment|default:'—' }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5">No log entries yet.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

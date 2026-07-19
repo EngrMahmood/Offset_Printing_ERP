@@ -23,8 +23,20 @@
             {% endif %}
             {% if nav.can_access_supply_chain %}
             <a href="{% url 'supply_chain:dashboard' %}"
-               class="erp-topnav-module {% if app == 'supply_chain' %}is-active{% endif %}">
+               class="erp-topnav-module {% if app == 'supply_chain' and 'item_request' not in url %}is-active{% endif %}">
                 Supply Chain
+            </a>
+            {% endif %}
+            {% if nav.can_access_item_request %}
+            <a href="{% url 'supply_chain:item_request_list' %}"
+               class="erp-topnav-module {% if 'item_request' in url %}is-active{% endif %}">
+                Item Requests
+            </a>
+            {% endif %}
+            {% if nav.can_access_maintenance %}
+            <a href="{% url 'maintenance:dashboard' %}"
+               class="erp-topnav-module {% if app == 'maintenance' %}is-active{% endif %}">
+                Maintenance
             </a>
             {% endif %}
             {% if nav.can_access_planning %}
@@ -279,9 +291,55 @@
            class="erp-subnav-link {% if url == 'change_requests' or url == 'change_request_detail' %}is-active{% endif %}">
             Change Requests
         </a>
+        {% if nav.can_access_item_request %}
+        <a href="{% url 'supply_chain:item_request_list' %}"
+           class="erp-subnav-link {% if 'item_request' in url %}is-active{% endif %}">
+            Item Requests
+        </a>
+        {% endif %}
     </div>
 
     {% include 'theme/supply_chain_context_nav.html' %}
+
+    {% elif app == 'maintenance' and nav.can_access_maintenance %}
+    <div class="erp-subnav">
+        <a href="{% url 'maintenance:dashboard' %}"
+           class="erp-subnav-link {% if url == 'dashboard' %}is-active{% endif %}">
+            Dashboard
+        </a>
+        <a href="{% url 'maintenance:record_list' %}"
+           class="erp-subnav-link {% if url == 'record_list' %}is-active{% endif %}">
+            Records
+        </a>
+        <a href="{% url 'maintenance:record_create' %}"
+           class="erp-subnav-link {% if url == 'record_create' %}is-active{% endif %}">
+            New Record
+        </a>
+        <a href="{% url 'maintenance:downtime_list' %}"
+           class="erp-subnav-link {% if url == 'downtime_list' %}is-active{% endif %}">
+            Downtime
+        </a>
+    </div>
+
+    {% elif app == 'supply_chain' and nav.can_access_item_request %}
+    <div class="erp-subnav">
+        <a href="{% url 'supply_chain:item_request_list' %}"
+           class="erp-subnav-link {% if url == 'item_request_list' %}is-active{% endif %}">
+            All Requests
+        </a>
+        <a href="{% url 'supply_chain:item_request_create' %}"
+           class="erp-subnav-link {% if url == 'item_request_create' %}is-active{% endif %}">
+            New Request
+        </a>
+        <a href="{% url 'supply_chain:item_request_list' %}?mine=1"
+           class="erp-subnav-link">
+            My Requests
+        </a>
+        <a href="{% url 'supply_chain:item_request_kpi_dashboard' %}"
+           class="erp-subnav-link {% if url == 'item_request_kpi_dashboard' %}is-active{% endif %}">
+            KPIs
+        </a>
+    </div>
 
     {% elif app == 'migration' and nav.can_access_migration %}
     <div class="erp-subnav">
