@@ -163,10 +163,11 @@
         </div>
     </div>
 
+    <div id="mp-report-body">
     <!-- MACHINE SELECTION TABS -->
     <div class="machine-tabs">
         {% for machine_name, payload in data.machine_reports.items %}
-            <button class="machine-tab-btn {% if forloop.first %}is-active{% endif %}" data-target="tab-{{ forloop.counter }}">
+            <button class="machine-tab-btn {% if forloop.first %}is-active{% endif %}" data-target="tab-{{ forloop.counter }}" data-tab-name="{{ machine_name }}">
                 <i class="fa fa-industry"></i> {{ machine_name }}
             </button>
         {% endfor %}
@@ -220,6 +221,16 @@
                     </div>
                 </div>
 
+                <!-- Total Impressions & Hours Required -->
+                <div class="summary-card" style="border-top: 4px solid #7c3aed;">
+                    <div class="summary-card-header">Total Impressions &amp; Hours Required</div>
+                    <div class="summary-card-value" style="display: flex; justify-content: space-between; align-items: baseline;">
+                        <span>{{ payload.summary.total_impressions }} <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">Impr.</span></span>
+                        <span style="color: #7c3aed;">{{ payload.summary.total_load_hours }}h <span style="font-size: 12px; color: #94a3b8; font-weight: normal;">Required</span></span>
+                    </div>
+                    <div class="summary-card-sub">Run {{ payload.summary.estimated_runtime }}h + Setup {{ payload.summary.estimated_setup_time }}h</div>
+                </div>
+
                 <!-- Estimated Runtime -->
                 <div class="summary-card" style="border-top: 4px solid #eab308;">
                     <div class="summary-card-header">Time &amp; Setup Savings</div>
@@ -240,6 +251,17 @@
                         <div class="summary-card-sub" style="color: #b91c1c;">These orders are nearing the 14-day SLA deadline.</div>
                     </div>
                 {% endif %}
+
+                <!-- Size violations -->
+                {% if payload.summary.size_violations_count > 0 %}
+                    <div class="summary-card" style="border-top: 4px solid #f97316; background: #fff7ed;">
+                        <div class="summary-card-header" style="color: #9a3412;">SIZE WARNING</div>
+                        <div class="summary-card-value" style="color: #f97316;">
+                            {{ payload.summary.size_violations_count }} <span style="font-size: 12px; color: #9a3412; font-weight: normal;">Oversized Runs</span>
+                        </div>
+                        <div class="summary-card-sub" style="color: #9a3412;">These jobs exceed this pool's max sheet size - move to the size-gate machine.</div>
+                    </div>
+                {% endif %}
             </div>
 
             <!-- PLANNING REPORT SHEET -->
@@ -250,6 +272,7 @@
                             <th style="width: 35px; text-align: center;">Seq</th>
                             <th style="width: 120px;">PO Numbers</th>
                             <th style="width: 120px;">Job Cards</th>
+                            <th style="width: 150px;">Stages / Progress</th>
                             <th style="min-width: 190px;">SKU</th>
                             <th style="width: 45px; text-align: center;">PO Count</th>
                             <th style="width: 45px; text-align: center;">Age</th>
@@ -261,8 +284,13 @@
                             <th style="width: 50px;">Colors</th>
                             <th style="width: 40px; text-align: center;">Ups</th>
                             <th style="width: 70px;">Size</th>
-                            <th style="width: 60px;">Sheets</th>
+                            <th style="width: 60px;">Sheets Remaining</th>
                             <th style="width: 70px;">Finish Qty</th>
+                            <th style="width: 80px; text-align: right;">Total Impressions</th>
+                            <th style="width: 60px; text-align: center;">Hours</th>
+                            <th style="width: 50px; text-align: center;">Passes</th>
+                            <th style="width: 110px;">Actual Machine</th>
+                            <th style="width: 130px;">Warnings</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -271,6 +299,26 @@
                                 <td style="font-weight: 700; text-align: center; font-size: 13px;">{{ row.sequence }}</td>
                                 <td style="color: #475569; font-size: 11px; font-weight: 500; max-width: 120px; word-wrap: break-word;">{{ row.po_numbers }}</td>
                                 <td style="color: #475569; font-size: 11px; font-weight: 500; max-width: 120px; word-wrap: break-word;">{{ row.job_card_numbers }}</td>
+                                <td style="font-size: 10px; line-height: 1.4; max-width: 150px;">
+                                    {% for jd in row.jobs_detail %}
+                                        <div style="margin-bottom: 3px; {% if jd.is_excluded %}opacity: 0.5;{% endif %}">
+                                            <input type="checkbox"
+                                                   class="jc-selection-checkbox"
+                                                   data-jc-number="{{ jd.jc_number }}"
+                                                   {% if not jd.is_excluded %}checked{% endif %}
+                                                   {% if not data.can_edit_jc_selection %}disabled{% endif %}
+                                                   style="vertical-align: middle; margin-right: 3px;">
+                                            <span style="font-weight: 600; color: #334155;">{{ jd.jc_number }}</span>
+                                            <span style="color: #64748b;">— {{ jd.stage }}</span>
+                                            {% if jd.is_excluded %}
+                                                <span style="color: #ef4444; font-weight: 600;">(Excluded by planner)</span>
+                                            {% elif jd.production_state == 'partially_produced' %}
+                                                <span class="dot dot-attention" title="Partially produced"></span>
+                                                <span style="color: #eab308;">{{ jd.percent_done }}% done, {{ jd.remaining_sheets }} sheets left</span>
+                                            {% endif %}
+                                        </div>
+                                    {% endfor %}
+                                </td>
                                 <td style="font-weight: 700; font-size: 13px; color: #0f172a; word-break: break-all;">{{ row.sku }}</td>
                                 <td style="font-weight: 700; text-align: center;">{{ row.po_count }}</td>
                                 <td style="text-align: center;">{{ row.po_age_days }}d</td>
@@ -302,6 +350,18 @@
                                 <td>{{ row.print_sheet_size }}</td>
                                 <td>{{ row.print_sheet_quantity }}</td>
                                 <td>{{ row.finish_quantity }}</td>
+                                <td style="text-align: right;">{{ row.total_impressions }}</td>
+                                <td style="text-align: center;">{{ row.estimated_hours }}h</td>
+                                <td style="text-align: center; font-weight: 600;">{{ row.passes }}</td>
+                                <td style="font-size: 11px; color: #475569;">{{ row.actual_machine }}</td>
+                                <td style="font-size: 10px;">
+                                    {% if row.planner_override %}
+                                        <div style="color: #2563eb; font-weight: 600;" title="Planner explicitly assigned this machine, overriding the auto-suggested pool.">Planner override</div>
+                                    {% endif %}
+                                    {% for warning in row.size_warnings %}
+                                        <div style="color: #ef4444; font-weight: 600;">⚠ {{ warning }}</div>
+                                    {% endfor %}
+                                </td>
                             </tr>
                         {% endfor %}
                     </tbody>
@@ -309,64 +369,148 @@
             </div>
         </div>
     {% endfor %}
+
+    {% if data.maintenance_machines %}
+        <div class="summary-card" style="border-top: 4px solid #f97316; margin-top: 16px;">
+            <div class="summary-card-header" style="color: #9a3412;">Under Maintenance (excluded from planning)</div>
+            <div class="summary-card-sub">{{ data.maintenance_machines|join:", " }}</div>
+        </div>
+    {% endif %}
+    </div>
 </div>
 
 <script>
-document.addEventListener('DOMContentLoaded', function() {
-    // 1. Tab Navigation
-    const tabs = document.querySelectorAll('.machine-tab-btn');
-    const contents = document.querySelectorAll('.machine-tab-content');
-
-    tabs.forEach(btn => {
-        btn.addEventListener('click', function() {
-            tabs.forEach(b => b.classList.remove('is-active'));
-            contents.forEach(c => c.style.display = 'none');
-
-            this.classList.add('is-active');
-            const targetId = this.getAttribute('data-target');
-            document.getElementById(targetId).style.display = 'block';
-        });
-    });
-
-    // 2. AJAX Priority Changer (with full page reload to trigger scoring, sorting, and summary metrics recalculations)
+(function () {
     const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
-    const selects = document.querySelectorAll('.priority-select');
+    const jcSelectionUrlTemplate = "{% url 'reports:reports_api:machine_planning_jc_selection' 'PLACEHOLDER' %}";
+    let refreshing = false;
 
-    selects.forEach(select => {
-        select.addEventListener('change', function() {
-            const jobId = this.getAttribute('data-job-id');
-            const newPriority = this.value;
-            const selectElement = this;
-
-            selectElement.className = 'priority-select priority-' + newPriority;
-
-            const formData = new FormData();
-            formData.append('priority', newPriority);
-            formData.append('csrfmiddlewaretoken', csrfToken);
-
-            fetch(`/planning/job/${jobId}/priority/`, {
-                method: 'POST',
-                body: formData,
-                headers: {
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            })
-            .then(response => response.json())
-            .then(data => {
-                if (data.ok) {
-                    // Score recalculation requires sorting and summary cards updating.
-                    // A quick reload makes sure the entire sheet reorganizes smoothly!
-                    window.location.reload();
-                } else {
-                    alert('Error: ' + (data.error || 'Failed to update priority'));
-                }
-            })
-            .catch(error => {
-                console.error('Error:', error);
-                alert('An error occurred while updating priority.');
+    function wireTabs() {
+        const tabs = document.querySelectorAll('.machine-tab-btn');
+        const contents = document.querySelectorAll('.machine-tab-content');
+        tabs.forEach(btn => {
+            btn.addEventListener('click', function () {
+                tabs.forEach(b => b.classList.remove('is-active'));
+                contents.forEach(c => c.style.display = 'none');
+                this.classList.add('is-active');
+                document.getElementById(this.getAttribute('data-target')).style.display = 'block';
             });
         });
-    });
-});
+    }
+
+    function wirePriority() {
+        document.querySelectorAll('.priority-select').forEach(select => {
+            select.addEventListener('change', function () {
+                const jobId = this.getAttribute('data-job-id');
+                const newPriority = this.value;
+                this.className = 'priority-select priority-' + newPriority;
+
+                const formData = new FormData();
+                formData.append('priority', newPriority);
+                formData.append('csrfmiddlewaretoken', csrfToken);
+
+                fetch(`/planning/job/${jobId}/priority/`, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.ok) {
+                        // Refresh just the report body (scores/sequence/totals
+                        // depend on it) without a full page navigation reload.
+                        refreshReportBody();
+                    } else {
+                        alert('Error: ' + (data.error || 'Failed to update priority'));
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while updating priority.');
+                });
+            });
+        });
+    }
+
+    function wireJcSelection() {
+        document.querySelectorAll('.jc-selection-checkbox').forEach(checkbox => {
+            checkbox.addEventListener('change', function () {
+                const jcNumber = this.getAttribute('data-jc-number');
+                const isExcluded = !this.checked;
+                const url = jcSelectionUrlTemplate.replace('PLACEHOLDER', encodeURIComponent(jcNumber));
+
+                const formData = new FormData();
+                formData.append('is_excluded', isExcluded ? 'true' : 'false');
+                formData.append('csrfmiddlewaretoken', csrfToken);
+
+                fetch(url, {
+                    method: 'POST',
+                    body: formData,
+                    headers: { 'X-Requested-With': 'XMLHttpRequest' },
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if (data.ok) {
+                        refreshReportBody();
+                    } else {
+                        alert('Error: ' + (data.error || 'Failed to update JC selection'));
+                        this.checked = !this.checked;
+                    }
+                })
+                .catch(error => {
+                    console.error('Error:', error);
+                    alert('An error occurred while updating JC selection.');
+                    this.checked = !this.checked;
+                });
+            });
+        });
+    }
+
+    function wireAll() {
+        wireTabs();
+        wirePriority();
+        wireJcSelection();
+    }
+
+    // Fetches the current page and swaps in just the report body, so a
+    // priority/JC-selection edit reflects immediately without the visible
+    // flash and scroll reset of a full window.location.reload().
+    function refreshReportBody() {
+        if (refreshing) return;
+        refreshing = true;
+        const currentBody = document.getElementById('mp-report-body');
+        const activeTabName = document.querySelector('.machine-tab-btn.is-active');
+        const activeTabNameValue = activeTabName ? activeTabName.getAttribute('data-tab-name') : null;
+        currentBody.style.opacity = '0.5';
+
+        fetch(window.location.href, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(response => response.text())
+            .then(html => {
+                const parser = new DOMParser();
+                const newDoc = parser.parseFromString(html, 'text/html');
+                const newBody = newDoc.getElementById('mp-report-body');
+                if (!newBody) {
+                    // Fallback - couldn't find the container, do a full reload.
+                    window.location.reload();
+                    return;
+                }
+                currentBody.innerHTML = newBody.innerHTML;
+                currentBody.style.opacity = '';
+                wireAll();
+                if (activeTabNameValue) {
+                    const matchingTab = Array.from(document.querySelectorAll('.machine-tab-btn'))
+                        .find(btn => btn.getAttribute('data-tab-name') === activeTabNameValue);
+                    if (matchingTab) matchingTab.click();
+                }
+                refreshing = false;
+            })
+            .catch(error => {
+                console.error('Error refreshing report:', error);
+                window.location.reload();
+            });
+    }
+
+    document.addEventListener('DOMContentLoaded', wireAll);
+})();
 </script>
 {% endblock %}

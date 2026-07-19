@@ -11,6 +11,25 @@ def _json_primitive(value: Any) -> str:
     return str(value)
 
 
+def _report_totals_line(payload: dict, rows: list[dict[str, Any]]) -> str | None:
+    """Total Impressions / Hours summary line, Machine Planning only - other
+    reports (e.g. Manual Working) have their own unrelated 'total_impressions'
+    field, so this is gated on the report slug, not just key presence."""
+    slug = (payload.get('report') or {}).get('slug')
+    if slug != 'machine-planning' or not rows:
+        return None
+    total_impressions = sum(_to_number(row.get('total_impressions')) for row in rows)
+    total_hours = sum(_to_number(row.get('estimated_hours')) for row in rows)
+    return f'Total Impressions: {total_impressions:,.0f} — Total Hours: {total_hours:,.2f}h'
+
+
+def _to_number(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
 def _rowset_from_payload(payload: dict) -> list[dict[str, Any]]:
     data = payload.get('data') or {}
     if isinstance(data, list):
@@ -61,6 +80,9 @@ def export_as_csv(payload: dict) -> bytes:
     writer = csv.writer(output)
     writer.writerow([report_title])
     writer.writerow(['generated_at', payload.get('generated_at', '')])
+    totals_line = _report_totals_line(payload, rows)
+    if totals_line:
+        writer.writerow([totals_line])
     writer.writerow([])
 
     if not rows:
@@ -94,6 +116,9 @@ def export_as_xlsx(payload: dict) -> bytes:
     sheet.title = 'Report'
     sheet.append([report_title])
     sheet.append(['generated_at', payload.get('generated_at', '')])
+    totals_line = _report_totals_line(payload, rows)
+    if totals_line:
+        sheet.append([totals_line])
     sheet.append([])
 
     if not rows:
@@ -175,15 +200,21 @@ def export_as_pdf(payload: dict) -> bytes:
         alignment=0,
     )
 
-    min_col_width = 16 * mm
+    # Small enough that Machine Planning's 19 columns (with the narrow S#,
+    # colour/pass/hour columns) all fit on one landscape A4 page instead of
+    # spilling extra columns onto a second page - reduces paper usage.
+    min_col_width = 9 * mm
     max_columns = max(1, min(len(headers), int(usable_width // min_col_width)))
     header_chunks = [headers] if len(headers) <= max_columns else [headers[i:i + max_columns] for i in range(0, len(headers), max_columns)]
     stylesheet = getSampleStyleSheet()
     story = [
         Paragraph(f'<b>Offset Printing ERP - {report_title}</b>', stylesheet['Heading3']),
         Paragraph(f'Generated at: {generated_at} — Rows: {row_count}', stylesheet['Normal']),
-        Paragraph('<br/>', stylesheet['Normal']),
     ]
+    totals_line = _report_totals_line(payload, rows)
+    if totals_line:
+        story.append(Paragraph(totals_line, stylesheet['Normal']))
+    story.append(Paragraph('<br/>', stylesheet['Normal']))
 
     for chunk_index, chunk_headers in enumerate(header_chunks):
         table_data = [
@@ -195,24 +226,30 @@ def export_as_pdf(payload: dict) -> bytes:
                 for header in chunk_headers
             ])
 
-        # Dynamically set proportional column widths to prevent excessive wrapping of text fields
+        # Dynamically set proportional column widths to prevent excessive
+        # wrapping of text fields. Narrow numeric columns get a slim share so
+        # all 19 Machine Planning columns fit on one page; kept <=1.0 total
+        # (it previously summed to 1.06, silently overflowing the page).
         widths_map = {
-            'sequence': 0.05,        # 5% of usable width
-            'po_count': 0.04,        # 4%
-            'po_age_days': 0.04,     # 4%
-            'ai_score': 0.04,        # 4%
-            'colors': 0.04,          # 4%
-            'ups': 0.04,             # 4%
-            'status': 0.06,          # 6%
-            'priority_display': 0.07, # 7%
-            'machine_name': 0.06,    # 6%
-            'material': 0.08,        # 8%
-            'print_sheet_size': 0.08, # 8%
-            'print_sheet_quantity': 0.06, # 6%
-            'finish_quantity': 0.07,  # 7%
-            'sku': 0.11,             # 11%
-            'po_numbers': 0.11,      # 11%
-            'job_card_numbers': 0.11, # 11%
+            'sequence': 0.025,          # S# - very narrow
+            'po_count': 0.03,
+            'po_age_days': 0.03,
+            'ai_score': 0.035,
+            'colors': 0.03,
+            'ups': 0.03,
+            'passes': 0.03,
+            'estimated_hours': 0.035,
+            'total_impressions': 0.05,
+            'status': 0.05,
+            'priority_display': 0.055,
+            'machine_name': 0.06,
+            'print_sheet_size': 0.05,
+            'print_sheet_quantity': 0.05,
+            'finish_quantity': 0.05,
+            'material': 0.06,
+            'sku': 0.09,
+            'po_numbers': 0.09,
+            'job_card_numbers': 0.09,
         }
         
         col_widths = []

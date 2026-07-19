@@ -7,7 +7,7 @@ from django.utils.html import format_html
 from django.utils.safestring import mark_safe
 
 
-from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, DeliveryLocation, PrintColor, ProductType, Material, Operator, Supervisor, Sorter, UserProfile, ChangeLog, EditOverrideRequest, Vendor, Notification, NotificationEvent, NotificationRule, WorkflowTransition, NotificationRuleAuditLog, PasswordResetRequest
+from .models import JobCard, Production, ProductionDowntime, Dispatch, Machine, Department, DeliveryLocation, PrintColor, ProductType, ApplicationType, Material, Operator, Supervisor, Sorter, UserProfile, ChangeLog, EditOverrideRequest, Vendor, Notification, NotificationEvent, NotificationRule, WorkflowTransition, NotificationRuleAuditLog, PasswordResetRequest
 
 User = get_user_model()
 
@@ -320,8 +320,25 @@ class SupervisorAdmin(admin.ModelAdmin):
 
 @admin.register(Machine)
 class MachineAdmin(admin.ModelAdmin):
-    list_display = ['name', 'standard_impressions_per_hour', 'plate_life_impressions', 'is_active']
-    search_fields = ['name']
+    list_display = [
+        'name', 'machine_type', 'machine_group_code', 'default_colors', 'operational_colors',
+        'standard_impressions_per_hour', 'plate_life_impressions', 'is_active',
+    ]
+    list_filter = ['machine_type', 'machine_group_code', 'is_active']
+    search_fields = ['name', 'machine_group_code']
+    fieldsets = (
+        (None, {'fields': ('name', 'machine_type', 'machine_group_code', 'is_active')}),
+        ('Colour (offset printing only)', {'fields': ('default_colors', 'operational_colors')}),
+        ('Print size range (mm)', {
+            'fields': (
+                ('min_print_length_mm', 'min_print_width_mm'),
+                ('max_print_length_mm', 'max_print_width_mm'),
+            ),
+        }),
+        ('Speed & setup', {
+            'fields': ('standard_impressions_per_hour', 'standard_setup_minutes_per_color', 'plate_life_impressions'),
+        }),
+    )
 
 @admin.register(Department)
 class DepartmentAdmin(admin.ModelAdmin):
@@ -335,6 +352,11 @@ class DeliveryLocationAdmin(admin.ModelAdmin):
 
 @admin.register(ProductType)
 class ProductTypeAdmin(admin.ModelAdmin):
+    search_fields = ['name']
+
+
+@admin.register(ApplicationType)
+class ApplicationTypeAdmin(admin.ModelAdmin):
     search_fields = ['name']
 
 

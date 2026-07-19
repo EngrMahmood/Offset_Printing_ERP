@@ -208,12 +208,7 @@ class SkuRecipeForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
 
-        app_field = self.fields['application']
-        app_field.widget = forms.Select(choices=APPLICATION_CHOICES, attrs={'class': 'erp-select'})
-        app_field.required = True
-        app_field.widget.attrs.setdefault('required', 'required')
-
-        from core.models import Machine, Material, ProductType
+        from core.models import ApplicationType, Machine, Material, ProductType
         from core.print_colors import get_print_color_choices
 
         def _current_field_value(field_name):
@@ -224,6 +219,16 @@ class SkuRecipeForm(forms.ModelForm):
             if self.instance is not None:
                 return getattr(self.instance, field_name, None)
             return None
+
+        application_types = ApplicationType.objects.all().order_by('name')
+        application_choices = [('', 'Select Application')] + [(item.name, item.name) for item in application_types]
+        current_application = _current_field_value('application')
+        if current_application and current_application not in [item.name for item in application_types]:
+            application_choices.append((current_application, current_application))
+        app_field = self.fields['application']
+        app_field.widget = forms.Select(choices=application_choices, attrs={'class': 'erp-select'})
+        app_field.required = True
+        app_field.widget.attrs.setdefault('required', 'required')
 
         product_types = ProductType.objects.all().order_by('name')
         product_type_choices = [('', 'Select Product Type')] + [(item.name, item.name) for item in product_types]

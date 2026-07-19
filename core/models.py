@@ -14,7 +14,22 @@ from production.services import OEECalculator
 # =========================
 
 class Machine(models.Model):
+    MACHINE_TYPE_CHOICES = [
+        ('offset_printing', 'Offset Printing'),
+        ('digital_printing', 'Digital Printing'),
+        ('cutting', 'Cutting'),
+        ('other', 'Other'),
+    ]
+
     name = models.CharField(max_length=100, unique=True)
+    machine_type = models.CharField(
+        max_length=30,
+        choices=MACHINE_TYPE_CHOICES,
+        default='other',
+        blank=True,
+        help_text="What kind of machine this is. Colour/size fields below only apply to "
+                  "Offset Printing machines - fill them in only where they're relevant.",
+    )
     standard_impressions_per_hour = models.FloatField(default=4000, help_text="Standard printing speed in impressions per hour")
     standard_setup_minutes_per_color = models.FloatField(
         default=15,
@@ -25,10 +40,39 @@ class Machine(models.Model):
         help_text="Impressions one plate set can run before a replacement set is needed",
     )
 
+    default_colors = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Nominal colour capacity of the machine (e.g. 1 or 2). Offset printing machines only.",
+    )
+    operational_colors = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Currently working colour units. 0 = under maintenance; "
+                   "lower than default_colors = temporarily degraded. Offset printing machines only.",
+    )
+    min_print_length_mm = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    min_print_width_mm = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    max_print_length_mm = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    max_print_width_mm = models.DecimalField(max_digits=8, decimal_places=2, null=True, blank=True)
+    machine_group_code = models.CharField(
+        max_length=20,
+        blank=True,
+        help_text="Stable code used to group machines by colour class, e.g. GTO1, GTO2, SM74",
+    )
+
     is_active = models.BooleanField(default=True)
 
     def __str__(self):
         return self.name
+
+    @property
+    def is_under_maintenance(self):
+        return self.operational_colors == 0
+
+    @property
+    def effective_colors(self):
+        if self.operational_colors:
+            return self.operational_colors
+        return self.default_colors or 1
 
 
 class Department(models.Model):
@@ -57,6 +101,21 @@ class ProductType(models.Model):
         ordering = ['name']
         verbose_name = 'Product Type'
         verbose_name_plural = 'Product Types'
+
+    def __str__(self):
+        return self.name
+
+
+class ApplicationType(models.Model):
+    """Master list for SkuRecipe/PlanningJob 'application' values
+    (UV, Lamination Gloss, Lamination Matt, NO, ...), editable by
+    planners/admins instead of being hard-coded in planning/forms.py."""
+    name = models.CharField(max_length=100, unique=True)
+
+    class Meta:
+        ordering = ['name']
+        verbose_name = 'Application Type'
+        verbose_name_plural = 'Application Types'
 
     def __str__(self):
         return self.name

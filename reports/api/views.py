@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from django.contrib.auth.decorators import login_required
 from django.core.exceptions import PermissionDenied
 from django.http import HttpResponse, JsonResponse
 from django.views.decorators.http import require_GET
@@ -8,10 +9,12 @@ from django.views.decorators.http import require_POST
 # Ensure built-in reports are registered on import.
 from reports.report_registry import builtin_reports  # noqa: F401
 from reports.report_engine import run_report
+from reports.report_engine.engine import bump_cache_version
 from reports.report_registry import registry
 from reports.export.services import export_as_csv, export_as_pdf, export_as_xlsx
-from reports.models import ScheduledReport
+from reports.models import MachinePlanningJcSelection, ScheduledReport
 from reports.scheduler.services import calculate_next_run
+from reports.services import _can_edit_jc_selection
 
 
 @require_GET
@@ -89,6 +92,26 @@ def export_report_api(request, slug):
     response = HttpResponse(content, content_type='text/csv; charset=utf-8')
     response['Content-Disposition'] = f'attachment; filename="{filename_base}.csv"'
     return response
+
+
+@login_required
+@require_POST
+def machine_planning_jc_selection_api(request, jc_number):
+    """V2 plan item 3: toggle whether a JC is included in its combined
+    Machine Planning run. Shared state (not per-user); only Planner/Manager/
+    Admin (or superuser) may change it."""
+    if not _can_edit_jc_selection(request.user):
+        return JsonResponse({'ok': False, 'error': 'Only Planner, Manager, or Admin can change JC selection.'}, status=403)
+
+    is_excluded_raw = (request.POST.get('is_excluded') or '').strip().lower()
+    is_excluded = is_excluded_raw in {'1', 'true', 'yes', 'on'}
+
+    selection, _ = MachinePlanningJcSelection.objects.update_or_create(
+        jc_number=jc_number,
+        defaults={'is_excluded': is_excluded, 'updated_by': request.user},
+    )
+    bump_cache_version()
+    return JsonResponse({'ok': True, 'jc_number': jc_number, 'is_excluded': selection.is_excluded})
 
 
 @require_GET

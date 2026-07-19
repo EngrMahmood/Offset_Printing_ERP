@@ -41,7 +41,21 @@
 </div>
 {% endwith %}
 
-{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.application label='Application (UV / Lamination Gloss / Lamination Matt / NO)' required=True %}
+{% with field=form.application.field %}
+<div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">
+    <span class="sku-recipe-field__badge{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">{{ field.sku_role_label }}</span>
+    <label for="{{ form.application.id_for_label }}">Application (UV / Lamination Gloss / Lamination Matt / NO) <span>*</span></label>
+    <div style="display:flex; gap:8px; align-items:center;">
+        {{ form.application }}
+        {% if not is_readonly %}
+            {% if can_admin_actions or sku_recipe_viewer_role == 'planner' %}
+            <button type="button" class="erp-btn erp-btn-secondary sm" onclick="quickAddApplication()" title="Add application">+</button>
+            {% endif %}
+        {% endif %}
+    </div>
+    {% if form.application.errors %}<div class="erp-form-error">{{ form.application.errors.0 }}</div>{% endif %}
+</div>
+{% endwith %}
 
 {% with field=form.product_type.field %}
 <div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">
@@ -57,7 +71,19 @@
 </div>
 {% endwith %}
 
-{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.machine_name label='Machine Name' required=True %}
+{% with field=form.machine_name.field %}
+<div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">
+    <span class="sku-recipe-field__badge{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">{{ field.sku_role_label }}</span>
+    <label for="{{ form.machine_name.id_for_label }}">Machine Name <span>*</span></label>
+    <div style="display:flex; gap:8px; align-items:center;">
+        {{ form.machine_name }}
+        {% if can_admin_actions and not is_readonly %}
+        <button type="button" class="erp-btn erp-btn-secondary sm" onclick="quickAddMachine()" title="Add machine">+</button>
+        {% endif %}
+    </div>
+    {% if form.machine_name.errors %}<div class="erp-form-error">{{ form.machine_name.errors.0 }}</div>{% endif %}
+</div>
+{% endwith %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.print_passes label='No. of Passes' required=True help_text='Press passes for this SKU (1, 2, 3, or 4). Not used for Cut & Pack.' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.default_unit_cost label='Default Unit Cost' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.daily_demand label='Daily Demand' %}

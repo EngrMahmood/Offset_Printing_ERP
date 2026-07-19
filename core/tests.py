@@ -357,3 +357,271 @@ class PrintColorNormalizationTests(TestCase):
         self.assertEqual(normalize_color_spec_value('4 color'), '4')
         self.assertEqual(normalize_color_spec_value('4C'), '4')
 
+
+class MasterDataAddNewEntryTests(TestCase):
+    """Admin can add new Machines/Application Types (and other master data)
+    directly from the Master Data screen, not just edit existing rows."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.admin = User.objects.create_user(username='md_admin_add', password='pass12345')
+        from .models import UserProfile
+        profile = UserProfile.objects.get(user=self.admin)
+        profile.role = 'admin'
+        profile.save(update_fields=['role'])
+        self.client.login(username='md_admin_add', password='pass12345')
+
+    def test_admin_can_create_new_machine_from_master_data(self):
+        response = self.client.post(reverse('master_data'), {
+            'entity_type': 'machine',
+            'action': 'create_master',
+            'new_name': 'Brand New GTO',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(Machine.objects.filter(name='Brand New GTO').exists())
+
+    def test_admin_can_create_new_application_type_from_master_data(self):
+        from .models import ApplicationType
+        response = self.client.post(reverse('master_data'), {
+            'entity_type': 'application',
+            'action': 'create_master',
+            'new_name': 'Spot UV',
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(ApplicationType.objects.filter(name='Spot UV').exists())
+
+    def test_create_master_rejects_duplicate_name(self):
+        from .models import ApplicationType
+        ApplicationType.objects.create(name='Foil Stamp')
+        response = self.client.post(reverse('master_data'), {
+            'entity_type': 'application',
+            'action': 'create_master',
+            'new_name': 'foil stamp',  # case-insensitive duplicate
+        })
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(ApplicationType.objects.filter(name__iexact='foil stamp').count(), 1)
+
+
+class QuickAddMasterTests(TestCase):
+    """quick_add_master powers the '+' buttons on the SKU master-entry form
+    (Application, Machine, Material, Product Type)."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.planner = User.objects.create_user(username='qam_planner', password='pass12345')
+        from .models import UserProfile
+        UserProfile.objects.filter(user=self.planner).update(role='planner')
+
+    def test_planner_can_quick_add_application_type(self):
+        from .models import ApplicationType
+        self.client.login(username='qam_planner', password='pass12345')
+        response = self.client.post(reverse('quick_add_master'), {
+            'type': 'application',
+            'name': 'Spot UV',
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['ok'])
+        self.assertTrue(data['created'])
+        self.assertTrue(ApplicationType.objects.filter(name='Spot UV').exists())
+
+    def test_quick_add_application_reuses_existing_case_insensitively(self):
+        from .models import ApplicationType
+        ApplicationType.objects.create(name='Foil Stamp')
+        self.client.login(username='qam_planner', password='pass12345')
+        response = self.client.post(reverse('quick_add_master'), {
+            'type': 'application',
+            'name': 'foil stamp',
+        })
+        data = response.json()
+        self.assertTrue(data['ok'])
+        self.assertFalse(data['created'])
+        self.assertEqual(ApplicationType.objects.filter(name__iexact='foil stamp').count(), 1)
+
+    def test_quick_add_application_requires_planner_or_admin(self):
+        User = get_user_model()
+        from .models import UserProfile
+        qc_user = User.objects.create_user(username='qam_qc', password='pass12345')
+        UserProfile.objects.filter(user=qc_user).update(role='qc')
+        self.client.login(username='qam_qc', password='pass12345')
+        response = self.client.post(reverse('quick_add_master'), {
+            'type': 'application',
+            'name': 'Spot UV',
+        })
+        self.assertEqual(response.status_code, 403)
+
+    def test_planner_can_quick_add_machine(self):
+        self.client.login(username='qam_planner', password='pass12345')
+        response = self.client.post(reverse('quick_add_master'), {
+            'type': 'machine',
+            'name': 'Quick Add Machine',
+        })
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertTrue(data['ok'])
+        self.assertTrue(Machine.objects.filter(name='Quick Add Machine').exists())
+
+
+class MasterDataMachinePrintSizeTests(TestCase):
+    """Machine print size is entered in inches on the Master Data screen
+    (matching how planners record sheet sizes) and stored internally in
+    mm - verifies the conversion round-trips correctly."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.admin = User.objects.create_user(username='md_admin', password='pass12345')
+        from .models import UserProfile
+        profile = UserProfile.objects.get(user=self.admin)
+        profile.role = 'admin'
+        profile.save(update_fields=['role'])
+        self.machine = Machine.objects.create(name='Test SM74', is_active=True)
+
+    def test_inches_input_converts_to_mm_on_save(self):
+        self.client.login(username='md_admin', password='pass12345')
+        response = self.client.post(reverse('master_data'), {
+            'entity_type': 'machine',
+            'action': 'edit_master',
+            'record_id': self.machine.id,
+            'new_name': self.machine.name,
+            'standard_impressions_per_hour': '4000',
+            'standard_setup_minutes_per_color': '15',
+            'plate_life_impressions': '25000',
+            'max_print_length_in': '29.13',  # ~740mm
+            'max_print_width_in': '41.34',   # ~1050mm
+        })
+        self.assertEqual(response.status_code, 302)
+        self.machine.refresh_from_db()
+        self.assertAlmostEqual(float(self.machine.max_print_length_mm), 740.0, delta=0.5)
+        self.assertAlmostEqual(float(self.machine.max_print_width_mm), 1050.0, delta=0.5)
+
+
+class SkuPreferredMachineLearningTests(TestCase):
+    """Part C: actual production machine should write back to the SKU
+    master's preferred machine, unless explicitly locked."""
+
+    def setUp(self):
+        self.machine = Machine.objects.create(name='GTO 2A', is_active=True)
+        self.other_machine = Machine.objects.create(name='SM 74', is_active=True)
+
+        from planning.models import PlanningJob, SkuRecipe
+        self.recipe = SkuRecipe.objects.create(sku='SKU-LEARN-1', machine_name='', is_active=True)
+        self.pj = PlanningJob.objects.create(
+            jc_number='JC-LEARN-1', order_qty=100, status='released',
+            plan_date=date.today(), plan_month='July 2026', sku='SKU-LEARN-1',
+        )
+        self.jc = JobCard.objects.create(
+            job_card_no='JC-LEARN-1', planning_job=self.pj, order_qty=100,
+            total_sheet_quantity=100, status='in_production', is_active=True,
+            SKU='SKU-LEARN-1', po_date=date.today(), machine_name=self.machine,
+            total_impressions_required=100, total_colors=4,
+        )
+
+    def test_production_save_writes_back_actual_machine_to_sku_master(self):
+        from planning.models import SkuRecipe
+
+        Production.objects.create(
+            entry_type='printing', job_card=self.jc, date=date.today(), shift='A',
+            output_sheets=100, status='completed', machine=self.machine,
+        )
+        self.recipe.refresh_from_db()
+        self.assertEqual(self.recipe.machine_name, 'GTO 2A')
+
+    def test_locked_sku_master_is_not_overwritten(self):
+        from planning.models import SkuRecipe
+
+        self.recipe.machine_name = 'SM 74'
+        self.recipe.machine_name_locked = True
+        self.recipe.save(update_fields=['machine_name', 'machine_name_locked'])
+
+        Production.objects.create(
+            entry_type='printing', job_card=self.jc, date=date.today(), shift='A',
+            output_sheets=100, status='completed', machine=self.machine,
+        )
+        self.recipe.refresh_from_db()
+        self.assertEqual(self.recipe.machine_name, 'SM 74')
+
+
+class MachineRoutingTests(TestCase):
+    def _make_fleet(self):
+        gto1a = Machine.objects.create(name='GTO 1A', machine_type='offset_printing', machine_group_code='GTO1', default_colors=1, operational_colors=1)
+        gto1b = Machine.objects.create(name='GTO 1B', machine_type='offset_printing', machine_group_code='GTO1', default_colors=1, operational_colors=1)
+        gto2a = Machine.objects.create(name='GTO 2A', machine_type='offset_printing', machine_group_code='GTO2', default_colors=2, operational_colors=2)
+        gto2b = Machine.objects.create(name='GTO 2B', machine_type='offset_printing', machine_group_code='GTO2', default_colors=2, operational_colors=2)
+        gto2c = Machine.objects.create(name='GTO 2C', machine_type='offset_printing', machine_group_code='GTO2', default_colors=2, operational_colors=2)
+        sm74 = Machine.objects.create(
+            name='SM 74', machine_type='offset_printing', machine_group_code='SM74', default_colors=5, operational_colors=5,
+            max_print_length_mm=740, max_print_width_mm=1050,
+        )
+        for m in (gto1a, gto1b, gto2a, gto2b, gto2c):
+            m.max_print_length_mm = 520
+            m.max_print_width_mm = 740
+            m.save()
+        return [gto1a, gto1b, gto2a, gto2b, gto2c, sm74]
+
+    def test_color_class_treats_symmetric_plus_as_single_colour(self):
+        from core.machine_routing import color_class
+
+        self.assertEqual(color_class('1+1'), 1)
+        self.assertEqual(color_class('4+4'), 4)
+        self.assertEqual(color_class('4'), 4)
+
+    def test_one_color_job_routes_to_gto1_pool_named(self):
+        from core.machine_routing import build_pools, route_job
+
+        machines = self._make_fleet()
+        pools = build_pools(machines)
+        result = route_job('1', '18*25', pools, size_gate_machine_code='SM74')
+        self.assertEqual(result['pool_key'], 'GTO1')
+        self.assertIn('GTO 1A', result['pool_label'])
+        self.assertIn('GTO 1B', result['pool_label'])
+        self.assertEqual(result['passes'], 1)
+
+    def test_three_color_job_routes_to_gto2_with_two_passes(self):
+        from core.machine_routing import build_pools, route_job
+
+        machines = self._make_fleet()
+        pools = build_pools(machines)
+        result = route_job('3', '18*25', pools, size_gate_machine_code='SM74')
+        self.assertEqual(result['pool_key'], 'GTO2')
+        self.assertEqual(result['passes'], 2)
+
+    def test_oversized_job_routes_to_sm74_regardless_of_color(self):
+        from core.machine_routing import build_pools, route_job
+
+        machines = self._make_fleet()
+        pools = build_pools(machines)
+        # 30x40 inches -> 762x1016mm, exceeds the GTO groups' 520x740mm max.
+        result = route_job('1', '30*40', pools, size_gate_machine_code='SM74')
+        self.assertEqual(result['pool_key'], 'SM74')
+
+    def test_front_back_1plus1_routes_to_gto1(self):
+        from core.machine_routing import build_pools, route_job
+
+        machines = self._make_fleet()
+        pools = build_pools(machines)
+        result = route_job('1+1', '18*25', pools, size_gate_machine_code='SM74')
+        self.assertEqual(result['pool_key'], 'GTO1')
+
+    def test_degraded_two_color_machine_joins_single_color_pool(self):
+        from core.machine_routing import build_pools
+
+        machines = self._make_fleet()
+        gto2a = next(m for m in machines if m.name == 'GTO 2A')
+        gto2a.operational_colors = 1
+        gto2a.save()
+        pools = build_pools(machines)
+        gto1_pool = pools['GTO1']
+        self.assertIn('GTO 2A', [m.name for m in gto1_pool.members])
+
+    def test_maintenance_machine_excluded_from_pools(self):
+        from core.machine_routing import build_pools
+
+        machines = self._make_fleet()
+        gto1b = next(m for m in machines if m.name == 'GTO 1B')
+        gto1b.operational_colors = 0
+        gto1b.save()
+        pools = build_pools(machines)
+        gto1_pool = pools['GTO1']
+        self.assertNotIn('GTO 1B', [m.name for m in gto1_pool.members])
+        self.assertIn('GTO 1B', [m.name for m in gto1_pool.maintenance_members])
+

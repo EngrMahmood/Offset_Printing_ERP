@@ -30,6 +30,7 @@
         input[type="text"], input[type="number"] { width: 100%; min-width: 160px; box-sizing: border-box; padding: 6px 8px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 12px; }
         .edit-grid { display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 6px; align-items: center; }
         .edit-grid.operator { grid-template-columns: repeat(2, minmax(150px, 1fr)); }
+        .offset-only-fields { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(3, minmax(150px, 1fr)); gap: 6px; }
         .compact-note { font-size: 10px; color: #5f6f84; }
         .muted { color: #6b7280; font-size: 12px; }
         .badge-on { background: #e6f4ea; color: #1e6d33; border-radius: 999px; padding: 3px 10px; font-size: 12px; font-weight: 600; }
@@ -58,16 +59,32 @@
     </div>
 
     <div class="card">
-        <p class="muted">Use this screen to correct or maintain master values used across planning, production, and job cards. Department and delivery location names are auto-synced from planning jobs and PO intake; product types are auto-synced from SKU master recipes when you open this page.</p>
+        <p class="muted">Use this screen to correct or maintain master values used across planning, production, and job cards. Department and delivery location names are auto-synced from planning jobs and PO intake; product types are auto-synced from SKU master recipes when you open this page. Machine print sizes are entered in inches (matching how sheet sizes are recorded on planning jobs) and stored internally in mm - no manual conversion needed.</p>
 
 
         <h2 class="section-header">Machines</h2>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="machine">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="New machine name" required>
+            <button type="submit" class="btn btn-green">Add Machine</button>
+        </form>
+        <div class="compact-note" style="margin-bottom:8px;">Adds with default speed/colours - edit the row below to set group code, colours, and print size.</div>
+        {% endif %}
         <div class="table-shell">
         <table>
             <thead>
                 <tr>
                     <th>ID</th>
                     <th>Machine Name / Settings</th>
+                    <th>Type</th>
+                    <th>Group Code</th>
+                    <th>Default Colors</th>
+                    <th>Operational Colors</th>
+                    <th>Print Size Min (in)</th>
+                    <th>Print Size Max (in)</th>
                     <th>Status</th>
                     <th>Speed (imp/hr)</th>
                     <th>Setup Min/Color</th>
@@ -90,16 +107,43 @@
                             <input type="hidden" name="record_id" value="{{ row.record.id }}">
                             <div class="edit-grid">
                                 <input type="text" name="new_name" value="{{ row.record.name }}" required placeholder="Machine name">
+                                <select name="machine_type" class="machine-type-select">
+                                    {% for code, label in machine_type_choices %}
+                                        <option value="{{ code }}" {% if row.record.machine_type == code %}selected{% endif %}>{{ label }}</option>
+                                    {% endfor %}
+                                </select>
                                 <input type="number" name="standard_impressions_per_hour" value="{{ row.record.standard_impressions_per_hour }}" min="0.01" step="0.01" required placeholder="Speed (imp/hr)">
                                 <input type="number" name="standard_setup_minutes_per_color" value="{{ row.record.standard_setup_minutes_per_color }}" min="0.01" step="0.01" required placeholder="Setup min/color">
                                 <input type="number" name="plate_life_impressions" value="{{ row.record.plate_life_impressions }}" min="1" step="1" required placeholder="Plate life (imp/set)">
+                                <div class="offset-only-fields" {% if row.record.machine_type != 'offset_printing' %}style="display:none;"{% endif %}>
+                                    <input type="text" name="machine_group_code" value="{{ row.record.machine_group_code }}" placeholder="Group code (e.g. GTO1)">
+                                    <input type="number" name="default_colors" value="{{ row.record.default_colors|default_if_none:'' }}" min="1" step="1" placeholder="Default colors">
+                                    <input type="number" name="operational_colors" value="{{ row.record.operational_colors|default_if_none:'' }}" min="0" step="1" placeholder="Operational colors (0 = maintenance)">
+                                    <input type="number" name="min_print_length_in" value="{{ row.min_print_length_in|default_if_none:'' }}" step="0.001" placeholder="Min length (in)">
+                                    <input type="number" name="min_print_width_in" value="{{ row.min_print_width_in|default_if_none:'' }}" step="0.001" placeholder="Min width (in)">
+                                    <input type="number" name="max_print_length_in" value="{{ row.max_print_length_in|default_if_none:'' }}" step="0.001" placeholder="Max length (in)">
+                                    <input type="number" name="max_print_width_in" value="{{ row.max_print_width_in|default_if_none:'' }}" step="0.001" placeholder="Max width (in)">
+                                </div>
                             </div>
                             <button type="submit" class="btn btn-green">Edit</button>
                         </form>
-                        <div class="compact-note">Name, Speed, Setup Min/Color, Plate Life (all in one form).</div>
+                        <div class="compact-note">Name, Type, Speed, Setup Min/Color, Plate Life (all in one form). Group Code/Colors/Print Size only apply to Offset Printing machines.</div>
                         {% else %}
                         <div>{{ row.record.name }}</div>
                         {% endif %}
+                    </td>
+                    <td>{{ row.record.get_machine_type_display }}</td>
+                    <td>{{ row.record.machine_group_code|default:'-' }}</td>
+                    <td>{{ row.record.default_colors|default:'-' }}</td>
+                    <td>
+                        {{ row.record.operational_colors|default:'-' }}
+                        {% if row.record.is_under_maintenance %}<span class="badge-off">Maintenance</span>{% endif %}
+                    </td>
+                    <td>
+                        {% if row.min_print_length_in %}{{ row.min_print_length_in }} x {{ row.min_print_width_in }}{% else %}-{% endif %}
+                    </td>
+                    <td>
+                        {% if row.max_print_length_in %}{{ row.max_print_length_in }} x {{ row.max_print_width_in }}{% else %}-{% endif %}
                     </td>
                     <td>
                         {% if row.record.is_active %}
@@ -135,13 +179,23 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="9">No machines found.</td></tr>
+                <tr><td colspan="15">No machines found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
         </div>
 
         <h2 class="section-header">Operators</h2>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="operator">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="New operator name" required>
+            <input type="text" name="employee_code" placeholder="Employee code (optional)">
+            <button type="submit" class="btn btn-green">Add Operator</button>
+        </form>
+        {% endif %}
         <div class="table-shell">
         <table>
             <thead>
@@ -214,6 +268,16 @@
         </div>
 
         <h2 class="section-header">Supervisors</h2>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="supervisor">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="New supervisor name" required>
+            <input type="text" name="employee_code" placeholder="Employee code (optional)">
+            <button type="submit" class="btn btn-green">Add Supervisor</button>
+        </form>
+        {% endif %}
         <div class="table-shell">
         <table>
             <thead>
@@ -278,6 +342,15 @@
         </div>
 
         <h2 class="section-header">Materials</h2>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="material">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="New material name" required>
+            <button type="submit" class="btn btn-green">Add Material</button>
+        </form>
+        {% endif %}
         <div class="table-shell">
         <table>
             <thead>
@@ -329,6 +402,15 @@
         </div>
 
         <h2 class="section-header">Departments</h2>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="department">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="New department name" required>
+            <button type="submit" class="btn btn-green">Add Department</button>
+        </form>
+        {% endif %}
         <div class="table-shell">
         <table>
             <thead>
@@ -382,6 +464,15 @@
         </div>
 
         <h2 class="section-header">Delivery Locations</h2>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="delivery_location">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="New delivery location name" required>
+            <button type="submit" class="btn btn-green">Add Delivery Location</button>
+        </form>
+        {% endif %}
         <div class="table-shell">
         <table>
             <thead>
@@ -435,6 +526,15 @@
         </div>
 
         <h2 class="section-header">Product Types</h2>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="product_type">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="New product type name" required>
+            <button type="submit" class="btn btn-green">Add Product Type</button>
+        </form>
+        {% endif %}
         <div class="table-shell">
         <table>
             <thead>
@@ -482,6 +582,65 @@
                 </tr>
                 {% empty %}
                 <tr><td colspan="5">No product types found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+
+        <h2 class="section-header">Application Types</h2>
+        <p class="erp-help-text" style="margin:0 0 10px;">Used on SKU master's Application field (UV, Lamination Gloss, Lamination Matt, NO, …).</p>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="application">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="New application name" required>
+            <button type="submit" class="btn btn-green">Add Application Type</button>
+        </form>
+        {% endif %}
+        <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Application Name</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in application_type_rows %}
+                <tr>
+                    <td>{{ row.record.id }}</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:flex;gap:8px;align-items:center;">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="application">
+                            <input type="hidden" name="action" value="edit_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <input type="text" name="new_name" value="{{ row.record.name }}" required>
+                            <button type="submit" class="btn btn-green">Edit</button>
+                        </form>
+                        {% else %}
+                        {{ row.record.name }}
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete application type {{ row.record.name|escapejs }} permanently?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="application">
+                            <input type="hidden" name="action" value="delete_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="3">No application types found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -553,6 +712,15 @@
         </div>
 
         <h2 class="section-header">Vendors</h2>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="vendor">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="New vendor name" required>
+            <button type="submit" class="btn btn-green">Add Vendor</button>
+        </form>
+        {% endif %}
         <div class="table-shell">
         <table>
             <thead>
@@ -604,4 +772,17 @@
         </div>
     </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+    document.querySelectorAll('.machine-type-select').forEach(function (select) {
+        var group = select.closest('.edit-grid').querySelector('.offset-only-fields');
+        if (!group) return;
+        var sync = function () {
+            group.style.display = (select.value === 'offset_printing') ? '' : 'none';
+        };
+        select.addEventListener('change', sync);
+        sync();
+    });
+});
+</script>
 {% endblock %}

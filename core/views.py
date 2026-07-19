@@ -21,7 +21,9 @@ from datetime import datetime, date, timedelta
 
 from .bulk_upload import process_jobcard_upload, get_template_headers, get_template_example
 from .jc_numbering import allocate_next_jc_number
+from .machine_routing import MM_PER_INCH
 from .models import (
+    ApplicationType,
     ChangeLog,
     DeliveryLocation,
     Department,
@@ -220,20 +222,20 @@ def quick_add_master(request):
     master_type = (request.POST.get('type') or '').strip().lower()
     name = (request.POST.get('name') or '').strip()
 
-    if master_type not in {'material', 'machine', 'department', 'delivery_location', 'operator', 'vendor', 'product_type', 'print_color'}:
+    if master_type not in {'material', 'machine', 'department', 'delivery_location', 'operator', 'vendor', 'product_type', 'print_color', 'application'}:
         return JsonResponse({'ok': False, 'error': 'Invalid master type.'}, status=400)
 
     if not name:
         return JsonResponse({'ok': False, 'error': 'Name is required.'}, status=400)
 
-    if master_type == 'material':
+    if master_type in {'material', 'application'}:
         profile = getattr(request.user, 'profile', None)
         role = getattr(profile, 'normalized_role', '') if profile else ''
         if not (
             request.user.is_superuser
             or role in {'admin', 'planner'}
         ):
-            return JsonResponse({'ok': False, 'error': 'Only planner or admin can add materials.'}, status=403)
+            return JsonResponse({'ok': False, 'error': f'Only planner or admin can add {master_type.replace("_", " ")}s.'}, status=403)
 
     if master_type == 'print_color':
         profile = getattr(request.user, 'profile', None)
@@ -353,6 +355,7 @@ def quick_add_master(request):
         'delivery_location': DeliveryLocation,
         'vendor': Vendor,
         'product_type': ProductType,
+        'application': ApplicationType,
     }
     model = model_map[master_type]
 
@@ -1296,6 +1299,7 @@ def master_data(request):
         'department': Department,
         'delivery_location': DeliveryLocation,
         'product_type': ProductType,
+        'application': ApplicationType,
         'supervisor': Supervisor,
         'vendor': Vendor,
         'print_color': PrintColor,
@@ -1313,15 +1317,25 @@ def master_data(request):
             messages.error(request, 'Only admin can edit or delete master values.')
             return redirect('master_data')
 
-        if action == 'create_master' and entity_type == 'print_color':
+        if action == 'create_master' and entity_type in model_map:
             new_name = (request.POST.get('new_name') or '').strip()
+            label = entity_type.replace('_', ' ').title()
             if not new_name:
-                messages.error(request, 'Print color name is required.')
-            elif PrintColor.objects.filter(name__iexact=new_name).exists():
-                messages.error(request, f'Print color "{new_name}" already exists.')
-            else:
-                PrintColor.objects.create(name=new_name, is_active=True)
-                messages.success(request, f'Print color "{new_name}" added.')
+                messages.error(request, f'{label} name is required.')
+                return redirect('master_data')
+            if model.objects.filter(name__iexact=new_name).exists():
+                messages.error(request, f'{label} "{new_name}" already exists.')
+                return redirect('master_data')
+
+            create_kwargs = {'name': new_name}
+            if entity_type == 'print_color':
+                create_kwargs['is_active'] = True
+            elif entity_type in {'operator', 'supervisor'}:
+                employee_code = (request.POST.get('employee_code') or '').strip() or None
+                create_kwargs['employee_code'] = employee_code
+
+            model.objects.create(**create_kwargs)
+            messages.success(request, f'{label} "{new_name}" added.')
             return redirect('master_data')
 
         if action in {'rename_machine', 'edit_master'} and record:
@@ -1348,16 +1362,39 @@ def master_data(request):
                         changed_fields.append('employee_code')
 
                 if entity_type == 'machine':
+                    machine_type_raw = (request.POST.get('machine_type') or '').strip()
                     speed_raw = (request.POST.get('standard_impressions_per_hour') or '').strip()
                     setup_raw = (request.POST.get('standard_setup_minutes_per_color') or '').strip()
                     plate_life_raw = (request.POST.get('plate_life_impressions') or '').strip()
+                    group_code_raw = (request.POST.get('machine_group_code') or '').strip()
+                    # Colour/size fields are optional and only meaningful for offset
+                    # printing machines - a cutting machine or digital printer can be
+                    # created without them; blank means "not applicable", not "1".
+                    default_colors_raw = (request.POST.get('default_colors') or '').strip()
+                    operational_colors_raw = (request.POST.get('operational_colors') or '').strip()
+                    # Planners always work in inches (matches print_sheet_size data entry);
+                    # the form collects inches and we convert to mm for storage so the DB
+                    # has one unambiguous unit and there's no mm/inch guesswork on entry.
+                    min_l_in_raw = (request.POST.get('min_print_length_in') or '').strip()
+                    min_w_in_raw = (request.POST.get('min_print_width_in') or '').strip()
+                    max_l_in_raw = (request.POST.get('max_print_length_in') or '').strip()
+                    max_w_in_raw = (request.POST.get('max_print_width_in') or '').strip()
+
+                    valid_machine_types = {code for code, _ in Machine.MACHINE_TYPE_CHOICES}
+                    new_machine_type = machine_type_raw if machine_type_raw in valid_machine_types else (record.machine_type or 'other')
 
                     try:
                         new_speed = float(speed_raw) if speed_raw else float(record.standard_impressions_per_hour or 0)
                         new_setup = float(setup_raw) if setup_raw else float(record.standard_setup_minutes_per_color or 0)
                         new_plate_life = int(plate_life_raw) if plate_life_raw else int(record.plate_life_impressions or 25000)
+                        new_default_colors = int(default_colors_raw) if default_colors_raw else record.default_colors
+                        new_operational_colors = int(operational_colors_raw) if operational_colors_raw != '' else record.operational_colors
+                        new_min_l = round(float(min_l_in_raw) * MM_PER_INCH, 2) if min_l_in_raw else None
+                        new_min_w = round(float(min_w_in_raw) * MM_PER_INCH, 2) if min_w_in_raw else None
+                        new_max_l = round(float(max_l_in_raw) * MM_PER_INCH, 2) if max_l_in_raw else None
+                        new_max_w = round(float(max_w_in_raw) * MM_PER_INCH, 2) if max_w_in_raw else None
                     except ValueError:
-                        messages.error(request, 'Machine speed, setup minutes, and plate life must be numeric values.')
+                        messages.error(request, 'Machine speed, setup minutes, plate life, colours, and print size fields must be numeric values.')
                         return redirect('master_data')
 
                     if new_speed <= 0 or new_setup <= 0:
@@ -1365,6 +1402,12 @@ def master_data(request):
                         return redirect('master_data')
                     if new_plate_life < 1:
                         messages.error(request, 'Plate life impressions must be at least 1.')
+                        return redirect('master_data')
+                    if new_default_colors is not None and new_default_colors < 1:
+                        messages.error(request, 'Default colors must be at least 1.')
+                        return redirect('master_data')
+                    if new_operational_colors is not None and new_operational_colors < 0:
+                        messages.error(request, 'Operational colors cannot be negative.')
                         return redirect('master_data')
 
                     if float(record.standard_impressions_per_hour) != float(new_speed):
@@ -1376,6 +1419,30 @@ def master_data(request):
                     if int(record.plate_life_impressions or 0) != int(new_plate_life):
                         record.plate_life_impressions = new_plate_life
                         changed_fields.append('plate_life_impressions')
+                    if (record.machine_type or '') != new_machine_type:
+                        record.machine_type = new_machine_type
+                        changed_fields.append('machine_type')
+                    if (record.machine_group_code or '') != group_code_raw:
+                        record.machine_group_code = group_code_raw
+                        changed_fields.append('machine_group_code')
+                    if record.default_colors != new_default_colors:
+                        record.default_colors = new_default_colors
+                        changed_fields.append('default_colors')
+                    if record.operational_colors != new_operational_colors:
+                        record.operational_colors = new_operational_colors
+                        changed_fields.append('operational_colors')
+                    if record.min_print_length_mm != new_min_l:
+                        record.min_print_length_mm = new_min_l
+                        changed_fields.append('min_print_length_mm')
+                    if record.min_print_width_mm != new_min_w:
+                        record.min_print_width_mm = new_min_w
+                        changed_fields.append('min_print_width_mm')
+                    if record.max_print_length_mm != new_max_l:
+                        record.max_print_length_mm = new_max_l
+                        changed_fields.append('max_print_length_mm')
+                    if record.max_print_width_mm != new_max_w:
+                        record.max_print_width_mm = new_max_w
+                        changed_fields.append('max_print_width_mm')
 
                 if changed_fields:
                     record.save(update_fields=changed_fields)
@@ -1548,10 +1615,17 @@ def master_data(request):
     # Build rows
     machine_rows = []
     for item in Machine.objects.all().order_by('name', 'id'):
+        def _mm_to_in(value):
+            return round(float(value) / MM_PER_INCH, 3) if value is not None else None
+
         machine_rows.append({
             'record': item,
             'job_card_count': jc_machine_counter[item.id],
             'production_count': prod_machine_counter[item.id],
+            'min_print_length_in': _mm_to_in(item.min_print_length_mm),
+            'min_print_width_in': _mm_to_in(item.min_print_width_mm),
+            'max_print_length_in': _mm_to_in(item.max_print_length_mm),
+            'max_print_width_in': _mm_to_in(item.max_print_width_mm),
         })
 
     operator_rows = []
@@ -1619,14 +1693,18 @@ def master_data(request):
             'planning_job_count': pj_color_counter[name_key],
         })
 
+    application_type_rows = [{'record': item} for item in ApplicationType.objects.all().order_by('name', 'id')]
+
     context = {
         'machine_rows': machine_rows,
+        'machine_type_choices': Machine.MACHINE_TYPE_CHOICES,
         'operator_rows': operator_rows,
         'supervisor_rows': supervisor_rows,
         'material_rows': material_rows,
         'department_rows': department_rows,
         'delivery_location_rows': delivery_location_rows,
         'product_type_rows': product_type_rows,
+        'application_type_rows': application_type_rows,
         'vendor_rows': vendor_rows,
         'print_color_rows': print_color_rows,
         'is_admin_user': bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin'),

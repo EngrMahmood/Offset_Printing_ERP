@@ -38,3 +38,23 @@ class ScheduledReport(models.Model):
 
     def __str__(self):
         return f'{self.name} ({self.report_slug})'
+
+
+class MachinePlanningJcSelection(models.Model):
+    """Shared, planner/admin-editable opt-out for a JC in a Machine Planning
+    combined run (V2 plan item 3). Everyone sees the same selection state;
+    an excluded JC is dropped from the report's merged totals/exports but
+    stays visible (marked excluded) in the planner console."""
+
+    jc_number = models.CharField(max_length=50, unique=True, db_index=True)
+    is_excluded = models.BooleanField(default=False)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'{self.jc_number} ({"excluded" if self.is_excluded else "included"})'

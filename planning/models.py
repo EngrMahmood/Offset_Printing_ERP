@@ -892,6 +892,10 @@ class SkuRecipe(models.Model):
     application = models.CharField(max_length=120, blank=True)
     product_type = models.CharField(max_length=100, blank=True)
     machine_name = models.CharField(max_length=120, blank=True)
+    machine_name_locked = models.BooleanField(
+        default=False,
+        help_text='When set, actual production machine tracking will not auto-update machine_name for this SKU.',
+    )
     JOB_PROCESS_TYPE_CHOICES = [
         ('print_and_pack', 'Print + Pack'),
         ('cut_and_pack', 'Cut & Pack (no printing)'),

@@ -1,7 +1,12 @@
-from django.http import Http404
+import logging
+
+from django.core.exceptions import PermissionDenied
+from django.http import Http404, HttpResponseForbidden
 from django.shortcuts import render
 
 from reports.report_registry import registry
+
+logger = logging.getLogger(__name__)
 
 # Ensure built-in reports are loaded.
 from reports.report_registry import builtin_reports  # noqa: F401
@@ -41,8 +46,10 @@ def report_detail(request, report_type: str):
         try:
             payload = run_report(report_type, request)
             context['data'] = payload.get('data') or {}
+        except PermissionDenied:
+            return HttpResponseForbidden("You don't have access to this report.")
         except Exception:
-            pass
+            logger.exception('Failed to build report %s', report_type)
 
     return render(
         request,

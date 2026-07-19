@@ -8,6 +8,7 @@ from django.http import Http404
 from django.utils import timezone
 import zoneinfo
 
+from core.navigation import REPORTS_NAV_ROLES
 from reports.filters import parse_universal_filters
 from reports.report_engine.serializer import to_json_safe
 from reports.report_registry import registry
@@ -19,11 +20,34 @@ def _has_access(request, permissions: tuple[str, ...]) -> bool:
     user = getattr(request, 'user', None)
     if not user or not user.is_authenticated:
         return False
+    if user.is_superuser:
+        return True
+    profile = getattr(user, 'profile', None)
+    if profile is not None and getattr(profile, 'role', None) in REPORTS_NAV_ROLES:
+        return True
     return any(user.has_perm(code) for code in permissions)
 
 
+CACHE_VERSION_KEY = 'reports:engine:cache_version'
+
+
+def get_cache_version() -> int:
+    version = cache.get(CACHE_VERSION_KEY)
+    if version is None:
+        version = 1
+        cache.set(CACHE_VERSION_KEY, version, timeout=None)
+    return version
+
+
+def bump_cache_version() -> None:
+    try:
+        cache.incr(CACHE_VERSION_KEY)
+    except ValueError:
+        cache.set(CACHE_VERSION_KEY, 1, timeout=None)
+
+
 def _cache_key(slug: str, user_id: int | None, filters: dict) -> str:
-    key_input = f'{slug}|{user_id}|{filters}'
+    key_input = f'{get_cache_version()}|{slug}|{user_id}|{filters}'
     return f'reports:engine:{sha256(key_input.encode("utf-8")).hexdigest()}'
 
 

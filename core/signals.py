@@ -119,6 +119,38 @@ def trigger_production_notifications(sender, instance, created, **kwargs):
         notify_event('production.submitted', instance=instance, actor=actor)
 
 
+@receiver(post_save, sender='core.Production')
+def sync_sku_preferred_machine_from_production(sender, instance, **kwargs):
+    """Part C: learn a default machine per SKU from actual printing runs,
+    so future planning can suggest it. Skipped when the SKU master has an
+    explicit manual lock (machine_name_locked)."""
+    if instance.entry_type != 'printing' or not instance.machine_id:
+        return
+    job_card = instance.job_card
+    sku = (getattr(job_card, 'SKU', '') or '').strip()
+    if not sku:
+        return
+
+    from planning.models import SkuRecipe
+    recipe = SkuRecipe.objects.filter(sku__iexact=sku).first()
+    if not recipe or recipe.machine_name_locked:
+        return
+    machine_name = instance.machine.name
+    if recipe.machine_name != machine_name:
+        recipe.machine_name = machine_name
+        recipe.save(update_fields=['machine_name'])
+
+
+@receiver(post_save, sender='planning.PlanningJob')
+@receiver(post_save, sender='core.Machine')
+def bump_reports_cache_version(sender, instance, **kwargs):
+    """Invalidate cached report payloads (e.g. Machine Planning) so
+    priority/master-data edits are reflected immediately instead of
+    waiting for the cache timeout."""
+    from reports.report_engine.engine import bump_cache_version
+    bump_cache_version()
+
+
 @receiver(post_save, sender='core.PasswordResetRequest')
 def trigger_password_reset_notifications(sender, instance, created, **kwargs):
     if created:

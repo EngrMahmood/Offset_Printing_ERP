@@ -479,6 +479,51 @@ def build_overview_context(request):
     }
 
 
+PARTIAL_PRODUCTION_DONE_TOLERANCE_PCT = 5  # remaining <= 5% of planned qty counts as fully done
+# Manager has all planning-console permissions a planner/admin has (short of
+# deletion/superuser-only actions), so it's included here alongside them.
+MACHINE_PLANNING_SELECTION_ROLES = {'planner', 'admin', 'manager'}
+
+
+def _can_edit_jc_selection(user):
+    """V2 plan item 3: Planner/Admin/Manager (or superuser) may toggle JC selection."""
+    if not user or not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    profile = getattr(user, 'profile', None)
+    return bool(profile and profile.role in MACHINE_PLANNING_SELECTION_ROLES)
+
+
+def _production_state(job, produced_sheets_by_jobcard):
+    """Classify a plannable job's production progress (V2 plan item 1).
+
+    Returns not_started / partially_produced / done, plus the remaining
+    sheet quantity to use for report totals instead of the full order qty.
+    """
+    total_planned = job.actual_sheet_required_display or 0
+    job_card = getattr(job, 'job_card', None)
+    produced = produced_sheets_by_jobcard.get(job_card.id, 0) if job_card else 0
+
+    remaining_sheets = max(total_planned - produced, 0)
+    percent_done = round(produced * 100 / total_planned, 1) if total_planned else 0.0
+
+    if produced <= 0:
+        state = 'not_started'
+    elif total_planned and remaining_sheets <= total_planned * PARTIAL_PRODUCTION_DONE_TOLERANCE_PCT / 100:
+        state = 'done'
+    else:
+        state = 'partially_produced'
+
+    return {
+        'state': state,
+        'produced_sheets': produced,
+        'remaining_sheets': remaining_sheets if state != 'not_started' else total_planned,
+        'percent_done': percent_done,
+        'total_planned_sheets': total_planned,
+    }
+
+
 def build_machine_planning_context(request):
     from django.utils import timezone
     from collections import Counter
@@ -489,11 +534,39 @@ def build_machine_planning_context(request):
     search_value = (request.GET.get('q') or '').strip()
     status_value = (request.GET.get('status') or '').strip()
 
-    # Get all pending printing jobs (excluding cut_and_pack and completed)
-    jobs = PlanningJob.objects.filter(is_active=True).exclude(status='completed').exclude(job_process_type='cut_and_pack').select_related('job_card')
-    jobs = _search_jobs(jobs, search_value)
+    # Get all pending printing jobs (excluding cut_and_pack, completed, and
+    # on-hold - is_on_hold is the planner's exclude toggle, V2 plan item 1).
+    base_jobs = (
+        PlanningJob.objects.filter(is_active=True)
+        .exclude(status='completed')
+        .exclude(job_process_type='cut_and_pack')
+        .exclude(is_on_hold=True)
+        .select_related('job_card')
+    )
+    base_jobs = _search_jobs(base_jobs, search_value)
     if status_value:
-        jobs = jobs.filter(status=status_value)
+        base_jobs = base_jobs.filter(status=status_value)
+
+    # Classify production state (not_started / partially_produced / done) per
+    # job so fully-produced jobs (>=95% of planned sheets already run) leave
+    # the plannable set, while partially-produced jobs stay visible showing
+    # their remaining balance (V2 plan item 1).
+    candidate_jobs = list(base_jobs)
+    job_card_ids = [j.job_card.id for j in candidate_jobs if getattr(j, 'job_card', None)]
+    produced_lookup = dict(
+        Production.objects.filter(is_active=True, entry_type='printing', job_card_id__in=job_card_ids)
+        .values('job_card_id').annotate(total=Sum('output_sheets'))
+        .values_list('job_card_id', 'total')
+    )
+    production_state_by_job_id = {}
+    done_ids = []
+    for j in candidate_jobs:
+        state = _production_state(j, produced_lookup)
+        production_state_by_job_id[j.id] = state
+        if state['state'] == 'done':
+            done_ids.append(j.id)
+
+    jobs = base_jobs.exclude(id__in=done_ids) if done_ids else base_jobs
 
     # Prefetch SkuRecipes to avoid N+1 queries in loops
     from planning.models import SkuRecipe
@@ -504,9 +577,19 @@ def build_machine_planning_context(request):
         if s_val and s_val not in recipe_dict:
             recipe_dict[s_val] = r
 
+    # V2 plan item 3: shared planner/admin JC opt-out. Excluded JCs are
+    # dropped from merged report totals/exports but stay visible (marked
+    # excluded) in the planner console.
+    from reports.models import MachinePlanningJcSelection
+    excluded_jc_numbers = set(
+        MachinePlanningJcSelection.objects.filter(is_excluded=True).values_list('jc_number', flat=True)
+    )
+
     for job in jobs:
         s_val = (job.sku or '').lower().strip()
         job._cached_sku_recipe = recipe_dict.get(s_val)
+        job._production_state = production_state_by_job_id.get(job.id) or _production_state(job, produced_lookup)
+        job._is_excluded_by_planner = job.jc_number in excluded_jc_numbers
 
     planned_window = jobs.filter(Q(plan_date__range=(start, end)) | Q(plan_date__isnull=True))
     machine_rows = list(
@@ -522,7 +605,19 @@ def build_machine_planning_context(request):
         .order_by('-total_sheet_qty', '-job_count')
     )
 
-    machine_map = {machine.name.lower(): machine for machine in Machine.objects.filter(is_active=True)}
+    all_active_machines = list(Machine.objects.filter(is_active=True))
+    machine_map = {machine.name.lower(): machine for machine in all_active_machines}
+
+    from core.machine_routing import build_pools, route_job
+    machine_pools = build_pools(all_active_machines)
+    size_gate_code = next(
+        (m.machine_group_code for m in all_active_machines if m.default_colors and m.default_colors >= 5),
+        None,
+    )
+    maintenance_machines = sorted(
+        {m.name for pool in machine_pools.values() for m in pool.maintenance_members}
+    )
+
     for row in machine_rows:
         machine_name = (row['machine_name'] or '').strip()
         machine = machine_map.get(machine_name.lower()) if machine_name else None
@@ -566,12 +661,88 @@ def build_machine_planning_context(request):
             1,
         ) if machine else None
 
-    # Group all pending printing jobs by (machine, SKU) to consolidate same-SKU runs
+    # Group all pending printing jobs by (colour/size-routed machine pool, SKU) to
+    # consolidate same-SKU runs. A job that's already explicitly assigned to a
+    # machine stays grouped under that machine's own pool (e.g. SM74 never gets
+    # folded into a GTO pool just because its colour count would fit one) -
+    # only unassigned jobs get auto-routed by colour/size.
+    from core.machine_routing import (
+        find_pool_for_machine, find_pool_by_group_code_text, color_class as _color_class,
+        parse_sheet_size_mm, pool_fits,
+    )
+    import math as _math
+
     sku_groups = {}
     today_date = timezone.localdate()
 
     for job in jobs:
-        m_name = (job.machine_name or 'Unassigned').strip()
+        explicit_name = (job.machine_name or '').strip()
+        routed = None
+        planner_override = False
+        size_warning = None
+        if explicit_name:
+            explicit_machine = machine_map.get(explicit_name.lower())
+            pool = find_pool_for_machine(machine_pools, explicit_machine) if explicit_machine else None
+            if pool is None and explicit_machine is None:
+                # No exact machine match (e.g. legacy data says "GTO 1" with
+                # no per-unit suffix) - fall back to matching the group code
+                # so it still collapses into the combined pool tab.
+                pool = find_pool_by_group_code_text(machine_pools, explicit_name)
+            if pool and pool.members:
+                colors = _color_class(job.color_spec_display)
+                # Pools are defined by colour capability, and the job's colour
+                # requirement - not a stale machine assignment - decides its
+                # pool. When the assigned machine degraded (e.g. a GTO2 unit
+                # dropped to operational_colors=1 and folded into the GTO1
+                # pool), its 2-colour jobs must NOT follow it into the
+                # 1-colour tab: they re-route by colour/size back to the
+                # remaining capable pool, spreading that load over the
+                # machines still in it. Multi-pass routing (a 3-colour job on
+                # a 2-colour pool) is still allowed - only a pool whose class
+                # a single-colour machine physically can't serve in its class
+                # (colour class > pool colour capacity where a capable pool
+                # exists) triggers the re-route.
+                auto_routed = route_job(job.color_spec_display, job.print_sheet_size_display, machine_pools, size_gate_code)
+                if colors and colors > pool.effective_colors and auto_routed and auto_routed['pool_key'] != pool.group_code:
+                    routed = auto_routed
+                    pool = None
+                else:
+                    passes = max(1, _math.ceil(colors / max(pool.effective_colors, 1))) if colors else 1
+                    routed = {
+                        'pool_key': pool.group_code,
+                        'pool_label': pool.label,
+                        'member_machines': [m.name for m in pool.members],
+                        'passes': passes,
+                        'color_class': colors,
+                    }
+                    # V2 plan item 5a: an explicit assignment the pool can
+                    # actually serve wins over auto-routing - flag it as a
+                    # planner override so it's clear why (e.g. a job small
+                    # enough for GTO sitting on SM74).
+                    if auto_routed and auto_routed['pool_key'] != pool.group_code:
+                        planner_override = True
+                    # V2 plan item 5b: warn (don't auto-move) when a job explicitly
+                    # parked on a non-size-gate pool (a GTO) doesn't actually fit
+                    # that pool's max sheet size.
+                    if pool.group_code != size_gate_code:
+                        size_mm = parse_sheet_size_mm(job.print_sheet_size_display)
+                        if size_mm and not pool_fits(pool, size_mm):
+                            size_warning = f"Exceeds {pool.group_code} max print size - move to the size-gate machine."
+            if routed:
+                m_name = routed['pool_label']
+            elif explicit_machine:
+                # Canonicalize to the stored Machine.name so case variants of
+                # the same machine (e.g. 'Konica Minolta' vs 'KONICA MINOLTA'
+                # in legacy job data) collapse into one tab.
+                m_name = explicit_machine.name
+            else:
+                m_name = explicit_name
+        else:
+            routed = route_job(job.color_spec_display, job.print_sheet_size_display, machine_pools, size_gate_code)
+            m_name = routed['pool_label'] if routed else 'Unassigned'
+        job._routed_pool = routed
+        job._planner_override = planner_override
+        job._size_warning = size_warning
         sku_val = (job.sku or 'Unknown SKU').strip()
         key = (m_name, sku_val)
         if key not in sku_groups:
@@ -601,12 +772,43 @@ def build_machine_planning_context(request):
 
     # Process and score each merged SKU group
     all_merged_rows = []
-    for (m_name, sku_val), group_jobs in sku_groups.items():
+    for (m_name, sku_val), all_group_jobs in sku_groups.items():
+        # V2 plan item 3: JCs the planner deselected are excluded from the
+        # merged totals/exports below but stay in all_group_jobs so the
+        # planner console can still show them (marked excluded).
+        group_jobs = [j for j in all_group_jobs if not getattr(j, '_is_excluded_by_planner', False)]
+        if not group_jobs:
+            continue
         first_job = group_jobs[0]
-        
-        # Aggregations
-        finish_qty = sum(j.order_qty or 0 for j in group_jobs)
-        print_sheet_qty = sum(j.actual_sheet_required_display or 0 for j in group_jobs)
+
+        # Aggregations - partially-produced jobs contribute only their
+        # remaining balance, not the full order qty (V2 plan item 1/2).
+        def _remaining_order_qty(j):
+            state = getattr(j, '_production_state', None)
+            total_sheets = (state or {}).get('total_planned_sheets') or 0
+            if not state or state['state'] != 'partially_produced' or not total_sheets:
+                return j.order_qty or 0
+            ratio = state['remaining_sheets'] / total_sheets
+            return round((j.order_qty or 0) * ratio)
+
+        finish_qty = sum(_remaining_order_qty(j) for j in group_jobs)
+        print_sheet_qty = sum((j._production_state or {}).get('remaining_sheets', j.actual_sheet_required_display or 0) for j in group_jobs)
+
+        # Physical print passes (e.g. 1+1 front/back = 2 passes) come from
+        # planning's own field (PlanningJob.effective_print_passes, synced
+        # from the SKU master) - the authoritative source the planner
+        # already maintains. Only fall back to the machine-pool merge-pass
+        # count (how many runs a colour-count needs on a smaller-colour
+        # pool) when planning hasn't set an explicit pass count.
+        def _job_passes(j):
+            return j.effective_print_passes or (j._routed_pool or {}).get('passes') or 1
+
+        def _job_remaining_sheets(j):
+            return (j._production_state or {}).get('remaining_sheets', j.actual_sheet_required_display or 0)
+
+        total_impressions = sum(_job_remaining_sheets(j) * _job_passes(j) for j in group_jobs)
+        row_passes = _job_passes(first_job)
+
         jc_numbers = sorted(list({j.jc_number for j in group_jobs if j.jc_number}))
         po_numbers = sorted(list({j.po_number for j in group_jobs if j.po_number}))
         po_count = len(po_numbers)
@@ -716,8 +918,39 @@ def build_machine_planning_context(request):
             'ai_reason': ai_reason,
             'status': status_pill,
             'job_ids': [j.id for j in group_jobs],
+            'passes': row_passes,
+            'planned_machine_pool': m_name,
+            'actual_machine': _actual_machine_for_jobs(group_jobs),
+            'jobs_detail': [
+                {
+                    'job_id': j.id,
+                    'jc_number': j.jc_number,
+                    'stage': j.get_status_display(),
+                    'production_state': (j._production_state or {}).get('state', 'not_started'),
+                    'percent_done': (j._production_state or {}).get('percent_done', 0),
+                    'remaining_sheets': (j._production_state or {}).get('remaining_sheets'),
+                    'is_excluded': getattr(j, '_is_excluded_by_planner', False),
+                }
+                for j in all_group_jobs
+            ],
+            'has_partial_production': any((j._production_state or {}).get('state') == 'partially_produced' for j in group_jobs),
+            'planner_override': any(getattr(j, '_planner_override', False) for j in group_jobs),
+            'size_warnings': sorted({j._size_warning for j in group_jobs if getattr(j, '_size_warning', None)}),
+            'total_impressions': total_impressions,
         }
         all_merged_rows.append(row)
+
+    # Average speed/setup across a pool's members, for pool tabs (label != any
+    # single machine name) where a plain machine_map lookup would miss.
+    pool_label_settings = {}
+    for pool in machine_pools.values():
+        if pool.members:
+            speeds = [m.standard_impressions_per_hour for m in pool.members if m.standard_impressions_per_hour]
+            setups = [m.standard_setup_minutes_per_color for m in pool.members if m.standard_setup_minutes_per_color]
+            pool_label_settings[pool.label] = (
+                sum(speeds) / len(speeds) if speeds else 5000,
+                sum(setups) / len(setups) if setups else 30,
+            )
 
     # Group rows by machine and sort each machine's rows by AI Score descending
     machine_reports = {}
@@ -726,22 +959,33 @@ def build_machine_planning_context(request):
     for m_name in unique_machines:
         m_rows = [row for row in all_merged_rows if row['machine_name'] == m_name]
         m_rows.sort(key=lambda x: x['ai_score'], reverse=True)
-        
+
         # Add sequence numbers
         for idx, row in enumerate(m_rows, 1):
             row['sequence'] = idx
 
         # Machine settings
-        machine = machine_map.get(m_name.lower())
-        speed = machine.standard_impressions_per_hour if machine and machine.standard_impressions_per_hour else 5000
-        setup_minutes = machine.standard_setup_minutes_per_color if machine and machine.standard_setup_minutes_per_color else 30
+        if m_name in pool_label_settings:
+            speed, setup_minutes = pool_label_settings[m_name]
+        else:
+            machine = machine_map.get(m_name.lower())
+            speed = machine.standard_impressions_per_hour if machine and machine.standard_impressions_per_hour else 5000
+            setup_minutes = machine.standard_setup_minutes_per_color if machine and machine.standard_setup_minutes_per_color else 30
+
+        # Per-row estimated hours for the supervisor overview (run + setup).
+        # Runtime is driven by impressions (sheets x passes), not raw sheet
+        # count, so a 1+1 (2-pass) job correctly takes twice as long as a
+        # single-pass job of the same sheet quantity.
+        for row in m_rows:
+            row['estimated_hours'] = round(row['total_impressions'] / max(speed, 1000) + setup_minutes / 60, 2)
 
         total_print_sheets = sum(r['print_sheet_quantity'] for r in m_rows)
+        total_impressions_sum = sum(r['total_impressions'] for r in m_rows)
         total_job_cards = sum(len(r['job_ids']) for r in m_rows)
         total_planned_jobs = len(m_rows)
 
         # Runtime and Setup calculations
-        est_runtime_hours = round(total_print_sheets / max(speed, 1000), 2)
+        est_runtime_hours = round(total_impressions_sum / max(speed, 1000), 2)
         est_setup_time_hours = round((total_planned_jobs * setup_minutes) / 60, 2)
         
         # Setup Saved calculations (merging savings)
@@ -773,12 +1017,15 @@ def build_machine_planning_context(request):
                 'total_pos': sum(r['po_count'] for r in m_rows),
                 'total_job_cards': total_job_cards,
                 'total_print_sheets': total_print_sheets,
+                'total_impressions': total_impressions_sum,
+                'total_load_hours': round(total_load_hours, 2),
                 'estimated_runtime': est_runtime_hours,
                 'estimated_setup_time': est_setup_time_hours,
                 'setup_changes_saved': setup_changes_saved,
                 'setup_time_saved': setup_time_saved_hours,
                 'jobs_at_sla_risk': sla_risks_count,
                 'expected_completion_time': completion_time.strftime('%Y-%m-%d %I:%M %p'),
+                'size_violations_count': sum(1 for r in m_rows if r['size_warnings']),
             }
         }
 
@@ -794,25 +1041,29 @@ def build_machine_planning_context(request):
     headers = [
         'sequence', 'po_numbers', 'job_card_numbers', 'sku', 'po_count',
         'po_age_days', 'status', 'priority_display', 'ai_score', 'machine_name',
-        'material', 'colors', 'ups', 'print_sheet_size', 'print_sheet_quantity', 'finish_quantity'
+        'material', 'colors', 'ups', 'print_sheet_size', 'print_sheet_quantity', 'finish_quantity',
+        'total_impressions', 'passes', 'estimated_hours',
     ]
     header_labels = {
-        'sequence': 'Sequence',
+        'sequence': 'S#',
         'po_numbers': 'PO Numbers',
         'job_card_numbers': 'Job Card Numbers',
         'sku': 'SKU',
-        'po_count': 'PO Count',
-        'po_age_days': 'PO Age (Days)',
+        'po_count': 'PO#',
+        'po_age_days': 'Age',
         'status': 'Status',
-        'priority_display': 'Business Priority',
+        'priority_display': 'Priority',
         'ai_score': 'AI Score',
         'machine_name': 'Machine',
         'material': 'Material',
         'colors': 'Colors',
         'ups': 'Ups',
-        'print_sheet_size': 'Print Sheet Size',
-        'print_sheet_quantity': 'Print Sheet Qty',
+        'print_sheet_size': 'Size',
+        'print_sheet_quantity': 'Sheet Qty',
         'finish_quantity': 'Finish Qty',
+        'total_impressions': 'Impr.',
+        'passes': 'Passes',
+        'estimated_hours': 'Hours',
     }
 
     return {
@@ -838,7 +1089,27 @@ def build_machine_planning_context(request):
         'machine_reports': machine_reports,
         'headers': headers,
         'header_labels': header_labels,
+        'maintenance_machines': maintenance_machines,
+        'can_edit_jc_selection': _can_edit_jc_selection(getattr(request, 'user', None)),
     }
+
+
+def _actual_machine_for_jobs(planning_jobs):
+    """Name(s) of the machine(s) that actually ran production for these jobs
+    (plan-vs-actual tracking, Part C). Falls back to '-' when nothing has
+    been produced yet."""
+    jc_numbers = {j.jc_number for j in planning_jobs if j.jc_number}
+    if not jc_numbers:
+        return '-'
+    names = sorted({
+        p.machine.name
+        for p in Production.objects.filter(
+            is_active=True,
+            job_card__job_card_no__in=jc_numbers,
+            machine__isnull=False,
+        ).select_related('machine')
+    })
+    return ", ".join(names) if names else '-'
 
 
 def build_job_planning_context(request):
