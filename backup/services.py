@@ -86,15 +86,17 @@ def create_backup(backup_type='AUTO', user=None):
         created_by=user
     )
     
-    # Create local backup folder if it doesn't exist
-    local_dir = settings_obj.local_backup_folder
-    if not os.path.isabs(local_dir):
-        local_dir = os.path.join(settings.BASE_DIR, local_dir)
-    os.makedirs(local_dir, exist_ok=True)
-    
     temp_files = []
-    
+
     try:
+        # Create local backup folder if it doesn't exist. Kept inside the try so a
+        # bad/missing backup path records a FAILED history instead of orphaning the
+        # record as PENDING.
+        local_dir = settings_obj.local_backup_folder
+        if not os.path.isabs(local_dir):
+            local_dir = os.path.join(settings.BASE_DIR, local_dir)
+        os.makedirs(local_dir, exist_ok=True)
+
         engine = get_database_engine()
         timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
         erp_version = getattr(settings, 'ERP_SOFTWARE_VERSION', '1.0')

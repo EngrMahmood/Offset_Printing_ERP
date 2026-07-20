@@ -114,7 +114,21 @@ def upsert_raw_material_sku_row(row_data):
     existing_by_sku = RawMaterialSku.objects.filter(sku__iexact=sku).first()
 
     if existing_by_sku and existing_by_pair and existing_by_sku.pk != existing_by_pair.pk:
-        return None, [f'SKU "{sku}" and material/size pair point to different records.'], False
+        # The desired SKU code is held by one record while the material/size pair
+        # is held by another. Soft-deleted (archived) rows keep occupying the unique
+        # SKU and (material, size) slots, which otherwise blocks re-creation/mapping.
+        # If either conflicting record is only archived, reclaim it instead of erroring.
+        if not existing_by_sku.is_active:
+            # Free the SKU code from the archived record so the pair record can take it.
+            existing_by_sku.delete()
+            existing_by_sku = None
+        elif not existing_by_pair.is_active:
+            # An active record already owns this SKU code; retarget onto it and
+            # drop the archived duplicate that held the material/size pair.
+            existing_by_pair.delete()
+            existing_by_pair = None
+        else:
+            return None, [f'SKU "{sku}" and material/size pair point to different records.'], False
 
     target = existing_by_pair or existing_by_sku
     created = target is None

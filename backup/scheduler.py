@@ -70,17 +70,29 @@ class BackupSchedulerThread(threading.Thread):
             if now.day != 1:
                 return False
                 
-        # Check if a successful backup already ran today after midnight
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
-        
-        # Check database for any successful auto backup today
-        already_run = BackupHistory.objects.filter(
-            status='SUCCESS',
+
+        # Do not launch a new backup if one is already in progress. Without this,
+        # a slow or stuck run would cause the 60s tick to spawn a new worker every
+        # minute (the "retry storm" seen as many Pending rows).
+        in_progress = BackupHistory.objects.filter(
+            status='PENDING',
             backup_type='AUTO',
-            start_time__gte=today_start
+            start_time__gte=today_start,
         ).exists()
-        
-        return not already_run
+        if in_progress:
+            return False
+
+        # Only ONE automatic attempt per scheduled window: if any AUTO backup has
+        # already been attempted today (success OR failure), don't auto-retry every
+        # minute. Admins can retry via "Create Backup Now". This is what stops the
+        # every-minute storm even when a run fails.
+        already_attempted = BackupHistory.objects.filter(
+            backup_type='AUTO',
+            start_time__gte=today_start,
+        ).exists()
+
+        return not already_attempted
 
     def trigger_backup(self):
         from backup.services import create_backup
@@ -96,6 +108,15 @@ def start_scheduler():
     # Do not run scheduler under unit tests
     if 'test' in sys.argv or any('test' in arg for arg in sys.argv):
         logger.info("Running under test runner. Skipping scheduler start.")
+        return
+
+    # The in-process background scheduler is disabled by default. Daily backups
+    # are driven by the OS scheduler (Windows Task Scheduler -> manage.py run_backup),
+    # which runs in a clean one-shot process and does not depend on the web server.
+    # To re-enable the in-process thread (e.g. on a dev box), set
+    # BACKUP_INPROCESS_SCHEDULER = True in settings.
+    if not getattr(settings, 'BACKUP_INPROCESS_SCHEDULER', False):
+        logger.info("In-process backup scheduler disabled (using OS scheduler). Skipping.")
         return
 
     # Only start the scheduler in the main process thread to avoid running duplicate schedulers

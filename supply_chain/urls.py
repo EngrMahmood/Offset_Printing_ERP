@@ -18,6 +18,7 @@ urlpatterns = [
     path('items/', views.item_list, name='items'),
     path('items/<int:pk>/edit/', views.item_edit, name='item_edit'),
     path('items/<int:pk>/delete/', views.item_delete, name='item_delete'),
+    path('items/<int:pk>/reactivate/', views.item_reactivate, name='item_reactivate'),
     path('raw-material-skus/quick-add/', views.quick_add_raw_material_sku, name='quick_add_raw_material_sku'),
     
     path('monthly-demand/', views.monthly_demand, name='monthly_demand'),

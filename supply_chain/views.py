@@ -162,7 +162,13 @@ def kpi_dashboard(request):
 
 @supply_chain_required
 def item_list(request):
-    items = RawMaterialSku.objects.filter(is_active=True).select_related('material').order_by('material__name', 'purchase_sheet_size', 'sku')
+    show_archived = request.GET.get('show') == 'archived'
+    items = (
+        RawMaterialSku.objects
+        .filter(is_active=not show_archived)
+        .select_related('material')
+        .order_by('material__name', 'purchase_sheet_size', 'sku')
+    )
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
@@ -185,6 +191,7 @@ def item_list(request):
         'quick_form': QuickRawMaterialSkuForm(),
         'material_choices': list_material_choices(),
         'is_admin': is_supply_chain_admin(request.user),
+        'show_archived': show_archived,
     })
 
 
@@ -1030,6 +1037,31 @@ def item_delete(request, pk):
         'title': 'Delete Raw Material SKU',
         'back_url': reverse('supply_chain:items')
     })
+
+
+@supply_chain_required
+@require_POST
+def item_reactivate(request, pk):
+    """Restore a soft-deleted (archived) Raw Material SKU so it maps again."""
+    if not is_supply_chain_admin(request.user):
+        messages.error(request, 'Only administrators can reactivate SKUs.')
+        return redirect(f"{reverse('supply_chain:items')}?show=archived")
+
+    item = get_object_or_404(RawMaterialSku.objects.filter(is_active=False), pk=pk)
+    item.is_active = True
+    item.save(update_fields=['is_active'])
+    ChangeRequest.objects.create(
+        model_name='RawMaterialSku',
+        action='UPDATE',
+        target_id=item.pk,
+        proposed_data={'is_active': True},
+        requested_by=request.user,
+        status='APPROVED',
+        reviewed_by=request.user,
+        reviewed_at=timezone.now(),
+    )
+    messages.success(request, f'Raw Material SKU {item.sku} reactivated.')
+    return redirect('supply_chain:items')
 
 
 @supply_chain_required
