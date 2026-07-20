@@ -22,12 +22,28 @@ A server started by double-clicking `start server.bat` dies when that user logs 
 To keep it running across logoff/reboot (so backups keep happening), run the server
 as a background service or a startup task. Pick one:
 
-**Option A — Task Scheduler (simple):**
-1. Task Scheduler > Create Task.
-2. General: select "Run whether user is logged on or not", check "Run with highest privileges".
-3. Triggers: "At startup".
-4. Actions: Start a program > `E:\Offset_Printing_ERP\start server.bat`.
-5. Save (enter the account password when prompted).
+**Option A — Task Scheduler at boot (ready-made, recommended):**
+Two files are provided:
+- `scripts/run_server.bat` — launches the server in-process (no pop-up windows,
+  works with no user logged in), logging to `backups/server.log`.
+- `scripts/ERP_Server_Startup_Task.xml` — a boot-time task set to "run whether
+  logged on or not", highest privileges, auto-restart on failure.
+
+Import it (Admin Command Prompt; substitute your Windows account + password):
+```
+schtasks /Create /TN "Offset ERP Server" /XML "E:\Offset_Printing_ERP\scripts\ERP_Server_Startup_Task.xml" /RU "%COMPUTERNAME%\YourUser" /RP "YourPassword"
+```
+Then start it now without rebooting, and confirm it's running:
+```
+schtasks /Run /TN "Offset ERP Server"
+schtasks /Query /TN "Offset ERP Server"
+```
+Check `backups\server.log` and open the ERP in a browser to confirm. First edit
+`scripts\run_server.bat` if your venv path or bind address differs.
+
+Or do it in the GUI: Task Scheduler > Create Task > General: "Run whether user is
+logged on or not" + "Run with highest privileges"; Triggers: "At startup";
+Actions: Start a program > `E:\Offset_Printing_ERP\scripts\run_server.bat`.
 
 **Option B — Windows Service via NSSM (most robust):**
 ```
