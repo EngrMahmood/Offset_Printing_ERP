@@ -72,27 +72,29 @@ class BackupSchedulerThread(threading.Thread):
                 
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # Do not launch a new backup if one is already in progress. Without this,
-        # a slow or stuck run would cause the 60s tick to spawn a new worker every
-        # minute (the "retry storm" seen as many Pending rows).
-        in_progress = BackupHistory.objects.filter(
-            status='PENDING',
-            backup_type='AUTO',
-            start_time__gte=today_start,
-        ).exists()
-        if in_progress:
+        # Already completed successfully today? Nothing more to do this window.
+        if BackupHistory.objects.filter(
+            status='SUCCESS', backup_type='AUTO', start_time__gte=today_start,
+        ).exists():
             return False
 
-        # Only ONE automatic attempt per scheduled window: if any AUTO backup has
-        # already been attempted today (success OR failure), don't auto-retry every
-        # minute. Admins can retry via "Create Backup Now". This is what stops the
-        # every-minute storm even when a run fails.
-        already_attempted = BackupHistory.objects.filter(
-            backup_type='AUTO',
-            start_time__gte=today_start,
-        ).exists()
+        # A run is already in progress? Don't launch a second one.
+        if BackupHistory.objects.filter(
+            status='PENDING', backup_type='AUTO', start_time__gte=today_start,
+        ).exists():
+            return False
 
-        return not already_attempted
+        # Cooldown after a failed/partial attempt: wait before retrying so a
+        # persistent failure can't spawn a new backup on every 60s tick (the
+        # "retry storm"). Failures are retried at most every 15 minutes; the
+        # first SUCCESS above stops retries for the rest of the day.
+        cooldown_start = now - datetime.timedelta(minutes=15)
+        if BackupHistory.objects.filter(
+            backup_type='AUTO', start_time__gte=cooldown_start,
+        ).exists():
+            return False
+
+        return True
 
     def trigger_backup(self):
         from backup.services import create_backup
@@ -105,31 +107,36 @@ class BackupSchedulerThread(threading.Thread):
 
 def start_scheduler():
     import sys
-    # Do not run scheduler under unit tests
+
+    # Never run the scheduler under the test runner.
     if 'test' in sys.argv or any('test' in arg for arg in sys.argv):
         logger.info("Running under test runner. Skipping scheduler start.")
         return
 
-    # The in-process background scheduler is disabled by default. Daily backups
-    # are driven by the OS scheduler (Windows Task Scheduler -> manage.py run_backup),
-    # which runs in a clean one-shot process and does not depend on the web server.
-    # To re-enable the in-process thread (e.g. on a dev box), set
-    # BACKUP_INPROCESS_SCHEDULER = True in settings.
-    if not getattr(settings, 'BACKUP_INPROCESS_SCHEDULER', False):
-        logger.info("In-process backup scheduler disabled (using OS scheduler). Skipping.")
+    # Opt-out switch. Defaults to ON so auto-backup works out of the box on ANY
+    # server the same way -- dev or production, DEBUG on or off, runserver
+    # (with or without --noreload) or a WSGI server (gunicorn/waitress/uWSGI/IIS).
+    # Set BACKUP_INPROCESS_SCHEDULER = False in settings only to disable it.
+    if getattr(settings, 'BACKUP_INPROCESS_SCHEDULER', True) is False:
+        logger.info("In-process backup scheduler disabled via settings. Skipping.")
         return
 
-    # Only start the scheduler in the main process thread to avoid running duplicate schedulers
-    # In Django dev server, RUN_MAIN=true is set in the reloader subprocess
-    if settings.DEBUG and os.environ.get('RUN_MAIN') != 'true':
-        logger.info("DEBUG is True and RUN_MAIN is not true. Skipping scheduler start in parent process.")
+    # Avoid a duplicate scheduler under Django's autoreloader. The reloader runs
+    # two processes: a watcher parent and a child with RUN_MAIN=true. Start only
+    # in the child. This guard does NOT apply to `runserver --noreload` or to WSGI
+    # servers (no 'runserver' in argv), where the scheduler must start normally --
+    # this is exactly the case (`--noreload`) that previously left production with
+    # no auto-backup.
+    running_under_reloader = ('runserver' in sys.argv) and ('--noreload' not in sys.argv)
+    if running_under_reloader and os.environ.get('RUN_MAIN') != 'true':
+        logger.info("Reloader parent detected; the child process will start the scheduler.")
         return
 
-    # Guard to prevent duplicate threads starting
+    # Guard against duplicate threads within a single process.
     for thread in threading.enumerate():
         if thread.name == "DjangoBackupScheduler":
             logger.info("Backup scheduler thread is already running.")
             return
 
-    scheduler = BackupSchedulerThread()
-    scheduler.start()
+    BackupSchedulerThread().start()
+    logger.info("In-process backup scheduler started.")

@@ -1,58 +1,65 @@
-# Reliable Auto-Backup Setup (Windows Task Scheduler)
+# Auto-Backup — How It Works
 
-## Why
-The old auto-backup ran as a background thread *inside the Django web process*.
-Your `start server.bat` launches the server with `--noreload`, which means Django
-never sets `RUN_MAIN=true`, so the scheduler thread was **never started at all** —
-that is the exact reason `backup_backuphistory` had zero AUTO records. Rather than
-depend on the web process, Windows Task Scheduler runs the backup on its own.
+Auto-backup now runs **inside the running server process**, the same way on every
+machine (dev or production). As long as the Django server is running, a background
+thread checks once a minute and creates the daily backup at the scheduled time
+(Backup > Settings). No per-machine configuration and no separate scheduler needed.
 
-## Do I need the server running?
-**No.** Once the scheduled task is set up, the backup runs on its own every day at
-20:05. `manage.py run_backup` opens its own short-lived process, reads the database
-file, and writes the zip — it does not need `start server.bat` to be running. The
-only requirement is that the **PC is powered on** at 20:05 (and if it isn't, the
-`StartWhenAvailable` setting makes it run at the next power-on).
+## Why it wasn't working in production
+Production starts the server with `runserver ... --noreload`. The old code only
+started the scheduler when Django set `RUN_MAIN=true`, which **never happens with
+`--noreload`** — so the thread never started and no auto-backup ever ran. That guard
+has been fixed: the scheduler now starts under `runserver` (with or without
+`--noreload`) and under WSGI servers (gunicorn/waitress/uWSGI/IIS), and only skips
+the redundant reloader *parent* process to avoid running twice.
 
-## What was added
-- `scripts/run_backup.bat` — runs `python manage.py run_backup`, logs to `backups/auto_backup.log`.
-- `scripts/ERP_AutoBackup_Task.xml` — importable scheduled task, daily at 20:05.
-- `manage.py run_backup` now records the run as **AUTO** by default (`--type MANUAL` to override).
+## What you need to do
+Nothing in the code — just make sure the **server process stays running**. The backup
+only happens while the server is up.
 
-## One-time setup
+### Backup "whether a user is logged in or not"
+A server started by double-clicking `start server.bat` dies when that user logs off.
+To keep it running across logoff/reboot (so backups keep happening), run the server
+as a background service or a startup task. Pick one:
 
-1. **Check the Python path.** Open `scripts\run_backup.bat`. If you run the ERP from a
-   virtual environment, set `PYTHON` to that venv's `python.exe`. Otherwise leave it as
-   `python` (must be on PATH).
+**Option A — Task Scheduler (simple):**
+1. Task Scheduler > Create Task.
+2. General: select "Run whether user is logged on or not", check "Run with highest privileges".
+3. Triggers: "At startup".
+4. Actions: Start a program > `E:\Offset_Printing_ERP\start server.bat`.
+5. Save (enter the account password when prompted).
 
-2. **Test the batch file** by double-clicking `run_backup.bat`, then confirm a new
-   zip appears in `E:\Offset ERP DB Backup` and a line was written to
-   `backups\auto_backup.log`.
-
-3. **Import the task** (Admin PowerShell / Command Prompt):
-   ```
-   schtasks /Create /TN "Offset ERP Auto Backup" /XML "E:\Offset_Printing_ERP\scripts\ERP_AutoBackup_Task.xml"
-   ```
-   Or: Task Scheduler → Action → **Import Task…** → select the XML.
-
-4. **Run it once on demand** to verify:
-   ```
-   schtasks /Run /TN "Offset ERP Auto Backup"
-   ```
-   Then check the backup folder, `auto_backup.log`, and Supply Chain → backup history.
-
-## In-process scheduler (disabled)
-The old background-thread scheduler is now **off by default** — the Windows scheduled
-task is the single source of truth, so there's no risk of duplicate backups. If you
-ever want the in-process thread back on a dev machine, add to `settings.py`:
+**Option B — Windows Service via NSSM (most robust):**
 ```
-BACKUP_INPROCESS_SCHEDULER = True
+nssm install OffsetERP "C:\path\to\python.exe" "E:\Offset_Printing_ERP\manage.py runserver 192.168.88.30:8000 --noreload"
+nssm set OffsetERP AppDirectory E:\Offset_Printing_ERP
+nssm start OffsetERP
 ```
+A service runs regardless of login and restarts automatically.
 
-## Notes
-- `StartWhenAvailable` is on, so if the PC is off at 20:05 the task runs at the next
-  opportunity (catch-up).
-- To run even when no user is logged in, edit the task → General → "Run whether user is
-  logged on or not" (Windows will ask for the account password).
-- The in-process thread scheduler can stay as-is (harmless) or be disabled later; the
-  Task Scheduler job is now the source of truth.
+## Verifying
+- Set the backup time (Backup > Settings) a couple of minutes ahead and watch the
+  Backup dashboard — a new **Auto / Success** row should appear.
+- Or force one immediately in a clean process:
+  ```
+  cd E:\Offset_Printing_ERP
+  python manage.py run_backup
+  ```
+  This is the exact code the scheduler runs; it should produce a Success row.
+
+## Reliability behaviour (built in)
+- One successful Auto backup per day; after it succeeds the scheduler stops retrying
+  until the next day.
+- If the server starts *after* the scheduled time and today's backup hasn't run yet,
+  it runs within ~1 minute (catch-up).
+- If a backup fails, it retries at most every 15 minutes — never the per-minute
+  "storm" that filled the dashboard with Pending rows before.
+- A run that is interrupted (e.g. server restart) is recorded as Failed, not left
+  hanging as Pending.
+
+## Optional: OS-driven backups instead of in-process
+If you would rather NOT depend on the server being up, you can disable the in-process
+scheduler and drive backups from Windows Task Scheduler instead:
+- In `settings.py`: `BACKUP_INPROCESS_SCHEDULER = False`
+- Import `scripts/ERP_AutoBackup_Task.xml` (runs `scripts/run_backup.bat`, i.e.
+  `manage.py run_backup`, daily). Do not use both at once.
