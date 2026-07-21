@@ -11,6 +11,7 @@ urlpatterns = [
     path('sent/', views.PlateSentListView.as_view(), name='sent_list'),
     path('received/', views.PlateReceivedListView.as_view(), name='received_list'),
     path('merged/', views.MergedLayoutListView.as_view(), name='merged_list'),
+    path('on-hold/', views.PlatesOnHoldListView.as_view(), name='on_hold_list'),
     path('request/add/', views.PlateRequestCreateView.as_view(), name='request_add'),
     path('request/<int:pk>/', views.PlateRequestDetailView.as_view(), name='request_detail'),
     path('request/<int:pk>/action/', views.PlateRequestActionView.as_view(), name='request_action'),

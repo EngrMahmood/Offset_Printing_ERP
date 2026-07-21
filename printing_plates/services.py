@@ -879,3 +879,74 @@ def _log_plate_request_change(plate_request, actor=None, action='', reason='', b
         change_reason=reason,
         field_changes=field_changes,
     )
+
+
+def scrap_plate_for_merge(plate_request, actor=None, merge_code='', reason=''):
+    """Archive a plate set that the combined merge layout supersedes."""
+    from workflow.services import _append_unique_note_line
+
+    note = f'Superseded by combined layout {merge_code}'.strip()
+    if reason:
+        note = f'{note}: {reason}'
+    plate_request.remarks = _append_unique_note_line(plate_request.remarks, note)
+    plate_request.progress = 'Superseded by merge'
+    plate_request.save(update_fields=['remarks', 'progress', 'updated_at'])
+    return execute_plate_request_action(plate_request, 'archive', actor=actor, reason=note)
+
+
+def retain_plate_for_reuse(plate_request, actor=None, merge_code='', reason=''):
+    """Park a plate set for a future run of the same SKU instead of scrapping it."""
+    from workflow.services import _append_unique_note_line
+
+    note = f'Retained for a future run — SKU moved into combined layout {merge_code}'.strip()
+    if reason:
+        note = f'{note}: {reason}'
+    plate_request.retained_for_reuse = True
+    plate_request.retained_at = timezone.now()
+    plate_request.retained_by = actor
+    plate_request.retained_reason = reason or note
+    plate_request.retained_released_at = None
+    plate_request.remarks = _append_unique_note_line(plate_request.remarks, note)
+    plate_request.progress = 'Retained for reuse'
+    plate_request.save(update_fields=[
+        'retained_for_reuse', 'retained_at', 'retained_by', 'retained_reason',
+        'retained_released_at', 'remarks', 'progress', 'updated_at',
+    ])
+    return execute_plate_request_action(plate_request, 'archive', actor=actor, reason=note)
+
+
+def retained_plates_queryset():
+    """Plate sets parked for reuse and not yet picked back up."""
+    return (
+        PlateRequest.objects.filter(retained_for_reuse=True, retained_released_at__isnull=True)
+        .select_related('planning_job', 'sku_recipe', 'job_card', 'retained_by')
+        .order_by('-retained_at', '-id')
+    )
+
+
+def get_retained_plate_for_sku(sku):
+    """Latest unreleased retained plate set for a SKU, if one is parked."""
+    sku = (sku or '').strip()
+    if not sku:
+        return None
+    return retained_plates_queryset().filter(
+        Q(planning_job__sku__iexact=sku) | Q(sku_recipe__sku__iexact=sku) | Q(job_card__SKU__iexact=sku)
+    ).first()
+
+
+def release_retained_plate_for_sku(sku, actor=None):
+    """Mark a parked plate set as picked back up by a later job for the same SKU."""
+    plate_request = get_retained_plate_for_sku(sku)
+    if not plate_request:
+        return None
+    plate_request.retained_released_at = timezone.now()
+    plate_request.save(update_fields=['retained_released_at', 'updated_at'])
+    _log_plate_request_change(
+        plate_request,
+        actor=actor,
+        action='retained_plate_released',
+        reason=f'Retained plate set reused for a new run of {sku}.',
+        before_status=plate_request.status,
+        after_status=plate_request.status,
+    )
+    return plate_request

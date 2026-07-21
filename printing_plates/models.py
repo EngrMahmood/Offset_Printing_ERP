@@ -168,6 +168,25 @@ class PlateRequest(models.Model):
         related_name='plate_requests_designed',
     )
 
+    # Smart layout merge: when a job joins a combined layout, its own plate set is
+    # either scrapped (superseded by the combined plate) or parked here for a
+    # future run of the same SKU instead of being thrown away.
+    retained_for_reuse = models.BooleanField(default=False, db_index=True)
+    retained_at = models.DateTimeField(null=True, blank=True)
+    retained_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='plate_requests_retained',
+    )
+    retained_reason = models.TextField(blank=True)
+    retained_released_at = models.DateTimeField(
+        null=True,
+        blank=True,
+        help_text='Set when a later job for this SKU picked the retained plate set back up.',
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -208,6 +227,12 @@ class PlateRequest(models.Model):
                     merge_group = planning_job.active_merge_group
                     if merge_group and merge_group.lead_job_id == planning_job.id:
                         merge_group.propagate_planning_stage('plate_received')
+                    # If a plate set for this SKU was parked for reuse, this run
+                    # is the one that picks it back up.
+                    if not self.retained_for_reuse:
+                        from printing_plates.services import release_retained_plate_for_sku
+
+                        release_retained_plate_for_sku(planning_job.sku, actor=self.received_by)
             except Exception:
                 pass
         super().save(*args, **kwargs)

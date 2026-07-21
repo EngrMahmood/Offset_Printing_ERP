@@ -918,3 +918,34 @@ class MergedLayoutListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
         context['rows'] = rows
         context['show_all'] = (self.request.GET.get('show') or '').strip() == 'all'
         return context
+
+
+class PlatesOnHoldListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
+    """Plate sets parked for reuse when their SKU moved into a combined layout.
+
+    They are not scrapped: when the SKU is ordered again the planner can pick the
+    set back up instead of paying for plate making a second time.
+    """
+
+    template_name = 'printing_plates/plate_on_hold_list.html'
+    context_object_name = 'plate_requests'
+    paginate_by = 50
+
+    def get_queryset(self):
+        from .services import retained_plates_queryset
+
+        queryset = retained_plates_queryset()
+        query = (self.request.GET.get('q') or '').strip()
+        if query:
+            queryset = queryset.filter(
+                Q(planning_job__sku__icontains=query)
+                | Q(sku_recipe__sku__icontains=query)
+                | Q(job_card__SKU__icontains=query)
+                | Q(planning_job__jc_number__icontains=query)
+            )
+        return queryset
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['q'] = (self.request.GET.get('q') or '').strip()
+        return context

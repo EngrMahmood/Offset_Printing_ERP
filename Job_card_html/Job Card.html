@@ -264,7 +264,7 @@ table {
       <td>{{ member.sku }}</td>
       <td>{{ member.allocated_ups }}</td>
       <td>{{ member.planned_produced_qty }}</td>
-      <td>{{ member.source_awc_no|default:"-" }}</td>
+      <td>{% if member.source_awc_no %}{{ member.source_awc_no }}{% else %}<strong>NEW ARTWORK — to be created</strong>{% endif %}</td>
     </tr>
     {% endfor %}
   </table>

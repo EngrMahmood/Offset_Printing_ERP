@@ -52,6 +52,33 @@ def bucket_signature(job, cfg):
     )
 
 
+def merge_blockers(job, cfg=None):
+    """Why this job cannot be ganged yet, in words a planner can act on.
+
+    Empty list means the job is mergeable. Only the geometry is required — a
+    missing AWC is fine, since a new SKU's artwork is drawn into the combined
+    layout rather than copied from an existing file.
+    """
+    cfg = cfg or MergeConfig()
+    reasons = []
+
+    if job.size_w_mm is None or job.size_h_mm is None:
+        reasons.append('Piece size (W×H mm) missing on SKU master')
+    if not normalise_material(job.material):
+        reasons.append('Material missing')
+    if not (job.print_sheet_size or '').strip():
+        reasons.append('Print sheet size missing')
+    if not job.ups_value:
+        reasons.append('UPS missing — the ups split cannot be calculated')
+    if not job.total_colors:
+        reasons.append('Colour count missing')
+    if not job.print_passes:
+        reasons.append('No. of passes missing')
+    if not job.net_print_qty:
+        reasons.append('No open quantity left to produce')
+    return reasons
+
+
 def candidate_buckets(jobs, cfg):
     buckets = {}
     for job in jobs:

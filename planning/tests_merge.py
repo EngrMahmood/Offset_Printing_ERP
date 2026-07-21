@@ -454,14 +454,22 @@ class MergeEligibilityPlateGuardTests(TestCase):
         profile.save()
         self.client.force_login(user)
 
-    def test_job_with_plate_request_is_excluded(self):
+    def test_job_with_plate_request_is_still_offered(self):
+        # Plates existing is no longer a blocker: the make-ready and setup saving
+        # still applies, so the planner decides scrap/retain/exclude at accept.
         from printing_plates.models import PlateRequest
         job = make_job('JC1', 10000)
         make_job('JC2', 5000)
         make_job('JC3', 5000)
-        PlateRequest.objects.create(planning_job=job, status=PlateRequest.STATUS_SENT)
+        plate = PlateRequest.objects.create(planning_job=job, status=PlateRequest.STATUS_SENT)
         response = self.client.get(reverse('planning:merge_board'))
-        self.assertEqual(response.context['eligible_count'], 2)
+        self.assertEqual(response.context['eligible_count'], 3)
+        offered = {
+            item['job'].id: item['job']
+            for suggestion in response.context['suggestions']
+            for item in suggestion['allocation']['items']
+        }
+        self.assertEqual(offered[job.id].existing_plate_request, plate)
 
     def test_archived_plate_request_does_not_exclude(self):
         from printing_plates.models import PlateRequest
@@ -480,5 +488,139 @@ class MergeEligibilityPlateGuardTests(TestCase):
         follower = group.items.filter(is_lead=False).first().planning_job
         PlateRequest.objects.create(planning_job=follower, status=PlateRequest.STATUS_SENT)
         response = self.client.get(reverse('planning:merge_detail', args=[group.id]))
-        self.assertContains(response, 'Plates already exist for members of this group')
+        self.assertContains(response, 'Plates still exist for members of this group')
         self.assertContains(response, follower.jc_number)
+
+
+class MergePlateDispositionTests(TestCase):
+    """Existing plates are a decision, not a blocker."""
+
+    def setUp(self):
+        user = get_user_model().objects.create_user('planner5', password='pw12345678')
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.role = 'admin'
+        profile.save()
+        self.user = user
+        self.client.force_login(user)
+
+    def _jobs_with_plates(self):
+        from printing_plates.models import PlateRequest
+        jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
+        plates = {}
+        for job in jobs:
+            plates[job.id] = PlateRequest.objects.create(
+                planning_job=job, status=PlateRequest.STATUS_AVAILABLE,
+            )
+        return jobs, plates
+
+    def test_plated_jobs_are_offered_again(self):
+        jobs, _ = self._jobs_with_plates()
+        response = self.client.get(reverse('planning:merge_board'))
+        self.assertEqual(response.context['eligible_count'], 3)
+        self.assertTrue(response.context['suggestions'])
+
+    def test_scrap_archives_follower_plates(self):
+        from printing_plates.models import PlateRequest
+        jobs, plates = self._jobs_with_plates()
+        payload = {'job_ids': [j.id for j in jobs]}
+        for job in jobs:
+            payload[f'plate_action_{job.id}'] = 'scrap'
+        self.client.post(reverse('planning:merge_accept'), payload, follow=True)
+        group = MergeGroup.objects.get()
+        for job in jobs:
+            plate = PlateRequest.objects.get(pk=plates[job.id].pk)
+            if job.id == group.lead_job_id:
+                self.assertNotEqual(plate.status, PlateRequest.STATUS_ARCHIVED)
+            else:
+                self.assertEqual(plate.status, PlateRequest.STATUS_ARCHIVED)
+                self.assertFalse(plate.retained_for_reuse)
+
+    def test_retain_parks_plate_for_reuse(self):
+        from printing_plates.models import PlateRequest
+        from printing_plates.services import get_retained_plate_for_sku
+        jobs, plates = self._jobs_with_plates()
+        payload = {'job_ids': [j.id for j in jobs]}
+        for job in jobs:
+            payload[f'plate_action_{job.id}'] = 'retain'
+        self.client.post(reverse('planning:merge_accept'), payload, follow=True)
+        group = MergeGroup.objects.get()
+        follower = group.items.filter(is_lead=False).first().planning_job
+        plate = PlateRequest.objects.get(pk=plates[follower.id].pk)
+        self.assertTrue(plate.retained_for_reuse)
+        self.assertIsNotNone(plate.retained_at)
+        self.assertEqual(plate.status, PlateRequest.STATUS_ARCHIVED)
+        self.assertEqual(get_retained_plate_for_sku(follower.sku), plate)
+
+    def test_exclude_drops_member_and_reallocates(self):
+        jobs, _ = self._jobs_with_plates()
+        payload = {'job_ids': [j.id for j in jobs]}
+        payload[f'plate_action_{jobs[0].id}'] = 'exclude'   # the 10000-pc job
+        payload[f'plate_action_{jobs[1].id}'] = 'scrap'
+        payload[f'plate_action_{jobs[2].id}'] = 'scrap'
+        self.client.post(reverse('planning:merge_accept'), payload, follow=True)
+        group = MergeGroup.objects.get()
+        self.assertEqual(group.items.count(), 2)
+        self.assertNotIn(jobs[0].id, group.items.values_list('planning_job_id', flat=True))
+
+    def test_excluding_too_many_is_rejected(self):
+        jobs, _ = self._jobs_with_plates()
+        payload = {'job_ids': [j.id for j in jobs]}
+        for job in jobs[:2]:
+            payload[f'plate_action_{job.id}'] = 'exclude'
+        payload[f'plate_action_{jobs[2].id}'] = 'scrap'
+        self.client.post(reverse('planning:merge_accept'), payload, follow=True)
+        self.assertEqual(MergeGroup.objects.count(), 0)
+
+    def test_retained_plate_shows_on_hold_tab_and_job_detail(self):
+        jobs, _ = self._jobs_with_plates()
+        payload = {'job_ids': [j.id for j in jobs]}
+        for job in jobs:
+            payload[f'plate_action_{job.id}'] = 'retain'
+        self.client.post(reverse('planning:merge_accept'), payload, follow=True)
+        group = MergeGroup.objects.get()
+        follower = group.items.filter(is_lead=False).first().planning_job
+
+        hold = self.client.get(reverse('printing_plates:on_hold_list'))
+        self.assertEqual(hold.status_code, 200)
+        self.assertIn(follower.sku, hold.content.decode())
+
+        # A NEW job for the same SKU is told the plate set is waiting.
+        later = make_job('JC-LATER', 4000, sku=follower.sku)
+        detail = self.client.get(reverse('planning:job_detail', args=[later.id]))
+        self.assertContains(detail, 'A plate set for this SKU is on hold')
+
+
+class MergeBlockerTests(TestCase):
+    def setUp(self):
+        user = get_user_model().objects.create_user('planner6', password='pw12345678')
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.role = 'planner'
+        profile.save()
+        self.client.force_login(user)
+
+    def test_complete_job_has_no_blockers(self):
+        from planning.merge_engine import merge_blockers
+        self.assertEqual(merge_blockers(make_job('JC1', 10000)), [])
+
+    def test_missing_ups_and_sheet_are_reported(self):
+        from planning.merge_engine import merge_blockers
+        job = make_job('JC1', 10000, ups=None, print_sheet_size='')
+        reasons = merge_blockers(job)
+        self.assertTrue(any('UPS missing' in r for r in reasons))
+        self.assertTrue(any('Print sheet size missing' in r for r in reasons))
+
+    def test_missing_awc_is_not_a_blocker(self):
+        from planning.merge_engine import merge_blockers
+        job = make_job('JC-NEWSKU', 10000)   # no SkuRecipe at all, so no AWC
+        self.assertEqual(job.awc_no_display, '')
+        self.assertEqual(merge_blockers(job), [])
+
+    def test_board_lists_near_miss_job_with_reasons(self):
+        make_job('JC1', 10000)
+        make_job('JC2', 5000)
+        make_job('JC3', 5000)
+        make_job('JC-BAD', 5000, ups=None)   # same size/material, missing ups
+        response = self.client.get(reverse('planning:merge_board'))
+        rows = response.context['blocked_rows']
+        self.assertEqual([row['job'].jc_number for row in rows], ['JC-BAD'])
+        self.assertTrue(any('UPS missing' in r for r in rows[0]['reasons']))

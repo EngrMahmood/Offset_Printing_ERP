@@ -54,7 +54,10 @@ from core.models import ChangeLog, JobCard, Machine
 from core.jobcard_service import job_card_queue_queryset, execute_job_card_action
 from core.views import permission_required
 from reports.export.services import export_as_pdf, export_as_xlsx
-from .merge_engine import MergeConfig, allocate_ups, bucket_signature, build_suggestions, compute_savings
+from .merge_engine import (
+    MergeConfig, allocate_ups, bucket_signature, build_suggestions, compute_savings,
+    merge_blockers, normalise_material, size_key,
+)
 from .forms import JobCardLayoutForm, PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeForm
 from .services import (
     _user_is_admin, _planning_status_filter_values, _parse_date_filter,
@@ -1911,11 +1914,25 @@ def planning_job_detail(request, job_id):
 
     sku_duplicate_alert = build_sku_duplicate_alert(job)
 
+    # A plate set parked when this SKU joined an earlier combined layout can be
+    # picked back up instead of paying for plate making again.
+    retained_plate = None
+    if not job.active_merge_item:
+        from printing_plates.models import PlateRequest
+        from printing_plates.services import get_retained_plate_for_sku
+
+        has_live_plate = PlateRequest.objects.filter(planning_job=job).exclude(
+            status=PlateRequest.STATUS_ARCHIVED
+        ).exists()
+        if not has_live_plate:
+            retained_plate = get_retained_plate_for_sku(job.sku)
+
     return render(
         request,
         'planning/planning_job_detail.html',
         {
             'job': job,
+            'retained_plate': retained_plate,
             'recipe': active_recipe,
             'status_now': status_now,
             'po_approval_date_display': po_approval_date_display,
@@ -5575,20 +5592,13 @@ def reject_change_request(request, request_id):
 def _eligible_merge_jobs(request=None):
     """Jobs that have not been printed yet and are free to be ganged.
 
-    Jobs whose plates are already requested or made are excluded: the whole
-    saving is one plate set and one make-ready, so merging after plates exist
-    saves nothing and would tell the press to run a combined sheet that was
-    never plated.
+    Jobs whose plates already exist are still offered: the saving is not only the
+    plate set but one make-ready, one setup and a longer run. The planner decides
+    per member at accept time whether to scrap or retain the existing plate
+    (see ``existing_plate_request`` on each returned job).
     """
-    from printing_plates.models import PlateRequest
-
     printed_job_ids = set(
         PlanningPrintRun.objects.filter(print_qty__gt=0).values_list('planning_job_id', flat=True)
-    )
-    plated_job_ids = set(
-        PlateRequest.objects.exclude(status=PlateRequest.STATUS_ARCHIVED)
-        .filter(planning_job__isnull=False)
-        .values_list('planning_job_id', flat=True)
     )
     merged_job_ids = set(
         MergeGroupItem.objects.filter(merge_group__status__in=MERGE_GROUP_OPEN_STATUSES)
@@ -5599,7 +5609,7 @@ def _eligible_merge_jobs(request=None):
         .exclude(status__in=['in_production', 'completed', 'cancelled'])
         .exclude(issued_to_production=True)
         .exclude(job_process_type='cut_and_pack')
-        .exclude(id__in=printed_job_ids | merged_job_ids | plated_job_ids)
+        .exclude(id__in=printed_job_ids | merged_job_ids)
     )
     if request is not None:
         material = (request.GET.get('material') or '').strip()
@@ -5609,6 +5619,57 @@ def _eligible_merge_jobs(request=None):
         if plan_month:
             queryset = queryset.filter(plan_month__iexact=plan_month)
     return queryset
+
+
+def _annotate_existing_plate_requests(jobs):
+    """Attach each job's live (non-archived) plate request, if any.
+
+    Merging is still allowed when plates exist — the planner decides per member
+    whether to scrap or retain them — so the board must show what is at stake.
+    """
+    from printing_plates.models import PlateRequest
+
+    job_ids = [job.id for job in jobs]
+    by_job = {}
+    for plate_request in (
+        PlateRequest.objects.exclude(status=PlateRequest.STATUS_ARCHIVED)
+        .filter(planning_job_id__in=job_ids)
+        .order_by('planning_job_id', '-requested_at', '-id')
+    ):
+        by_job.setdefault(plate_request.planning_job_id, plate_request)
+    for job in jobs:
+        job.existing_plate_request = by_job.get(job.id)
+    return jobs
+
+
+def _apply_merge_plate_dispositions(jobs, plate_actions, group, actor=None, reason=''):
+    """Scrap or retain each member's pre-existing plate set for a new merge group.
+
+    Only the lead keeps a live plate path — its own request (if any) is left
+    alone, because the combined plate is raised against the lead.
+    """
+    from printing_plates.models import PlateRequest
+    from printing_plates.services import retain_plate_for_reuse, scrap_plate_for_merge
+
+    scrapped, retained = [], []
+    for job in jobs:
+        if job.id == group.lead_job_id:
+            continue
+        plate_request = (
+            PlateRequest.objects.exclude(status=PlateRequest.STATUS_ARCHIVED)
+            .filter(planning_job_id=job.id)
+            .order_by('-requested_at', '-id')
+            .first()
+        )
+        if not plate_request:
+            continue
+        if plate_actions.get(job.id) == 'retain':
+            retain_plate_for_reuse(plate_request, actor=actor, merge_code=group.code, reason=reason)
+            retained.append(plate_request)
+        else:
+            scrap_plate_for_merge(plate_request, actor=actor, merge_code=group.code, reason=reason)
+            scrapped.append(plate_request)
+    return scrapped, retained
 
 
 def _merge_config_from_request(request):
@@ -5621,11 +5682,42 @@ def _merge_config_from_request(request):
     return cfg
 
 
+def _near_miss_blocked_jobs(jobs, cfg, limit=50):
+    """Jobs that would be mergeable if someone completed their master data.
+
+    Jobs that already look like a partner for a live candidate (same rough piece
+    size and material) are listed first, but a job missing its size cannot be
+    bucketed at all — and those are exactly the ones needing attention — so every
+    blocked job is listed, capped so the board stays scannable.
+    """
+    mergeable_keys = set()
+    blocked = []
+    for job in jobs:
+        if merge_blockers(job, cfg):
+            blocked.append(job)
+        else:
+            key = size_key(job, cfg.size_tolerance_mm)
+            if key:
+                mergeable_keys.add((key, normalise_material(job.material)))
+
+    rows = []
+    for job in blocked:
+        key = size_key(job, cfg.size_tolerance_mm)
+        material = normalise_material(job.material)
+        rows.append({
+            'job': job,
+            'reasons': merge_blockers(job, cfg),
+            'is_near_miss': bool(key and material and (key, material) in mergeable_keys),
+        })
+    rows.sort(key=lambda row: (not row['is_near_miss'], len(row['reasons'])))
+    return rows[:limit]
+
+
 @login_required
 @permission_required('can_view_planning_queue')
 def planning_merge_board(request):
     cfg = _merge_config_from_request(request)
-    jobs = list(_eligible_merge_jobs(request))
+    jobs = _annotate_existing_plate_requests(list(_eligible_merge_jobs(request)))
     suggestions = build_suggestions(jobs, cfg)
     open_groups = (
         MergeGroup.objects.filter(status__in=MERGE_GROUP_OPEN_STATUSES)
@@ -5635,6 +5727,7 @@ def planning_merge_board(request):
         'suggestions': suggestions,
         'open_groups': open_groups,
         'eligible_count': len(jobs),
+        'blocked_rows': _near_miss_blocked_jobs(jobs, cfg),
         'config': cfg,
         'filters': {
             'material': (request.GET.get('material') or '').strip(),
@@ -5667,6 +5760,23 @@ def planning_merge_accept(request):
             messages.error(request, 'One or more jobs are no longer eligible for merging. Refresh the board.')
             return redirect('planning:merge_board')
 
+        # Per-member decision about an existing plate set: scrap it (the combined
+        # plate supersedes it), retain it for a future run of that SKU, or drop
+        # the job from this merge entirely.
+        plate_actions = {
+            job.id: (request.POST.get(f'plate_action_{job.id}') or 'scrap').strip().lower()
+            for job in jobs
+        }
+        excluded = [job for job in jobs if plate_actions.get(job.id) == 'exclude']
+        if excluded:
+            jobs = [job for job in jobs if plate_actions.get(job.id) != 'exclude']
+            if len(jobs) < 2:
+                messages.error(
+                    request,
+                    'Excluding those jobs leaves fewer than two SKUs — nothing left to merge.',
+                )
+                return redirect('planning:merge_board')
+
         signatures = {bucket_signature(job, cfg) for job in jobs}
         if len(signatures) != 1 or None in signatures:
             messages.error(request, 'These jobs do not share the same size, material and colour specification.')
@@ -5674,7 +5784,16 @@ def planning_merge_accept(request):
 
         allocation = allocate_ups(jobs, jobs[0].ups_value, cfg)
         if not allocation:
-            messages.error(request, 'Quantities cannot be split into whole ups within the 5% tolerance.')
+            if excluded:
+                messages.error(
+                    request,
+                    'After excluding '
+                    + ', '.join(job.jc_number for job in excluded)
+                    + ', the remaining quantities no longer split into whole ups within the '
+                    f'{cfg.qty_tolerance_pct:g}% tolerance. Adjust the selection and try again.',
+                )
+            else:
+                messages.error(request, 'Quantities cannot be split into whole ups within the 5% tolerance.')
             return redirect('planning:merge_board')
 
         savings = compute_savings(allocation, jobs, cfg)
@@ -5717,7 +5836,19 @@ def planning_merge_accept(request):
         group.lead_job = lead_item['job']
         group.save(update_fields=['lead_job'])
 
-    messages.success(request, f'Merge group {group.code} created with {len(jobs)} jobs.')
+        scrapped, retained = _apply_merge_plate_dispositions(
+            jobs, plate_actions, group, actor=request.user,
+            reason=(request.POST.get('plate_reason') or '').strip(),
+        )
+
+    note = f'Merge group {group.code} created with {len(jobs)} jobs.'
+    if excluded:
+        note += ' Excluded: ' + ', '.join(job.jc_number for job in excluded) + '.'
+    if scrapped:
+        note += f' {len(scrapped)} existing plate set(s) scrapped as superseded.'
+    if retained:
+        note += f' {len(retained)} plate set(s) retained for a future run.'
+    messages.success(request, note)
     return redirect('planning:merge_detail', group_id=group.id)
 
 
@@ -5739,9 +5870,12 @@ def planning_merge_detail(request, group_id):
         .exclude(planning_job_id=group.lead_job_id)
         .select_related('planning_job')
     )
+    items = list(group.items.all())
     return render(request, 'planning/planning_merge_detail.html', {
         'group': group,
         'preexisting_plate_requests': preexisting,
+        'new_artwork_count': sum(1 for item in items if not (item.source_awc_no or '').strip()),
+        'member_count': len(items),
     })
 
 

@@ -29,6 +29,14 @@
 
 {% block content %}
 <div class="erp-page-stack">
+    {% if retained_plate %}
+    <div class="erp-alert erp-alert-info">
+        <strong>A plate set for this SKU is on hold.</strong>
+        Plate set {{ retained_plate.display_set_no|default:'—' }} was retained when this SKU joined an
+        earlier combined layout (<a href="{% url 'printing_plates:request_detail' retained_plate.pk %}">request #{{ retained_plate.pk }}</a>).
+        Consider repeat plate making with the stored set instead of raising a new plate request.
+    </div>
+    {% endif %}
     {% with merge_item=job.active_merge_item %}
     {% if merge_item %}
     <div class="erp-alert erp-alert-info">

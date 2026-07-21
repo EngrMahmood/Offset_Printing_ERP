@@ -25,10 +25,11 @@
 <div class="erp-page-stack">
     {% if preexisting_plate_requests %}
     <div class="erp-alert erp-alert-warning">
-        <strong>Plates already exist for members of this group.</strong>
-        These SKUs had their own plate requests before the merge was accepted, so there is no
-        combined plate set to print from and the merge saves nothing. Cancel this group and let
-        the jobs run separately, or have graphics make the combined plate before production starts.
+        <strong>Plates still exist for members of this group.</strong>
+        These SKUs kept their own plate sets, so there is no combined plate to print from yet.
+        The make-ready and setup saving still applies once the combined plate is made — so either
+        have graphics produce it before production starts, or cancel the group and run the jobs
+        separately. (New merges ask you to scrap or retain each plate set at accept time.)
         <ul style="margin:8px 0 0; padding-left:20px;">
             {% for req in preexisting_plate_requests %}
             <li>
@@ -69,7 +70,7 @@
                     <tr>
                         <td><a href="{% url 'planning:job_detail' item.planning_job.id %}">{{ item.planning_job.jc_number }}</a></td>
                         <td>{{ item.planning_job.sku }}</td>
-                        <td>{{ item.source_awc_no|default:"—" }}</td>
+                        <td>{% if item.source_awc_no %}{{ item.source_awc_no }}{% else %}<em>NEW ARTWORK — to be created</em>{% endif %}</td>
                         <td>{{ item.planning_job.size_w_mm }} × {{ item.planning_job.size_h_mm }}</td>
                         <td>{{ item.net_qty }}</td>
                         <td><strong>{{ item.allocated_ups }}</strong></td>
@@ -94,11 +95,17 @@
         </div>
         <div class="merge-artwork">
             <div class="merge-artwork-code">{{ group.artwork_code|default:"—" }}</div>
+            {% if new_artwork_count %}
+            <p class="erp-section-desc">
+                <strong>{{ new_artwork_count }} of {{ member_count }} SKUs have no existing artwork</strong> —
+                draw these fresh into the combined layout rather than looking for a source file.
+            </p>
+            {% endif %}
             <p class="erp-section-desc">Combined artwork code for the merged layout. Source files to merge:</p>
             <ul class="merge-awc-list">
                 {% for item in group.items.all %}
                 <li>
-                    <strong>{{ item.source_awc_no|default:"AWC not set" }}</strong>
+                    <strong>{% if item.source_awc_no %}{{ item.source_awc_no }}{% else %}NEW ARTWORK — to be created{% endif %}</strong>
                     — {{ item.planning_job.sku }} ({{ item.allocated_ups }} ups)
                 </li>
                 {% endfor %}

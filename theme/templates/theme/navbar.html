@@ -433,6 +433,10 @@
            class="erp-subnav-link {% if url == 'merged_list' %}is-active{% endif %}">
             <i class="fas fa-layer-group"></i> Merged Layouts
         </a>
+        <a href="{% url 'printing_plates:on_hold_list' %}"
+           class="erp-subnav-link {% if url == 'on_hold_list' %}is-active{% endif %}">
+            <i class="fas fa-box-archive"></i> Plates on Hold
+        </a>
         <a href="{% url 'printing_plates:request_add' %}"
            class="erp-subnav-link {% if url == 'request_add' %}is-active{% endif %}">
             New Request
