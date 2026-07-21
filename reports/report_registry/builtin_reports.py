@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from reports.services import (
+    build_daily_production_context,
     build_dispatch_tracking_context,
     build_job_planning_context,
     build_machine_planning_context,
@@ -16,6 +17,10 @@ from reports.report_registry.registry import registry
 
 def _machine_planning_executor(request, filters):
     return build_machine_planning_context(request)
+
+
+def _daily_production_executor(request, filters):
+    return build_daily_production_context(request)
 
 
 def _dispatch_tracking_executor(request, filters):
@@ -45,6 +50,25 @@ def _raw_material_cutting_executor(request, filters):
 def _wastage_report_executor(request, filters):
     return build_wastage_report_context(request)
 
+
+registry.register(
+    ReportDefinition(
+        slug='daily-production',
+        title='Daily Production',
+        description='Day-by-day printing impressions, packing output, and dispatch quantities.',
+        department='production',
+        permissions=('core.view_reports',),
+        filters=('date_range', 'machine'),
+        supported_exports=('csv', 'xlsx', 'pdf'),
+        supported_charts=('line', 'bar', 'stacked_bar'),
+        drilldown_support=False,
+        cache_timeout=300,
+        icon='fa-calendar-day',
+        category='execution',
+        navigation_group='operations',
+        executor=_daily_production_executor,
+    )
+)
 
 registry.register(
     ReportDefinition(

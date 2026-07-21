@@ -1,0 +1,384 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags humanize %}
+
+{% block title %}{{ report.title }} — Reports{% endblock %}
+{% block header_title %}{{ report.title }}{% endblock %}
+{% block header_subtitle %}Printing impressions, packing output and dispatch — day by day.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dp-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+    .dp-card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 14px 16px;
+    }
+    .dp-card-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #64748b;
+        font-weight: 700;
+    }
+    .dp-card-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: #0f172a;
+        margin-top: 4px;
+    }
+    .dp-card-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .dp-filters {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: end;
+        margin-bottom: 18px;
+    }
+    .dp-num { text-align: right; font-variant-numeric: tabular-nums; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+
+    <section class="erp-section-shell">
+        <form method="get" class="dp-filters">
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="dp-period">Period</label>
+                <select name="period" id="dp-period" class="erp-select">
+                    <option value="today" {% if data.period == 'today' %}selected{% endif %}>Today</option>
+                    <option value="week" {% if data.period == 'week' %}selected{% endif %}>This Week</option>
+                    <option value="month" {% if data.period == 'month' %}selected{% endif %}>This Month</option>
+                    <option value="custom" {% if data.period == 'custom' %}selected{% endif %}>Custom Range</option>
+                    <option value="all" {% if data.period == 'all' %}selected{% endif %}>All Time</option>
+                </select>
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="dp-from">From</label>
+                <input type="date" id="dp-from" name="date_from" class="erp-input" value="{{ data.date_from }}">
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="dp-to">To</label>
+                <input type="date" id="dp-to" name="date_to" class="erp-input" value="{{ data.date_to }}">
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="dp-machine">Machine</label>
+                <select name="machine" id="dp-machine" class="erp-select">
+                    <option value="">All machines</option>
+                    {% for m in data.machines %}
+                    <option value="{{ m }}" {% if data.machine_filter == m %}selected{% endif %}>{{ m }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="dp-shift">Shift</label>
+                <select name="shift" id="dp-shift" class="erp-select">
+                    <option value="">All shifts</option>
+                    {% for code, label in data.shift_choices %}
+                    <option value="{{ code }}" {% if data.shift_filter == code %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'reports:detail' report.slug %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
+        </form>
+
+        {% if data.shift_filter %}
+        <div class="erp-alert erp-alert-info mb-4">
+            Showing <strong>{% for code, label in data.shift_choices %}{% if data.shift_filter == code %}{{ label }}{% endif %}{% endfor %}</strong> only.
+            Dispatch is not recorded per shift, so the Dispatch tab still shows all shifts.
+        </div>
+        {% endif %}
+
+        <div class="dp-summary-grid">
+            <div class="dp-card">
+                <div class="dp-card-label">Impressions</div>
+                <div class="dp-card-value">{{ data.totals.impressions|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.totals.avg_impressions_per_day|intcomma }} / day avg</div>
+            </div>
+            <div class="dp-card">
+                <div class="dp-card-label">Printed Sheets</div>
+                <div class="dp-card-value">{{ data.totals.output_sheets|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.totals.printing_waste|intcomma }} waste sheets</div>
+            </div>
+            <div class="dp-card">
+                <div class="dp-card-label">Packed Pcs</div>
+                <div class="dp-card-value">{{ data.totals.packing_qty|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.totals.packing_waste|intcomma }} sorting waste</div>
+            </div>
+            <div class="dp-card">
+                <div class="dp-card-label">Dispatched Pcs</div>
+                <div class="dp-card-value">{{ data.totals.dispatch_qty|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.totals.dc_count }} delivery challans</div>
+            </div>
+            <div class="dp-card">
+                <div class="dp-card-label">Days With Activity</div>
+                <div class="dp-card-value">{{ data.totals.days }}</div>
+                <div class="dp-card-sub">{{ data.period_label }}</div>
+            </div>
+        </div>
+    </section>
+
+    {# Current filter selection, reused by every per-tab export link. #}
+    {% with qs="period="|add:data.period|add:"&date_from="|add:data.date_from|add:"&date_to="|add:data.date_to|add:"&machine="|add:data.machine_filter|add:"&shift="|add:data.shift_filter %}
+    <section class="erp-section-shell">
+        <div class="erp-tabs">
+            <button type="button" class="erp-tab-btn is-active" data-target="dp-tab-overview" data-tab-name="overview">
+                <i class="fa fa-layer-group"></i> Overview
+            </button>
+            <button type="button" class="erp-tab-btn" data-target="dp-tab-printing" data-tab-name="printing">
+                <i class="fa fa-print"></i> Printing
+            </button>
+            <button type="button" class="erp-tab-btn" data-target="dp-tab-packing" data-tab-name="packing">
+                <i class="fa fa-box"></i> Packing
+            </button>
+            <button type="button" class="erp-tab-btn" data-target="dp-tab-dispatch" data-tab-name="dispatch">
+                <i class="fa fa-truck"></i> Dispatch
+            </button>
+        </div>
+
+        <!-- OVERVIEW -->
+        <div id="dp-tab-overview" class="erp-tab-content">
+            {% include 'reports/_daily_production_exports.html' with slug=report.slug tab='overview' qs=qs %}
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th class="dp-num">Impressions</th>
+                            <th class="dp-num">Printed Sheets</th>
+                            <th class="dp-num">Printing Waste</th>
+                            <th class="dp-num">Packed Pcs</th>
+                            <th class="dp-num">Packing Waste</th>
+                            <th class="dp-num">Dispatched Pcs</th>
+                            <th class="dp-num">DCs</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.overview_rows %}
+                        <tr>
+                            <td>{{ row.date_label }}</td>
+                            <td class="dp-num">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
+                            <td class="dp-num">{{ row.printing_waste|intcomma }}</td>
+                            <td class="dp-num">{{ row.packing_qty|intcomma }}</td>
+                            <td class="dp-num">{{ row.packing_waste|intcomma }}</td>
+                            <td class="dp-num">{{ row.dispatch_qty|intcomma }}</td>
+                            <td class="dp-num">{{ row.dc_count }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8">No production or dispatch recorded in this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                    {% if data.overview_rows %}
+                    <tfoot>
+                        <tr>
+                            <th>Total</th>
+                            <th class="dp-num">{{ data.totals.impressions|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.output_sheets|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.printing_waste|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.packing_qty|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.packing_waste|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.dispatch_qty|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.dc_count }}</th>
+                        </tr>
+                    </tfoot>
+                    {% endif %}
+                </table>
+            </div>
+        </div>
+
+        <!-- PRINTING -->
+        <div id="dp-tab-printing" class="erp-tab-content" style="display:none;">
+            {% include 'reports/_daily_production_exports.html' with slug=report.slug tab='printing' qs=qs %}
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Production Date</th>
+                            <th class="dp-num">Entries</th>
+                            <th class="dp-num">Impressions</th>
+                            <th class="dp-num">Output Sheets</th>
+                            <th class="dp-num">Waste Sheets</th>
+                            <th class="dp-num">Waste %</th>
+                            <th class="dp-num">Downtime (min)</th>
+                            <th class="dp-num">Efficiency %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.printing_rows %}
+                        <tr>
+                            <td>{{ row.date_label }}</td>
+                            <td class="dp-num">{{ row.entries }}</td>
+                            <td class="dp-num">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
+                            <td class="dp-num">{{ row.waste_sheets|intcomma }}</td>
+                            <td class="dp-num">{{ row.waste_pct }}%</td>
+                            <td class="dp-num">{{ row.downtime_minutes|floatformat:0 }}</td>
+                            <td class="dp-num">{% if row.efficiency_pct is not None %}{{ row.efficiency_pct }}%{% else %}—{% endif %}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8">No printing production recorded in this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if data.printing_by_shift %}
+            <div class="erp-card-header mb-4 mt-4">
+                <h3 class="erp-section-title">By Shift</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Shift</th>
+                            <th class="dp-num">Entries</th>
+                            <th class="dp-num">Impressions</th>
+                            <th class="dp-num">Output Sheets</th>
+                            <th class="dp-num">Waste Sheets</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.printing_by_shift %}
+                        <tr>
+                            <td>{{ row.shift_label }}</td>
+                            <td class="dp-num">{{ row.entries }}</td>
+                            <td class="dp-num">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
+                            <td class="dp-num">{{ row.waste_sheets|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
+            {% if data.printing_by_machine %}
+            <div class="erp-card-header mb-4 mt-4">
+                <h3 class="erp-section-title">By Machine</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Machine</th>
+                            <th class="dp-num">Impressions</th>
+                            <th class="dp-num">Output Sheets</th>
+                            <th class="dp-num">Waste Sheets</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.printing_by_machine %}
+                        <tr>
+                            <td>{{ row.machine__name|default:'—' }}</td>
+                            <td class="dp-num">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
+                            <td class="dp-num">{{ row.waste_sheets|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- PACKING -->
+        <div id="dp-tab-packing" class="erp-tab-content" style="display:none;">
+            {% include 'reports/_daily_production_exports.html' with slug=report.slug tab='packing' qs=qs %}
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Packing Date</th>
+                            <th class="dp-num">Entries</th>
+                            <th class="dp-num">Packed Pcs</th>
+                            <th class="dp-num">Sorting Waste</th>
+                            <th class="dp-num">Waste %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.packing_rows %}
+                        <tr>
+                            <td>{{ row.date_label }}</td>
+                            <td class="dp-num">{{ row.entries }}</td>
+                            <td class="dp-num">{{ row.packing_qty|intcomma }}</td>
+                            <td class="dp-num">{{ row.sorting_waste_qty|intcomma }}</td>
+                            <td class="dp-num">{{ row.waste_pct }}%</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="5">No packing production recorded in this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if data.packing_by_shift %}
+            <div class="erp-card-header mb-4 mt-4">
+                <h3 class="erp-section-title">By Shift</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Shift</th>
+                            <th class="dp-num">Entries</th>
+                            <th class="dp-num">Packed Pcs</th>
+                            <th class="dp-num">Sorting Waste</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.packing_by_shift %}
+                        <tr>
+                            <td>{{ row.shift_label }}</td>
+                            <td class="dp-num">{{ row.entries }}</td>
+                            <td class="dp-num">{{ row.packing_qty|intcomma }}</td>
+                            <td class="dp-num">{{ row.sorting_waste_qty|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- DISPATCH -->
+        <div id="dp-tab-dispatch" class="erp-tab-content" style="display:none;">
+            {% include 'reports/_daily_production_exports.html' with slug=report.slug tab='dispatch' qs=qs %}
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Dispatch Date</th>
+                            <th class="dp-num">Dispatch Entries</th>
+                            <th class="dp-num">Delivery Challans</th>
+                            <th class="dp-num">Dispatched Pcs</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.dispatch_rows %}
+                        <tr>
+                            <td>{{ row.date_label }}</td>
+                            <td class="dp-num">{{ row.entries }}</td>
+                            <td class="dp-num">{{ row.dc_count }}</td>
+                            <td class="dp-num">{{ row.dispatch_qty|intcomma }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="4">No dispatches recorded in this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+    {% endwith %}
+</div>
+{% endblock %}

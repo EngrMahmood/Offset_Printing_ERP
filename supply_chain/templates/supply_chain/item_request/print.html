@@ -46,10 +46,81 @@
         <tr><th>Required Quantity</th><td>{{ item_request.required_quantity }}</td></tr>
         <tr><th>Department</th><td>{{ item_request.department.name }}</td></tr>
         <tr><th>Budget / Cost Centre</th><td>{{ item_request.cost_centre|default:'—' }}</td></tr>
-        <tr><th>Existing SKU</th><td>{{ item_request.existing_sku|default:'—' }}</td></tr>
+        <tr><th>Existing SKU</th><td>{% if item_request.existing_sku %}{{ item_request.existing_sku.display_label }}{% else %}— (new item){% endif %}</td></tr>
         <tr><th>Estimated Unit Price</th><td>{{ item_request.estimated_unit_price|default:'—' }}</td></tr>
         <tr><th>Request by</th><td>{{ item_request.raised_by.get_full_name|default:item_request.raised_by.username }}</td></tr>
         <tr><th>Status</th><td>{{ item_request.get_status_display }}</td></tr>
+    </table>
+
+    {% if procurement %}
+    <div class="section-title">Procurement Timeline</div>
+    <table>
+        <tr><th>Linked SKU</th><td>{% if procurement.sku %}{{ procurement.sku.display_label }}{% else %}— (not yet opened){% endif %}</td></tr>
+        <tr><th>Item Code</th><td>{{ procurement.item_code|default:'—' }}</td></tr>
+        {% if procurement.sku_pre_existing %}
+        <tr><th>Code Opening</th><td>Not required — SKU already existed</td></tr>
+        {% else %}
+        <tr><th>Code Opened Date</th><td>{{ procurement.code_opened_date|default:'Pending' }}</td></tr>
+        <tr>
+            <th>Code Opening Time</th>
+            <td>
+                {% if procurement.code_opening_days is not None %}
+                    {{ procurement.code_opening_days }} day{{ procurement.code_opening_days|pluralize }}{% if not procurement.code_opened_date %} (still open){% endif %}
+                {% else %}—{% endif %}
+            </td>
+        </tr>
+        {% endif %}
+        <tr><th>Indent / PR No.</th><td>{{ procurement.indent_pr_no|default:'—' }}</td></tr>
+        <tr><th>PR Date</th><td>{{ procurement.pr_date|default:'—' }}</td></tr>
+        <tr><th>PO No.</th><td>{{ procurement.po_no|default:'—' }}</td></tr>
+        <tr><th>PO Date</th><td>{{ procurement.po_date|default:'—' }}</td></tr>
+        <tr><th>Supplier</th><td>{{ procurement.supplier|default:'—' }}</td></tr>
+        <tr><th>Received Date</th><td>{{ procurement.received_date|default:'—' }}</td></tr>
+        <tr><th>Unit Price</th><td>{{ procurement.unit_price|default:'—' }}</td></tr>
+        <tr><th>Received Qty</th><td>{{ procurement.received_qty|default:'—' }}</td></tr>
+        <tr><th>Remarks</th><td>{{ procurement.remarks|default:'—' }}</td></tr>
+    </table>
+
+    {% if procurement.quotes.all %}
+    <div class="section-title">Supplier Quotes</div>
+    <table>
+        <tr><th>Supplier</th><th>Quoted Price</th><th>Notes</th></tr>
+        {% for q in procurement.quotes.all %}
+        <tr>
+            <td>{{ q.supplier }}</td>
+            <td>{{ q.quoted_price|default:'—' }}</td>
+            <td>{{ q.notes|default:'—' }}</td>
+        </tr>
+        {% endfor %}
+    </table>
+    {% endif %}
+    {% endif %}
+
+    <div class="section-title">Review Decisions</div>
+    <table>
+        <tr><th>Stage</th><th>Decision</th><th>By</th><th>Date</th><th>Comment</th></tr>
+        <tr>
+            <td>Manager Review</td>
+            {% if manager_decision %}
+            <td>{{ manager_decision.get_action_display }}</td>
+            <td>{{ manager_decision.actor.username }}</td>
+            <td>{{ manager_decision.created_at|date:'Y-m-d H:i' }}</td>
+            <td>{{ manager_decision.comment|default:'—' }}</td>
+            {% else %}
+            <td colspan="4">Pending</td>
+            {% endif %}
+        </tr>
+        <tr>
+            <td>Supply Chain Review</td>
+            {% if sc_decision %}
+            <td>{{ sc_decision.get_action_display }}</td>
+            <td>{{ sc_decision.actor.username }}</td>
+            <td>{{ sc_decision.created_at|date:'Y-m-d H:i' }}</td>
+            <td>{{ sc_decision.comment|default:'—' }}</td>
+            {% else %}
+            <td colspan="4">Pending</td>
+            {% endif %}
+        </tr>
     </table>
 
     {% if item_request.approvals.all %}

@@ -52,6 +52,15 @@ class RawMaterialSku(models.Model):
         related_name='raw_material_skus',
     )
     purchase_sheet_size = models.CharField(max_length=80, verbose_name='Purchase Sheet Size')
+    sku_type = models.ForeignKey(
+        'supply_chain.ItemRequestType',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='raw_material_skus',
+        verbose_name='SKU Type',
+        help_text='Raw Material, Consumable, Service, Maintenance, …',
+    )
     uom = models.CharField(max_length=20, verbose_name='UOM', default='Sheets')
     sheet_packing_pcs = models.IntegerField(verbose_name='Sheet Packing/Pcs', default=1)
     unit_cost = models.DecimalField(max_digits=12, decimal_places=2, default=0.0, verbose_name='Unit Cost')
@@ -553,8 +562,22 @@ class ItemRequestApproval(models.Model):
 class ItemProcurementTimeline(models.Model):
     request = models.OneToOneField(ItemRequest, on_delete=models.CASCADE, related_name='procurement')
 
+    sku = models.ForeignKey(
+        'supply_chain.RawMaterialSku',
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name='procurement_timelines',
+        verbose_name='Linked SKU',
+        help_text='Link to an existing SKU. Leave blank while a new code is being opened.',
+    )
     item_code = models.CharField(max_length=50, blank=True, default='')
     code_opened_date = models.DateField(null=True, blank=True)
+    sku_pre_existing = models.BooleanField(
+        default=False,
+        verbose_name='SKU already existed',
+        help_text='True when the request was linked to an existing SKU, so code opening was not required.',
+    )
     indent_pr_no = models.CharField(max_length=50, blank=True, default='')
     pr_date = models.DateField(null=True, blank=True)
     po_no = models.CharField(max_length=50, blank=True, default='')
@@ -574,6 +597,25 @@ class ItemProcurementTimeline(models.Model):
 
     def __str__(self):
         return f'Procurement — {self.request}'
+
+    @property
+    def code_opening_required(self):
+        """Code opening only applies when the item was not already an SKU."""
+        return not self.sku_pre_existing
+
+    @property
+    def code_opening_days(self):
+        """Days taken to open the code, or days elapsed so far if still open.
+
+        Returns None when the SKU already existed (nothing to track).
+        """
+        if self.sku_pre_existing:
+            return None
+        start = self.request.request_date
+        if not start:
+            return None
+        end = self.code_opened_date or timezone.localdate()
+        return (end - start).days
 
 
 class ItemRequestQuote(models.Model):

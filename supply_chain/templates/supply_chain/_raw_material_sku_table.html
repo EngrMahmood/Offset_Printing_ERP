@@ -1,0 +1,55 @@
+<div class="erp-table-wrap erp-table-dense">
+    <table class="erp-table">
+        <thead>
+            <tr>
+                <th class="w-12 text-center" style="width: 48px;">
+                    <input type="checkbox" onclick="toggleSelectAll(this, 'sku-checkbox')">
+                </th>
+                <th>SKU</th>
+                <th>Material</th>
+                <th>Type</th>
+                <th>Purchase Sheet Size</th>
+                <th>UOM</th>
+                <th>Unit Cost</th>
+                <th>Safety Stock</th>
+                <th>Active</th>
+                <th>Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in rows %}
+            <tr>
+                <td class="text-center">
+                    <input type="checkbox" name="selected_ids" value="{{ item.pk }}" class="sku-checkbox">
+                </td>
+                <td><strong>{{ item.sku }}</strong></td>
+                <td>{{ item.material.name }}</td>
+                <td>{{ item.sku_type.name|default:'—' }}</td>
+                <td>{{ item.purchase_sheet_size }}</td>
+                <td>{{ item.uom }}</td>
+                <td>{{ item.unit_cost }}</td>
+                <td>{{ item.safety_stock }}</td>
+                <td>{% if item.is_active %}Yes{% else %}No{% endif %}</td>
+                <td class="flex gap-1">
+                    {% if item.is_active %}
+                        <a href="{% url 'supply_chain:item_edit' item.pk %}" class="erp-btn erp-btn-secondary sm">Edit</a>
+                        <a href="{% url 'supply_chain:item_delete' item.pk %}" class="erp-btn erp-btn-secondary sm text-red-600 hover:bg-red-50">Delete</a>
+                    {% elif is_admin %}
+                        <button type="submit" formaction="{% url 'supply_chain:item_reactivate' item.pk %}"
+                                class="erp-btn erp-btn-secondary sm text-green-700 hover:bg-green-50"
+                                onclick="return confirm('Reactivate SKU {{ item.sku }}? It will map to demand again.');">
+                            <i class="fas fa-rotate-left"></i> Reactivate
+                        </button>
+                    {% else %}
+                        <span class="text-gray-400 text-sm">Archived</span>
+                    {% endif %}
+                </td>
+            </tr>
+            {% empty %}
+            <tr>
+                <td colspan="10">No raw material SKUs yet. Download the template or use quick add above.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>

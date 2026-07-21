@@ -1,0 +1,13 @@
+{# Per-tab export bar. `tab` selects which table the report exports. #}
+<div style="margin-bottom: 14px; display: flex; gap: 8px; justify-content: flex-end;">
+    <a class="erp-btn erp-btn-secondary"
+       href="{% url 'reports:reports_api:export_report' slug %}?type=xlsx&tab={{ tab }}&{{ qs }}"
+       style="padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+        <i class="fa fa-file-excel"></i> Export Excel
+    </a>
+    <a class="erp-btn erp-btn-secondary"
+       href="{% url 'reports:reports_api:export_report' slug %}?type=pdf&tab={{ tab }}&{{ qs }}"
+       style="padding: 6px 12px; font-size: 12px; display: inline-flex; align-items: center; gap: 6px;">
+        <i class="fa fa-file-pdf"></i> Export PDF
+    </a>
+</div>

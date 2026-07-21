@@ -69,28 +69,46 @@
             </div>
         </section>
 
-        {% if can_review_manager or can_review_sc %}
         <section class="erp-section-shell">
             <div class="erp-card-header mb-4">
-                <h3 class="erp-section-title">{% if can_review_manager %}Manager Review{% else %}Supply Chain Review{% endif %}</h3>
+                <h3 class="erp-section-title">Review</h3>
             </div>
-            <form method="post" action="{% url 'supply_chain:item_request_review' item_request.pk %}">
-                {% csrf_token %}
-                <div class="erp-input-group">
-                    {% for radio in review_form.action %}
-                    <label style="margin-right:16px;">{{ radio.tag }} {{ radio.choice_label }}</label>
-                    {% endfor %}
-                </div>
-                <div class="erp-input-group">
-                    <label class="erp-input-label">Comment</label>
-                    {{ review_form.comment }}
-                </div>
-                <div class="erp-actions">
-                    <button type="submit" class="erp-btn erp-btn-primary">Submit Decision</button>
-                </div>
-            </form>
+
+            <div class="erp-tabs">
+                <button type="button" class="erp-tab-btn {% if active_review_tab == 'manager' %}is-active{% endif %}" data-target="review-tab-manager">
+                    Manager Review
+                    {% if manager_decision %}<span class="erp-badge erp-badge-{% if manager_decision.action == 'APPROVE' %}approved{% elif manager_decision.action == 'REJECT' %}rejected{% else %}pending{% endif %}">{{ manager_decision.get_action_display }}</span>{% endif %}
+                </button>
+                <button type="button" class="erp-tab-btn {% if active_review_tab == 'sc' %}is-active{% endif %}" data-target="review-tab-sc">
+                    Supply Chain Review
+                    {% if sc_decision %}<span class="erp-badge erp-badge-{% if sc_decision.action == 'APPROVE' %}approved{% elif sc_decision.action == 'REJECT' %}rejected{% else %}pending{% endif %}">{{ sc_decision.get_action_display }}</span>{% endif %}
+                </button>
+            </div>
+
+            <div id="review-tab-manager" class="erp-tab-content" style="{% if active_review_tab != 'manager' %}display:none;{% endif %}">
+                {% if can_review_manager %}
+                {% include 'supply_chain/item_request/_review_form.html' with review_form=review_form item_request=item_request %}
+                {% elif manager_decision %}
+                {% include 'supply_chain/item_request/_review_decision.html' with decision=manager_decision %}
+                {% elif item_request.status == 'MGR_REVIEW' %}
+                <p class="erp-empty-note">Awaiting a manager decision. You do not have permission to act on this stage.</p>
+                {% else %}
+                <p class="erp-empty-note">Not yet reached.</p>
+                {% endif %}
+            </div>
+
+            <div id="review-tab-sc" class="erp-tab-content" style="{% if active_review_tab != 'sc' %}display:none;{% endif %}">
+                {% if can_review_sc %}
+                {% include 'supply_chain/item_request/_review_form.html' with review_form=review_form item_request=item_request %}
+                {% elif sc_decision %}
+                {% include 'supply_chain/item_request/_review_decision.html' with decision=sc_decision %}
+                {% elif item_request.status == 'SC_REVIEW' %}
+                <p class="erp-empty-note">Awaiting a supply-chain decision. You do not have permission to act on this stage.</p>
+                {% else %}
+                <p class="erp-empty-note">Not yet reached — pending manager approval.</p>
+                {% endif %}
+            </div>
         </section>
-        {% endif %}
 
         {% if procurement %}
         <section class="erp-section-shell">
@@ -103,8 +121,21 @@
             <div class="erp-table-wrap erp-table-dense">
                 <table class="erp-table">
                     <tbody>
+                        <tr><td><strong>Linked SKU</strong></td><td>{% if procurement.sku %}{{ procurement.sku.display_label }}{% else %}—{% endif %}</td></tr>
                         <tr><td><strong>Item Code</strong></td><td>{{ procurement.item_code|default:'—' }}</td></tr>
-                        <tr><td><strong>Code Opened Date</strong></td><td>{{ procurement.code_opened_date|default:'—' }}</td></tr>
+                        {% if procurement.sku_pre_existing %}
+                        <tr><td><strong>Code Opening</strong></td><td><span class="erp-badge erp-badge-approved">Not required — SKU already exists</span></td></tr>
+                        {% else %}
+                        <tr><td><strong>Code Opened Date</strong></td><td>{{ procurement.code_opened_date|default:'Pending' }}</td></tr>
+                        <tr>
+                            <td><strong>Code Opening Time</strong></td>
+                            <td>
+                                {% if procurement.code_opening_days is not None %}
+                                    {{ procurement.code_opening_days }}d{% if not procurement.code_opened_date %} <span class="erp-badge erp-badge-pending">still open</span>{% endif %}
+                                {% else %}—{% endif %}
+                            </td>
+                        </tr>
+                        {% endif %}
                         <tr><td><strong>Indent / PR No.</strong></td><td>{{ procurement.indent_pr_no|default:'—' }}</td></tr>
                         <tr><td><strong>PR Date</strong></td><td>{{ procurement.pr_date|default:'—' }}</td></tr>
                         <tr><td><strong>PO No.</strong></td><td>{{ procurement.po_no|default:'—' }}</td></tr>

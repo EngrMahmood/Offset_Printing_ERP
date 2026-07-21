@@ -11,6 +11,24 @@
 {% block content %}
     <div class="erp-page-stack">
         <section class="erp-section-shell">
+            {% if procurement.sku_pre_existing %}
+            <div class="erp-alert erp-alert-info mb-4">
+                <strong>SKU already exists — code opening not required.</strong>
+                This request was linked to <strong>{{ procurement.sku.display_label|default:procurement.item_code }}</strong>,
+                so it goes straight to indent / PR.
+            </div>
+            {% elif procurement.code_opened_date %}
+            <div class="erp-alert erp-alert-success mb-4">
+                Code opened on <strong>{{ procurement.code_opened_date }}</strong> — took
+                <strong>{{ procurement.code_opening_days }} day{{ procurement.code_opening_days|pluralize }}</strong> from request date.
+            </div>
+            {% else %}
+            <div class="erp-alert erp-alert-warning mb-4">
+                <strong>Code opening in progress</strong> — {{ procurement.code_opening_days }} day{{ procurement.code_opening_days|pluralize }} elapsed
+                since {{ item_request.request_date }}. Pick the SKU below once the code is opened.
+            </div>
+            {% endif %}
+
             <form method="post" class="erp-form-grid" style="grid-template-columns:1fr 1fr; gap:16px; max-width:720px;">
                 {% csrf_token %}
                 {% for field in form %}
@@ -73,4 +91,29 @@
             </form>
         </section>
     </div>
+
+    <script>
+    // When an SKU is linked the item code is derived from it, so keep the free-text
+    // field read-only rather than letting the two drift apart.
+    (function () {
+        var sku = document.getElementById('id_sku');
+        var itemCode = document.getElementById('id_item_code');
+        if (!sku || !itemCode) return;
+
+        function sync() {
+            var option = sku.options[sku.selectedIndex];
+            if (sku.value) {
+                // Option label is "Material — Size (SKU)"; the SKU is the trailing parens.
+                var match = (option ? option.text : '').match(/\(([^()]+)\)\s*$/);
+                if (match) itemCode.value = match[1];
+                itemCode.readOnly = true;
+            } else {
+                itemCode.readOnly = false;
+            }
+        }
+
+        sku.addEventListener('change', sync);
+        sync();
+    })();
+    </script>
 {% endblock %}

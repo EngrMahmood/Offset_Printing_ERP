@@ -22,6 +22,9 @@ def parse_universal_filters(request) -> dict:
         'approval_status': (request.GET.get('approval_status') or '').strip(),
         'wastage_status': (request.GET.get('wastage_status') or '').strip(),
         'period': (request.GET.get('period') or '').strip(),
+        # Selects which table a multi-table report renders/exports; part of the
+        # cache key so per-tab exports don't collide.
+        'tab': (request.GET.get('tab') or '').strip(),
         'page': (request.GET.get('page') or '').strip(),
         'high_wastage': (request.GET.get('high_wastage') or '').strip(),
     }

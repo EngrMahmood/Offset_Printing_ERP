@@ -3,6 +3,7 @@ import io
 from django import forms
 from django.core.files.base import ContentFile
 from django.core.files.uploadedfile import UploadedFile
+from django.utils import timezone
 
 from core.models import Machine, Material
 
@@ -54,6 +55,7 @@ class RawMaterialSkuForm(forms.ModelForm):
         fields = [
             'sku',
             'material',
+            'sku_type',
             'purchase_sheet_size',
             'uom',
             'sheet_packing_pcs',
@@ -66,6 +68,7 @@ class RawMaterialSkuForm(forms.ModelForm):
         widgets = {
             'sku': forms.TextInput(attrs={'class': 'erp-input'}),
             'material': forms.Select(attrs={'class': 'erp-select'}),
+            'sku_type': forms.Select(attrs={'class': 'erp-select'}),
             'purchase_sheet_size': forms.TextInput(attrs={'class': 'erp-input'}),
             'uom': forms.TextInput(attrs={'class': 'erp-input'}),
             'sheet_packing_pcs': forms.NumberInput(attrs={'class': 'erp-input'}),
@@ -255,6 +258,7 @@ class ItemProcurementTimelineForm(forms.ModelForm):
     class Meta:
         model = ItemProcurementTimeline
         fields = [
+            'sku',
             'item_code',
             'code_opened_date',
             'indent_pr_no',
@@ -268,6 +272,7 @@ class ItemProcurementTimelineForm(forms.ModelForm):
             'remarks',
         ]
         widgets = {
+            'sku': forms.Select(attrs={'class': 'erp-input', 'id': 'id_sku'}),
             'item_code': forms.TextInput(attrs={'class': 'erp-input'}),
             'code_opened_date': forms.DateInput(attrs={'class': 'erp-input', 'type': 'date'}),
             'indent_pr_no': forms.TextInput(attrs={'class': 'erp-input'}),
@@ -280,6 +285,24 @@ class ItemProcurementTimelineForm(forms.ModelForm):
             'received_qty': forms.NumberInput(attrs={'class': 'erp-input', 'step': '0.01'}),
             'remarks': forms.Textarea(attrs={'class': 'erp-input', 'rows': 2}),
         }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.fields['sku'].queryset = RawMaterialSku.objects.filter(is_active=True).select_related('material')
+        self.fields['sku'].empty_label = '— No SKU yet (code opening in progress) —'
+        self.fields['sku'].required = False
+
+    def clean(self):
+        cleaned = super().clean()
+        sku = cleaned.get('sku')
+        if sku:
+            # The SKU is the authoritative item code; keep the free-text field in sync.
+            cleaned['item_code'] = sku.sku
+            # Linking an SKU here means the code now exists — stamp the date if
+            # the user did not supply one, so the opening duration closes out.
+            if not cleaned.get('code_opened_date'):
+                cleaned['code_opened_date'] = timezone.localdate()
+        return cleaned
 
 
 class ItemRequestQuoteForm(forms.ModelForm):

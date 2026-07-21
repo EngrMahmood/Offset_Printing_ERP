@@ -1,0 +1,15 @@
+<form method="post" action="{% url 'supply_chain:item_request_review' item_request.pk %}">
+    {% csrf_token %}
+    <div class="erp-input-group">
+        {% for radio in review_form.action %}
+        <label style="margin-right:16px;">{{ radio.tag }} {{ radio.choice_label }}</label>
+        {% endfor %}
+    </div>
+    <div class="erp-input-group">
+        <label class="erp-input-label">Comment</label>
+        {{ review_form.comment }}
+    </div>
+    <div class="erp-actions">
+        <button type="submit" class="erp-btn erp-btn-primary">Submit Decision</button>
+    </div>
+</form>

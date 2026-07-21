@@ -2,7 +2,19 @@ from __future__ import annotations
 
 from datetime import datetime, timedelta
 
-from django.db.models import Avg, Count, F, OuterRef, Prefetch, Q, Subquery, Sum, Value
+from django.db.models import (
+    Avg,
+    Count,
+    ExpressionWrapper,
+    F,
+    FloatField,
+    OuterRef,
+    Prefetch,
+    Q,
+    Subquery,
+    Sum,
+    Value,
+)
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
@@ -22,6 +34,12 @@ PRODUCTION_WIP_STATUSES = ('released', 'in_production')
 
 
 REPORT_CATALOG = [
+    {
+        'key': 'daily-production',
+        'title': 'Daily Production',
+        'description': 'Day-by-day printing impressions, packing output, and dispatch quantities.',
+        'focus': 'Execution',
+    },
     {
         'key': 'machine-planning',
         'title': 'Machine Planning',
@@ -1363,6 +1381,222 @@ def build_qc_approvals_context(request):
         'rejected_jobs': rejected_jobs,
         'approved_recent': approved_recent,
         'status_choices': JobCard._meta.get_field('status').choices,
+    }
+
+
+def build_daily_production_context(request):
+    """Day-by-day printing / packing / dispatch output for the selected window.
+
+    Each stream is aggregated independently and then aligned on the date so the
+    Overview tab can show one row per day across all three.
+    """
+    start, end, period, period_label, date_from, date_to = _parse_period_filter(request, default_period='month')
+
+    productions = Production.objects.filter(is_active=True)
+    dispatches = Dispatch.objects.filter(is_active=True)
+    if start and end:
+        productions = productions.filter(date__range=(start, end))
+        dispatches = dispatches.filter(dispatch_date__range=(start, end))
+
+    machine_filter = (request.GET.get('machine') or '').strip()
+    if machine_filter:
+        productions = productions.filter(machine__name=machine_filter)
+
+    # Shift lives on Production only — Dispatch has no shift, so a shift filter
+    # narrows printing/packing and leaves the dispatch stream untouched.
+    shift_filter = (request.GET.get('shift') or '').strip().upper()
+    if shift_filter in {choice[0] for choice in Production.SHIFT_CHOICES}:
+        productions = productions.filter(shift=shift_filter)
+    else:
+        shift_filter = ''
+
+    # Production.expected_impressions is a Python property, so the DB equivalent
+    # (run time in hours x machine rated speed) is rebuilt here as an expression.
+    expected_expr = ExpressionWrapper(
+        Coalesce(F('run_time'), Value(0.0)) / Value(60.0)
+        * Coalesce(F('machine__standard_impressions_per_hour'), Value(0.0)),
+        output_field=FloatField(),
+    )
+
+    printing_rows = list(
+        productions.filter(entry_type='printing')
+        .values('date')
+        .annotate(
+            impressions=Coalesce(Sum('impressions'), Value(0)),
+            output_sheets=Coalesce(Sum('output_sheets'), Value(0)),
+            waste_sheets=Coalesce(Sum('waste_sheets'), Value(0)),
+            expected_impressions=Coalesce(Sum(expected_expr), Value(0.0)),
+            downtime_minutes=Coalesce(Sum('downtime_minutes'), Value(0.0)),
+            entries=Count('id'),
+        )
+        .order_by('-date')
+    )
+    # The report engine serialises dates to ISO strings before they reach the
+    # template, so build the display label here while they are still dates.
+    def _label(day):
+        return day.strftime('%Y-%m-%d (%a)') if day else '—'
+
+    for row in printing_rows:
+        row['date_label'] = _label(row['date'])
+        gross = (row['output_sheets'] or 0) + (row['waste_sheets'] or 0)
+        row['waste_pct'] = round((row['waste_sheets'] or 0) * 100.0 / gross, 2) if gross else 0.0
+        expected = row['expected_impressions'] or 0
+        row['efficiency_pct'] = round((row['impressions'] or 0) * 100.0 / expected, 2) if expected else None
+
+    packing_rows = list(
+        productions.filter(entry_type='packing')
+        .values('date')
+        .annotate(
+            packing_qty=Coalesce(Sum('packing_qty'), Value(0)),
+            sorting_waste_qty=Coalesce(Sum('sorting_waste_qty'), Value(0)),
+            entries=Count('id'),
+        )
+        .order_by('-date')
+    )
+    for row in packing_rows:
+        row['date_label'] = _label(row['date'])
+        gross = (row['packing_qty'] or 0) + (row['sorting_waste_qty'] or 0)
+        row['waste_pct'] = round((row['sorting_waste_qty'] or 0) * 100.0 / gross, 2) if gross else 0.0
+
+    dispatch_rows = list(
+        dispatches.values('dispatch_date')
+        .annotate(
+            dispatch_qty=Coalesce(Sum('dispatch_qty'), Value(0)),
+            dc_count=Count('dc_no', distinct=True),
+            entries=Count('id'),
+        )
+        .order_by('-dispatch_date')
+    )
+    for row in dispatch_rows:
+        row['date_label'] = _label(row['dispatch_date'])
+
+    # Align the three streams on the calendar date for the Overview tab.
+    printing_by_date = {r['date']: r for r in printing_rows}
+    packing_by_date = {r['date']: r for r in packing_rows}
+    dispatch_by_date = {r['dispatch_date']: r for r in dispatch_rows}
+
+    overview_rows = []
+    for day in sorted(set(printing_by_date) | set(packing_by_date) | set(dispatch_by_date), reverse=True):
+        printing = printing_by_date.get(day, {})
+        packing = packing_by_date.get(day, {})
+        dispatch = dispatch_by_date.get(day, {})
+        overview_rows.append({
+            'date': day,
+            'date_label': _label(day),
+            'impressions': printing.get('impressions', 0),
+            'output_sheets': printing.get('output_sheets', 0),
+            'printing_waste': printing.get('waste_sheets', 0),
+            'packing_qty': packing.get('packing_qty', 0),
+            'packing_waste': packing.get('sorting_waste_qty', 0),
+            'dispatch_qty': dispatch.get('dispatch_qty', 0),
+            'dc_count': dispatch.get('dc_count', 0),
+        })
+
+    def _total(rows, key):
+        return sum((r.get(key) or 0) for r in rows)
+
+    totals = {
+        'impressions': _total(printing_rows, 'impressions'),
+        'output_sheets': _total(printing_rows, 'output_sheets'),
+        'printing_waste': _total(printing_rows, 'waste_sheets'),
+        'packing_qty': _total(packing_rows, 'packing_qty'),
+        'packing_waste': _total(packing_rows, 'sorting_waste_qty'),
+        'dispatch_qty': _total(dispatch_rows, 'dispatch_qty'),
+        'dc_count': _total(dispatch_rows, 'dc_count'),
+        'days': len(overview_rows),
+    }
+    totals['avg_impressions_per_day'] = round(totals['impressions'] / totals['days']) if totals['days'] else 0
+
+    # Machine split for the printing tab.
+    printing_by_machine = list(
+        productions.filter(entry_type='printing')
+        .values('machine__name')
+        .annotate(
+            impressions=Coalesce(Sum('impressions'), Value(0)),
+            output_sheets=Coalesce(Sum('output_sheets'), Value(0)),
+            waste_sheets=Coalesce(Sum('waste_sheets'), Value(0)),
+        )
+        .order_by('-impressions')
+    )
+
+    # Shift performance split.
+    shift_labels = dict(Production.SHIFT_CHOICES)
+    printing_by_shift = list(
+        productions.filter(entry_type='printing')
+        .values('shift')
+        .annotate(
+            impressions=Coalesce(Sum('impressions'), Value(0)),
+            output_sheets=Coalesce(Sum('output_sheets'), Value(0)),
+            waste_sheets=Coalesce(Sum('waste_sheets'), Value(0)),
+            entries=Count('id'),
+        )
+        .order_by('shift')
+    )
+    packing_by_shift = list(
+        productions.filter(entry_type='packing')
+        .values('shift')
+        .annotate(
+            packing_qty=Coalesce(Sum('packing_qty'), Value(0)),
+            sorting_waste_qty=Coalesce(Sum('sorting_waste_qty'), Value(0)),
+            entries=Count('id'),
+        )
+        .order_by('shift')
+    )
+    for row in printing_by_shift + packing_by_shift:
+        row['shift_label'] = shift_labels.get(row['shift'], row['shift'] or '—')
+
+    # The generic exporter picks up data['export_rows'] with data['headers'];
+    # ?tab= selects which of the four tables gets exported.
+    export_tabs = {
+        'overview': (overview_rows, [
+            ('date_label', 'Date'), ('impressions', 'Impressions'),
+            ('output_sheets', 'Printed Sheets'), ('printing_waste', 'Printing Waste'),
+            ('packing_qty', 'Packed Pcs'), ('packing_waste', 'Packing Waste'),
+            ('dispatch_qty', 'Dispatched Pcs'), ('dc_count', 'DCs'),
+        ]),
+        'printing': (printing_rows, [
+            ('date_label', 'Date'), ('entries', 'Entries'), ('impressions', 'Impressions'),
+            ('output_sheets', 'Output Sheets'), ('waste_sheets', 'Waste Sheets'),
+            ('waste_pct', 'Waste %'), ('downtime_minutes', 'Downtime (min)'),
+            ('efficiency_pct', 'Efficiency %'),
+        ]),
+        'packing': (packing_rows, [
+            ('date_label', 'Date'), ('entries', 'Entries'), ('packing_qty', 'Packed Pcs'),
+            ('sorting_waste_qty', 'Sorting Waste'), ('waste_pct', 'Waste %'),
+        ]),
+        'dispatch': (dispatch_rows, [
+            ('date_label', 'Date'), ('entries', 'Dispatch Entries'),
+            ('dc_count', 'Delivery Challans'), ('dispatch_qty', 'Dispatched Pcs'),
+        ]),
+    }
+    export_tab = (request.GET.get('tab') or 'overview').strip().lower()
+    if export_tab not in export_tabs:
+        export_tab = 'overview'
+    export_rows, export_columns = export_tabs[export_tab]
+
+    return {
+        'export_rows': export_rows,
+        'headers': [key for key, _ in export_columns],
+        'header_labels': {key: label for key, label in export_columns},
+        'export_tab': export_tab,
+        'printing_by_shift': printing_by_shift,
+        'packing_by_shift': packing_by_shift,
+        'shift_filter': shift_filter,
+        'shift_choices': list(Production.SHIFT_CHOICES),
+        'overview_rows': overview_rows,
+        'printing_rows': printing_rows,
+        'packing_rows': packing_rows,
+        'dispatch_rows': dispatch_rows,
+        'printing_by_machine': printing_by_machine,
+        'totals': totals,
+        'period': period,
+        'period_label': period_label,
+        'date_from': date_from,
+        'date_to': date_to,
+        'machine_filter': machine_filter,
+        'machines': list(
+            Machine.objects.filter(is_active=True).values_list('name', flat=True).order_by('name')
+        ),
     }
 
 

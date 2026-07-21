@@ -36,7 +36,7 @@ _URL_LABELS = {
     'receiving': 'Stock Receiving',
     'issuance': 'Stock Issuance',
     'adjustment': 'Stock Adjustment',
-    'items': 'Item Master',
+    'items': 'SKU Master',
     'item_edit': 'Edit Item',
     'consumption_reports': 'Consumption Reports',
     'kpi_dashboard': 'Inventory KPIs',

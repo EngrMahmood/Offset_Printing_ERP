@@ -166,7 +166,7 @@ def item_list(request):
     items = (
         RawMaterialSku.objects
         .filter(is_active=not show_archived)
-        .select_related('material')
+        .select_related('material', 'sku_type')
         .order_by('material__name', 'purchase_sheet_size', 'sku')
     )
 
@@ -185,8 +185,20 @@ def item_list(request):
     if request.GET.get('export') == 'template':
         return export_raw_material_sku_template()
 
+    # One tab per SKU type, plus an "Unclassified" bucket for rows with no type.
+    items = list(items)
+    type_tabs = []
+    for sku_type in ItemRequestType.objects.filter(is_active=True):
+        rows = [i for i in items if i.sku_type_id == sku_type.id]
+        if rows:
+            type_tabs.append({'key': f'type-{sku_type.id}', 'label': sku_type.name, 'items': rows})
+    untyped = [i for i in items if i.sku_type_id is None]
+    if untyped:
+        type_tabs.append({'key': 'type-none', 'label': 'Unclassified', 'items': untyped})
+
     return render(request, 'supply_chain/raw_material_skus.html', {
         'items': items,
+        'type_tabs': type_tabs,
         'upload_form': ExcelUploadForm(),
         'quick_form': QuickRawMaterialSkuForm(),
         'material_choices': list_material_choices(),
@@ -1169,6 +1181,19 @@ def _is_supply_chain(user):
     return _item_request_role(user) in ('admin', 'supply_chain')
 
 
+def _stage_decisions(approvals):
+    """Latest recorded decision for each review stage, for the review tabs/print."""
+    decision_actions = ('APPROVE', 'REJECT', 'REVISE')
+    ordered = list(approvals)
+    return {
+        stage: next(
+            (a for a in reversed(ordered) if a.stage == stage and a.action in decision_actions),
+            None,
+        )
+        for stage in ('MANAGER', 'SUPPLY_CHAIN')
+    }
+
+
 @item_request_access_required
 def item_request_list(request):
     requests_qs = (
@@ -1259,11 +1284,20 @@ def item_request_detail(request, pk):
 
     days_in_stage, sla_limit, breached = sla_status(item_request, approvals)
 
+    # Latest recorded decision per review stage, for the in-built review tabs.
+    decisions = _stage_decisions(approvals)
+    manager_decision = decisions['MANAGER']
+    sc_decision = decisions['SUPPLY_CHAIN']
+    active_review_tab = 'sc' if (can_review_sc or item_request.status == 'SC_REVIEW') else 'manager'
+
     return render(request, 'supply_chain/item_request/detail.html', {
         'item_request': item_request,
         'approvals': approvals,
         'procurement': procurement,
         'review_form': ItemRequestReviewForm(),
+        'manager_decision': manager_decision,
+        'sc_decision': sc_decision,
+        'active_review_tab': active_review_tab,
         'can_review_manager': can_review_manager,
         'can_review_sc': can_review_sc,
         'can_resubmit': can_resubmit,
@@ -1353,6 +1387,7 @@ def item_request_procurement(request, pk):
     return render(request, 'supply_chain/item_request/procurement_form.html', {
         'form': form,
         'item_request': item_request,
+        'procurement': procurement,
         'quotes': procurement.quotes.all(),
         'quote_form': ItemRequestQuoteForm(),
     })
@@ -1443,8 +1478,12 @@ def item_request_print(request, pk):
         ItemRequest.objects.select_related('request_type', 'department', 'machine', 'raised_by'),
         pk=pk,
     )
+    decisions = _stage_decisions(item_request.approvals.select_related('actor').all())
     return render(request, 'supply_chain/item_request/print.html', {
         'item_request': item_request,
+        'manager_decision': decisions['MANAGER'],
+        'sc_decision': decisions['SUPPLY_CHAIN'],
+        'procurement': getattr(item_request, 'procurement', None),
     })
 
 

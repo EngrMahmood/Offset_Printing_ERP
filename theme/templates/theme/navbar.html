@@ -30,7 +30,7 @@
             {% if nav.can_access_item_request %}
             <a href="{% url 'supply_chain:item_request_list' %}"
                class="erp-topnav-module {% if 'item_request' in url %}is-active{% endif %}">
-                Item Requests
+                Item Requests{% if nav.item_request_pending_count %}<span class="erp-nav-badge" title="{{ nav.item_request_pending_count }} awaiting your review">{{ nav.item_request_pending_count }}</span>{% endif %}
             </a>
             {% endif %}
             {% if nav.can_access_maintenance %}
@@ -201,6 +201,10 @@
            class="erp-subnav-link {% if url == 'home' %}is-active{% endif %}">
             Overview
         </a>
+        <a href="{% url 'reports:detail' 'daily-production' %}"
+           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'daily-production' %}is-active{% endif %}">
+            Daily Production
+        </a>
         <a href="{% url 'reports:detail' 'machine-planning' %}"
            class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'machine-planning' %}is-active{% endif %}">
             Machine Planning
@@ -245,7 +249,7 @@
         </a>
         <a href="{% url 'supply_chain:items' %}"
            class="erp-subnav-link {% if url == 'items' or url == 'item_edit' %}is-active{% endif %}">
-            Raw Material SKUs
+            SKU Master
         </a>
         <a href="{% url 'supply_chain:monthly_demand' %}"
            class="erp-subnav-link {% if url == 'monthly_demand' %}is-active{% endif %}">
@@ -294,7 +298,7 @@
         {% if nav.can_access_item_request %}
         <a href="{% url 'supply_chain:item_request_list' %}"
            class="erp-subnav-link {% if 'item_request' in url %}is-active{% endif %}">
-            Item Requests
+            Item Requests{% if nav.item_request_pending_count %}<span class="erp-nav-badge" title="{{ nav.item_request_pending_count }} awaiting your review">{{ nav.item_request_pending_count }}</span>{% endif %}
         </a>
         {% endif %}
     </div>
@@ -337,7 +341,7 @@
     <div class="erp-subnav">
         <a href="{% url 'supply_chain:item_request_list' %}"
            class="erp-subnav-link {% if url == 'item_request_list' %}is-active{% endif %}">
-            All Requests
+            All Requests{% if nav.item_request_pending_count %}<span class="erp-nav-badge" title="{{ nav.item_request_pending_count }} awaiting your review">{{ nav.item_request_pending_count }}</span>{% endif %}
         </a>
         <a href="{% url 'supply_chain:item_request_create' %}"
            class="erp-subnav-link {% if url == 'item_request_create' %}is-active{% endif %}">

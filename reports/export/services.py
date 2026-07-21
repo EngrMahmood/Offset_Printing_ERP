@@ -37,8 +37,10 @@ def _rowset_from_payload(payload: dict) -> list[dict[str, Any]]:
     if not isinstance(data, dict):
         return []
 
-    # Prefer common tabular keys from report contexts.
+    # Prefer common tabular keys from report contexts. 'export_rows' lets a
+    # report nominate exactly which of its tables should be exported.
     for key in (
+        'export_rows',
         'wastage_rows',
         'machine_rows',
         'actual_rows',

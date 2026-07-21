@@ -76,6 +76,48 @@ def resubmit_request(item_request, user):
     )
 
 
+def _link_existing_sku(timeline, item_request):
+    """Carry a pre-existing SKU onto the timeline and skip the code-opening stage.
+
+    When the requester already identified the item as an existing SKU there is
+    nothing to open, so the timeline jumps straight to indent/PR. Otherwise the
+    SKU fields stay blank — that is exactly the duration the timeline measures.
+    """
+    sku = item_request.existing_sku
+    if not sku:
+        return timeline
+    timeline.sku = sku
+    timeline.item_code = sku.sku
+    timeline.sku_pre_existing = True
+    timeline.code_opened_date = timeline.code_opened_date or timezone.localdate()
+    timeline.save(update_fields=['sku', 'item_code', 'sku_pre_existing', 'code_opened_date'])
+    return timeline
+
+
+def pending_review_count(user):
+    """Number of item requests waiting on *this* user's decision.
+
+    Mirrors the stage gating in ``views.item_request_review``: managers own
+    MGR_REVIEW, supply chain owns SC_REVIEW, admins own both.
+    """
+    if not user or not getattr(user, 'is_authenticated', False):
+        return 0
+
+    profile = getattr(user, 'profile', None)
+    role = (getattr(profile, 'role', '') or '').strip().lower()
+    if user.is_superuser:
+        role = role or 'admin'
+
+    statuses = []
+    if role in APPROVER_ROLES:
+        statuses.append('MGR_REVIEW')
+    if role in SUPPLY_CHAIN_ROLES:
+        statuses.append('SC_REVIEW')
+    if not statuses:
+        return 0
+    return ItemRequest.objects.filter(status__in=statuses, is_active=True).count()
+
+
 def review_request(item_request, user, stage, action, comment=''):
     """Apply a manager/supply-chain review decision and advance the workflow."""
     ItemRequestApproval.objects.create(
@@ -99,7 +141,8 @@ def review_request(item_request, user, stage, action, comment=''):
             item_request.status = 'APPROVED'
             if not item_request.request_no:
                 generate_request_no(item_request)
-            ItemProcurementTimeline.objects.get_or_create(request=item_request)
+            timeline, _ = ItemProcurementTimeline.objects.get_or_create(request=item_request)
+            _link_existing_sku(timeline, item_request)
             item_request.status = 'IN_PROCUREMENT'
             notify_requester = True
 

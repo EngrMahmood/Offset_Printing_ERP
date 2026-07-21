@@ -1,0 +1,10 @@
+<div class="erp-table-wrap erp-table-dense">
+    <table class="erp-table">
+        <tbody>
+            <tr><td><strong>Decision</strong></td><td>{{ decision.get_action_display }}</td></tr>
+            <tr><td><strong>By</strong></td><td>{{ decision.actor.username|default:'—' }}</td></tr>
+            <tr><td><strong>On</strong></td><td>{{ decision.created_at|date:'Y-m-d H:i' }}</td></tr>
+            <tr><td><strong>Comment</strong></td><td>{{ decision.comment|default:'—' }}</td></tr>
+        </tbody>
+    </table>
+</div>

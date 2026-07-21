@@ -41,8 +41,19 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
             return False
         return is_superuser or role in roles
 
+    def _pending_item_reviews() -> int:
+        if not _allow(ITEM_REQUEST_NAV_ROLES):
+            return 0
+        # Imported lazily so core does not hard-depend on supply_chain at import time.
+        from supply_chain.item_request_service import pending_review_count
+        try:
+            return pending_review_count(request.user)
+        except Exception:
+            return 0
+
     return {
         'role': role,
+        'item_request_pending_count': _pending_item_reviews(),
         'can_access_dashboard': is_authenticated,
         'can_access_planning': _allow(PLANNING_NAV_ROLES),
         'can_access_qc': _allow(QC_NAV_ROLES),
