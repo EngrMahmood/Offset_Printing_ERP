@@ -36,6 +36,15 @@
         <a href="{% url 'planning:merge_detail' merge_item.merge_group.id %}"><strong>{{ merge_item.merge_group.code }}</strong></a>
         — {{ merge_item.allocated_ups }} ups of {{ merge_item.merge_group.total_sheet_ups }} on the combined sheet
         ({{ merge_item.merge_group.get_status_display }}).
+        {% if merge_item.is_lead %}
+            This is the <strong>lead job</strong>: it carries the shared plate set
+            ({{ merge_item.merge_group.artwork_code }}) and the single printing run for all
+            {{ merge_item.merge_group.items.count }} SKUs.
+        {% else %}
+            <strong>Plates are covered by {{ merge_item.merge_group.lead_job.jc_number }}</strong>
+            under {{ merge_item.merge_group.artwork_code }} — no separate plate request is raised for this SKU,
+            and printing is recorded on the lead job.
+        {% endif %}
     </div>
     {% endif %}
     {% endwith %}

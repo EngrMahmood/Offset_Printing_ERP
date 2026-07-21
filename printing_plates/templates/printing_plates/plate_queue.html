@@ -120,6 +120,7 @@
             <div class="erp-actions" style="gap:8px;">
                 <button type="submit" class="erp-btn erp-btn-primary">Filter</button>
                 <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary">Reset</a>
+            <a href="{% url 'printing_plates:merged_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-layer-group"></i> Merged Layouts</a>
             </div>
         </form>
 
@@ -157,7 +158,7 @@
                         <td>
                             <strong>
                                 <a href="{% url 'printing_plates:request_detail' req.pk %}" class="plates-jc-link">
-                                    {{ req.jc_number|default:'—' }}
+                                    {{ req.jc_number|default:'—' }}{% include 'printing_plates/includes/merge_badge.html' %}
                                 </a>
                             </strong>
                         </td>

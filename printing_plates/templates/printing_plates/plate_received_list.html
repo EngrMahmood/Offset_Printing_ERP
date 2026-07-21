@@ -12,6 +12,7 @@
             <a href="{% url 'printing_plates:sent_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-paper-plane"></i> Plate Sent</a>
             <a href="{% url 'printing_plates:received_list' %}" class="erp-btn erp-btn-primary"><i class="fas fa-check-circle"></i> Plate Received</a>
             <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-list"></i> Plate Queue</a>
+            <a href="{% url 'printing_plates:merged_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-layer-group"></i> Merged Layouts</a>
         </div>
         <div>
             <a href="{% url 'printing_plates:request_add' %}" class="erp-btn" style="background-color: #6f42c1; color: white; border: none; font-weight: 500; display: inline-flex; align-items: center; gap: 6px;">
@@ -99,7 +100,7 @@
                             <tbody>
                                 {% for req in plate_requests %}
                                 <tr>
-                                    <td><strong><a href="{% url 'printing_plates:request_detail' req.pk %}">{{ req.jc_number|default:'—' }}</a></strong></td>
+                                    <td><strong><a href="{% url 'printing_plates:request_detail' req.pk %}">{{ req.jc_number|default:'—' }}</a></strong>{% include 'printing_plates/includes/merge_badge.html' %}</td>
                                     <td class="erp-plate-type-cell">
                                         {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type %}
                                     </td>

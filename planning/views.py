@@ -59,7 +59,8 @@ from .forms import JobCardLayoutForm, PlanningJobEditForm, PlanningJobFinalizati
 from .services import (
     _user_is_admin, _planning_status_filter_values, _parse_date_filter,
     cancel_planning_job, request_job_cancellation, approve_job_cancellation,
-    _build_job_card_pdf_bytes, _sku_key, _missing_required_master_fields,
+    _build_job_card_pdf_bytes, build_job_card_merge_context,
+    _sku_key, _missing_required_master_fields,
     _sync_new_sku_requirement, _build_recipe_map, _to_optional_positive_int,
     _to_optional_decimal, _sanitize_po_payload_items, _po_payload_items,
     _annotate_items_with_recipe, _deduplicate_po_items_by_sku,
@@ -382,6 +383,12 @@ def _job_card_layout_field_labels():
         'mi_quantity': 'Issued Qty',
         'mi_balance': 'Balance',
         'remaining_sheet': 'Remaining Sheet',
+        # Smart layout merge (blank on non-merged jobs).
+        'merge_code': 'Merge Group',
+        'merge_artwork_code': 'Combined Artwork Code',
+        'merge_role': 'Merge Role',
+        'merge_allocated_ups': 'Merged UPS',
+        'merge_run_sheets': 'Merged Run Sheets',
     }
 
 
@@ -434,6 +441,15 @@ def _build_job_card_layout_context(job):
         'mi_balance': job.mi_balance,
         'remaining_sheet': job.remaining_sheet,
     }
+    merge = build_job_card_merge_context(job)
+    if merge:
+        field_values.update({
+            'merge_code': merge['code'],
+            'merge_artwork_code': merge['artwork_code'],
+            'merge_role': merge['role_label'],
+            'merge_allocated_ups': merge['allocated_ups'],
+            'merge_run_sheets': merge['run_sheets'],
+        })
     normalized_sections = []
     for section in active_layout.layout:
         normalized_fields = []
@@ -2446,6 +2462,7 @@ def planning_job_card_print(request, job_id):
         {
             'job': job,
             'recipe': recipe,
+            'merge': build_job_card_merge_context(job),
             'job_scan_url': job_scan_url,
             'job_qr_data_uri': job_qr_data_uri,
             'production_type_tag': production_type_tag,
@@ -5556,9 +5573,22 @@ def reject_change_request(request, request_id):
 # ---------------------------------------------------------------------------
 
 def _eligible_merge_jobs(request=None):
-    """Jobs that have not been printed yet and are free to be ganged."""
+    """Jobs that have not been printed yet and are free to be ganged.
+
+    Jobs whose plates are already requested or made are excluded: the whole
+    saving is one plate set and one make-ready, so merging after plates exist
+    saves nothing and would tell the press to run a combined sheet that was
+    never plated.
+    """
+    from printing_plates.models import PlateRequest
+
     printed_job_ids = set(
         PlanningPrintRun.objects.filter(print_qty__gt=0).values_list('planning_job_id', flat=True)
+    )
+    plated_job_ids = set(
+        PlateRequest.objects.exclude(status=PlateRequest.STATUS_ARCHIVED)
+        .filter(planning_job__isnull=False)
+        .values_list('planning_job_id', flat=True)
     )
     merged_job_ids = set(
         MergeGroupItem.objects.filter(merge_group__status__in=MERGE_GROUP_OPEN_STATUSES)
@@ -5569,7 +5599,7 @@ def _eligible_merge_jobs(request=None):
         .exclude(status__in=['in_production', 'completed', 'cancelled'])
         .exclude(issued_to_production=True)
         .exclude(job_process_type='cut_and_pack')
-        .exclude(id__in=printed_job_ids | merged_job_ids)
+        .exclude(id__in=printed_job_ids | merged_job_ids | plated_job_ids)
     )
     if request is not None:
         material = (request.GET.get('material') or '').strip()
@@ -5694,11 +5724,25 @@ def planning_merge_accept(request):
 @login_required
 @permission_required('can_view_planning_queue')
 def planning_merge_detail(request, group_id):
+    from printing_plates.models import PlateRequest
+
     group = get_object_or_404(
         MergeGroup.objects.prefetch_related('items__planning_job'),
         id=group_id,
     )
-    return render(request, 'planning/planning_merge_detail.html', {'group': group})
+    # Groups formed before the plate guard existed may contain members whose
+    # plates were already requested or made separately — merging them saves
+    # nothing and there is no combined plate to print from.
+    preexisting = (
+        PlateRequest.objects.exclude(status=PlateRequest.STATUS_ARCHIVED)
+        .filter(planning_job__in=[item.planning_job_id for item in group.items.all()])
+        .exclude(planning_job_id=group.lead_job_id)
+        .select_related('planning_job')
+    )
+    return render(request, 'planning/planning_merge_detail.html', {
+        'group': group,
+        'preexisting_plate_requests': preexisting,
+    })
 
 
 @login_required

@@ -1130,6 +1130,43 @@ def _normalize_po_number(raw_value):
     return re.sub(r'[^A-Z0-9]+', '', value)
 
 
+def build_job_card_merge_context(job):
+    """Merge banner data for a job card, or None when the job is not merged.
+
+    Single source of truth for the printed HTML card, the PDF card and the
+    layout-builder field values, so the three can never disagree.
+    """
+    item = job.active_merge_item
+    if not item:
+        return None
+    group = item.merge_group
+    members = [
+        {
+            'jc_number': member.planning_job.jc_number,
+            'sku': member.planning_job.sku,
+            'allocated_ups': member.allocated_ups,
+            'planned_produced_qty': member.planned_produced_qty,
+            'source_awc_no': member.source_awc_no,
+            'is_lead': member.is_lead,
+        }
+        for member in group.items.select_related('planning_job').order_by('-allocated_ups', 'id')
+    ]
+    return {
+        'code': group.code,
+        'artwork_code': group.artwork_code,
+        'is_lead': item.is_lead,
+        'lead_jc': group.lead_job.jc_number if group.lead_job else '',
+        'allocated_ups': item.allocated_ups,
+        'planned_produced_qty': item.planned_produced_qty,
+        'total_sheet_ups': group.total_sheet_ups,
+        'run_sheets': group.run_sheets,
+        'print_sheet_size': group.print_sheet_size,
+        'member_count': len(members),
+        'members': members,
+        'role_label': 'LEAD — combined layout' if item.is_lead else f'Printed with {group.lead_job.jc_number if group.lead_job else ""}',
+    }
+
+
 def _build_job_card_pdf_bytes(job, scan_url):
     if not REPORTLAB_AVAILABLE:
         raise RuntimeError('reportlab is required to generate PDF job cards. Install reportlab and restart the server.')
@@ -1155,6 +1192,69 @@ def _build_job_card_pdf_bytes(job, scan_url):
     label_style = ParagraphStyle('Label', parent=normal, fontName='Helvetica-Bold', fontSize=8.5, leading=10)
 
     story = [Paragraph('UTOPIA PRINTING & PACKAGING', title_style), Spacer(1, 4), Paragraph('PRODUCTION JOB CARD', subtitle_style), Spacer(1, 8)]
+
+    # Smart layout merge banner — mirrors the HTML job card so PDF and print agree.
+    merge = build_job_card_merge_context(job)
+    if merge:
+        banner_style = ParagraphStyle(
+            'MergeBanner', parent=normal, fontName='Helvetica-Bold', fontSize=12, leading=14,
+        )
+        meta_style = ParagraphStyle('MergeMeta', parent=normal, fontSize=8.5, leading=10)
+        if merge['is_lead']:
+            banner_text = f"COMBINED LAYOUT {merge['code']} — PRINT ONCE FOR ALL SKUs BELOW"
+            meta_text = (
+                f"Combined artwork: {merge['artwork_code']} | "
+                f"Print sheet: {merge['print_sheet_size'] or '-'} | "
+                f"Run: {merge['run_sheets']} sheets x {merge['total_sheet_ups']} ups | "
+                f"One make-ready and one plate set for all {merge['member_count']} SKUs"
+            )
+            bg = colors.HexColor('#ffe08a')
+        else:
+            banner_text = f"DO NOT PRINT SEPARATELY — printed with {merge['lead_jc']} under {merge['code']}"
+            meta_text = (
+                f"This SKU runs on the combined sheet: {merge['allocated_ups']} of "
+                f"{merge['total_sheet_ups']} ups | Qty to produce: {merge['planned_produced_qty']} | "
+                f"Combined artwork: {merge['artwork_code']} | "
+                f"Printing is recorded on {merge['lead_jc']}. Use this card for cutting, packing, QC and dispatch."
+            )
+            bg = colors.HexColor('#ffb3b3')
+
+        banner_rows = [[Paragraph(banner_text, banner_style)], [Paragraph(meta_text, meta_style)]]
+        banner_table = Table(banner_rows, colWidths=[194 * mm], hAlign='LEFT')
+        banner_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), bg),
+            ('BOX', (0, 0), (-1, -1), 1.2, colors.black),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        story.extend([banner_table, Spacer(1, 6)])
+
+        if merge['is_lead']:
+            member_rows = [[
+                Paragraph('JC #', label_style), Paragraph('SKU', label_style),
+                Paragraph('UPS', label_style), Paragraph('QTY', label_style),
+                Paragraph('SOURCE AWC', label_style),
+            ]]
+            for member in merge['members']:
+                member_rows.append([
+                    _format_job_value(member['jc_number'] + (' (lead)' if member['is_lead'] else '')),
+                    _paragraph_text(member['sku'] or '-'),
+                    _format_job_value(member['allocated_ups']),
+                    _format_job_value(member['planned_produced_qty']),
+                    _format_job_value(member['source_awc_no']),
+                ])
+            member_table = Table(
+                member_rows,
+                colWidths=[38 * mm, 74 * mm, 16 * mm, 28 * mm, 38 * mm],
+                hAlign='LEFT',
+            )
+            member_table.setStyle(TableStyle([
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0.25, colors.black),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#dddddd')),
+            ]))
+            story.extend([member_table, Spacer(1, 8)])
+        else:
+            story.append(Spacer(1, 2))
 
     header_data = [
         [Paragraph('JOB CARD #', label_style), _format_job_value(job.jc_number), Paragraph('PO #', label_style), _format_job_value(job.po_number)],

@@ -881,3 +881,40 @@ class BulkCancelStalePlateRequestsView(LoginRequiredMixin, AdminAccessMixin, Vie
         if next_url:
             return redirect(next_url)
         return redirect(reverse('printing_plates:request_list') + '?type=cancelled')
+
+
+class MergedLayoutListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, ListView):
+    """Tracking screen for smart-merge combined layouts.
+
+    Purely additive: lists merge groups and the plate request raised on each
+    group's lead job, so followers are never mistaken for missing plate sets.
+    """
+
+    template_name = 'printing_plates/plate_merged_list.html'
+    context_object_name = 'groups'
+    paginate_by = 50
+
+    def get_queryset(self):
+        from planning.models import MERGE_GROUP_OPEN_STATUSES, MergeGroup
+
+        show_all = (self.request.GET.get('show') or '').strip() == 'all'
+        queryset = MergeGroup.objects.select_related('lead_job').prefetch_related('items__planning_job')
+        if not show_all:
+            queryset = queryset.filter(status__in=MERGE_GROUP_OPEN_STATUSES)
+        return queryset.order_by('-created_at')
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        rows = []
+        for group in context['groups']:
+            plate_request = None
+            if group.lead_job_id:
+                plate_request = (
+                    PlateRequest.objects.filter(planning_job_id=group.lead_job_id)
+                    .order_by('-requested_at', '-created_at')
+                    .first()
+                )
+            rows.append({'group': group, 'plate_request': plate_request})
+        context['rows'] = rows
+        context['show_all'] = (self.request.GET.get('show') or '').strip() == 'all'
+        return context

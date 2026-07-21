@@ -54,6 +54,43 @@
     <div class="plate-detail-layout">
         <div class="plate-detail-main erp-page-stack">
 
+            {% with merge=plate_request.merge_info %}
+            {% if merge %}
+            <section class="erp-section-shell" style="border-left:4px solid #b8860b;">
+                <div class="erp-card-header">
+                    <div class="erp-card-title-stack">
+                        <div class="erp-eyebrow">Smart merge</div>
+                        <h3 class="erp-section-title">Combined layout {{ merge.code }} — {{ merge.member_count }} SKUs on one plate set</h3>
+                        <p class="erp-section-desc">
+                            Combined artwork <strong>{{ merge.artwork_code }}</strong>
+                            · Print sheet {{ merge.print_sheet_size|default:'—' }}
+                            · {{ merge.run_sheets }} sheets × {{ merge.total_sheet_ups }} ups
+                            · Lead job {{ merge.lead_jc }}
+                        </p>
+                    </div>
+                </div>
+                <div style="overflow-x:auto;">
+                    <table class="erp-table" style="width:100%;min-width:620px;">
+                        <thead>
+                            <tr><th>JC No</th><th>SKU</th><th>Ups on sheet</th><th>Qty</th><th>Source AWC</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for member in merge.members %}
+                            <tr>
+                                <td>{{ member.jc_number }}{% if member.is_lead %} <strong>(lead)</strong>{% endif %}</td>
+                                <td>{{ member.sku }}</td>
+                                <td>{{ member.allocated_ups }}</td>
+                                <td>{{ member.planned_produced_qty }}</td>
+                                <td>{{ member.source_awc_no|default:'—' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+            {% endif %}
+            {% endwith %}
+
             <section class="erp-section-shell">
                 <div class="erp-card-header">
                     <div class="erp-card-title-stack">

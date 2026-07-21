@@ -429,6 +429,10 @@
            class="erp-subnav-link {% if url == 'request_list' %}is-active{% endif %}">
             <i class="far fa-file-alt"></i> All Requests
         </a>
+        <a href="{% url 'printing_plates:merged_list' %}"
+           class="erp-subnav-link {% if url == 'merged_list' %}is-active{% endif %}">
+            <i class="fas fa-layer-group"></i> Merged Layouts
+        </a>
         <a href="{% url 'printing_plates:request_add' %}"
            class="erp-subnav-link {% if url == 'request_add' %}is-active{% endif %}">
             New Request

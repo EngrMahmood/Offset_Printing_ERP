@@ -1,0 +1,89 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Printing Plates - Merged Layouts{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack erp-records-shell">
+    <!-- Navigation Tabs / Actions -->
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+        <div class="erp-actions">
+            <a href="{% url 'printing_plates:dashboard' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-chart-line"></i> Dashboard</a>
+            <a href="{% url 'printing_plates:request_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-file-invoice"></i> Plate Requests</a>
+            <a href="{% url 'printing_plates:sent_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-paper-plane"></i> Plate Sent</a>
+            <a href="{% url 'printing_plates:received_list' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-check-circle"></i> Plate Received</a>
+            <a href="{% url 'printing_plates:queue' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-list"></i> Plate Queue</a>
+            <a href="{% url 'printing_plates:merged_list' %}" class="erp-btn erp-btn-primary"><i class="fas fa-layer-group"></i> Merged Layouts</a>
+        </div>
+        <div>
+            {% if show_all %}
+            <a href="{% url 'printing_plates:merged_list' %}" class="erp-btn erp-btn-secondary">Show open only</a>
+            {% else %}
+            <a href="{% url 'printing_plates:merged_list' %}?show=all" class="erp-btn erp-btn-secondary">Show all</a>
+            {% endif %}
+        </div>
+    </div>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <h2>Merged Layouts</h2>
+            <p>
+                Combined layouts from Smart Merge. Each group prints once on the lead job's plate set —
+                the other SKUs are covered by the same plates and do not raise their own plate request.
+            </p>
+        </div>
+
+        <div style="overflow-x:auto;">
+            <table class="erp-table" style="width:100%; min-width:1000px;">
+                <thead>
+                    <tr>
+                        <th>Group</th>
+                        <th>Status</th>
+                        <th>Combined artwork</th>
+                        <th>Lead job</th>
+                        <th>SKUs</th>
+                        <th>Colours</th>
+                        <th>Print sheet</th>
+                        <th>Run sheets</th>
+                        <th>Plate request</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in rows %}
+                    <tr>
+                        <td><strong>{{ row.group.code }}</strong></td>
+                        <td>{{ row.group.get_status_display }}</td>
+                        <td>{{ row.group.artwork_code|default:'—' }}</td>
+                        <td>{{ row.group.lead_job.jc_number|default:'—' }}</td>
+                        <td>{{ row.group.items.count }}</td>
+                        <td>{{ row.group.total_colors|default:'—' }}</td>
+                        <td>{{ row.group.print_sheet_size|default:'—' }}</td>
+                        <td>{{ row.group.run_sheets|default:'—' }}</td>
+                        <td>
+                            {% if row.plate_request %}
+                            <a href="{% url 'printing_plates:request_detail' row.plate_request.pk %}">
+                                #{{ row.plate_request.pk }} · {{ row.plate_request.get_status_display }}
+                            </a>
+                            {% else %}
+                            <span style="color:#a05a00;">Not raised yet</span>
+                            {% endif %}
+                        </td>
+                        <td><a href="{% url 'planning:merge_detail' row.group.id %}" class="erp-btn erp-btn-secondary">Open</a></td>
+                    </tr>
+                    <tr>
+                        <td colspan="10" style="padding-top:0; font-size:0.85rem; color:#555;">
+                            Covered SKUs:
+                            {% for item in row.group.items.all %}
+                                {{ item.planning_job.jc_number }} ({{ item.allocated_ups }} ups{% if item.is_lead %}, lead{% endif %}){% if not forloop.last %} · {% endif %}
+                            {% endfor %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="10">No merged layouts{% if not show_all %} open right now{% endif %}.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

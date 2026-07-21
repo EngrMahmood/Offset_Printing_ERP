@@ -121,7 +121,7 @@
                                 {% for req in plate_requests %}
                                 <tr>
                                     <td class="plates-jc-cell">
-                                        <a href="{% url 'printing_plates:request_detail' req.pk %}" class="plates-jc-link" title="{{ req.jc_number|default:'' }}">{{ req.jc_number|default:'—' }}</a>
+                                        <a href="{% url 'printing_plates:request_detail' req.pk %}" class="plates-jc-link" title="{{ req.jc_number|default:'' }}">{{ req.jc_number|default:'—' }}</a>{% include 'printing_plates/includes/merge_badge.html' %}
                                     </td>
                                     <td class="erp-plate-type-cell">
                                         {% include 'printing_plates/includes/plate_repeat_flag.html' with plate_request_type=req.plate_request_type %}

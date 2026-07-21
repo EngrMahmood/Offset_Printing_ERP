@@ -343,6 +343,22 @@ class PlateRequest(models.Model):
         return ''
 
     @property
+    def merge_info(self):
+        """Smart-merge context when this request covers a combined layout.
+
+        None for ordinary requests, so plate templates stay unchanged for the
+        normal single-SKU flow.
+        """
+        if hasattr(self, '_cached_merge_info'):
+            return self._cached_merge_info
+        self._cached_merge_info = None
+        if self.planning_job_id:
+            from planning.services import build_job_card_merge_context
+
+            self._cached_merge_info = build_job_card_merge_context(self.planning_job)
+        return self._cached_merge_info
+
+    @property
     def display_awc_no(self):
         from planning.services import normalize_awc_no
 

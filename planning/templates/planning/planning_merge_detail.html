@@ -23,6 +23,23 @@
 
 {% block content %}
 <div class="erp-page-stack">
+    {% if preexisting_plate_requests %}
+    <div class="erp-alert erp-alert-warning">
+        <strong>Plates already exist for members of this group.</strong>
+        These SKUs had their own plate requests before the merge was accepted, so there is no
+        combined plate set to print from and the merge saves nothing. Cancel this group and let
+        the jobs run separately, or have graphics make the combined plate before production starts.
+        <ul style="margin:8px 0 0; padding-left:20px;">
+            {% for req in preexisting_plate_requests %}
+            <li>
+                {{ req.planning_job.jc_number }} —
+                <a href="{% url 'printing_plates:request_detail' req.pk %}">plate request #{{ req.pk }}</a>
+                ({{ req.get_status_display }})
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
     <section class="erp-section-shell">
         <div class="erp-card-header">
             <div class="erp-card-title-stack">
