@@ -1449,6 +1449,10 @@ class UserProfile(models.Model):
     def can_approve_planning(self):
         """Can approve the planning queue."""
         return self.normalized_role in ('admin', 'manager', 'planner')
+
+    def can_cancel_planning_job(self):
+        """Can cancel a planning job the customer no longer needs."""
+        return self.normalized_role in ('admin', 'manager', 'planner')
     
     def can_edit_production(self):
         """Can log production data"""

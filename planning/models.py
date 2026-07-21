@@ -14,7 +14,22 @@ PLANNING_STATUS_CHOICES = [
     ('released', 'Released'),
     ('in_production', 'In Production'),
     ('completed', 'Completed'),
+    ('cancelled', 'Cancelled'),
 ]
+
+PLANNING_CANCEL_REASON_CHOICES = [
+    ('customer_cancelled', 'Customer Cancelled the SKU'),
+    ('po_amended', 'PO Amended / Quantity Removed'),
+    ('duplicate_entry', 'Duplicate Planning Entry'),
+    ('superseded', 'Superseded by Another Job'),
+    ('other', 'Other'),
+]
+
+JOB_CANCEL_REQUEST_TYPE = 'cancel_job'
+
+# Jobs at or before these statuses can be cancelled directly by a planner.
+# Anything later requires PM approval via JobCardChangeRequest.
+PLANNING_PRE_RELEASE_STATUSES = {'draft', 'pending_qc', 'qc_approved'}
 
 PLANNING_STATUS_ALIASES = {
     'open': 'draft',
@@ -203,6 +218,21 @@ class PlanningJob(models.Model):
     )
     archived_at = models.DateTimeField(null=True, blank=True)
     archive_reason = models.TextField(blank=True)
+    is_cancelled = models.BooleanField(default=False, db_index=True)
+    cancel_reason_code = models.CharField(
+        max_length=40,
+        choices=PLANNING_CANCEL_REASON_CHOICES,
+        blank=True,
+    )
+    cancel_reason = models.TextField(blank=True)
+    cancelled_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='planning_jobs_cancelled',
+    )
+    cancelled_at = models.DateTimeField(null=True, blank=True)
     restored_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -253,6 +283,8 @@ class PlanningJob(models.Model):
 
     @property
     def effective_status(self):
+        if self.is_cancelled:
+            return 'cancelled'
         status_rank = {
             'draft': 0,
             'pending_qc': 1,
@@ -293,6 +325,46 @@ class PlanningJob(models.Model):
             return planning_status
 
         return planning_status if status_rank[planning_status] >= status_rank[job_card_status] else job_card_status
+
+    @property
+    def can_cancel_directly(self):
+        """Pre-release jobs are cancelled outright; later ones need PM approval."""
+        return self.effective_status in PLANNING_PRE_RELEASE_STATUSES
+
+    def cancellation_blockers(self):
+        """Human-readable reasons this job may not be cancelled right now."""
+        blockers = []
+        if self.is_cancelled:
+            blockers.append('This job is already cancelled.')
+            return blockers
+
+        from printing_plates.models import PlateRequest
+
+        open_plates = self.plate_requests.filter(
+            status__in=[
+                PlateRequest.STATUS_DRAFT,
+                PlateRequest.STATUS_SENT,
+                PlateRequest.STATUS_RECEIVED,
+            ]
+        ).count()
+        if open_plates:
+            blockers.append(
+                f'{open_plates} plate request(s) are still open. Cancel or close them first.'
+            )
+
+        job_card = getattr(self, 'job_card', None)
+        if job_card:
+            card_status = (job_card.workflow_status or '').strip().lower()
+            if card_status in {'in_production', 'completed', 'closed'}:
+                blockers.append(
+                    f'Job Card {job_card.job_card_no} is already {card_status.replace("_", " ")}; '
+                    'it cannot be cancelled.'
+                )
+
+        if self.print_runs.exists():
+            blockers.append('Production has already been booked against this job.')
+
+        return blockers
 
     @property
     def effective_status_label(self):
@@ -1043,6 +1115,29 @@ class JobCardChangeRequest(models.Model):
 
     def __str__(self):
         return f"Reopen Request for {self.planning_job.jc_number} ({self.status})"
+
+    @property
+    def is_cancellation(self):
+        return self.request_type == JOB_CANCEL_REQUEST_TYPE
+
+    def _split_cancel_reason(self):
+        """Cancellation reasons are stored as '[reason_code] free text'."""
+        match = re.match(r'^\[([a-z_]+)\]\s*(.*)$', (self.reason or '').strip(), re.DOTALL)
+        if not match:
+            return '', (self.reason or '').strip()
+        return match.group(1), match.group(2).strip()
+
+    @property
+    def cancel_reason_code(self):
+        return self._split_cancel_reason()[0]
+
+    @property
+    def cancel_reason_text(self):
+        return self._split_cancel_reason()[1]
+
+    @property
+    def cancel_reason_label(self):
+        return dict(PLANNING_CANCEL_REASON_CHOICES).get(self.cancel_reason_code, '')
 
 
 

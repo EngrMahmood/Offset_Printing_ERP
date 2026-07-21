@@ -57,6 +57,7 @@ from reports.export.services import export_as_pdf, export_as_xlsx
 from .forms import JobCardLayoutForm, PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeForm
 from .services import (
     _user_is_admin, _planning_status_filter_values, _parse_date_filter,
+    cancel_planning_job, request_job_cancellation, approve_job_cancellation,
     _build_job_card_pdf_bytes, _sku_key, _missing_required_master_fields,
     _sync_new_sku_requirement, _build_recipe_map, _to_optional_positive_int,
     _to_optional_decimal, _sanitize_po_payload_items, _po_payload_items,
@@ -99,6 +100,7 @@ from .services import (
     request_master_data_sync,
 )
 from .models import (
+    PLANNING_CANCEL_REASON_CHOICES,
     PLANNING_QC_GATE_STATUSES,
     PLANNING_STATUS_ALIASES,
     PLANNING_STATUS_CHOICES,
@@ -582,6 +584,38 @@ Plates:
 """
 
 
+def _user_can_cancel_planning_job(user):
+    profile = getattr(user, 'profile', None)
+    if not profile:
+        return False
+    return profile.can_cancel_planning_job()
+
+
+def _clear_cancellation(job):
+    """Un-cancel a job being restored. Returns the extra update_fields touched."""
+    if not job.is_cancelled:
+        return []
+    job.is_cancelled = False
+    job.cancel_reason = ''
+    job.cancel_reason_code = ''
+    job.cancelled_by = None
+    job.cancelled_at = None
+    job.status = 'draft'
+    return ['is_cancelled', 'cancel_reason', 'cancel_reason_code', 'cancelled_by', 'cancelled_at', 'status']
+
+
+def _report_validation_error(request, exc, prefix=''):
+    """Surface a ValidationError (dict or plain) as user-facing messages."""
+    label = f'{prefix}: ' if prefix else ''
+    error_dict = getattr(exc, 'message_dict', None)
+    if error_dict:
+        for field_errors in error_dict.values():
+            for error_message in field_errors:
+                messages.error(request, f'{label}{error_message}')
+    else:
+        messages.error(request, f'{label}{exc}')
+
+
 @login_required
 @permission_required('can_edit_jobcard')
 def planning_readme(request):
@@ -986,7 +1020,7 @@ def planning_home(request):
             messages.success(request, f'Bulk delete complete. Deleted {deleted_count} jobs.')
             return redirect('planning:jobs')
 
-        if action in {'hold', 'release_hold', 'archive', 'delete', 'update_planning_stage'}:
+        if action in {'hold', 'release_hold', 'archive', 'cancel', 'delete', 'update_planning_stage'}:
             job_id = request.POST.get('job_id')
             try:
                 job_id = int(job_id)
@@ -1111,6 +1145,28 @@ def planning_home(request):
                                 messages.error(request, f'{job.jc_number}: {error_message}')
                     else:
                         messages.error(request, f'{job.jc_number}: {exc}')
+                return redirect('planning:jobs')
+
+            if action == 'cancel':
+                if not _user_can_cancel_planning_job(request.user):
+                    messages.error(request, 'You do not have permission to cancel planning jobs.')
+                    return redirect('planning:jobs')
+
+                reason = (request.POST.get('reason') or '').strip()
+                reason_code = (request.POST.get('cancel_reason_code') or '').strip()
+                needs_approval = not job.can_cancel_directly
+                try:
+                    if needs_approval:
+                        request_job_cancellation(job, actor=request.user, reason=reason, reason_code=reason_code)
+                        messages.success(
+                            request,
+                            f'Cancellation request for {job.jc_number} was sent for approval.',
+                        )
+                    else:
+                        cancel_planning_job(job, actor=request.user, reason=reason, reason_code=reason_code)
+                        messages.success(request, f'Planning job {job.jc_number} was cancelled.')
+                except ValidationError as exc:
+                    _report_validation_error(request, exc, prefix=job.jc_number)
                 return redirect('planning:jobs')
 
             if action == 'archive':
@@ -1420,6 +1476,8 @@ def planning_home(request):
             'stage_choices': PLANNING_STAGE_CHOICES,
             'can_admin_actions': _user_is_admin(request.user),
             'user_can_plan': _user_can_plan,
+            'user_can_cancel': _user_can_cancel_planning_job(request.user),
+            'cancel_reason_choices': PLANNING_CANCEL_REASON_CHOICES,
             'filters': {
                 'q': q,
                 'status': status_filter,
@@ -1458,12 +1516,24 @@ def planning_jobs_archived(request):
             if action == 'bulk_restore':
                 reason = (request.POST.get('reason') or '').strip()
                 restored_count = 0
-                for job in PlanningJob.objects.filter(id__in=selected_ids, is_active=False):
+                restore_queryset = PlanningJob.objects.filter(id__in=selected_ids, is_active=False)
+                if not _user_is_admin(request.user):
+                    skipped = restore_queryset.filter(is_cancelled=True).count()
+                    if skipped:
+                        messages.warning(
+                            request,
+                            f'Skipped {skipped} cancelled job(s). Only administrators can restore a cancelled job.',
+                        )
+                    restore_queryset = restore_queryset.filter(is_cancelled=False)
+                for job in restore_queryset:
                     job.is_active = True
                     job.restored_by = request.user
                     job.restored_at = timezone.now()
                     job.restore_reason = reason
-                    job.save(update_fields=['is_active', 'restored_by', 'restored_at', 'restore_reason', 'updated_at'])
+                    job.save(update_fields=[
+                        'is_active', 'restored_by', 'restored_at', 'restore_reason', 'updated_at',
+                        *_clear_cancellation(job),
+                    ])
                     _clear_ignored_sku_from_po_docs(job.po_number, job.sku)
                     restored_count += 1
                 messages.success(request, f'Bulk restore complete. Restored {restored_count} jobs.')
@@ -1487,12 +1557,18 @@ def planning_jobs_archived(request):
         job = get_object_or_404(PlanningJob, id=job_id, is_active=False)
 
         if action == 'restore':
+            if job.is_cancelled and not _user_is_admin(request.user):
+                messages.error(request, 'Only administrators can restore a cancelled planning job.')
+                return redirect('planning:jobs_archived')
             reason = (request.POST.get('reason') or '').strip()
             job.is_active = True
             job.restored_by = request.user
             job.restored_at = timezone.now()
             job.restore_reason = reason
-            job.save(update_fields=['is_active', 'restored_by', 'restored_at', 'restore_reason', 'updated_at'])
+            job.save(update_fields=[
+                'is_active', 'restored_by', 'restored_at', 'restore_reason', 'updated_at',
+                *_clear_cancellation(job),
+            ])
             _clear_ignored_sku_from_po_docs(job.po_number, job.sku)
             messages.success(request, f'Planning job {job.jc_number} was restored from archive.')
             return redirect('planning:jobs_archived')
@@ -1509,6 +1585,13 @@ def planning_jobs_archived(request):
         return redirect('planning:jobs_archived')
 
     queryset = PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs').filter(is_active=False)
+
+    # view: '' = everything archived, 'cancelled' / 'archived' narrow it down.
+    view_filter = (request.GET.get('view') or '').strip()
+    if view_filter == 'cancelled':
+        queryset = queryset.filter(is_cancelled=True)
+    elif view_filter == 'archived':
+        queryset = queryset.filter(is_cancelled=False)
 
     q = (request.GET.get('q') or '').strip()
     status_filter = _normalize_status(request.GET.get('status'), default='')
@@ -1552,11 +1635,14 @@ def planning_jobs_archived(request):
             'status_counts': status_counts,
             'status_choices': PLANNING_STATUSES,
             'can_admin_actions': _user_is_admin(request.user),
+            'view_filter': view_filter,
+            'cancelled_count': PlanningJob.objects.filter(is_active=False, is_cancelled=True).count(),
             'filters': {
                 'q': q,
                 'status': status_filter,
                 'department': department_filter,
                 'machine': machine_filter,
+                'view': view_filter,
                 'from_date': request.GET.get('from_date', ''),
                 'to_date': request.GET.get('to_date', ''),
             },
@@ -5377,7 +5463,21 @@ def approve_change_request(request, request_id):
         
     job = change_request.planning_job
     job_card = getattr(job, 'job_card', None)
-    
+
+    if change_request.is_cancellation:
+        try:
+            approve_job_cancellation(change_request, actor=request.user)
+        except ValidationError as exc:
+            _report_validation_error(request, exc, prefix=job.jc_number)
+            return redirect('planning:approval_queue')
+
+        change_request.status = 'approved'
+        change_request.approved_by = request.user
+        change_request.approved_at = timezone.now()
+        change_request.save(update_fields=['status', 'approved_by', 'approved_at'])
+        messages.success(request, f'Cancellation approved. Planning job {job.jc_number} is now cancelled.')
+        return redirect('planning:approval_queue')
+
     old_status = job.status
     job.status = 'draft'
     job.issued_to_production = False

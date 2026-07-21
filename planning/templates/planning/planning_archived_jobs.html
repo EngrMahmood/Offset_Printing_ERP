@@ -23,8 +23,16 @@
     {% endfor %}
 
     <div class="erp-section-divider">
-        Archived Jobs
+        {% if view_filter == 'cancelled' %}Cancelled Jobs{% elif view_filter == 'archived' %}Archived Jobs{% else %}Archived &amp; Cancelled Jobs{% endif %}
         <span class="erp-badge is-count">{{ jobs.paginator.count }}</span>
+    </div>
+    <div class="erp-actions" style="gap:6px; margin-bottom:12px;">
+        <a class="erp-btn {% if not view_filter %}erp-btn-primary{% else %}erp-btn-secondary{% endif %}"
+           href="{% url 'planning:jobs_archived' %}">All</a>
+        <a class="erp-btn {% if view_filter == 'archived' %}erp-btn-primary{% else %}erp-btn-secondary{% endif %}"
+           href="{% url 'planning:jobs_archived' %}?view=archived">Archived Only</a>
+        <a class="erp-btn {% if view_filter == 'cancelled' %}erp-btn-primary{% else %}erp-btn-secondary{% endif %}"
+           href="{% url 'planning:jobs_archived' %}?view=cancelled">Cancelled <span class="erp-badge is-count">{{ cancelled_count }}</span></a>
     </div>
     <div class="erp-split-layout">
         <aside class="erp-filter-sidebar erp-records-filter-sidebar">
@@ -114,16 +122,28 @@
                             <td>{{ job.sku|default:"-" }}</td>
                             <td>
                                 {{ job.job_name|default:"-" }}
-                                {% if job.archive_reason %}
-                                    <div class="muted">Reason: {{ job.archive_reason }}</div>
+                                {% if job.is_cancelled %}
+                                    <div class="muted">
+                                        {{ job.get_cancel_reason_code_display }}: {{ job.cancel_reason }}
+                                    </div>
+                                    <div class="muted">
+                                        Cancelled {{ job.cancelled_at|date:"Y-m-d" }}{% if job.cancelled_by %} by {{ job.cancelled_by }}{% endif %}
+                                    </div>
+                                {% else %}
+                                    {% if job.archive_reason %}
+                                        <div class="muted">Reason: {{ job.archive_reason }}</div>
+                                    {% endif %}
+                                    <div class="muted">
+                                        Archived {{ job.archived_at|date:"Y-m-d" }}{% if job.archived_by %} by {{ job.archived_by }}{% endif %}
+                                    </div>
                                 {% endif %}
-                                <div class="muted">
-                                    Archived {{ job.archived_at|date:"Y-m-d" }}{% if job.archived_by %} by {{ job.archived_by }}{% endif %}
-                                </div>
                             </td>
                             <td>{{ job.order_qty|default:"-" }}</td>
                             <td>
                                 <span class="erp-badge {% if job.repeat_flag|lower == 'new' %}is-new{% else %}is-repeat{% endif %}">{{ job.repeat_flag|default:"-" }}</span>
+                                {% if job.is_cancelled %}
+                                    <span class="erp-badge is-danger">Cancelled</span>
+                                {% endif %}
                                 {% if job.is_on_hold %}
                                     <span class="erp-badge is-hold">On Hold</span>
                                 {% endif %}
@@ -137,12 +157,15 @@
                             <td class="erp-col-actions">
                                 <div class="erp-actions erp-actions--compact">
                                     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:job_detail' job.id %}">View</a>
+                                    {% if not job.is_cancelled or can_admin_actions %}
+                                    <form method="post" data-reason-prompt="{% if job.is_cancelled %}Reason for restoring this CANCELLED job?{% else %}Restore reason?{% endif %}">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="restore">
                                         <input type="hidden" name="job_id" value="{{ job.id }}">
                                         <input type="hidden" name="reason" value="">
                                         <button type="button" class="erp-btn erp-btn-secondary" onclick="submitWithPrompt(this);">Restore</button>
                                     </form>
+                                    {% endif %}
                                     {% if can_admin_actions %}
                                         <form method="post" onsubmit="return confirm('Permanently delete this archived planning job? This cannot be undone.');">
                                             {% csrf_token %}

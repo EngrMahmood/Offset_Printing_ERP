@@ -34,6 +34,14 @@
         {% include 'planning/includes/sku_duplicate_alert.html' %}
     </div>
 
+    {% if job.is_cancelled %}
+    <div class="erp-alert erp-alert-warning" style="background:#fff1f3; color:#8f1f2b; border-left:4px solid #d82a3b;">
+        <strong>JOB CANCELLED — {{ job.get_cancel_reason_code_display }}.</strong>
+        {{ job.cancel_reason }}
+        <div>Cancelled {{ job.cancelled_at|date:"Y-m-d H:i" }}{% if job.cancelled_by %} by {{ job.cancelled_by }}{% endif %}.</div>
+    </div>
+    {% endif %}
+
     {% if job.repeat_flag|lower == 'new' %}
     <div class="erp-alert erp-alert-warning"><strong>NEW SKU ALERT:</strong> Shade matching and setup verification required before production run.</div>
     {% endif %}

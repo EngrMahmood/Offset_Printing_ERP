@@ -124,7 +124,8 @@ def _date_window(request, default_days=30):
 def _parse_period_filter(request, default_period='month'):
     """Resolve dashboard period presets or explicit date range."""
     today = timezone.localdate()
-    period = (request.GET.get('period') or default_period).strip().lower()
+    requested_period = (request.GET.get('period') or '').strip().lower()
+    period = (requested_period or default_period).strip().lower()
 
     if period == 'all':
         start = None
@@ -135,7 +136,13 @@ def _parse_period_filter(request, default_period='month'):
     date_from_raw = (request.GET.get('date_from') or '').strip()
     date_to_raw = (request.GET.get('date_to') or '').strip()
 
-    if date_from_raw and date_to_raw:
+    # An explicitly chosen preset wins over date_from/date_to. The filter forms
+    # render the *resolved* range of the current preset into the date inputs, so
+    # those fields are always populated; without this guard they would silently
+    # override every preset the user picks and the report would never change.
+    preset_wins = bool(requested_period) and requested_period != 'custom'
+
+    if not preset_wins and date_from_raw and date_to_raw:
         try:
             start = datetime.strptime(date_from_raw, '%Y-%m-%d').date()
             end = datetime.strptime(date_to_raw, '%Y-%m-%d').date()

@@ -322,6 +322,40 @@
                                     </form>
                                     {% endif %}
                                 {% endif %}
+                                {% if user_can_cancel %}
+                                    {% with blockers=job.cancellation_blockers %}
+                                    {% if blockers %}
+                                        <span class="erp-badge erp-badge-secondary" title="{% for blocker in blockers %}{{ blocker }} {% endfor %}">Cancel blocked</span>
+                                    {% else %}
+                                    <details class="erp-inline-form">
+                                        <summary class="erp-btn erp-btn-warning sm" style="list-style:none; cursor:pointer;">
+                                            {% if job.can_cancel_directly %}Cancel{% else %}Request Cancel{% endif %}
+                                        </summary>
+                                        <form method="post" action="{% url 'planning:jobs' %}" style="padding:8px; min-width:240px;">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="cancel">
+                                            <input type="hidden" name="job_id" value="{{ job.id }}">
+                                            <select name="cancel_reason_code" required style="width:100%; margin-bottom:6px;">
+                                                <option value="">Select reason…</option>
+                                                {% for code, label in cancel_reason_choices %}
+                                                    <option value="{{ code }}">{{ label }}</option>
+                                                {% endfor %}
+                                            </select>
+                                            <textarea name="reason" rows="2" required placeholder="Details (required)" style="width:100%; margin-bottom:6px;"></textarea>
+                                            {% if not job.can_cancel_directly %}
+                                                <p class="erp-text-muted" style="font-size:11px; margin:0 0 6px;">
+                                                    This job is already released — cancellation needs PM approval.
+                                                </p>
+                                            {% endif %}
+                                            <button type="submit" class="erp-btn erp-btn-danger sm"
+                                                    onclick="return confirm('Cancel planning job {{ job.jc_number }}?');">
+                                                {% if job.can_cancel_directly %}Confirm Cancel{% else %}Send for Approval{% endif %}
+                                            </button>
+                                        </form>
+                                    </details>
+                                    {% endif %}
+                                    {% endwith %}
+                                {% endif %}
                                 {% if can_admin_actions %}
                                     <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form" onsubmit="return confirm('Delete planning job {{ job.jc_number }} and all related plate requests? This cannot be undone.');">
                                         {% csrf_token %}

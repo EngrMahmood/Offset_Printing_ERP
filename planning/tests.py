@@ -2287,3 +2287,139 @@ class PlanningJobPriorityUpdateTests(TestCase):
 		)
 		self.assertEqual(response.status_code, 302)
 
+
+
+class PlanningJobCancellationTests(TestCase):
+	def setUp(self):
+		self.planner = get_user_model().objects.create_user(username='cancel_planner', password='testpass123')
+		self.pm = get_user_model().objects.create_user(username='cancel_pm', password='testpass123')
+		self.operator = get_user_model().objects.create_user(username='cancel_operator', password='testpass123')
+
+		for user, role in ((self.planner, 'planner'), (self.pm, 'production_manager'), (self.operator, 'operator')):
+			profile, _ = UserProfile.objects.get_or_create(user=user)
+			profile.role = role
+			profile.save()
+
+		self.job = PlanningJob.objects.create(
+			jc_number='JC-CANCEL-1',
+			po_number='PO-CANCEL-1',
+			sku='SKU-CANCEL-1',
+			order_qty=1000,
+			status='draft',
+		)
+
+	def _cancel_post(self, job, **overrides):
+		payload = {
+			'action': 'cancel',
+			'job_id': job.id,
+			'cancel_reason_code': 'customer_cancelled',
+			'reason': 'Customer dropped the SKU.',
+		}
+		payload.update(overrides)
+		return self.client.post(reverse('planning:jobs'), payload)
+
+	def test_planner_cancels_pre_release_job(self):
+		self.client.force_login(self.planner)
+		response = self._cancel_post(self.job)
+		self.assertEqual(response.status_code, 302)
+
+		self.job.refresh_from_db()
+		self.assertTrue(self.job.is_cancelled)
+		self.assertFalse(self.job.is_active)
+		self.assertEqual(self.job.status, 'cancelled')
+		self.assertEqual(self.job.effective_status, 'cancelled')
+		self.assertEqual(self.job.cancel_reason_code, 'customer_cancelled')
+		self.assertEqual(self.job.cancelled_by, self.planner)
+		self.assertIsNotNone(self.job.cancelled_at)
+		# Archive fields are mirrored so existing archive views keep working.
+		self.assertEqual(self.job.archived_by, self.planner)
+		self.assertIn('Customer dropped the SKU.', self.job.archive_reason)
+
+	def test_cancel_requires_reason_and_code(self):
+		self.client.force_login(self.planner)
+		self._cancel_post(self.job, reason='')
+		self.job.refresh_from_db()
+		self.assertFalse(self.job.is_cancelled)
+
+		self._cancel_post(self.job, cancel_reason_code='not_a_real_code')
+		self.job.refresh_from_db()
+		self.assertFalse(self.job.is_cancelled)
+
+	def test_operator_cannot_cancel(self):
+		self.client.force_login(self.operator)
+		self._cancel_post(self.job)
+		self.job.refresh_from_db()
+		self.assertFalse(self.job.is_cancelled)
+
+	def test_open_plate_request_blocks_cancel(self):
+		from printing_plates.models import PlateRequest
+
+		PlateRequest.objects.create(planning_job=self.job, status=PlateRequest.STATUS_SENT)
+		self.assertTrue(self.job.cancellation_blockers())
+
+		self.client.force_login(self.planner)
+		self._cancel_post(self.job)
+		self.job.refresh_from_db()
+		self.assertFalse(self.job.is_cancelled)
+
+	def test_released_job_creates_approval_request_instead(self):
+		self.job.status = 'released'
+		self.job.save(update_fields=['status'])
+		self.assertFalse(self.job.can_cancel_directly)
+
+		self.client.force_login(self.planner)
+		self._cancel_post(self.job)
+
+		self.job.refresh_from_db()
+		self.assertFalse(self.job.is_cancelled)
+		change_request = JobCardChangeRequest.objects.get(planning_job=self.job)
+		self.assertEqual(change_request.request_type, 'cancel_job')
+		self.assertEqual(change_request.status, 'pending')
+		self.assertEqual(change_request.cancel_reason_code, 'customer_cancelled')
+		self.assertEqual(change_request.cancel_reason_text, 'Customer dropped the SKU.')
+
+	def test_pm_approval_cancels_released_job(self):
+		self.job.status = 'released'
+		self.job.save(update_fields=['status'])
+		change_request = JobCardChangeRequest.objects.create(
+			planning_job=self.job,
+			request_type='cancel_job',
+			reason='[po_amended] PO revised, line removed.',
+			requested_by=self.planner,
+		)
+
+		self.client.force_login(self.pm)
+		response = self.client.post(reverse('planning:approve_change_request', args=[change_request.id]))
+		self.assertEqual(response.status_code, 302)
+
+		self.job.refresh_from_db()
+		change_request.refresh_from_db()
+		self.assertTrue(self.job.is_cancelled)
+		self.assertEqual(self.job.cancel_reason_code, 'po_amended')
+		self.assertEqual(self.job.cancel_reason, 'PO revised, line removed.')
+		self.assertEqual(change_request.status, 'approved')
+
+	def test_cancelled_job_hidden_from_active_list_and_shown_in_archive(self):
+		self.client.force_login(self.planner)
+		self._cancel_post(self.job)
+
+		# Check the listing itself, not the page text: the JC number also shows
+		# up in the carried-over "was cancelled" success message.
+		active = self.client.get(reverse('planning:jobs'))
+		self.assertNotIn(self.job, list(active.context['jobs']))
+
+		archived = self.client.get(reverse('planning:jobs_archived'), {'view': 'cancelled'})
+		self.assertContains(archived, 'JC-CANCEL-1')
+
+	def test_non_admin_cannot_restore_cancelled_job(self):
+		self.client.force_login(self.planner)
+		self._cancel_post(self.job)
+
+		self.client.post(reverse('planning:jobs_archived'), {
+			'action': 'restore',
+			'job_id': self.job.id,
+			'reason': 'oops',
+		})
+		self.job.refresh_from_db()
+		self.assertTrue(self.job.is_cancelled)
+		self.assertFalse(self.job.is_active)

@@ -1065,3 +1065,54 @@ class ReportsAppTests(TestCase):
         self.assertEqual(data_high['wastage_rows'][0]['job_card_no'], 'JC-TEST-WASTE-1')
         self.assertEqual(data_high['wastage_rows'][1]['job_card_no'], 'JC-TEST-WASTE-2')
 
+
+
+class PeriodFilterPrecedenceTests(TestCase):
+    """The filter forms always render the resolved range of the active preset
+    into date_from/date_to, so a chosen preset must win over those inputs.
+    Regression guard: previously every preset was silently overridden by them.
+    """
+
+    def setUp(self):
+        from django.test import RequestFactory
+        self.rf = RequestFactory()
+        self.user = get_user_model().objects.create_user(username='report_user', password='testpass123')
+
+    def _period(self, query):
+        from reports.services import _parse_period_filter
+        request = self.rf.get('/reports/daily-production/?' + query)
+        request.user = self.user
+        start, end, period, label, date_from, date_to = _parse_period_filter(request)
+        return period, start, end
+
+    def test_preset_beats_stale_date_inputs(self):
+        from django.utils import timezone
+        today = timezone.localdate()
+        stale = 'date_from=2026-07-01&date_to=2026-07-21'
+
+        period, start, end = self._period('period=today&' + stale)
+        self.assertEqual(period, 'today')
+        self.assertEqual(start, today)
+        self.assertEqual(end, today)
+
+        period, _, _ = self._period('period=week&' + stale)
+        self.assertEqual(period, 'week')
+
+        period, start, end = self._period('period=all&' + stale)
+        self.assertEqual(period, 'all')
+        self.assertIsNone(start)
+        self.assertIsNone(end)
+
+    def test_custom_range_still_honours_dates(self):
+        from datetime import date
+        period, start, end = self._period('period=custom&date_from=2026-07-10&date_to=2026-07-12')
+        self.assertEqual(period, 'custom')
+        self.assertEqual(start, date(2026, 7, 10))
+        self.assertEqual(end, date(2026, 7, 12))
+
+    def test_bare_dates_without_period_are_custom(self):
+        from datetime import date
+        period, start, end = self._period('date_from=2026-07-10&date_to=2026-07-12')
+        self.assertEqual(period, 'custom')
+        self.assertEqual(start, date(2026, 7, 10))
+        self.assertEqual(end, date(2026, 7, 12))

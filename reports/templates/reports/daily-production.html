@@ -90,6 +90,27 @@
                 <a href="{% url 'reports:detail' report.slug %}" class="erp-btn erp-btn-secondary">Reset</a>
             </div>
         </form>
+        <script>
+        // The From/To inputs show the resolved range of the active preset, so they
+        // only accept input under "Custom Range". The server ignores them for any
+        // other preset; greying them out keeps the UI honest about that.
+        (function () {
+            var period = document.getElementById('dp-period');
+            var from = document.getElementById('dp-from');
+            var to = document.getElementById('dp-to');
+            if (!period || !from || !to) { return; }
+            function syncDateInputs() {
+                var isCustom = period.value === 'custom';
+                [from, to].forEach(function (input) {
+                    input.readOnly = !isCustom;
+                    input.style.opacity = isCustom ? '' : '0.6';
+                    input.title = isCustom ? '' : 'Select "Custom Range" to set your own dates.';
+                });
+            }
+            period.addEventListener('change', syncDateInputs);
+            syncDateInputs();
+        })();
+        </script>
 
         {% if data.shift_filter %}
         <div class="erp-alert erp-alert-info mb-4">

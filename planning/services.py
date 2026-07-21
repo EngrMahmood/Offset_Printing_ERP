@@ -10,7 +10,15 @@ from django.db.models import Sum, Q
 from django.db.models.functions import Upper
 from django.utils import timezone
 from core.models import Machine, Department, Material
-from .models import PLANNING_STATUS_ALIASES, PlanningJob, PoDocument, SkuRecipe
+from .models import (
+    JOB_CANCEL_REQUEST_TYPE,
+    PLANNING_CANCEL_REASON_CHOICES,
+    PLANNING_STATUS_ALIASES,
+    JobCardChangeRequest,
+    PlanningJob,
+    PoDocument,
+    SkuRecipe,
+)
 from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note, _normalize_status, _to_int, _to_decimal, SKU_MASTER_APPROVAL_REQUIRED_FIELDS, _warning_master_fields
 from core.jc_numbering import allocate_next_jc_number
 
@@ -2502,3 +2510,104 @@ def reopen_and_apply_master_data_sync(job, actor, reason=''):
 
     return job, result
 
+
+
+def cancel_planning_job(job, actor=None, reason='', reason_code=''):
+    """
+    Cancel a planning job the customer no longer needs.
+
+    A cancelled job is also archived (is_active=False) so every existing
+    active-jobs filter, queue and report drops it without further changes; the
+    cancel_* fields are what distinguish a customer cancellation from routine
+    housekeeping.
+    """
+    from django.core.exceptions import ValidationError
+
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValidationError({'reason': 'A cancellation reason is required.'})
+
+    valid_codes = {code for code, _ in PLANNING_CANCEL_REASON_CHOICES}
+    if reason_code not in valid_codes:
+        raise ValidationError({'reason_code': 'Select a valid cancellation reason code.'})
+
+    blockers = job.cancellation_blockers()
+    if blockers:
+        raise ValidationError({'__all__': blockers})
+
+    now = timezone.now()
+    with transaction.atomic():
+        job.is_cancelled = True
+        job.cancel_reason = reason
+        job.cancel_reason_code = reason_code
+        job.cancelled_by = actor
+        job.cancelled_at = now
+        job.status = 'cancelled'
+        # Mirror into the archive fields so the archived list keeps working.
+        job.is_active = False
+        job.archive_reason = f'Cancelled: {reason}'
+        job.archived_by = actor
+        job.archived_at = now
+        job.save(update_fields=[
+            'is_cancelled',
+            'cancel_reason',
+            'cancel_reason_code',
+            'cancelled_by',
+            'cancelled_at',
+            'status',
+            'is_active',
+            'archive_reason',
+            'archived_by',
+            'archived_at',
+            'updated_at',
+        ])
+
+        job_card = getattr(job, 'job_card', None)
+        if job_card and job_card.is_active:
+            job_card.is_active = False
+            job_card.save(update_fields=['is_active'])
+
+    return job
+
+
+def request_job_cancellation(job, actor=None, reason='', reason_code=''):
+    """Raise a PM approval request to cancel a job that is already released."""
+    from django.core.exceptions import ValidationError
+
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValidationError({'reason': 'A cancellation reason is required.'})
+
+    valid_codes = {code for code, _ in PLANNING_CANCEL_REASON_CHOICES}
+    if reason_code not in valid_codes:
+        raise ValidationError({'reason_code': 'Select a valid cancellation reason code.'})
+
+    if job.is_cancelled:
+        raise ValidationError({'__all__': ['This job is already cancelled.']})
+
+    existing = JobCardChangeRequest.objects.filter(
+        planning_job=job,
+        request_type=JOB_CANCEL_REQUEST_TYPE,
+        status='pending',
+    ).first()
+    if existing:
+        raise ValidationError({'__all__': ['A cancellation request is already pending for this job.']})
+
+    return JobCardChangeRequest.objects.create(
+        planning_job=job,
+        request_type=JOB_CANCEL_REQUEST_TYPE,
+        # The code is stored inline so approval can replay the exact cancellation.
+        # JobCardChangeRequest.cancel_reason_code/cancel_reason_text parse it back.
+        reason=f'[{reason_code}] {reason}',
+        requested_by=actor,
+    )
+
+
+def approve_job_cancellation(change_request, actor=None):
+    """Apply a PM-approved cancellation request to its planning job."""
+    return cancel_planning_job(
+        change_request.planning_job,
+        actor=actor,
+        reason=change_request.cancel_reason_text,
+        reason_code=change_request.cancel_reason_code,
+    )
