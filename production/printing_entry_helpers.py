@@ -175,4 +175,16 @@ def build_printing_job_card_maps(job_cards, edit_record=None):
             'history': history_data,
         }
 
+        # Smart layout merge context for the operator.
+        merge_item = job_card.planning_job.active_merge_item if job_card.planning_job else None
+        if merge_item:
+            group = merge_item.merge_group
+            info_map[job_id]['merge'] = {
+                'code': group.code,
+                'is_lead': merge_item.is_lead,
+                'lead_jc': group.lead_job.jc_number if group.lead_job else '',
+                'allocated_ups': merge_item.allocated_ups,
+                'run_sheets': group.run_sheets,
+            }
+
     return plan_map, machine_map, info_map

@@ -964,6 +964,13 @@ def get_plate_making_prerequisite_errors(planning_job):
         errors.append('Machine Name is required before Plate Making.')
     if not planning_job.is_cut_and_pack() and not planning_job.effective_print_passes:
         errors.append('No. of Passes is required on SKU master before Plate Making.')
+    if planning_job.is_merge_member_follower:
+        group = planning_job.active_merge_group
+        lead_jc = group.lead_job.jc_number if group and group.lead_job else ''
+        errors.append(
+            f'This job is merged into layout {group.code if group else ""}. '
+            f'Plates are made once on the lead job {lead_jc}, not per SKU.'
+        )
     return errors
 
 
@@ -2566,6 +2573,15 @@ def cancel_planning_job(job, actor=None, reason='', reason_code=''):
         if job_card and job_card.is_active:
             job_card.is_active = False
             job_card.save(update_fields=['is_active'])
+
+        # Cancelling a member invalidates the ganged layout — dissolve the whole
+        # open merge group so the planner can re-merge the remaining SKUs cleanly.
+        merge_item = job.active_merge_item
+        if merge_item:
+            group = merge_item.merge_group
+            group.status = 'cancelled'
+            group.cancelled_at = now
+            group.save(update_fields=['status', 'cancelled_at'])
 
     return job
 

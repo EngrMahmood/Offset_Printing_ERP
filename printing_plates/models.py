@@ -203,6 +203,11 @@ class PlateRequest(models.Model):
                 if planning_job and planning_job.planning_stage in ['new_plate_making', 'repeat_plate_making']:
                     planning_job.planning_stage = 'plate_received'
                     planning_job.save(update_fields=['planning_stage', 'updated_at'])
+                # Shared plates for a merge group land all member jobs at once.
+                if planning_job:
+                    merge_group = planning_job.active_merge_group
+                    if merge_group and merge_group.lead_job_id == planning_job.id:
+                        merge_group.propagate_planning_stage('plate_received')
             except Exception:
                 pass
         super().save(*args, **kwargs)

@@ -130,6 +130,12 @@ def planning_job_should_skip_plate_making(planning_job):
     """True when a new planning plate request must not be opened."""
     if not planning_job:
         return False
+
+    # A follower in a smart-merge group never raises its own plates; the group's
+    # lead job carries the single shared plate set for the whole layout.
+    if planning_job.is_merge_member_follower:
+        return True
+
     from core.models import JOB_CARD_PRODUCTION_START_STATUSES
     from workflow.services import _normalize_status
 
@@ -438,6 +444,17 @@ def create_or_get_plate_request_from_planning_job(planning_job, user):
     except (JobCard.DoesNotExist, AttributeError):
         job_card = None
 
+    # When this job leads a smart-merge group, the plate request represents the
+    # whole combined layout: carry the group's artwork code and a merge note.
+    merge_group = planning_job.active_merge_group if planning_job.is_merge_lead else None
+    awc_override = merge_group.artwork_code if merge_group else ''
+    remarks = getattr(planning_job, 'remarks', '') or ''
+    if merge_group:
+        member_jcs = ', '.join(
+            item.planning_job.jc_number for item in merge_group.items.select_related('planning_job')
+        )
+        remarks = (f'Combined layout {merge_group.code} — prints {member_jcs}. ' + remarks).strip()
+
     plate_request = PlateRequest.objects.create(
         planning_job=planning_job,
         job_card=job_card,
@@ -448,7 +465,8 @@ def create_or_get_plate_request_from_planning_job(planning_job, user):
         source=PlateRequest.SOURCE_PLANNING,
         requested_at=timezone.now(),
         requested_by=user,
-        remarks=getattr(planning_job, 'remarks', '') or '',
+        awc_no=awc_override,
+        remarks=remarks,
     )
 
     _log_plate_request_change(

@@ -5668,11 +5668,15 @@ def planning_merge_accept(request):
             accepted_by=request.user,
             accepted_at=timezone.now(),
         )
+        # The member with the most allocated ups leads: it carries the shared
+        # plate request and the single printing run for the whole group.
+        lead_item = max(allocation['items'], key=lambda item: item['allocated_ups'])
         MergeGroupItem.objects.bulk_create([
             MergeGroupItem(
                 merge_group=group,
                 planning_job=item['job'],
                 allocated_ups=item['allocated_ups'],
+                is_lead=(item is lead_item),
                 source_awc_no=item['job'].awc_no_display or '',
                 planned_produced_qty=item['planned_produced_qty'],
                 net_qty=item['net_qty'],
@@ -5680,6 +5684,8 @@ def planning_merge_accept(request):
             )
             for item in allocation['items']
         ])
+        group.lead_job = lead_item['job']
+        group.save(update_fields=['lead_job'])
 
     messages.success(request, f'Merge group {group.code} created with {len(jobs)} jobs.')
     return redirect('planning:merge_detail', group_id=group.id)
@@ -5719,6 +5725,25 @@ def planning_merge_cancel(request, group_id):
     group = get_object_or_404(MergeGroup, id=group_id)
     if request.method != 'POST':
         return redirect('planning:merge_detail', group_id=group.id)
+
+    # Once the shared plates are on the floor, a planner cannot silently unpick
+    # the group — that is a production change requiring PM approval.
+    from printing_plates.services import plates_were_issued_to_production
+
+    lead_card = None
+    if group.lead_job:
+        try:
+            lead_card = group.lead_job.job_card
+        except Exception:
+            lead_card = None
+    if lead_card and plates_were_issued_to_production(lead_card):
+        messages.error(
+            request,
+            f'Plates for {group.code} are already issued to production. '
+            f'Raise a change request for PM approval instead of cancelling the merge.',
+        )
+        return redirect('planning:merge_detail', group_id=group.id)
+
     group.status = 'cancelled'
     group.cancelled_at = timezone.now()
     group.save(update_fields=['status', 'cancelled_at'])

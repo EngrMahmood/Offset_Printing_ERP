@@ -475,6 +475,17 @@ class PlanningJob(models.Model):
         )
 
     @property
+    def is_merge_lead(self):
+        item = self.active_merge_item
+        return bool(item and item.is_lead)
+
+    @property
+    def is_merge_member_follower(self):
+        """In an open merge group but NOT the lead — plates/printing come from the lead."""
+        item = self.active_merge_item
+        return bool(item and not item.is_lead)
+
+    @property
     def approved_sku_recipe(self):
         if not (self.sku or '').strip():
             return None
@@ -1188,6 +1199,15 @@ class MergeGroup(models.Model):
     run_sheets = models.PositiveIntegerField(null=True, blank=True)
     total_colors = models.PositiveIntegerField(null=True, blank=True)
 
+    lead_job = models.ForeignKey(
+        PlanningJob,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='led_merge_groups',
+        help_text='The job that carries the shared plate request and printing run for the whole group.',
+    )
+
     plates_saved = models.IntegerField(default=0)
     makereadies_saved = models.IntegerField(default=0)
     setup_sheets_saved = models.IntegerField(default=0)
@@ -1241,11 +1261,24 @@ class MergeGroup(models.Model):
         """Combined artwork code derived from the group code."""
         return f'AWC-{code}'
 
+    @property
+    def member_jobs(self):
+        return [item.planning_job for item in self.items.all()]
+
+    def propagate_planning_stage(self, stage):
+        """Set the same planning stage on every member job (e.g. plate_received)."""
+        for item in self.items.select_related('planning_job'):
+            job = item.planning_job
+            if job.planning_stage != stage:
+                job.planning_stage = stage
+                job.save(update_fields=['planning_stage', 'updated_at'])
+
 
 class MergeGroupItem(models.Model):
     merge_group = models.ForeignKey(MergeGroup, on_delete=models.CASCADE, related_name='items')
     planning_job = models.ForeignKey(PlanningJob, on_delete=models.CASCADE, related_name='merge_items')
     allocated_ups = models.PositiveIntegerField()
+    is_lead = models.BooleanField(default=False)
     source_awc_no = models.CharField(
         max_length=120,
         blank=True,

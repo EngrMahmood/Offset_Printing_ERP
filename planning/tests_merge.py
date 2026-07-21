@@ -35,6 +35,26 @@ def make_job(jc_number, order_qty, **overrides):
     return PlanningJob.objects.create(**defaults)
 
 
+def make_card(job, prefix='JCARD'):
+    """A released job card for `job`, with the fields release validation needs."""
+    from core.models import JobCard, Machine
+    machine, _ = Machine.objects.get_or_create(name='Press-1')
+    return JobCard.objects.create(
+        job_card_no=f'{prefix}-{job.jc_number}',
+        planning_job=job,
+        SKU=job.sku,
+        order_qty=job.order_qty,
+        ups=job.ups,
+        total_sheet_quantity=20000,
+        total_impressions_required=40000,
+        total_colors=job.total_colors,
+        wastage=0,
+        po_date='2026-07-01',
+        machine_name=machine,
+        status='released',
+    )
+
+
 class AllocateUpsTests(TestCase):
     def test_ratio_split_across_three_skus(self):
         jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
@@ -173,3 +193,89 @@ class MergeBoardViewTests(TestCase):
         self.assertEqual(group.status, 'cancelled')
         board = self.client.get(reverse('planning:merge_board'))
         self.assertEqual(board.context['eligible_count'], 3)
+
+
+class MergeDownstreamTests(TestCase):
+    def setUp(self):
+        user = get_user_model().objects.create_user('planner2', password='pw12345678')
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.role = 'planner'
+        profile.save()
+        self.user = user
+        self.client.force_login(user)
+
+    def _accept_group(self):
+        jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
+        self.client.post(reverse('planning:merge_accept'), {'job_ids': [j.id for j in jobs]}, follow=True)
+        return MergeGroup.objects.get(), jobs
+
+    def test_lead_is_largest_ups(self):
+        group, jobs = self._accept_group()
+        self.assertIsNotNone(group.lead_job)
+        lead_item = group.items.get(is_lead=True)
+        self.assertEqual(lead_item.allocated_ups, 2)   # the 10000-pc job
+        self.assertEqual(group.items.filter(is_lead=True).count(), 1)
+
+    def test_follower_blocked_from_plates(self):
+        from planning.services import get_plate_making_prerequisite_errors
+        from printing_plates.services import planning_job_should_skip_plate_making
+        group, jobs = self._accept_group()
+        follower = group.items.filter(is_lead=False).first().planning_job
+        self.assertTrue(follower.is_merge_member_follower)
+        self.assertTrue(planning_job_should_skip_plate_making(follower))
+        errors = get_plate_making_prerequisite_errors(follower)
+        self.assertTrue(any('merged into layout' in e for e in errors))
+
+    def test_lead_not_blocked_from_plates(self):
+        from printing_plates.services import planning_job_should_skip_plate_making
+        group, jobs = self._accept_group()
+        self.assertFalse(planning_job_should_skip_plate_making(group.lead_job))
+
+    def test_cancelling_member_dissolves_group(self):
+        from planning.services import cancel_planning_job
+        group, jobs = self._accept_group()
+        follower = group.items.filter(is_lead=False).first().planning_job
+        cancel_planning_job(follower, actor=self.user, reason='customer dropped', reason_code='customer_cancelled')
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'cancelled')
+
+    def test_printing_split_to_member_cards(self):
+        from core.models import JobCard, Production
+        group, jobs = self._accept_group()
+        cards = {job.id: make_card(job) for job in jobs}
+        lead = group.lead_job
+        entry = Production.objects.create(
+            job_card=cards[lead.id],
+            entry_type='printing',
+            date='2026-07-21',
+            shift='A',
+            output_sheets=5000,
+        )
+        # Lead's own entry recounts at combined-sheet ups (2), not job-card ups (4).
+        entry.refresh_from_db()
+        self.assertEqual(entry.merge_allocated_ups, 2)
+        self.assertEqual(entry.pcs_produced, 10000)
+
+        # Each follower card received a derived entry at its allocated ups (1).
+        for item in group.items.filter(is_lead=False):
+            follower_entries = Production.objects.filter(
+                job_card__planning_job=item.planning_job, entry_type='printing',
+            )
+            self.assertEqual(follower_entries.count(), 1)
+            fe = follower_entries.first()
+            self.assertEqual(fe.merge_parent_id, entry.id)
+            self.assertEqual(fe.merge_allocated_ups, 1)
+            self.assertEqual(fe.pcs_produced, 5000)
+            self.assertEqual(fe.impressions, 0)
+
+    def test_split_does_not_recurse(self):
+        from core.models import JobCard, Production
+        group, jobs = self._accept_group()
+        for job in jobs:
+            make_card(job, prefix='JCARD2')
+        Production.objects.create(
+            job_card=group.lead_job.job_card, entry_type='printing',
+            date='2026-07-21', shift='A', output_sheets=5000,
+        )
+        # 1 lead + 2 followers, no cascade beyond that.
+        self.assertEqual(Production.objects.filter(entry_type='printing').count(), 3)

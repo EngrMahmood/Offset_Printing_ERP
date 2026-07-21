@@ -852,14 +852,38 @@ class Production(models.Model):
     is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # Smart layout merge: when a ganged sheet is printed, one operator entry on
+    # the lead job card is auto-split to each member SKU's card. Derived entries
+    # point back to the operator's entry via merge_parent and count pieces at the
+    # SKU's ups share on the combined sheet, not its original full-sheet ups.
+    merge_parent = models.ForeignKey(
+        'self',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='merge_children',
+    )
+    merge_allocated_ups = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="This SKU's ups on the combined merge sheet; overrides job-card ups for piece counting.",
+    )
+
     #Calculated Fields
+
+    @property
+    def effective_ups(self):
+        """Ups used for piece counting — merge allocation wins over job-card ups."""
+        if self.merge_allocated_ups:
+            return self.merge_allocated_ups
+        return self.job_card.ups
 
     @property
     def pcs_produced(self):
         if self.entry_type != 'printing':
             return 0
-        if self.job_card.ups:
-            return self.output_sheets * self.job_card.ups
+        if self.effective_ups:
+            return self.output_sheets * self.effective_ups
         return 0
     
     @property
@@ -931,6 +955,14 @@ class Production(models.Model):
                 raise ValidationError(errors)
             return
 
+        # Entries derived from a smart-merge run are governed by the combined
+        # layout's run, not this SKU's standalone sheet/impression plan, so the
+        # per-job ceilings below do not apply to them.
+        if self.merge_parent_id:
+            if errors:
+                raise ValidationError(errors)
+            return
+
         existing = Production.objects.filter(
             job_card=self.job_card,
             is_active=True,
@@ -996,7 +1028,11 @@ class Production(models.Model):
         if not self.ideal_run_rate and self.machine:
             self.ideal_run_rate = self.machine.standard_impressions_per_hour
 
-        self.full_clean()
+        # Merge-derived entries are system-generated mirrors of the lead job's
+        # run; they are validated by the lead entry, not against this SKU's own
+        # standalone plan or release state.
+        if not self.merge_parent_id:
+            self.full_clean()
 
         try:
             with transaction.atomic():

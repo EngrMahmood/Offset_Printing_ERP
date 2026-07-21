@@ -89,6 +89,24 @@ document.addEventListener('DOMContentLoaded', function(){
             waitingPlateNotice.style.display = info.waiting_for_plate ? 'block' : 'none';
         }
 
+        const mergeNotice = document.getElementById('ji_merge_notice');
+        if (mergeNotice) {
+            const merge = info.merge;
+            if (merge && merge.is_lead) {
+                mergeNotice.style.display = 'block';
+                mergeNotice.textContent = 'Smart merge ' + merge.code + ': this is the LEAD job. '
+                    + 'Enter the combined run once here (' + merge.run_sheets + ' sheets). '
+                    + 'The system splits produced pieces to every SKU on the sheet automatically.';
+            } else if (merge) {
+                mergeNotice.style.display = 'block';
+                mergeNotice.textContent = 'Smart merge ' + merge.code + ': this SKU prints on the combined sheet led by '
+                    + merge.lead_jc + '. Record printing on the lead job — production is filled in here automatically.';
+            } else {
+                mergeNotice.style.display = 'none';
+                mergeNotice.textContent = '';
+            }
+        }
+
         // Machine auto-display + fallback selection logic
         try{
             const machineAuto = document.getElementById('machine_auto_display');

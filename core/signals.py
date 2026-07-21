@@ -1,9 +1,13 @@
+import logging
+
 from django.db.models.signals import post_save
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
 
 from .models import UserProfile
+
+logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
@@ -117,6 +121,75 @@ def trigger_production_notifications(sender, instance, created, **kwargs):
         from core.notifications import notify_event
         actor = getattr(instance, 'created_by', None)
         notify_event('production.submitted', instance=instance, actor=actor)
+
+
+@receiver(post_save, sender='core.Production')
+def split_merge_group_printing_entry(sender, instance, created, **kwargs):
+    """Auto-split a lead job's printing run to every member SKU card.
+
+    When a ganged (merge-group) sheet is printed, the operator records ONE
+    printing entry on the lead job card. Each member SKU physically comes off
+    the same sheets, so we mirror that entry onto every member's card, counting
+    pieces at the SKU's ups share on the combined sheet (item.allocated_ups).
+    """
+    if not created or instance.entry_type != 'printing' or not instance.is_active:
+        return
+    if instance.merge_parent_id:  # already a derived child — never re-split
+        return
+
+    from core.models import JobCard, Production
+
+    def _card_for(pjob):
+        try:
+            return pjob.job_card
+        except (JobCard.DoesNotExist, AttributeError):
+            return None
+
+    job_card = instance.job_card
+    planning_job = getattr(job_card, 'planning_job', None)
+    if not planning_job:
+        return
+    group = planning_job.active_merge_group
+    if not group or group.lead_job_id != planning_job.id:
+        return
+
+    items = list(group.items.select_related('planning_job'))
+    lead_item = next((it for it in items if it.planning_job_id == planning_job.id), None)
+    if lead_item is None:
+        return
+
+    # The lead's own entry counts at its combined-sheet ups, not its full-sheet ups.
+    Production.objects.filter(pk=instance.pk).update(
+        merge_allocated_ups=lead_item.allocated_ups,
+    )
+
+    for item in items:
+        if item.planning_job_id == planning_job.id:
+            continue
+        member_card = _card_for(item.planning_job)
+        if not member_card:
+            continue  # member has no job card yet; nothing to attribute
+        try:
+            Production.objects.create(
+                job_card=member_card,
+                entry_type='printing',
+                date=instance.date,
+                shift=instance.shift,
+                machine=instance.machine,
+                output_sheets=instance.output_sheets,
+                waste_sheets=0,          # run waste is counted once, on the lead entry
+                impressions=0,           # run impressions counted once, on the lead entry
+                merge_parent=instance,
+                merge_allocated_ups=item.allocated_ups,
+                status=instance.status,
+                created_by=instance.created_by,
+            )
+        except Exception:
+            # A single member failing must never block the operator's entry.
+            logger.exception(
+                'Merge split failed for %s on group %s',
+                item.planning_job.jc_number, group.code,
+            )
 
 
 @receiver(post_save, sender='core.Production')
