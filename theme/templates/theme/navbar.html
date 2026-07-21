@@ -177,6 +177,10 @@
            class="erp-subnav-link {% if url == 'jobs' or url == 'jobs_drafts' or url == 'jobs_locked' or url == 'jobs_archived' or url == 'job_detail' or url == 'job_edit' or url == 'job_status_update' or url == 'scan' or url == 'scan_open' %}is-active{% endif %}">
             Planning Jobs
         </a>
+        <a href="{% url 'planning:merge_board' %}"
+           class="erp-subnav-link {% if url == 'merge_board' or url == 'merge_detail' %}is-active{% endif %}">
+            Smart Merge
+        </a>
         <a href="{% url 'planning:approval_queue' %}"
            class="erp-subnav-link {% if url == 'approval_queue' %}is-active{% endif %}">
             Job Card Workflow

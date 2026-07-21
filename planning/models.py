@@ -457,6 +457,24 @@ class PlanningJob(models.Model):
         return self._cached_sku_recipe
 
     @property
+    def active_merge_group(self):
+        """Open merge group this job belongs to, if any."""
+        item = (
+            self.merge_items.filter(merge_group__status__in=MERGE_GROUP_OPEN_STATUSES)
+            .select_related('merge_group')
+            .first()
+        )
+        return item.merge_group if item else None
+
+    @property
+    def active_merge_item(self):
+        return (
+            self.merge_items.filter(merge_group__status__in=MERGE_GROUP_OPEN_STATUSES)
+            .select_related('merge_group')
+            .first()
+        )
+
+    @property
     def approved_sku_recipe(self):
         if not (self.sku or '').strip():
             return None
@@ -1141,3 +1159,105 @@ class JobCardChangeRequest(models.Model):
 
 
 
+
+MERGE_GROUP_STATUS_CHOICES = [
+    ('accepted', 'Accepted'),
+    ('artwork_requested', 'Artwork Requested'),
+    ('artwork_ready', 'Artwork Ready'),
+    ('layout_done', 'Layout Done'),
+    ('cancelled', 'Cancelled'),
+]
+
+MERGE_GROUP_OPEN_STATUSES = {'accepted', 'artwork_requested', 'artwork_ready', 'layout_done'}
+
+
+class MergeGroup(models.Model):
+    """A set of planning jobs approved to print together on one combined sheet."""
+
+    code = models.CharField(max_length=30, unique=True)
+    artwork_code = models.CharField(
+        max_length=40,
+        blank=True,
+        help_text='Combined artwork code for the merged layout, e.g. AWC-MG-2026-0001.',
+    )
+    status = models.CharField(max_length=30, choices=MERGE_GROUP_STATUS_CHOICES, default='accepted', db_index=True)
+
+    print_sheet_size = models.CharField(max_length=80, blank=True)
+    material = models.CharField(max_length=120, blank=True)
+    total_sheet_ups = models.PositiveIntegerField(null=True, blank=True)
+    run_sheets = models.PositiveIntegerField(null=True, blank=True)
+    total_colors = models.PositiveIntegerField(null=True, blank=True)
+
+    plates_saved = models.IntegerField(default=0)
+    makereadies_saved = models.IntegerField(default=0)
+    setup_sheets_saved = models.IntegerField(default=0)
+    mr_minutes_saved = models.IntegerField(default=0)
+    impressions_saved = models.IntegerField(default=0)
+
+    notes = models.TextField(blank=True)
+    designer_notes = models.TextField(blank=True)
+    designer_requested_at = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='merge_groups_created',
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+    accepted_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='merge_groups_accepted',
+    )
+    accepted_at = models.DateTimeField(null=True, blank=True)
+    cancelled_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return self.code
+
+    @property
+    def is_open(self):
+        return self.status in MERGE_GROUP_OPEN_STATUSES
+
+    @classmethod
+    def next_code(cls):
+        from django.utils import timezone
+
+        year = timezone.now().year
+        prefix = f'MG-{year}-'
+        last = cls.objects.filter(code__startswith=prefix).order_by('-code').first()
+        sequence = int(last.code.rsplit('-', 1)[1]) + 1 if last else 1
+        return f'{prefix}{sequence:04d}'
+
+    @staticmethod
+    def artwork_code_for(code):
+        """Combined artwork code derived from the group code."""
+        return f'AWC-{code}'
+
+
+class MergeGroupItem(models.Model):
+    merge_group = models.ForeignKey(MergeGroup, on_delete=models.CASCADE, related_name='items')
+    planning_job = models.ForeignKey(PlanningJob, on_delete=models.CASCADE, related_name='merge_items')
+    allocated_ups = models.PositiveIntegerField()
+    source_awc_no = models.CharField(
+        max_length=120,
+        blank=True,
+        help_text="The SKU's own artwork code at the time of merging, so the designer can find the source file.",
+    )
+    planned_produced_qty = models.PositiveIntegerField(null=True, blank=True)
+    net_qty = models.PositiveIntegerField(null=True, blank=True)
+    overage_pct = models.DecimalField(max_digits=6, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        unique_together = ('merge_group', 'planning_job')
+        ordering = ['-allocated_ups', 'id']
+
+    def __str__(self):
+        return f'{self.merge_group.code} / {self.planning_job.jc_number}'

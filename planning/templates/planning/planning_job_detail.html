@@ -29,6 +29,16 @@
 
 {% block content %}
 <div class="erp-page-stack">
+    {% with merge_item=job.active_merge_item %}
+    {% if merge_item %}
+    <div class="erp-alert erp-alert-info">
+        This job is merged into layout
+        <a href="{% url 'planning:merge_detail' merge_item.merge_group.id %}"><strong>{{ merge_item.merge_group.code }}</strong></a>
+        — {{ merge_item.allocated_ups }} ups of {{ merge_item.merge_group.total_sheet_ups }} on the combined sheet
+        ({{ merge_item.merge_group.get_status_display }}).
+    </div>
+    {% endif %}
+    {% endwith %}
 
     <div id="sku-duplicate-alert">
         {% include 'planning/includes/sku_duplicate_alert.html' %}

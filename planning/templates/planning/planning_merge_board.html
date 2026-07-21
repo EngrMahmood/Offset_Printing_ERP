@@ -1,0 +1,151 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Smart Merge — Planning{% endblock %}
+{% block header_title %}Smart Layout Merge{% endblock %}
+{% block header_subtitle %}SKUs with matching size, material and colours that can share one print sheet — one make-ready, one plate set.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'planning:jobs' %}" class="erp-btn erp-btn-secondary">Back to Planning</a>
+    <a href="{% url 'planning:merge_board' %}" class="erp-btn erp-btn-primary">Refresh</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+.merge-filter-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)) auto; gap: 14px; align-items: end; }
+.merge-card { border: 1px solid var(--erp-border, #d9dee7); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.merge-savings { display: flex; flex-wrap: wrap; gap: 10px; margin: 10px 0; }
+.merge-chip { border-radius: 999px; padding: 4px 12px; font-size: 0.82rem; background: rgba(16, 145, 90, 0.12); color: #10915a; }
+.merge-chip.warn { background: rgba(200, 140, 20, 0.14); color: #a06a00; }
+.erp-table-wrap { overflow-x: auto; }
+.merge-table { width: 100%; min-width: 760px; }
+@media (max-width: 900px) { .merge-filter-grid { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Filters</div>
+                <h3 class="erp-section-title">Candidate pool — {{ eligible_count }} unprinted job{{ eligible_count|pluralize }}</h3>
+                <p class="erp-section-desc">Only jobs that have not been printed yet and are not already in an open merge group.</p>
+            </div>
+        </div>
+        <form method="get" class="merge-filter-grid">
+            <div class="erp-form-field">
+                <label>Material</label>
+                <input type="text" name="material" value="{{ filters.material }}" placeholder="e.g. Art Card 300gsm">
+            </div>
+            <div class="erp-form-field">
+                <label>Plan month</label>
+                <input type="text" name="plan_month" value="{{ filters.plan_month }}" placeholder="e.g. Jul-2026">
+            </div>
+            <div class="erp-form-field">
+                <label>Delivery window (days, 0 = off)</label>
+                <input type="number" name="delivery_window" min="0" value="{{ filters.delivery_window }}">
+            </div>
+            <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Suggestions</div>
+                <h3 class="erp-section-title">Recommended merges</h3>
+                <p class="erp-section-desc">Quantities are split into whole ups on the shared sheet, with over-production kept inside the 5% wastage tolerance.</p>
+            </div>
+        </div>
+
+        {% for suggestion in suggestions %}
+        <div class="merge-card">
+            <div class="merge-savings">
+                <span class="merge-chip">{{ suggestion.savings.setup_sheets_saved }} setup sheets saved</span>
+                <span class="merge-chip">{{ suggestion.savings.makereadies_saved }} make-ready{{ suggestion.savings.makereadies_saved|pluralize:"s" }} saved</span>
+                <span class="merge-chip">{{ suggestion.savings.plates_saved }} plates saved</span>
+                {% if suggestion.savings.mr_minutes_saved %}<span class="merge-chip">{{ suggestion.savings.mr_minutes_saved }} min make-ready time saved</span>{% endif %}
+                <span class="merge-chip warn">max over-production {{ suggestion.allocation.worst_overage_pct }}%</span>
+                <span class="merge-chip warn">run {{ suggestion.allocation.run_sheets }} sheets × {{ suggestion.allocation.sheet_ups }} ups</span>
+            </div>
+            <p class="erp-section-desc merge-sheet-line">
+                <strong>Print sheet:</strong> {{ suggestion.jobs.0.print_sheet_size|default:"—" }}
+                · <strong>Purchase sheet:</strong> {{ suggestion.jobs.0.purchase_sheet_size|default:"—" }}
+                · <strong>Setup wastage basis:</strong> {{ config.setup_wastage_sheets_per_colour }} sheets per colour
+                · {{ suggestion.savings.impressions_saved }} impressions saved
+            </p>
+            <div class="erp-table-wrap">
+                <table class="erp-table merge-table">
+                    <thead>
+                        <tr>
+                            <th>JC</th><th>SKU</th><th>Source AWC</th><th>Size (mm)</th><th>Material</th><th>Colours</th>
+                            <th>Net qty</th><th>Ups</th><th>Planned qty</th><th>Over %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in suggestion.allocation.items %}
+                        <tr>
+                            <td><a href="{% url 'planning:job_detail' item.job.id %}">{{ item.job.jc_number }}</a></td>
+                            <td>{{ item.job.sku }}</td>
+                            <td>{{ item.job.awc_no_display|default:"—" }}</td>
+                            <td>{{ item.job.size_w_mm }} × {{ item.job.size_h_mm }}</td>
+                            <td>{{ item.job.material }}</td>
+                            <td>{{ item.job.total_colors }}</td>
+                            <td>{{ item.net_qty }}</td>
+                            <td><strong>{{ item.allocated_ups }}</strong></td>
+                            <td>{{ item.planned_produced_qty }}</td>
+                            <td>{{ item.overage_pct }}%</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <form method="post" action="{% url 'planning:merge_accept' %}" style="margin-top:12px; display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+                {% csrf_token %}
+                {% for job_id in suggestion.job_ids %}
+                    <input type="hidden" name="job_ids" value="{{ job_id }}">
+                {% endfor %}
+                <div class="erp-form-field" style="flex:1; min-width:240px;">
+                    <label>Notes for the designer (optional)</label>
+                    <input type="text" name="notes" placeholder="Layout instructions">
+                </div>
+                <button type="submit" class="erp-btn erp-btn-primary">Accept merge</button>
+            </form>
+        </div>
+        {% empty %}
+        <p class="erp-section-desc">No mergeable groups found in the current pool.</p>
+        {% endfor %}
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Open groups</div>
+                <h3 class="erp-section-title">Accepted merge groups</h3>
+            </div>
+        </div>
+        <div class="erp-table-wrap">
+            <table class="erp-table merge-table">
+                <thead>
+                    <tr><th>Code</th><th>Status</th><th>Jobs</th><th>Sheet</th><th>Run sheets</th><th>Plates saved</th><th></th></tr>
+                </thead>
+                <tbody>
+                    {% for group in open_groups %}
+                    <tr>
+                        <td>{{ group.code }}</td>
+                        <td>{{ group.get_status_display }}</td>
+                        <td>{% for item in group.items.all %}{{ item.planning_job.jc_number }}{% if not forloop.last %}, {% endif %}{% endfor %}</td>
+                        <td>{{ group.print_sheet_size }}</td>
+                        <td>{{ group.run_sheets }}</td>
+                        <td>{{ group.plates_saved }}</td>
+                        <td><a href="{% url 'planning:merge_detail' group.id %}" class="erp-btn erp-btn-secondary">Open</a></td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7">No open merge groups.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

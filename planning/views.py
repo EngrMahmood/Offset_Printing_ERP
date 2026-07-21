@@ -54,6 +54,7 @@ from core.models import ChangeLog, JobCard, Machine
 from core.jobcard_service import job_card_queue_queryset, execute_job_card_action
 from core.views import permission_required
 from reports.export.services import export_as_pdf, export_as_xlsx
+from .merge_engine import MergeConfig, allocate_ups, bucket_signature, build_suggestions, compute_savings
 from .forms import JobCardLayoutForm, PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeForm
 from .services import (
     _user_is_admin, _planning_status_filter_values, _parse_date_filter,
@@ -105,7 +106,10 @@ from .models import (
     PLANNING_STATUS_ALIASES,
     PLANNING_STATUS_CHOICES,
     PLANNING_STAGE_CHOICES,
+    MERGE_GROUP_OPEN_STATUSES,
     JobCardLayout,
+    MergeGroup,
+    MergeGroupItem,
     PlanningDispatchRun,
     PlanningJob,
     PlanningPrintRun,
@@ -5545,3 +5549,178 @@ def reject_change_request(request, request_id):
     messages.warning(request, f'Reopen request for {change_request.planning_job.jc_number} has been rejected.')
     return redirect('planning:approval_queue')
 
+
+
+# ---------------------------------------------------------------------------
+# Smart layout merge (ganging)
+# ---------------------------------------------------------------------------
+
+def _eligible_merge_jobs(request=None):
+    """Jobs that have not been printed yet and are free to be ganged."""
+    printed_job_ids = set(
+        PlanningPrintRun.objects.filter(print_qty__gt=0).values_list('planning_job_id', flat=True)
+    )
+    merged_job_ids = set(
+        MergeGroupItem.objects.filter(merge_group__status__in=MERGE_GROUP_OPEN_STATUSES)
+        .values_list('planning_job_id', flat=True)
+    )
+    queryset = (
+        PlanningJob.objects.filter(is_active=True, is_cancelled=False)
+        .exclude(status__in=['in_production', 'completed', 'cancelled'])
+        .exclude(issued_to_production=True)
+        .exclude(job_process_type='cut_and_pack')
+        .exclude(id__in=printed_job_ids | merged_job_ids)
+    )
+    if request is not None:
+        material = (request.GET.get('material') or '').strip()
+        if material:
+            queryset = queryset.filter(material__icontains=material)
+        plan_month = (request.GET.get('plan_month') or '').strip()
+        if plan_month:
+            queryset = queryset.filter(plan_month__iexact=plan_month)
+    return queryset
+
+
+def _merge_config_from_request(request):
+    cfg = MergeConfig()
+    try:
+        window = int(request.GET.get('delivery_window') or 0)
+    except (TypeError, ValueError):
+        window = 0
+    cfg.delivery_window_days = max(window, 0)
+    return cfg
+
+
+@login_required
+@permission_required('can_view_planning_queue')
+def planning_merge_board(request):
+    cfg = _merge_config_from_request(request)
+    jobs = list(_eligible_merge_jobs(request))
+    suggestions = build_suggestions(jobs, cfg)
+    open_groups = (
+        MergeGroup.objects.filter(status__in=MERGE_GROUP_OPEN_STATUSES)
+        .prefetch_related('items__planning_job')
+    )
+    context = {
+        'suggestions': suggestions,
+        'open_groups': open_groups,
+        'eligible_count': len(jobs),
+        'config': cfg,
+        'filters': {
+            'material': (request.GET.get('material') or '').strip(),
+            'plan_month': (request.GET.get('plan_month') or '').strip(),
+            'delivery_window': cfg.delivery_window_days or '',
+        },
+    }
+    return render(request, 'planning/planning_merge_board.html', context)
+
+
+@login_required
+@permission_required('can_plan')
+def planning_merge_accept(request):
+    if request.method != 'POST':
+        return redirect('planning:merge_board')
+
+    try:
+        job_ids = sorted({int(value) for value in request.POST.getlist('job_ids')})
+    except (TypeError, ValueError):
+        job_ids = []
+    if len(job_ids) < 2:
+        messages.error(request, 'Select at least two jobs to merge.')
+        return redirect('planning:merge_board')
+
+    cfg = MergeConfig()
+    with transaction.atomic():
+        # Re-validate against the live eligibility set; never trust posted ups.
+        jobs = list(_eligible_merge_jobs().select_for_update().filter(id__in=job_ids))
+        if len(jobs) != len(job_ids):
+            messages.error(request, 'One or more jobs are no longer eligible for merging. Refresh the board.')
+            return redirect('planning:merge_board')
+
+        signatures = {bucket_signature(job, cfg) for job in jobs}
+        if len(signatures) != 1 or None in signatures:
+            messages.error(request, 'These jobs do not share the same size, material and colour specification.')
+            return redirect('planning:merge_board')
+
+        allocation = allocate_ups(jobs, jobs[0].ups_value, cfg)
+        if not allocation:
+            messages.error(request, 'Quantities cannot be split into whole ups within the 5% tolerance.')
+            return redirect('planning:merge_board')
+
+        savings = compute_savings(allocation, jobs, cfg)
+        group_code = MergeGroup.next_code()
+        group = MergeGroup.objects.create(
+            code=group_code,
+            artwork_code=MergeGroup.artwork_code_for(group_code),
+            status='accepted',
+            print_sheet_size=jobs[0].print_sheet_size or '',
+            material=jobs[0].material or '',
+            total_sheet_ups=allocation['sheet_ups'],
+            run_sheets=allocation['run_sheets'],
+            total_colors=jobs[0].total_colors or 0,
+            plates_saved=savings['plates_saved'],
+            makereadies_saved=savings['makereadies_saved'],
+            setup_sheets_saved=savings['setup_sheets_saved'],
+            mr_minutes_saved=savings['mr_minutes_saved'],
+            impressions_saved=savings['impressions_saved'],
+            notes=(request.POST.get('notes') or '').strip(),
+            created_by=request.user,
+            accepted_by=request.user,
+            accepted_at=timezone.now(),
+        )
+        MergeGroupItem.objects.bulk_create([
+            MergeGroupItem(
+                merge_group=group,
+                planning_job=item['job'],
+                allocated_ups=item['allocated_ups'],
+                source_awc_no=item['job'].awc_no_display or '',
+                planned_produced_qty=item['planned_produced_qty'],
+                net_qty=item['net_qty'],
+                overage_pct=item['overage_pct'],
+            )
+            for item in allocation['items']
+        ])
+
+    messages.success(request, f'Merge group {group.code} created with {len(jobs)} jobs.')
+    return redirect('planning:merge_detail', group_id=group.id)
+
+
+@login_required
+@permission_required('can_view_planning_queue')
+def planning_merge_detail(request, group_id):
+    group = get_object_or_404(
+        MergeGroup.objects.prefetch_related('items__planning_job'),
+        id=group_id,
+    )
+    return render(request, 'planning/planning_merge_detail.html', {'group': group})
+
+
+@login_required
+@permission_required('can_plan')
+def planning_merge_request_artwork(request, group_id):
+    group = get_object_or_404(MergeGroup, id=group_id)
+    if request.method != 'POST':
+        return redirect('planning:merge_detail', group_id=group.id)
+    if not group.is_open:
+        messages.error(request, 'This merge group is closed.')
+        return redirect('planning:merge_detail', group_id=group.id)
+
+    group.status = 'artwork_requested'
+    group.designer_notes = (request.POST.get('designer_notes') or '').strip()
+    group.designer_requested_at = timezone.now()
+    group.save(update_fields=['status', 'designer_notes', 'designer_requested_at'])
+    messages.success(request, f'Combined artwork requested from design for {group.code}.')
+    return redirect('planning:merge_detail', group_id=group.id)
+
+
+@login_required
+@permission_required('can_plan')
+def planning_merge_cancel(request, group_id):
+    group = get_object_or_404(MergeGroup, id=group_id)
+    if request.method != 'POST':
+        return redirect('planning:merge_detail', group_id=group.id)
+    group.status = 'cancelled'
+    group.cancelled_at = timezone.now()
+    group.save(update_fields=['status', 'cancelled_at'])
+    messages.success(request, f'Merge group {group.code} cancelled; its jobs are back in the pool.')
+    return redirect('planning:merge_board')

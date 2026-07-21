@@ -1,0 +1,109 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}{{ group.code }} — Merge Group{% endblock %}
+{% block header_title %}Merge Group {{ group.code }}{% endblock %}
+{% block header_subtitle %}{{ group.get_status_display }} · {{ group.material }} · {{ group.print_sheet_size }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'planning:merge_board' %}" class="erp-btn erp-btn-secondary">Back to Merge Board</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+.merge-savings { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.merge-chip { border-radius: 999px; padding: 4px 12px; font-size: 0.82rem; background: rgba(16, 145, 90, 0.12); color: #10915a; }
+.erp-table-wrap { overflow-x: auto; }
+.merge-table { width: 100%; min-width: 780px; }
+.merge-artwork { border: 1px solid var(--erp-border, #d9dee7); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+.merge-artwork-code { font-size: 1.25rem; font-weight: 700; letter-spacing: 0.03em; }
+.merge-awc-list { margin: 8px 0 0; padding-left: 20px; }
+.merge-awc-list li { margin-bottom: 4px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Combined layout</div>
+                <h3 class="erp-section-title">{{ group.total_sheet_ups }} ups on {{ group.print_sheet_size }} · run {{ group.run_sheets }} sheets</h3>
+                <p class="erp-section-desc">{{ group.total_colors }} colours — one plate set, one make-ready for all jobs below.</p>
+            </div>
+        </div>
+        <div class="merge-savings">
+            <span class="merge-chip">{{ group.setup_sheets_saved }} setup sheets saved</span>
+            <span class="merge-chip">{{ group.makereadies_saved }} make-readies saved</span>
+            <span class="merge-chip">{{ group.plates_saved }} plates saved</span>
+            {% if group.mr_minutes_saved %}<span class="merge-chip">{{ group.mr_minutes_saved }} min make-ready time saved</span>{% endif %}
+            <span class="merge-chip">{{ group.impressions_saved }} impressions saved</span>
+        </div>
+        <p class="erp-section-desc">
+            <strong>Print sheet:</strong> {{ group.print_sheet_size|default:"—" }}
+            · <strong>Material:</strong> {{ group.material|default:"—" }}
+        </p>
+        <div class="erp-table-wrap">
+            <table class="erp-table merge-table">
+                <thead>
+                    <tr><th>JC</th><th>SKU</th><th>Source AWC</th><th>Size (mm)</th><th>Net qty</th><th>Ups on sheet</th><th>Planned qty</th><th>Over %</th></tr>
+                </thead>
+                <tbody>
+                    {% for item in group.items.all %}
+                    <tr>
+                        <td><a href="{% url 'planning:job_detail' item.planning_job.id %}">{{ item.planning_job.jc_number }}</a></td>
+                        <td>{{ item.planning_job.sku }}</td>
+                        <td>{{ item.source_awc_no|default:"—" }}</td>
+                        <td>{{ item.planning_job.size_w_mm }} × {{ item.planning_job.size_h_mm }}</td>
+                        <td>{{ item.net_qty }}</td>
+                        <td><strong>{{ item.allocated_ups }}</strong></td>
+                        <td>{{ item.planned_produced_qty }}</td>
+                        <td>{{ item.overage_pct }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if group.notes %}<p class="erp-section-desc" style="margin-top:12px;"><strong>Planner notes:</strong> {{ group.notes }}</p>{% endif %}
+    </section>
+
+    {% if group.is_open %}
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Design</div>
+                <h3 class="erp-section-title">Combined artwork</h3>
+                <p class="erp-section-desc">Ask the designer to build one artwork containing all SKUs at the ups shown above.</p>
+            </div>
+        </div>
+        <div class="merge-artwork">
+            <div class="merge-artwork-code">{{ group.artwork_code|default:"—" }}</div>
+            <p class="erp-section-desc">Combined artwork code for the merged layout. Source files to merge:</p>
+            <ul class="merge-awc-list">
+                {% for item in group.items.all %}
+                <li>
+                    <strong>{{ item.source_awc_no|default:"AWC not set" }}</strong>
+                    — {{ item.planning_job.sku }} ({{ item.allocated_ups }} ups)
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% if group.designer_requested_at %}
+            <p class="erp-section-desc">Requested {{ group.designer_requested_at }}. {{ group.designer_notes }}</p>
+        {% else %}
+        <form method="post" action="{% url 'planning:merge_request_artwork' group.id %}" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
+            {% csrf_token %}
+            <div class="erp-form-field" style="flex:1; min-width:260px;">
+                <label>Instructions for the designer</label>
+                <input type="text" name="designer_notes" placeholder="e.g. keep 3mm bleed between SKUs">
+            </div>
+            <button type="submit" class="erp-btn erp-btn-primary">Request combined artwork</button>
+        </form>
+        {% endif %}
+        <form method="post" action="{% url 'planning:merge_cancel' group.id %}" style="margin-top:16px;">
+            {% csrf_token %}
+            <button type="submit" class="erp-btn erp-btn-secondary" onclick="return confirm('Cancel this merge group and release its jobs?');">Cancel merge group</button>
+        </form>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
