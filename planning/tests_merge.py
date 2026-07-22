@@ -315,51 +315,52 @@ class JobCardMergeBannerTests(TestCase):
         loner = make_job('JC-SOLO', 1000)
         self.assertIsNone(build_job_card_merge_context(loner))
 
-    def test_lead_card_shows_combined_banner_and_all_skus(self):
-        html = self._render_card(self.group.lead_job)
-        self.assertIn('Combined layout', html)
-        self.assertIn(self.group.code, html)
-        self.assertIn(self.group.artwork_code, html)
-        self.assertNotIn('Do not print separately', html)
-        # every member SKU listed on the lead's sheet
-        for item in self.group.items.all():
-            self.assertIn(item.planning_job.jc_number, html)
-        self.assertIn('A-111', html)  # source AWC for the designer/press
-
-    def test_follower_card_warns_not_to_print(self):
+    def test_follower_card_watermarked_and_names_lead(self):
         follower_item = self.group.items.filter(is_lead=False).first()
         html = self._render_card(follower_item.planning_job)
-        self.assertIn('Do not print separately', html)
-        self.assertIn(self.group.lead_job.jc_number, html)
-        self.assertNotIn('Combined layout', html)
+        self.assertIn('DO NOT PRINT SEPARATELY', html)   # watermark
+        self.assertIn(self.group.lead_job.jc_number, html)   # flag names the lead
+        self.assertNotIn('<div class="merge-banner', html)
 
-    def test_merged_ups_annotated_next_to_standalone_ups(self):
-        html = self._render_card(self.group.lead_job)
-        self.assertIn('(merged: 2)', html)   # lead holds 2 of the 4 ups
+    def test_combined_sheet_lists_all_skus(self):
+        from django.template.loader import render_to_string
+        html = render_to_string(
+            'planning/planning_merge_combined_sheet.html', {'group': self.group}
+        )
+        self.assertIn(self.group.code, html)
+        self.assertIn(self.group.artwork_code, html)
+        for item in self.group.items.all():
+            self.assertIn(item.planning_job.jc_number, html)
 
-    def test_unmerged_card_has_no_banner(self):
+    def test_unmerged_card_is_the_plain_card(self):
         loner = make_job('JC-SOLO2', 1000)
         set_awc(loner, 'A-SOLO')
         loner = PlanningJob.objects.get(pk=loner.pk)  # drop the cached (empty) recipe
         html = self._render_card(loner)
-        self.assertNotIn('<div class="merge-banner', html)  # element, not the CSS rule
-        self.assertNotIn('Do not print separately', html)
-        self.assertNotIn('(merged:', html)
-        # Non-merge card keeps the single plain Print button, no style switcher.
-        self.assertNotIn('printMerge(', html)
-        self.assertNotIn('id="combined-sheet-page"', html)
+        # No merge markers at all on a normal card.
+        self.assertNotIn('<div class="merge-watermark', html)
+        self.assertNotIn('<div class="merge-flag', html)
+        self.assertNotIn('DO NOT PRINT SEPARATELY', html)
+        self.assertNotIn('printMerge(', html)          # no old style switcher
+        self.assertEqual(html.count('window.print()'), 1)
 
-    def test_lead_card_offers_both_print_styles(self):
+    def test_merged_card_is_normal_plus_watermark(self):
+        """Round 9: merged card stays the familiar single-SKU card + watermark."""
         lead = self.group.lead_job
         html = self._render_card(lead)
-        # Two print buttons: one-page fit and separate layout sheet.
-        self.assertEqual(html.count('printMerge('), 2)
-        self.assertIn('id="combined-sheet-page"', html)
-        self.assertIn('id="jobcard-print-root"', html)
-        self.assertIn('function fitOnePage', html)
-        # The standalone layout sheet lists every member SKU.
-        for item in self.group.items.all():
-            self.assertIn(item.planning_job.jc_number, html)
+        # Watermark + small flag, but NOT the old banner / toolbar / combined table.
+        self.assertIn('<div class="merge-watermark', html)
+        self.assertIn('DO NOT PRINT SEPARATELY', html)
+        self.assertIn('<div class="merge-flag', html)
+        self.assertIn(self.group.code, html)
+        self.assertNotIn('<div class="merge-banner', html)
+        self.assertNotIn('printMerge(', html)
+        self.assertNotIn('id="combined-sheet-page"', html)
+        # Card body keeps the SKU's own numbers (no combined-run override).
+        self.assertNotIn('(combined run)', html)
+        self.assertNotIn('(merged:', html)
+        # One plain Print button, same as a normal card.
+        self.assertEqual(html.count('window.print()'), 1)
 
     def test_layout_builder_registers_merge_fields(self):
         from planning.views import _job_card_layout_field_labels
@@ -924,7 +925,9 @@ class MergeLayoutApprovalTests(TestCase):
         self.assertEqual(ctx['total_sheet_ups'], group.total_sheet_ups)
         self.assertEqual(ctx['combined_impressions'], group.run_sheets * 1)
 
-    def test_lead_card_prints_combined_sheets_not_standalone(self):
+    def test_lead_card_is_normal_with_watermark(self):
+        """Round 9: the printed card is the familiar single-SKU card + watermark;
+        combined-run figures live only on the separate Combined Layout Sheet."""
         from django.template.loader import render_to_string
         from planning.services import build_job_card_merge_context
         group, jobs = self._accepted_group()
@@ -933,7 +936,10 @@ class MergeLayoutApprovalTests(TestCase):
             'job': lead, 'recipe': lead.sku_recipe,
             'merge': build_job_card_merge_context(lead),
         })
-        self.assertIn(f'{group.run_sheets} <strong>(combined run)</strong>', html)
+        self.assertNotIn('(combined run)', html)          # card keeps standalone numbers
+        self.assertIn('DO NOT PRINT SEPARATELY', html)    # watermark instead
+        sheet = render_to_string('planning/planning_merge_combined_sheet.html', {'group': group})
+        self.assertIn(str(group.run_sheets), sheet)       # combined run lives here
 
     def test_approved_lead_can_print_and_split_lands_on_all(self):
         from core.models import Production

@@ -6,6 +6,7 @@
 {% block header_subtitle %}{{ group.get_status_display }} · {{ group.material }} · {{ group.print_sheet_size }}{% endblock %}
 {% block header_actions %}
     <a href="{% url 'planning:merge_board' %}" class="erp-btn erp-btn-secondary">Back to Merge Board</a>
+    <a href="{% url 'planning:merge_combined_sheet' group.id %}" target="_blank" class="erp-btn erp-btn-primary">Print combined sheet</a>
 {% endblock %}
 
 {% block extra_head %}
@@ -121,6 +122,45 @@
             </table>
         </div>
         {% if group.notes %}<p class="erp-section-desc" style="margin-top:12px;"><strong>Planner notes:</strong> {{ group.notes }}</p>{% endif %}
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Member job cards</div>
+                <h3 class="erp-section-title">{{ member_rows|length }} SKUs in {{ group.code }} (mother–child)</h3>
+                <p class="erp-section-desc">
+                    Each SKU keeps its own normal job card (with a "do not print separately" watermark) for
+                    cutting, packing, QC and dispatch. Print the combined run once from the
+                    <strong>Print combined sheet</strong> button above.
+                </p>
+            </div>
+        </div>
+        <div class="erp-table-wrap">
+            <table class="erp-table merge-table">
+                <thead>
+                    <tr><th>JC</th><th>SKU</th><th>Role</th><th>Job status</th><th>Actions</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in member_rows %}
+                    <tr>
+                        <td><strong>{{ row.job.jc_number }}</strong></td>
+                        <td>{{ row.job.sku }}</td>
+                        <td>{% if row.item.is_lead %}<span class="merge-chip">Lead</span>{% else %}Member{% endif %}</td>
+                        <td>{{ row.card_status_label }}</td>
+                        <td>
+                            <div class="erp-actions" style="gap:4px; flex-wrap:wrap;">
+                                <a href="{% url 'planning:job_detail' row.job.id %}" class="erp-btn erp-btn-secondary sm">View</a>
+                                {% if row.can_print %}
+                                <a href="{% url 'planning:job_card_print' row.job.id %}" target="_blank" class="erp-btn erp-btn-success sm">Print card</a>
+                                {% endif %}
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </section>
 
     {% if group.is_open and not is_layout_approved %}

@@ -1242,6 +1242,17 @@ def planning_home(request):
     if machine_filter:
         queryset = queryset.filter(machine_name__icontains=machine_filter)
 
+    # Merged job cards live under the Smart Merge tab (mother-child view), so keep
+    # them out of the regular queue to avoid confusion between normal and merged
+    # jobs. They are still fully reachable from Smart Merge.
+    merged_member_ids = list(
+        MergeGroupItem.objects.filter(merge_group__status__in=MERGE_GROUP_OPEN_STATUSES)
+        .values_list('planning_job_id', flat=True)
+    )
+    merged_jobs_count = queryset.filter(id__in=merged_member_ids).count() if merged_member_ids else 0
+    if merged_member_ids:
+        queryset = queryset.exclude(id__in=merged_member_ids)
+
     from planning.sku_duplicate_alert import (
         SKU_ALERT_FILTER_KEYS,
         attach_sku_duplicate_alerts_to_jobs,
@@ -1493,6 +1504,7 @@ def planning_home(request):
         {
             'jobs': jobs,
             'status_counts': status_counts,
+            'merged_jobs_count': merged_jobs_count,
             'status_choices': [
                 (value, label)
                 for value, label in PLANNING_STATUSES
@@ -5872,7 +5884,20 @@ def planning_merge_detail(request, group_id):
         .exclude(planning_job_id=group.lead_job_id)
         .select_related('planning_job')
     )
-    items = list(group.items.all())
+    items = list(group.items.select_related('planning_job__job_card').all())
+    # Mother-child: annotate each member so the child rows can show View/Print
+    # like the regular jobs queue.
+    printable_card_statuses = {'production_approved', 'released', 'in_production', 'completed', 'closed'}
+    member_rows = []
+    for item in items:
+        job = item.planning_job
+        card = getattr(job, 'job_card', None)
+        member_rows.append({
+            'item': item,
+            'job': job,
+            'can_print': bool(card and card.workflow_status in printable_card_statuses),
+            'card_status_label': card.workflow_status_label if card else 'No job card yet',
+        })
     combined_plate = combined_plate_request_for_group(group)
 
     released_members, unreleased_members = [], []
@@ -5896,7 +5921,23 @@ def planning_merge_detail(request, group_id):
         'master_data_report': merge_layout_master_data_report(group) if group.is_open else [],
         'is_layout_approved': group.is_layout_approved,
         'material_origin_choices': PURCHASE_MATERIAL_ORIGIN_CHOICES,
+        'member_rows': member_rows,
     })
+
+
+@login_required
+@permission_required('can_view_planning_queue')
+def planning_merge_combined_sheet(request, group_id):
+    """The single Combined Layout Sheet — the press document for a merged run.
+
+    All combined-run detail lives here (not on the job cards, which stay in the
+    familiar single-SKU format with just a watermark).
+    """
+    group = get_object_or_404(
+        MergeGroup.objects.select_related('lead_job').prefetch_related('items__planning_job'),
+        id=group_id,
+    )
+    return render(request, 'planning/planning_merge_combined_sheet.html', {'group': group})
 
 
 @login_required

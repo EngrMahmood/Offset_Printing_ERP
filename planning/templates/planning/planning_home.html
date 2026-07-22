@@ -160,6 +160,13 @@
                 <p class="erp-section-desc">{{ jobs.paginator.count }} active job{{ jobs.paginator.count|pluralize }}</p>
             </div>
         </div>
+        {% if merged_jobs_count %}
+        <div class="erp-alert erp-alert-info" style="margin-bottom:12px;">
+            <strong>{{ merged_jobs_count }} job{{ merged_jobs_count|pluralize }}</strong>
+            {{ merged_jobs_count|pluralize:"is,are" }} in a smart-merge group and managed under
+            <a href="{% url 'planning:merge_board' %}">Smart Merge</a> (mother–child view) — hidden here to keep the queue clean.
+        </div>
+        {% endif %}
         <form method="get" class="erp-form-grid" style="grid-template-columns:1fr 1fr auto; gap:12px; margin-bottom:12px;">
             {% if filters.sku_alert %}<input type="hidden" name="sku_alert" value="{{ filters.sku_alert }}">{% endif %}
             <div style="display:grid; gap:8px;">

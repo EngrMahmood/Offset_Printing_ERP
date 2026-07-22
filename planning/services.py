@@ -1312,68 +1312,25 @@ def _build_job_card_pdf_bytes(job, scan_url):
 
     story = [Paragraph('UTOPIA PRINTING & PACKAGING', title_style), Spacer(1, 4), Paragraph('PRODUCTION JOB CARD', subtitle_style), Spacer(1, 8)]
 
-    # Smart layout merge banner — mirrors the HTML job card so PDF and print agree.
+    # Smart-merge marker — the merged card stays the normal single-SKU card, with
+    # just a small flag line here and a diagonal "DO NOT PRINT SEPARATELY" watermark
+    # drawn on every page (see _merge_watermarker below). The combined-run detail
+    # lives on the separate Combined Layout Sheet, not on the card.
     merge = build_job_card_merge_context(job)
     if merge:
-        banner_style = ParagraphStyle(
-            'MergeBanner', parent=normal, fontName='Helvetica-Bold', fontSize=12, leading=14,
+        flag_style = ParagraphStyle(
+            'MergeFlag', parent=normal, fontName='Helvetica-Bold', fontSize=9,
+            leading=11, textColor=colors.HexColor('#7a1c12'),
+            backColor=colors.HexColor('#ffe5e0'), borderColor=colors.HexColor('#c0392b'),
+            borderWidth=1, borderPadding=4,
         )
-        meta_style = ParagraphStyle('MergeMeta', parent=normal, fontSize=8.5, leading=10)
-        if merge['is_lead']:
-            banner_text = f"COMBINED LAYOUT {merge['code']} — PRINT ONCE FOR ALL SKUs BELOW"
-            meta_text = (
-                f"Combined artwork: {merge['artwork_code']} | "
-                f"Print sheet: {merge['print_sheet_size'] or '-'} | "
-                f"Run: {merge['run_sheets']} sheets x {merge['total_sheet_ups']} ups | "
-                f"One make-ready and one plate set for all {merge['member_count']} SKUs"
-            )
-            bg = colors.HexColor('#ffe08a')
-        else:
-            banner_text = f"DO NOT PRINT SEPARATELY — printed with {merge['lead_jc']} under {merge['code']}"
-            meta_text = (
-                f"This SKU runs on the combined sheet: {merge['allocated_ups']} of "
-                f"{merge['total_sheet_ups']} ups | Qty to produce: {merge['planned_produced_qty']} | "
-                f"Combined artwork: {merge['artwork_code']} | "
-                f"Printing is recorded on {merge['lead_jc']}. Use this card for cutting, packing, QC and dispatch."
-            )
-            bg = colors.HexColor('#ffb3b3')
-
-        banner_rows = [[Paragraph(banner_text, banner_style)], [Paragraph(meta_text, meta_style)]]
-        banner_table = Table(banner_rows, colWidths=[194 * mm], hAlign='LEFT')
-        banner_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), bg),
-            ('BOX', (0, 0), (-1, -1), 1.2, colors.black),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-        ]))
-        story.extend([banner_table, Spacer(1, 6)])
-
-        if merge['is_lead']:
-            member_rows = [[
-                Paragraph('JC #', label_style), Paragraph('SKU', label_style),
-                Paragraph('UPS', label_style), Paragraph('QTY', label_style),
-                Paragraph('SOURCE AWC', label_style),
-            ]]
-            for member in merge['members']:
-                member_rows.append([
-                    _format_job_value(member['jc_number'] + (' (lead)' if member['is_lead'] else '')),
-                    _paragraph_text(member['sku'] or '-'),
-                    _format_job_value(member['allocated_ups']),
-                    _format_job_value(member['planned_produced_qty']),
-                    _format_job_value(member['source_awc_no']),
-                ])
-            member_table = Table(
-                member_rows,
-                colWidths=[38 * mm, 74 * mm, 16 * mm, 28 * mm, 38 * mm],
-                hAlign='LEFT',
-            )
-            member_table.setStyle(TableStyle([
-                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-                ('GRID', (0, 0), (-1, -1), 0.25, colors.black),
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#dddddd')),
-            ]))
-            story.extend([member_table, Spacer(1, 8)])
-        else:
-            story.append(Spacer(1, 2))
+        recorded = '' if merge['is_lead'] else f" Printing is recorded on {merge['lead_jc']}."
+        flag_text = (
+            f"MERGED IN {merge['code']} — see the Combined Layout Sheet for the run. "
+            f"Do not print or plate this SKU separately.{recorded} "
+            f"This card is for cutting, packing, QC and dispatch."
+        )
+        story.extend([Paragraph(flag_text, flag_style), Spacer(1, 8)])
 
     header_data = [
         [Paragraph('JOB CARD #', label_style), _format_job_value(job.jc_number), Paragraph('PO #', label_style), _format_job_value(job.po_number)],
@@ -1494,7 +1451,26 @@ def _build_job_card_pdf_bytes(job, scan_url):
     ]))
     story.extend([cutting_table])
 
-    doc.build(story)
+    def _merge_watermarker(canvas, doc_):
+        """Diagonal repeating 'DO NOT PRINT SEPARATELY' watermark on merged cards."""
+        canvas.saveState()
+        canvas.setFont('Helvetica-Bold', 26)
+        canvas.setFillColor(colors.HexColor('#c0392b'))
+        try:
+            canvas.setFillAlpha(0.12)
+        except Exception:
+            pass
+        text = f"PRINTS WITH MERGE {merge['code']} - DO NOT PRINT SEPARATELY"
+        canvas.translate(105 * mm, 148 * mm)
+        canvas.rotate(32)
+        for offset in (-170, -85, 0, 85, 170):
+            canvas.drawCentredString(0, offset, text)
+        canvas.restoreState()
+
+    if merge:
+        doc.build(story, onFirstPage=_merge_watermarker, onLaterPages=_merge_watermarker)
+    else:
+        doc.build(story)
     return buffer.getvalue()
 
 
