@@ -345,6 +345,21 @@ class JobCardMergeBannerTests(TestCase):
         self.assertNotIn('<div class="merge-banner', html)  # element, not the CSS rule
         self.assertNotIn('Do not print separately', html)
         self.assertNotIn('(merged:', html)
+        # Non-merge card keeps the single plain Print button, no style switcher.
+        self.assertNotIn('printMerge(', html)
+        self.assertNotIn('id="combined-sheet-page"', html)
+
+    def test_lead_card_offers_both_print_styles(self):
+        lead = self.group.lead_job
+        html = self._render_card(lead)
+        # Two print buttons: one-page fit and separate layout sheet.
+        self.assertEqual(html.count('printMerge('), 2)
+        self.assertIn('id="combined-sheet-page"', html)
+        self.assertIn('id="jobcard-print-root"', html)
+        self.assertIn('function fitOnePage', html)
+        # The standalone layout sheet lists every member SKU.
+        for item in self.group.items.all():
+            self.assertIn(item.planning_job.jc_number, html)
 
     def test_layout_builder_registers_merge_fields(self):
         from planning.views import _job_card_layout_field_labels
