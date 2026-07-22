@@ -215,8 +215,15 @@ class PlateRequest(models.Model):
             except Exception:
                 pass
 
-        # Auto-transition the PlanningJob stage to 'plate_received' when plates are ready/available
-        if self.status == self.STATUS_AVAILABLE:
+        became_available = self.status == self.STATUS_AVAILABLE
+        super().save(*args, **kwargs)
+
+        # Auto-transition the PlanningJob stage to 'plate_received' when plates are
+        # ready/available. Runs AFTER the row is persisted: releasing member job
+        # cards re-checks this plate request's status from the DB, so it must
+        # already read AVAILABLE (not the stale RECEIVED value) or release wrongly
+        # blocks itself as "an open plate request is still in progress".
+        if became_available:
             try:
                 planning_job = self.planning_job
                 if planning_job and planning_job.planning_stage in ['new_plate_making', 'repeat_plate_making']:
@@ -227,6 +234,9 @@ class PlateRequest(models.Model):
                     merge_group = planning_job.active_merge_group
                     if merge_group and merge_group.lead_job_id == planning_job.id:
                         merge_group.propagate_planning_stage('plate_received')
+                        from printing_plates.services import release_merge_group_to_production
+
+                        release_merge_group_to_production(merge_group, actor=self.received_by)
                     # If a plate set for this SKU was parked for reuse, this run
                     # is the one that picks it back up.
                     if not self.retained_for_reuse:
@@ -235,7 +245,6 @@ class PlateRequest(models.Model):
                         release_retained_plate_for_sku(planning_job.sku, actor=self.received_by)
             except Exception:
                 pass
-        super().save(*args, **kwargs)
 
 
     @property

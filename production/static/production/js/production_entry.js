@@ -453,8 +453,13 @@ document.addEventListener('DOMContentLoaded', function(){
             const row = document.createElement('button');
             row.type = 'button';
             row.className = 'dispatch-search-result-item';
+            const merge = item.info && item.info.merge;
+            const mergeTag = merge
+                ? `<span style="margin-left:6px;padding:1px 6px;border-radius:999px;font-size:11px;font-weight:700;background:${merge.is_lead ? '#ffe08a' : '#ffb3b3'};color:#5a3d00;">`
+                    + (merge.is_lead ? `MERGE LEAD ${merge.code}` : `MERGED — see ${merge.lead_jc}`) + '</span>'
+                : '';
             row.innerHTML = `
-                <div class="result-main">${item.job_card_no} · ${item.sku}</div>
+                <div class="result-main">${item.job_card_no} · ${item.sku}${mergeTag}</div>
                 <div class="result-meta">${item.customer} · Remaining: ${item.remaining_display} pcs</div>
             `;
             row.addEventListener('click', () => selectJobCard(item.id, item.label, item.info, item.machine, item.plan));

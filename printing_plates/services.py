@@ -393,6 +393,73 @@ def plate_request_type_label(type_key):
     return labels.get(type_key, '')
 
 
+def release_merge_group_to_production(group, actor=None):
+    """Release every member job card together once the combined plates land.
+
+    A ganged sheet cannot be half-released — printing the lead's run and
+    splitting it to followers only makes sense once every member is ready for
+    production. One card failing to release must not stop the others.
+    Returns (released_job_cards, still_blocked_reasons).
+    """
+    from core.jobcard_service import release_to_production
+
+    released = []
+    blocked = []
+    for item in group.items.select_related('planning_job__job_card'):
+        job_card = getattr(item.planning_job, 'job_card', None)
+        if not job_card:
+            blocked.append(f'{item.planning_job.jc_number}: no job card yet')
+            continue
+        if job_card.workflow_status in {'released', 'in_production', 'completed', 'closed'}:
+            continue
+        try:
+            release_to_production(job_card, actor=actor, reason=f'Combined plates received for {group.code}')
+            released.append(job_card)
+        except Exception as exc:  # noqa: BLE001 - one member must never block the rest
+            blocked.append(f'{item.planning_job.jc_number}: {exc}')
+
+    all_released = not any(
+        getattr(item.planning_job, 'job_card', None) is None
+        or item.planning_job.job_card.workflow_status not in {'released', 'in_production', 'completed', 'closed'}
+        for item in group.items.select_related('planning_job__job_card')
+    )
+    if all_released and group.status != 'layout_done':
+        group.status = 'layout_done'
+        group.save(update_fields=['status'])
+
+    return released, blocked
+
+
+def combined_plate_request_for_group(group):
+    """The group's own plate request — always on the lead, never a member."""
+    if not group or not group.lead_job_id:
+        return None
+    return (
+        PlateRequest.objects.filter(planning_job_id=group.lead_job_id)
+        .exclude(status=PlateRequest.STATUS_ARCHIVED)
+        .order_by('-requested_at', '-created_at')
+        .first()
+    )
+
+
+def group_combined_plate_issued(group):
+    """True once THIS group's combined plate is sent, received or available.
+
+    Deliberately ignores any legacy ``plate_set_no`` text on the lead job/SKU
+    master — that field can carry a repeat SKU's historical plate set even when
+    no plate request exists yet for the combined layout, which used to produce a
+    false "plates issued" reading and blocked cancellation incorrectly.
+    """
+    request = combined_plate_request_for_group(group)
+    if not request:
+        return False
+    return request.status in {
+        PlateRequest.STATUS_SENT,
+        PlateRequest.STATUS_RECEIVED,
+        PlateRequest.STATUS_AVAILABLE,
+    }
+
+
 def get_open_plate_request_for_planning_job(planning_job):
     """Return the latest open plate request (draft/sent/received), if any."""
     if not planning_job:

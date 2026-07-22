@@ -18,11 +18,50 @@
 .merge-artwork-code { font-size: 1.25rem; font-weight: 700; letter-spacing: 0.03em; }
 .merge-awc-list { margin: 8px 0 0; padding-left: 20px; }
 .merge-awc-list li { margin-bottom: 4px; }
+.merge-lifecycle { display: flex; flex-wrap: wrap; gap: 0; margin-bottom: 14px; }
+.merge-lifecycle__step {
+    flex: 1; min-width: 150px; padding: 10px 14px; border: 1px solid var(--erp-border, #d9dee7);
+    border-left: none; font-size: 0.82rem;
+}
+.merge-lifecycle__step:first-child { border-left: 1px solid var(--erp-border, #d9dee7); border-radius: 8px 0 0 8px; }
+.merge-lifecycle__step:last-child { border-radius: 0 8px 8px 0; }
+.merge-lifecycle__step.is-done { background: rgba(16, 145, 90, 0.12); }
+.merge-lifecycle__step.is-current { background: rgba(200, 140, 20, 0.14); font-weight: 600; }
+.merge-lifecycle__label { display: block; font-weight: 700; margin-bottom: 2px; }
 </style>
 {% endblock %}
 
 {% block content %}
 <div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="merge-lifecycle">
+            <div class="merge-lifecycle__step is-done">
+                <span class="merge-lifecycle__label">1. Accepted</span>{{ group.accepted_at|date:"d M, H:i" }}
+            </div>
+            <div class="merge-lifecycle__step {% if group.designer_requested_at %}is-done{% elif group.status == 'accepted' %}is-current{% endif %}">
+                <span class="merge-lifecycle__label">2. Artwork</span>
+                {% if group.designer_requested_at %}Requested {{ group.designer_requested_at|date:"d M" }}{% else %}Not requested{% endif %}
+            </div>
+            <div class="merge-lifecycle__step {% if combined_plate_issued %}is-done{% elif group.status == 'artwork_requested' or group.status == 'artwork_ready' %}is-current{% endif %}">
+                <span class="merge-lifecycle__label">3. Combined plate</span>
+                {% if combined_plate %}#{{ combined_plate.pk }} · {{ combined_plate.get_status_display }}{% else %}Not raised{% endif %}
+            </div>
+            <div class="merge-lifecycle__step {% if all_members_released %}is-done{% elif combined_plate_issued %}is-current{% endif %}">
+                <span class="merge-lifecycle__label">4. Cards released</span>
+                {{ released_member_count }} of {{ member_count }}
+            </div>
+            <div class="merge-lifecycle__step {% if group.status == 'layout_done' %}is-done{% endif %}">
+                <span class="merge-lifecycle__label">5. Printing</span>
+                {% if group.status == 'layout_done' %}Released to production{% else %}Pending{% endif %}
+            </div>
+        </div>
+        {% if group.lead_job %}
+        <a href="{% url 'planning:job_card_print' group.lead_job.id %}" class="erp-btn erp-btn-primary" target="_blank">
+            Print lead job card ({{ group.lead_job.jc_number }})
+        </a>
+        {% endif %}
+    </section>
+
     {% if preexisting_plate_requests %}
     <div class="erp-alert erp-alert-warning">
         <strong>Plates still exist for members of this group.</strong>
@@ -123,6 +162,31 @@
             <button type="submit" class="erp-btn erp-btn-primary">Request combined artwork</button>
         </form>
         {% endif %}
+
+        {% if combined_plate %}
+        <p class="erp-section-desc" style="margin-top:12px;">
+            Combined plate: <a href="{% url 'printing_plates:request_detail' combined_plate.pk %}">request #{{ combined_plate.pk }}</a>
+            ({{ combined_plate.get_status_display }}) — raised on lead job {{ group.lead_job.jc_number }}.
+        </p>
+        {% else %}
+        <form method="post" action="{% url 'planning:merge_raise_plate' group.id %}" style="margin-top:12px;">
+            {% csrf_token %}
+            <button type="submit" class="erp-btn erp-btn-primary">Artwork ready — raise combined plate</button>
+        </form>
+        <p class="erp-tiny" style="margin-top:4px;">
+            Raises ONE plate request on the lead job ({{ group.lead_job.jc_number }}) carrying
+            {{ group.artwork_code }}. Followers never raise their own.
+        </p>
+        {% endif %}
+
+        {% if unreleased_members and combined_plate_issued %}
+        <p class="erp-alert erp-alert-warning" style="margin-top:12px;">
+            Waiting on {{ unreleased_members|length }} member card{{ unreleased_members|length|pluralize }} to
+            release before printing can be recorded:
+            {% for item in unreleased_members %}{{ item.planning_job.jc_number }}{% if not forloop.last %}, {% endif %}{% endfor %}
+        </p>
+        {% endif %}
+
         <form method="post" action="{% url 'planning:merge_cancel' group.id %}" style="margin-top:16px;">
             {% csrf_token %}
             <button type="submit" class="erp-btn erp-btn-secondary" onclick="return confirm('Cancel this merge group and release its jobs?');">Cancel merge group</button>

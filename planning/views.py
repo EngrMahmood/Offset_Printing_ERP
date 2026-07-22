@@ -5856,14 +5856,14 @@ def planning_merge_accept(request):
 @permission_required('can_view_planning_queue')
 def planning_merge_detail(request, group_id):
     from printing_plates.models import PlateRequest
+    from printing_plates.services import combined_plate_request_for_group, group_combined_plate_issued
 
     group = get_object_or_404(
-        MergeGroup.objects.prefetch_related('items__planning_job'),
+        MergeGroup.objects.prefetch_related('items__planning_job__job_card'),
         id=group_id,
     )
-    # Groups formed before the plate guard existed may contain members whose
-    # plates were already requested or made separately — merging them saves
-    # nothing and there is no combined plate to print from.
+    # A member other than the lead still holding its own live plate set — either
+    # a legacy group from before scrap/retain existed, or a retain choice.
     preexisting = (
         PlateRequest.objects.exclude(status=PlateRequest.STATUS_ARCHIVED)
         .filter(planning_job__in=[item.planning_job_id for item in group.items.all()])
@@ -5871,12 +5871,85 @@ def planning_merge_detail(request, group_id):
         .select_related('planning_job')
     )
     items = list(group.items.all())
+    combined_plate = combined_plate_request_for_group(group)
+
+    released_members, unreleased_members = [], []
+    for item in items:
+        job_card = getattr(item.planning_job, 'job_card', None)
+        if job_card and job_card.workflow_status in {'released', 'in_production', 'completed', 'closed'}:
+            released_members.append(item)
+        else:
+            unreleased_members.append(item)
+
     return render(request, 'planning/planning_merge_detail.html', {
         'group': group,
         'preexisting_plate_requests': preexisting,
         'new_artwork_count': sum(1 for item in items if not (item.source_awc_no or '').strip()),
         'member_count': len(items),
+        'combined_plate': combined_plate,
+        'combined_plate_issued': group_combined_plate_issued(group),
+        'unreleased_members': unreleased_members,
+        'released_member_count': len(released_members),
+        'all_members_released': not unreleased_members,
     })
+
+
+@login_required
+@permission_required('can_plan')
+def planning_merge_raise_plate(request, group_id):
+    """Raise the ONE combined plate request for the group, on the lead job only.
+
+    Idempotent: if an open plate request already exists on the lead, it is
+    reused rather than duplicated.
+    """
+    from printing_plates.services import combined_plate_request_for_group
+
+    group = get_object_or_404(MergeGroup, id=group_id)
+    if request.method != 'POST':
+        return redirect('planning:merge_detail', group_id=group.id)
+    if not group.is_open:
+        messages.error(request, 'This merge group is closed.')
+        return redirect('planning:merge_detail', group_id=group.id)
+    if not group.lead_job_id:
+        messages.error(request, 'This group has no lead job — cannot raise plates.')
+        return redirect('planning:merge_detail', group_id=group.id)
+
+    existing = combined_plate_request_for_group(group)
+    if existing:
+        messages.info(request, f'Combined plate request #{existing.pk} is already open for {group.code}.')
+        return redirect('planning:merge_detail', group_id=group.id)
+
+    lead = group.lead_job
+    plate_errors = [
+        error for error in get_plate_making_prerequisite_errors(lead)
+        if 'merged into layout' not in error  # that check does not apply to the lead itself
+    ]
+    if plate_errors:
+        messages.error(request, ' '.join(plate_errors))
+        return redirect('planning:merge_detail', group_id=group.id)
+
+    from planning.sku_classification import plate_making_stage_for_repeat_flag
+
+    lead.planning_stage = plate_making_stage_for_repeat_flag(lead.repeat_flag)
+    lead.planning_stage_changed_at = timezone.now()
+    lead.planning_stage_changed_by = request.user
+    lead.save(update_fields=['planning_stage', 'planning_stage_changed_at', 'planning_stage_changed_by', 'updated_at'])
+
+    plate_request = trigger_plate_request_for_planning_job(lead, request.user)
+    if not plate_request:
+        messages.error(
+            request,
+            f'Could not raise the combined plate for {lead.jc_number}. Check the job status and try again.',
+        )
+        return redirect('planning:merge_detail', group_id=group.id)
+
+    group.status = 'artwork_ready'
+    group.save(update_fields=['status'])
+    messages.success(
+        request,
+        f'Combined plate request #{plate_request.pk} raised on lead job {lead.jc_number} for {group.code}.',
+    )
+    return redirect('printing_plates:request_detail', pk=plate_request.pk)
 
 
 @login_required
@@ -5904,20 +5977,17 @@ def planning_merge_cancel(request, group_id):
     if request.method != 'POST':
         return redirect('planning:merge_detail', group_id=group.id)
 
-    # Once the shared plates are on the floor, a planner cannot silently unpick
-    # the group — that is a production change requiring PM approval.
-    from printing_plates.services import plates_were_issued_to_production
+    # Once the group's own combined plate is on the floor, a planner cannot
+    # silently unpick the group — that is a production change requiring PM
+    # approval. This checks the group's own plate request, not the lead's
+    # (or a repeat SKU's) historical plate_set_no text, which does not mean a
+    # combined plate exists.
+    from printing_plates.services import group_combined_plate_issued
 
-    lead_card = None
-    if group.lead_job:
-        try:
-            lead_card = group.lead_job.job_card
-        except Exception:
-            lead_card = None
-    if lead_card and plates_were_issued_to_production(lead_card):
+    if group_combined_plate_issued(group):
         messages.error(
             request,
-            f'Plates for {group.code} are already issued to production. '
+            f'The combined plate for {group.code} is already issued to production. '
             f'Raise a change request for PM approval instead of cancelling the merge.',
         )
         return redirect('planning:merge_detail', group_id=group.id)

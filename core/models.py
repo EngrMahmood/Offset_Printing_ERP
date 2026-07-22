@@ -963,6 +963,31 @@ class Production(models.Model):
                 raise ValidationError(errors)
             return
 
+        # The lead of a merge group prints for every SKU on the combined sheet.
+        # Recording that run before every follower card is released for
+        # production would silently under-report their production, since the
+        # split can only write to a card that already exists in that state.
+        if self.entry_type == 'printing' and self.job_card and self.job_card.planning_job:
+            planning_job = self.job_card.planning_job
+            if planning_job.is_merge_lead:
+                group = planning_job.active_merge_group
+                if group:
+                    unreleased = []
+                    for item in group.items.select_related('planning_job__job_card'):
+                        if item.planning_job_id == planning_job.id:
+                            continue
+                        member_card = getattr(item.planning_job, 'job_card', None)
+                        if not member_card or member_card.workflow_status not in JOB_CARD_PRODUCTION_START_STATUSES:
+                            unreleased.append(item.planning_job.jc_number)
+                    if unreleased:
+                        errors['job_card'] = (
+                            f'Cannot record printing yet — {group.code} is a combined layout and these '
+                            f'member job cards are not released for production: {", ".join(unreleased)}.'
+                        )
+
+        if errors:
+            raise ValidationError(errors)
+
         existing = Production.objects.filter(
             job_card=self.job_card,
             is_active=True,

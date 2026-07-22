@@ -624,3 +624,158 @@ class MergeBlockerTests(TestCase):
         rows = response.context['blocked_rows']
         self.assertEqual([row['job'].jc_number for row in rows], ['JC-BAD'])
         self.assertTrue(any('UPS missing' in r for r in rows[0]['reasons']))
+
+
+class MergeLifecycleTests(TestCase):
+    """Round 6: artwork -> combined plate -> release-all -> printing."""
+
+    def setUp(self):
+        user = get_user_model().objects.create_user('planner7', password='pw12345678')
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.role = 'admin'
+        profile.save()
+        self.user = user
+        self.client.force_login(user)
+
+    def _accepted_group(self, n_jobs=3):
+        qtys = [10000, 5000, 5000][:n_jobs]
+        jobs = [make_job(f'JC{i+1}', q) for i, q in enumerate(qtys)]
+        for job in jobs:
+            job.application = 'Label'
+            job.effective_machine_name and None
+            job.save()
+        payload = {'job_ids': [j.id for j in jobs]}
+        self.client.post(reverse('planning:merge_accept'), payload, follow=True)
+        group = MergeGroup.objects.get()
+        return group, jobs
+
+    def _make_machine(self):
+        from core.models import Machine
+        machine, _ = Machine.objects.get_or_create(name='Press-Merge')
+        return machine
+
+    def _release_card(self, card):
+        card.status = 'production_approved'
+        card.save(update_fields=['status'])
+        from core.jobcard_service import release_to_production
+        release_to_production(card, actor=self.user, reason='test')
+        card.refresh_from_db()
+        return card
+
+    def test_cancel_allowed_before_combined_plate(self):
+        group, jobs = self._accepted_group()
+        response = self.client.post(reverse('planning:merge_cancel', args=[group.id]), follow=True)
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'cancelled')
+
+    def test_legacy_plate_set_no_does_not_block_cancel(self):
+        # This is the exact bug the user hit: a repeat SKU's historical
+        # plate_set_no text must not read as "plates issued" for the merge.
+        group, jobs = self._accepted_group()
+        group.lead_job.plate_set_no = '10576'
+        group.lead_job.save(update_fields=['plate_set_no'])
+        response = self.client.post(reverse('planning:merge_cancel', args=[group.id]), follow=True)
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'cancelled')
+
+    def test_raise_combined_plate_creates_one_request_on_lead_only(self):
+        from printing_plates.models import PlateRequest
+        group, jobs = self._accepted_group()
+        for job in jobs:
+            job.application = 'Label'
+            job.machine_name = 'GTO'
+            job.front_pass = 1
+            job.save()
+        response = self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
+        group.refresh_from_db()
+        requests_on_group_jobs = PlateRequest.objects.filter(
+            planning_job__in=[j.id for j in jobs]
+        ).exclude(status=PlateRequest.STATUS_ARCHIVED)
+        self.assertEqual(requests_on_group_jobs.count(), 1)
+        self.assertEqual(requests_on_group_jobs.first().planning_job_id, group.lead_job_id)
+        self.assertEqual(group.status, 'artwork_ready')
+
+    def test_raise_combined_plate_is_idempotent(self):
+        group, jobs = self._accepted_group()
+        for job in jobs:
+            job.application = 'Label'
+            job.machine_name = 'GTO'
+            job.front_pass = 1
+            job.save()
+        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
+        from printing_plates.models import PlateRequest
+        count_after_first = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
+            status=PlateRequest.STATUS_ARCHIVED
+        ).count()
+        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
+        count_after_second = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
+            status=PlateRequest.STATUS_ARCHIVED
+        ).count()
+        self.assertEqual(count_after_first, count_after_second)
+
+    def test_cancel_blocked_once_combined_plate_sent(self):
+        from printing_plates.models import PlateRequest
+        group, jobs = self._accepted_group()
+        PlateRequest.objects.create(
+            planning_job=group.lead_job, status=PlateRequest.STATUS_SENT,
+        )
+        response = self.client.post(reverse('planning:merge_cancel', args=[group.id]), follow=True)
+        group.refresh_from_db()
+        self.assertNotEqual(group.status, 'cancelled')
+        self.assertIn('already issued to production', response.content.decode())
+
+    def test_plate_receipt_releases_all_members(self):
+        from printing_plates.models import PlateRequest
+        group, jobs = self._accepted_group()
+        machine = self._make_machine()
+        cards = {}
+        for job in jobs:
+            card = make_card(job)
+            card.status = 'production_approved'
+            card.save(update_fields=['status'])
+            cards[job.id] = card
+
+        plate = PlateRequest.objects.create(
+            planning_job=group.lead_job, job_card=cards[group.lead_job_id],
+            status=PlateRequest.STATUS_RECEIVED,
+        )
+        plate.status = PlateRequest.STATUS_AVAILABLE
+        plate.save()
+
+        for job in jobs:
+            cards[job.id].refresh_from_db()
+            self.assertEqual(cards[job.id].workflow_status, 'released')
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'layout_done')
+
+    def test_lead_printing_blocked_until_followers_released(self):
+        from core.models import Production
+        group, jobs = self._accepted_group()
+        # make_card() defaults to status='released'; followers must NOT be
+        # released for this test, so build them at qc_approved instead.
+        cards = {}
+        for job in jobs:
+            card = make_card(job)
+            if job.id != group.lead_job_id:
+                card.status = 'qc_approved'
+                card.save(update_fields=['status'])
+            cards[job.id] = card
+        self._release_card(cards[group.lead_job_id])
+        with self.assertRaises(Exception):
+            Production.objects.create(
+                job_card=cards[group.lead_job_id], entry_type='printing',
+                date='2026-07-22', shift='A', output_sheets=1000,
+            )
+
+    def test_lead_printing_succeeds_once_all_released(self):
+        from core.models import Production
+        group, jobs = self._accepted_group()
+        cards = {job.id: make_card(job) for job in jobs}
+        for job in jobs:
+            self._release_card(cards[job.id])
+        entry = Production.objects.create(
+            job_card=cards[group.lead_job_id], entry_type='printing',
+            date='2026-07-22', shift='A', output_sheets=1000,
+        )
+        self.assertIsNotNone(entry.pk)
+        self.assertEqual(Production.objects.filter(entry_type='printing').count(), len(jobs))
