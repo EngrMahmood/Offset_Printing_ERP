@@ -1160,11 +1160,71 @@ def build_job_card_merge_context(job):
         'planned_produced_qty': item.planned_produced_qty,
         'total_sheet_ups': group.total_sheet_ups,
         'run_sheets': group.run_sheets,
+        'combined_impressions': group.combined_impressions(),
         'print_sheet_size': group.print_sheet_size,
         'member_count': len(members),
         'members': members,
         'role_label': 'LEAD — combined layout' if item.is_lead else f'Printed with {group.lead_job.jc_number if group.lead_job else ""}',
     }
+
+
+def merge_layout_master_data_report(group):
+    """Per-member missing-master-field report for a merge group's print gate.
+
+    Returns a list of (planning_job, [missing labels]); an empty list means every
+    member is ready for the combined run.
+    """
+    report = []
+    for item in group.items.select_related('planning_job'):
+        job = item.planning_job
+        recipe = job.sku_recipe
+        missing = _missing_required_master_fields(
+            recipe, recipe.job_name if recipe else job.job_name, allow_missing_plate_set_no=True
+        )
+        # AWC is optional for a merge — new artwork is drawn into the layout.
+        missing = [m for m in missing if m != 'AWC #']
+        if missing:
+            report.append((job, missing))
+    return report
+
+
+def approve_merge_layout(group, actor=None):
+    """Group-level production approval for a combined layout.
+
+    Stands in for each member SKU's individual QC/PM/release gate. Requires every
+    member's master data to be complete, then creates and releases each member's
+    job card for the merged run so the shared sheet can print as one job.
+    """
+    from django.core.exceptions import ValidationError
+
+    from core.jobcard_service import approve_card_for_merged_run, ensure_job_card_from_planning_job
+
+    if group.status == 'cancelled':
+        raise ValidationError('This merge group is cancelled.')
+    if not group.lead_job_id:
+        raise ValidationError('This group has no lead job.')
+
+    report = merge_layout_master_data_report(group)
+    if report:
+        lines = '; '.join(
+            f'{job.jc_number} ({job.sku}): {", ".join(missing)}' for job, missing in report
+        )
+        raise ValidationError(
+            'Complete master data for every SKU before approving the combined layout — '
+            + lines
+        )
+
+    with transaction.atomic():
+        for item in group.items.select_related('planning_job'):
+            job_card, _ = ensure_job_card_from_planning_job(item.planning_job, actor=actor)
+            approve_card_for_merged_run(job_card, group, actor=actor)
+
+        group.status = 'layout_approved'
+        group.layout_approved_by = actor
+        group.layout_approved_at = timezone.now()
+        group.save(update_fields=['status', 'layout_approved_by', 'layout_approved_at'])
+
+    return group
 
 
 def _build_job_card_pdf_bytes(job, scan_url):
@@ -1275,8 +1335,12 @@ def _build_job_card_pdf_bytes(job, scan_url):
         [Paragraph('ORDER QTY', label_style), _format_job_value(job.order_qty), Paragraph('PRINT PCS', label_style), _format_job_value(job.print_pcs)],
         [Paragraph('MATERIAL TYPE', label_style), _format_job_value(job.material), Paragraph('PRINT COLOR', label_style), _format_job_value(job.color_spec)],
         [Paragraph('APPLICATION', label_style), _format_job_value(job.application), Paragraph('PRINT SHEET SIZE', label_style), _format_job_value(job.print_sheet_size)],
-        [Paragraph('UPS', label_style), _format_job_value(job.ups), Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
-        [Paragraph('ACTUAL SHEETS', label_style), _format_job_value(job.calculated_sheets_required), Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
+        [Paragraph('UPS', label_style),
+         _format_job_value(f"{merge['total_sheet_ups']} (this SKU: {merge['allocated_ups']})" if merge else job.ups),
+         Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
+        [Paragraph('ACTUAL SHEETS', label_style),
+         _format_job_value(f"{merge['run_sheets']} (combined run)" if merge else job.calculated_sheets_required),
+         Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
         [Paragraph('PURCHASE ORIGIN', label_style), _format_job_value(job.purchase_material_origin), Paragraph('PURCHASE SHEET SIZE', label_style), _format_job_value(job.purchase_sheet_size)],
         [Paragraph('PURCHASE SHEET UPS', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('PURCHASE REQ', label_style), _format_job_value(job.purchase_sheet_required)],
         [Paragraph('MACHINE', label_style), _format_job_value(job.machine_name), Paragraph('TOTAL COLORS', label_style), _format_job_value(job.number_of_colors)],

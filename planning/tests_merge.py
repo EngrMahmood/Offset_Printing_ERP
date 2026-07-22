@@ -686,6 +686,10 @@ class MergeLifecycleTests(TestCase):
             job.machine_name = 'GTO'
             job.front_pass = 1
             job.save()
+        # Raising the combined plate requires the layout to be approved first;
+        # the approval path itself is covered by MergeLayoutApprovalTests.
+        group.status = 'layout_approved'
+        group.save(update_fields=['status'])
         response = self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
         group.refresh_from_db()
         requests_on_group_jobs = PlateRequest.objects.filter(
@@ -702,6 +706,8 @@ class MergeLifecycleTests(TestCase):
             job.machine_name = 'GTO'
             job.front_pass = 1
             job.save()
+        group.status = 'layout_approved'
+        group.save(update_fields=['status'])
         self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
         from printing_plates.models import PlateRequest
         count_after_first = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
@@ -779,3 +785,131 @@ class MergeLifecycleTests(TestCase):
         )
         self.assertIsNotNone(entry.pk)
         self.assertEqual(Production.objects.filter(entry_type='printing').count(), len(jobs))
+
+
+class MergeLayoutApprovalTests(TestCase):
+    """Round 7: group-level production gate replaces per-SKU release."""
+
+    def setUp(self):
+        user = get_user_model().objects.create_user('planner8', password='pw12345678')
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.role = 'admin'
+        profile.save()
+        self.user = user
+        self.client.force_login(user)
+
+    def _complete_master(self, job):
+        SkuRecipe.objects.update_or_create(sku=job.sku, defaults={
+            'awc_no': f'A-{job.jc_number}', 'material': job.material,
+            'color_spec': '4', 'application': 'Label', 'product_type': 'Sticker',
+            'size_w_mm': job.size_w_mm, 'size_h_mm': job.size_h_mm,
+            'print_sheet_size': job.print_sheet_size, 'purchase_sheet_size': job.purchase_sheet_size,
+            'ups': job.ups, 'purchase_sheet_ups': 4, 'die_cutting': 'Kiss', 'print_passes': 1,
+            'job_name': job.sku,
+        })
+
+    def _accepted_group(self, complete_master=True):
+        jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
+        for job in jobs:
+            job.application = 'Label'
+            job.machine_name = 'GTO'
+            job.front_pass = 1
+            job.save()
+            if complete_master:
+                self._complete_master(job)
+        self.client.post(reverse('planning:merge_accept'), {'job_ids': [j.id for j in jobs]}, follow=True)
+        return MergeGroup.objects.get(), jobs
+
+    def test_approve_refuses_when_master_incomplete(self):
+        from planning.services import approve_merge_layout
+        from django.core.exceptions import ValidationError
+        group, jobs = self._accepted_group(complete_master=False)
+        with self.assertRaises(ValidationError):
+            approve_merge_layout(group, actor=self.user)
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'accepted')
+
+    def test_approve_production_approves_all_member_cards(self):
+        group, jobs = self._accepted_group()
+        response = self.client.post(reverse('planning:merge_approve_layout', args=[group.id]), follow=True)
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'layout_approved')
+        # Approval clears the per-SKU QC/PM gate but stops short of released, so
+        # the lead can still raise the combined plate.
+        for item in group.items.select_related('planning_job__job_card'):
+            self.assertEqual(item.planning_job.job_card.workflow_status, 'production_approved')
+
+    def test_plate_receipt_releases_all_after_approval(self):
+        from printing_plates.models import PlateRequest
+        group, jobs = self._accepted_group()
+        self.client.post(reverse('planning:merge_approve_layout', args=[group.id]), follow=True)
+        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
+        plate = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
+            status=PlateRequest.STATUS_ARCHIVED
+        ).first()
+        plate.status = PlateRequest.STATUS_AVAILABLE
+        plate.save()
+        for item in group.items.select_related('planning_job__job_card'):
+            item.planning_job.job_card.refresh_from_db()
+            self.assertEqual(item.planning_job.job_card.workflow_status, 'released')
+
+    def test_raise_plate_blocked_until_layout_approved(self):
+        from printing_plates.models import PlateRequest
+        group, jobs = self._accepted_group()
+        # Not approved yet -> raise plate refused.
+        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
+        self.assertFalse(
+            PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
+                status=PlateRequest.STATUS_ARCHIVED
+            ).exists()
+        )
+        # Approve, then raise plate works.
+        self.client.post(reverse('planning:merge_approve_layout', args=[group.id]), follow=True)
+        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
+        self.assertTrue(
+            PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
+                status=PlateRequest.STATUS_ARCHIVED
+            ).exists()
+        )
+
+    def test_merge_context_carries_combined_run(self):
+        from planning.services import build_job_card_merge_context
+        group, jobs = self._accepted_group()
+        ctx = build_job_card_merge_context(group.lead_job)
+        self.assertEqual(ctx['run_sheets'], group.run_sheets)
+        self.assertEqual(ctx['total_sheet_ups'], group.total_sheet_ups)
+        self.assertEqual(ctx['combined_impressions'], group.run_sheets * 1)
+
+    def test_lead_card_prints_combined_sheets_not_standalone(self):
+        from django.template.loader import render_to_string
+        from planning.services import build_job_card_merge_context
+        group, jobs = self._accepted_group()
+        lead = group.lead_job
+        html = render_to_string('Job Card.html', {
+            'job': lead, 'recipe': lead.sku_recipe,
+            'merge': build_job_card_merge_context(lead),
+        })
+        self.assertIn(f'{group.run_sheets} <strong>(combined run)</strong>', html)
+
+    def test_approved_lead_can_print_and_split_lands_on_all(self):
+        from core.models import Production
+        from printing_plates.models import PlateRequest
+        group, jobs = self._accepted_group()
+        self.client.post(reverse('planning:merge_approve_layout', args=[group.id]), follow=True)
+        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
+        plate = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
+            status=PlateRequest.STATUS_ARCHIVED
+        ).first()
+        plate.status = PlateRequest.STATUS_AVAILABLE
+        plate.save()  # releases all member cards
+
+        lead_card = group.lead_job.job_card
+        lead_card.refresh_from_db()
+        entry = Production.objects.create(
+            job_card=lead_card, entry_type='printing',
+            date='2026-07-22', shift='A', output_sheets=group.run_sheets,
+        )
+        self.assertEqual(Production.objects.filter(entry_type='printing').count(), len(jobs))
+        # Lead recounts at its combined-sheet ups (2), not standalone 14.
+        entry.refresh_from_db()
+        self.assertEqual(entry.merge_allocated_ups, 2)

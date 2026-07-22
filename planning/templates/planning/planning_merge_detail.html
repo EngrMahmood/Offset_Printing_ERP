@@ -38,21 +38,21 @@
             <div class="merge-lifecycle__step is-done">
                 <span class="merge-lifecycle__label">1. Accepted</span>{{ group.accepted_at|date:"d M, H:i" }}
             </div>
-            <div class="merge-lifecycle__step {% if group.designer_requested_at %}is-done{% elif group.status == 'accepted' %}is-current{% endif %}">
-                <span class="merge-lifecycle__label">2. Artwork</span>
+            <div class="merge-lifecycle__step {% if is_layout_approved %}is-done{% elif group.status == 'accepted' %}is-current{% endif %}">
+                <span class="merge-lifecycle__label">2. Layout approved</span>
+                {% if group.layout_approved_at %}{{ group.layout_approved_at|date:"d M" }} · {{ released_member_count }}/{{ member_count }} released{% else %}Pending{% endif %}
+            </div>
+            <div class="merge-lifecycle__step {% if group.designer_requested_at %}is-done{% elif group.status == 'layout_approved' %}is-current{% endif %}">
+                <span class="merge-lifecycle__label">3. Artwork</span>
                 {% if group.designer_requested_at %}Requested {{ group.designer_requested_at|date:"d M" }}{% else %}Not requested{% endif %}
             </div>
             <div class="merge-lifecycle__step {% if combined_plate_issued %}is-done{% elif group.status == 'artwork_requested' or group.status == 'artwork_ready' %}is-current{% endif %}">
-                <span class="merge-lifecycle__label">3. Combined plate</span>
+                <span class="merge-lifecycle__label">4. Combined plate</span>
                 {% if combined_plate %}#{{ combined_plate.pk }} · {{ combined_plate.get_status_display }}{% else %}Not raised{% endif %}
-            </div>
-            <div class="merge-lifecycle__step {% if all_members_released %}is-done{% elif combined_plate_issued %}is-current{% endif %}">
-                <span class="merge-lifecycle__label">4. Cards released</span>
-                {{ released_member_count }} of {{ member_count }}
             </div>
             <div class="merge-lifecycle__step {% if group.status == 'layout_done' %}is-done{% endif %}">
                 <span class="merge-lifecycle__label">5. Printing</span>
-                {% if group.status == 'layout_done' %}Released to production{% else %}Pending{% endif %}
+                {% if group.status == 'layout_done' %}Ready to print{% else %}Pending{% endif %}
             </div>
         </div>
         {% if group.lead_job %}
@@ -123,6 +123,43 @@
         {% if group.notes %}<p class="erp-section-desc" style="margin-top:12px;"><strong>Planner notes:</strong> {{ group.notes }}</p>{% endif %}
     </section>
 
+    {% if group.is_open and not is_layout_approved %}
+    <section class="erp-section-shell" style="border-left:4px solid #b8860b;">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <div class="erp-eyebrow">Production gate</div>
+                <h3 class="erp-section-title">Approve combined layout for production</h3>
+                <p class="erp-section-desc">
+                    One approval releases all {{ member_count }} SKUs for the merged run — you do not
+                    walk each SKU through its own QC/PM approval. Each SKU rejoins normal packing, QC
+                    and dispatch after cutting. Requires every member's master data to be complete.
+                </p>
+            </div>
+        </div>
+        {% if master_data_report %}
+        <div class="erp-alert erp-alert-warning">
+            <strong>Complete master data before approving:</strong>
+            <ul style="margin:8px 0 0; padding-left:20px;">
+                {% for job, missing in master_data_report %}
+                <li>
+                    <a href="{% url 'planning:job_detail' job.id %}">{{ job.jc_number }}</a>
+                    ({{ job.sku }}): {{ missing|join:", " }}
+                </li>
+                {% endfor %}
+            </ul>
+        </div>
+        {% else %}
+        <form method="post" action="{% url 'planning:merge_approve_layout' group.id %}">
+            {% csrf_token %}
+            <button type="submit" class="erp-btn erp-btn-primary"
+                    onclick="return confirm('Approve this combined layout and release all {{ member_count }} member cards for the merged run?');">
+                Approve combined layout for production
+            </button>
+        </form>
+        {% endif %}
+    </section>
+    {% endif %}
+
     {% if group.is_open %}
     <section class="erp-section-shell">
         <div class="erp-card-header">
@@ -168,7 +205,7 @@
             Combined plate: <a href="{% url 'printing_plates:request_detail' combined_plate.pk %}">request #{{ combined_plate.pk }}</a>
             ({{ combined_plate.get_status_display }}) — raised on lead job {{ group.lead_job.jc_number }}.
         </p>
-        {% else %}
+        {% elif is_layout_approved %}
         <form method="post" action="{% url 'planning:merge_raise_plate' group.id %}" style="margin-top:12px;">
             {% csrf_token %}
             <button type="submit" class="erp-btn erp-btn-primary">Artwork ready — raise combined plate</button>
@@ -177,7 +214,13 @@
             Raises ONE plate request on the lead job ({{ group.lead_job.jc_number }}) carrying
             {{ group.artwork_code }}. Followers never raise their own.
         </p>
+        {% else %}
+        <p class="erp-tiny" style="margin-top:12px;">Approve the combined layout above before raising its plate.</p>
         {% endif %}
+        <p class="erp-tiny" style="margin-top:8px; color:#666;">
+            The combined artwork code {{ group.artwork_code }} lives only on this group's plate —
+            each SKU keeps its own master AWC for future standalone runs.
+        </p>
 
         {% if unreleased_members and combined_plate_issued %}
         <p class="erp-alert erp-alert-warning" style="margin-top:12px;">

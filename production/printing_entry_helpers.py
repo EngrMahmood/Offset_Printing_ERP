@@ -186,5 +186,13 @@ def build_printing_job_card_maps(job_cards, edit_record=None):
                 'allocated_ups': merge_item.allocated_ups,
                 'run_sheets': group.run_sheets,
             }
+            # The lead prints the whole combined sheet — show the combined run,
+            # not this SKU's standalone sheet count, so 5000 and 1429 do not clash.
+            if merge_item.is_lead and group.run_sheets:
+                info_map[job_id]['required_sheets'] = f'{int(group.run_sheets):,}'
+                combined_impr = group.combined_impressions()
+                if combined_impr:
+                    info_map[job_id]['allowed_impressions'] = f'{combined_impr:,}'
+                    info_map[job_id]['remaining_impressions'] = f'{max(combined_impr - total_impressions_used, 0):,}'
 
     return plan_map, machine_map, info_map

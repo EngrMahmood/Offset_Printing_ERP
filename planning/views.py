@@ -5857,6 +5857,7 @@ def planning_merge_accept(request):
 def planning_merge_detail(request, group_id):
     from printing_plates.models import PlateRequest
     from printing_plates.services import combined_plate_request_for_group, group_combined_plate_issued
+    from planning.services import merge_layout_master_data_report
 
     group = get_object_or_404(
         MergeGroup.objects.prefetch_related('items__planning_job__job_card'),
@@ -5891,7 +5892,42 @@ def planning_merge_detail(request, group_id):
         'unreleased_members': unreleased_members,
         'released_member_count': len(released_members),
         'all_members_released': not unreleased_members,
+        'master_data_report': merge_layout_master_data_report(group) if group.is_open else [],
+        'is_layout_approved': group.is_layout_approved,
     })
+
+
+@login_required
+@permission_required('can_plan')
+def planning_merge_approve_layout(request, group_id):
+    """Group-level production approval for a combined layout.
+
+    One approval releases every member for the merged run, standing in for each
+    SKU's individual QC/PM/release gate. Refuses with a per-SKU list if any
+    member's master data is incomplete.
+    """
+    from django.core.exceptions import ValidationError
+    from planning.services import approve_merge_layout
+
+    group = get_object_or_404(MergeGroup, id=group_id)
+    if request.method != 'POST':
+        return redirect('planning:merge_detail', group_id=group.id)
+    if not group.is_open:
+        messages.error(request, 'This merge group is closed.')
+        return redirect('planning:merge_detail', group_id=group.id)
+
+    try:
+        approve_merge_layout(group, actor=request.user)
+    except ValidationError as exc:
+        messages.error(request, '; '.join(exc.messages))
+        return redirect('planning:merge_detail', group_id=group.id)
+
+    messages.success(
+        request,
+        f'Combined layout {group.code} approved for production — all '
+        f'{group.items.count()} member cards released for the merged run.',
+    )
+    return redirect('planning:merge_detail', group_id=group.id)
 
 
 @login_required
@@ -5912,6 +5948,12 @@ def planning_merge_raise_plate(request, group_id):
         return redirect('planning:merge_detail', group_id=group.id)
     if not group.lead_job_id:
         messages.error(request, 'This group has no lead job — cannot raise plates.')
+        return redirect('planning:merge_detail', group_id=group.id)
+    if not group.is_layout_approved:
+        messages.error(
+            request,
+            'Approve the combined layout for production before raising its plate.',
+        )
         return redirect('planning:merge_detail', group_id=group.id)
 
     existing = combined_plate_request_for_group(group)

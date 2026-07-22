@@ -395,6 +395,38 @@ def release_to_production(job_card, actor=None, reason=''):
     return execute_job_card_action(job_card, 'release_for_production', actor=actor, reason=reason)
 
 
+def approve_card_for_merged_run(job_card, group, actor=None):
+    """Production-approve a member card for a combined (smart-merge) run.
+
+    The group's own layout approval stands in for this SKU's individual QC/PM
+    gate, so this sets the card straight to 'production_approved' rather than
+    walking the normal per-SKU transitions (which a draft member could never
+    satisfy). It stops short of 'released' on purpose: the lead must still raise
+    the combined plate (released jobs skip plate making), and the whole group is
+    released together when those plates are received. Idempotent: a card already
+    at or past production_approved is left as-is.
+    """
+    if job_card.workflow_status in {'production_approved', 'released', 'in_production', 'completed', 'closed'}:
+        return job_card
+
+    reason = f'Production-approved for combined layout {group.code} (group approval)'
+    with transaction.atomic():
+        before_status = job_card.workflow_status
+        job_card.status = 'production_approved'
+        job_card.save(update_fields=['status'])
+
+        planning_job = job_card.planning_job
+        if planning_job and planning_job.status != 'qc_approved':
+            planning_job.status = 'qc_approved'
+            planning_job.save(update_fields=['status', 'updated_at'])
+
+        log_job_card_workflow_change(
+            job_card, actor, 'approve_pm',
+            reason=reason, before_status=before_status, extra_message=reason,
+        )
+    return job_card
+
+
 def start_production(job_card, actor=None, reason=''):
     return execute_job_card_action(job_card, 'start_production', actor=actor, reason=reason)
 

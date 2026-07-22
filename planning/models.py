@@ -1173,13 +1173,16 @@ class JobCardChangeRequest(models.Model):
 
 MERGE_GROUP_STATUS_CHOICES = [
     ('accepted', 'Accepted'),
+    ('layout_approved', 'Layout Approved for Production'),
     ('artwork_requested', 'Artwork Requested'),
     ('artwork_ready', 'Artwork Ready'),
     ('layout_done', 'Layout Done'),
     ('cancelled', 'Cancelled'),
 ]
 
-MERGE_GROUP_OPEN_STATUSES = {'accepted', 'artwork_requested', 'artwork_ready', 'layout_done'}
+MERGE_GROUP_OPEN_STATUSES = {
+    'accepted', 'layout_approved', 'artwork_requested', 'artwork_ready', 'layout_done',
+}
 
 
 class MergeGroup(models.Model):
@@ -1218,6 +1221,15 @@ class MergeGroup(models.Model):
     designer_notes = models.TextField(blank=True)
     designer_requested_at = models.DateTimeField(null=True, blank=True)
 
+    layout_approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='merge_groups_layout_approved',
+    )
+    layout_approved_at = models.DateTimeField(null=True, blank=True)
+
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -1245,6 +1257,18 @@ class MergeGroup(models.Model):
     @property
     def is_open(self):
         return self.status in MERGE_GROUP_OPEN_STATUSES
+
+    @property
+    def is_layout_approved(self):
+        """The combined layout has passed the group production gate."""
+        return self.status in {'layout_approved', 'artwork_requested', 'artwork_ready', 'layout_done'}
+
+    def combined_impressions(self):
+        """Impressions for the whole combined run = run sheets × print passes."""
+        passes = 1
+        if self.lead_job and self.lead_job.print_passes:
+            passes = self.lead_job.print_passes
+        return (self.run_sheets or 0) * passes
 
     @classmethod
     def next_code(cls):

@@ -984,6 +984,12 @@ class Production(models.Model):
                             f'Cannot record printing yet — {group.code} is a combined layout and these '
                             f'member job cards are not released for production: {", ".join(unreleased)}.'
                         )
+                    if errors:
+                        raise ValidationError(errors)
+                    # The lead runs the whole combined sheet, so its output is
+                    # governed by the group's run, not this SKU's standalone
+                    # sheet/impression plan. Skip the per-job ceilings below.
+                    return
 
         if errors:
             raise ValidationError(errors)

@@ -401,18 +401,27 @@ def release_merge_group_to_production(group, actor=None):
     production. One card failing to release must not stop the others.
     Returns (released_job_cards, still_blocked_reasons).
     """
-    from core.jobcard_service import release_to_production
+    from core.jobcard_service import (
+        approve_card_for_merged_run, ensure_job_card_from_planning_job, release_to_production,
+    )
 
     released = []
     blocked = []
     for item in group.items.select_related('planning_job__job_card'):
         job_card = getattr(item.planning_job, 'job_card', None)
         if not job_card:
-            blocked.append(f'{item.planning_job.jc_number}: no job card yet')
-            continue
+            # A member auto-created at group approval may not have a card yet.
+            try:
+                job_card, _ = ensure_job_card_from_planning_job(item.planning_job, actor=actor)
+            except Exception as exc:  # noqa: BLE001
+                blocked.append(f'{item.planning_job.jc_number}: {exc}')
+                continue
         if job_card.workflow_status in {'released', 'in_production', 'completed', 'closed'}:
             continue
         try:
+            # The group's layout approval already cleared the per-SKU QC/PM gate;
+            # make sure the card is production-approved, then release it for the run.
+            approve_card_for_merged_run(job_card, group, actor=actor)
             release_to_production(job_card, actor=actor, reason=f'Combined plates received for {group.code}')
             released.append(job_card)
         except Exception as exc:  # noqa: BLE001 - one member must never block the rest
