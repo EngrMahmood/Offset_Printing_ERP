@@ -1242,16 +1242,30 @@ def planning_home(request):
     if machine_filter:
         queryset = queryset.filter(machine_name__icontains=machine_filter)
 
-    # Merged job cards live under the Smart Merge tab (mother-child view), so keep
-    # them out of the regular queue to avoid confusion between normal and merged
-    # jobs. They are still fully reachable from Smart Merge.
+    # Merged job cards are managed under the Smart Merge tab, so they are hidden
+    # from the regular queue by default to keep it clean. But they must never
+    # "vanish": a search always surfaces them, and a "Merged" quick-filter chip
+    # shows them on demand.
+    show_merged = request.GET.get('merged') == '1'
     merged_member_ids = list(
         MergeGroupItem.objects.filter(merge_group__status__in=MERGE_GROUP_OPEN_STATUSES)
         .values_list('planning_job_id', flat=True)
     )
     merged_jobs_count = queryset.filter(id__in=merged_member_ids).count() if merged_member_ids else 0
     if merged_member_ids:
-        queryset = queryset.exclude(id__in=merged_member_ids)
+        if show_merged:
+            queryset = queryset.filter(id__in=merged_member_ids)
+        elif not q:
+            queryset = queryset.exclude(id__in=merged_member_ids)
+        # else: searching — leave merged jobs in the results so they are findable.
+
+    merged_params = request.GET.copy()
+    merged_params.pop('page', None)
+    if show_merged:
+        merged_params.pop('merged', None)
+    else:
+        merged_params['merged'] = '1'
+    merged_filter_url = '?' + merged_params.urlencode() if merged_params.urlencode() else '?'
 
     from planning.sku_duplicate_alert import (
         SKU_ALERT_FILTER_KEYS,
@@ -1523,7 +1537,9 @@ def planning_home(request):
                 'from_date': request.GET.get('from_date', ''),
                 'to_date': request.GET.get('to_date', ''),
                 'sku_alert': sku_alert_filter,
+                'merged': show_merged,
             },
+            'merged_filter_url': merged_filter_url,
             'sku_alert_counts': sku_alert_counts,
             'sku_alert_filter_urls': sku_alert_filter_urls,
             'filter_query': filter_query,

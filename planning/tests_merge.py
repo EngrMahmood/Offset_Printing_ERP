@@ -962,3 +962,36 @@ class MergeLayoutApprovalTests(TestCase):
         # Lead recounts at its combined-sheet ups (2), not standalone 14.
         entry.refresh_from_db()
         self.assertEqual(entry.merge_allocated_ups, 2)
+
+
+class MergedJobsQueueVisibilityTests(TestCase):
+    """Round 10: merged jobs stay hidden by default but are always findable."""
+
+    def setUp(self):
+        user = get_user_model().objects.create_user('planner10', password='pw12345678')
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.role = 'admin'
+        profile.save()
+        self.user = user
+        self.client.force_login(user)
+        jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
+        self.client.post(reverse('planning:merge_accept'), {'job_ids': [j.id for j in jobs]}, follow=True)
+        self.group = MergeGroup.objects.get()
+        self.member_jc = self.group.items.first().planning_job.jc_number
+
+    def test_default_queue_hides_merged_jobs(self):
+        response = self.client.get(reverse('planning:jobs'))
+        self.assertNotContains(response, self.member_jc)
+        self.assertContains(response, 'Merged (3)')
+        self.assertContains(response, 'hidden here to keep the queue clean')
+
+    def test_search_surfaces_a_merged_job(self):
+        response = self.client.get(reverse('planning:jobs'), {'q': self.member_jc})
+        self.assertContains(response, self.member_jc)
+        self.assertContains(response, 'Merged \xb7')  # the row badge
+
+    def test_merged_chip_lists_only_merged_jobs(self):
+        response = self.client.get(reverse('planning:jobs'), {'merged': '1'})
+        self.assertContains(response, self.member_jc)
+        self.assertContains(response, 'Showing')
+        self.assertContains(response, self.group.code)

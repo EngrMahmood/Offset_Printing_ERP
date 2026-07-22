@@ -160,11 +160,18 @@
                 <p class="erp-section-desc">{{ jobs.paginator.count }} active job{{ jobs.paginator.count|pluralize }}</p>
             </div>
         </div>
-        {% if merged_jobs_count %}
+        {% if filters.merged %}
+        <div class="erp-alert erp-alert-info" style="margin-bottom:12px;">
+            Showing <strong>{{ merged_jobs_count }} merged job{{ merged_jobs_count|pluralize }}</strong> —
+            managed under <a href="{% url 'planning:merge_board' %}">Smart Merge</a> (mother–child view).
+            <a href="{% url 'planning:jobs' %}{{ merged_filter_url }}">Back to normal queue</a>.
+        </div>
+        {% elif merged_jobs_count and not filters.q %}
         <div class="erp-alert erp-alert-info" style="margin-bottom:12px;">
             <strong>{{ merged_jobs_count }} job{{ merged_jobs_count|pluralize }}</strong>
-            {{ merged_jobs_count|pluralize:"is,are" }} in a smart-merge group and managed under
-            <a href="{% url 'planning:merge_board' %}">Smart Merge</a> (mother–child view) — hidden here to keep the queue clean.
+            {{ merged_jobs_count|pluralize:"is,are" }} in a smart-merge group and hidden here to keep the queue clean —
+            use the <a href="{% url 'planning:jobs' %}{{ merged_filter_url }}">Merged ({{ merged_jobs_count }})</a> filter,
+            or just search their JC/SKU. Managed under <a href="{% url 'planning:merge_board' %}">Smart Merge</a>.
         </div>
         {% endif %}
         <form method="get" class="erp-form-grid" style="grid-template-columns:1fr 1fr auto; gap:12px; margin-bottom:12px;">
@@ -221,6 +228,11 @@
                class="erp-btn erp-btn-secondary erp-btn-sm{% if filters.sku_alert == 'low_priority' %} is-active{% endif %}">
                 Low priority ({{ sku_alert_counts.low_priority }})
             </a>
+            <a href="{% url 'planning:jobs' %}{{ merged_filter_url }}"
+               class="erp-btn erp-btn-secondary erp-btn-sm{% if filters.merged %} is-active{% endif %}"
+               title="Merged jobs are managed under Smart Merge; click to list them here.">
+                Merged ({{ merged_jobs_count }})
+            </a>
             {% if filters.sku_alert %}
             <a href="{% url 'planning:jobs' %}{{ sku_alert_filter_urls.clear }}" class="erp-btn erp-btn-secondary erp-btn-sm">Clear alert filter</a>
             {% endif %}
@@ -240,6 +252,11 @@
                     <tr>
                         <td><strong><a href="{% url 'planning:job_detail' job.id %}">{{ job.jc_number }}</a></strong>
                         {% include 'planning/includes/sku_duplicate_alert_compact.html' %}
+                        {% with mg=job.active_merge_group %}
+                        {% if mg %}
+                        <a href="{% url 'planning:merge_detail' mg.id %}" class="erp-badge erp-badge-warning" style="display:inline-block; margin-top:2px; font-size:0.72rem; text-decoration:none;" title="Managed under Smart Merge">Merged · {{ mg.code }}</a>
+                        {% endif %}
+                        {% endwith %}
                         </td>
                         <td>{{ job.po_number|default:'-' }}</td>
                         <td>{{ job.sku|default:'-' }}</td>
