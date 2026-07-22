@@ -1202,6 +1202,14 @@ class MergeGroup(models.Model):
     run_sheets = models.PositiveIntegerField(null=True, blank=True)
     total_colors = models.PositiveIntegerField(null=True, blank=True)
 
+    # Combined run inputs captured once at layout approval and reflected onto every
+    # member job: one material origin for the shared sheet, and the run's total
+    # wastage which is divided across members by their ups share.
+    combined_wastage_sheets = models.PositiveIntegerField(null=True, blank=True)
+    purchase_material_origin = models.CharField(
+        max_length=20, choices=PURCHASE_MATERIAL_ORIGIN_CHOICES, blank=True,
+    )
+
     lead_job = models.ForeignKey(
         PlanningJob,
         on_delete=models.SET_NULL,

@@ -451,6 +451,65 @@ def combined_plate_request_for_group(group):
     )
 
 
+def create_combined_plate_for_group(group, actor=None):
+    """Create the ONE combined plate request into the designer's queue.
+
+    This is the hand-off from planning to the graphics designer: the request
+    lands in the plate queue carrying the group's combined artwork code and the
+    merge panel (all member SKUs + source AWCs). The designer builds the single
+    combined artwork on it and sends it to the vendor. Idempotent.
+    """
+    from planning.sku_classification import plate_making_stage_for_repeat_flag
+
+    if not group or not group.lead_job_id:
+        return None
+    existing = combined_plate_request_for_group(group)
+    if existing:
+        return existing
+
+    lead = group.lead_job
+    # A plate request only opens from a plate-making stage; the group approval put
+    # the lead at production_approved, so move it into plate making first.
+    lead.planning_stage = plate_making_stage_for_repeat_flag(lead.repeat_flag)
+    lead.planning_stage_changed_at = timezone.now()
+    lead.planning_stage_changed_by = actor
+    lead.save(update_fields=[
+        'planning_stage', 'planning_stage_changed_at', 'planning_stage_changed_by', 'updated_at',
+    ])
+    plate_request = create_or_get_plate_request_from_planning_job(lead, actor)
+    if plate_request:
+        _notify_designers_combined_plate(group, plate_request, actor)
+    return plate_request
+
+
+def _notify_designers_combined_plate(group, plate_request, actor=None):
+    from django.urls import reverse
+
+    from core.notifications import notify_roles
+
+    try:
+        link = reverse('printing_plates:request_detail', args=[plate_request.pk])
+        member_skus = ', '.join(
+            item.planning_job.sku for item in group.items.select_related('planning_job')
+        )
+        notify_roles(
+            ['graphics_designer', 'admin', 'manager'],
+            event_type='plate.combined_artwork_requested',
+            title=f'Combined artwork needed — {group.code}',
+            message=(
+                f'Build one combined artwork ({group.artwork_code}) for {group.items.count()} '
+                f'SKUs: {member_skus}. Fill the layout specs on plate request '
+                f'#{plate_request.pk} and send to vendor.'
+            ),
+            link=link,
+            entity_type='plate_request',
+            entity_id=plate_request.pk,
+            actor=actor,
+        )
+    except Exception:  # noqa: BLE001 - a notification failure must not block approval
+        pass
+
+
 def group_combined_plate_issued(group):
     """True once THIS group's combined plate is sent, received or available.
 

@@ -246,6 +246,19 @@ class PlateRequest(models.Model):
             except Exception:
                 pass
 
+        # Advance the merge group when the designer sends the combined plate to
+        # the vendor: accepted/artwork_requested -> artwork_ready.
+        if self.status == self.STATUS_SENT:
+            try:
+                planning_job = self.planning_job
+                merge_group = planning_job.active_merge_group if planning_job else None
+                if (merge_group and merge_group.lead_job_id == planning_job.id
+                        and merge_group.status in ('artwork_requested', 'layout_approved', 'accepted')):
+                    merge_group.status = 'artwork_ready'
+                    merge_group.save(update_fields=['status'])
+            except Exception:
+                pass
+
 
     @property
     def job_name(self):

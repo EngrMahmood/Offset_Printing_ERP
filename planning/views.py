@@ -110,6 +110,7 @@ from .models import (
     PLANNING_STATUS_ALIASES,
     PLANNING_STATUS_CHOICES,
     PLANNING_STAGE_CHOICES,
+    PURCHASE_MATERIAL_ORIGIN_CHOICES,
     MERGE_GROUP_OPEN_STATUSES,
     JobCardLayout,
     MergeGroup,
@@ -5894,6 +5895,7 @@ def planning_merge_detail(request, group_id):
         'all_members_released': not unreleased_members,
         'master_data_report': merge_layout_master_data_report(group) if group.is_open else [],
         'is_layout_approved': group.is_layout_approved,
+        'material_origin_choices': PURCHASE_MATERIAL_ORIGIN_CHOICES,
     })
 
 
@@ -5917,7 +5919,11 @@ def planning_merge_approve_layout(request, group_id):
         return redirect('planning:merge_detail', group_id=group.id)
 
     try:
-        approve_merge_layout(group, actor=request.user)
+        approve_merge_layout(
+            group, actor=request.user,
+            combined_wastage=request.POST.get('combined_wastage'),
+            material_origin=(request.POST.get('material_origin') or '').strip(),
+        )
     except ValidationError as exc:
         messages.error(request, '; '.join(exc.messages))
         return redirect('planning:merge_detail', group_id=group.id)

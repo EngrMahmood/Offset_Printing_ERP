@@ -14,6 +14,7 @@ from .models import (
     JOB_CANCEL_REQUEST_TYPE,
     PLANNING_CANCEL_REASON_CHOICES,
     PLANNING_STATUS_ALIASES,
+    PURCHASE_MATERIAL_ORIGIN_CHOICES,
     JobCardChangeRequest,
     PlanningJob,
     PoDocument,
@@ -1188,12 +1189,36 @@ def merge_layout_master_data_report(group):
     return report
 
 
-def approve_merge_layout(group, actor=None):
+def divide_combined_wastage(items, combined_wastage):
+    """Split the run's total wastage across members by ups share, sum preserved.
+
+    A wasted sheet spoils each SKU's ups on it, so the run's wastage is shared;
+    dividing it by ups share avoids counting the same waste N times across the
+    member job cards. Returns {planning_job_id: wastage_sheets}.
+    """
+    combined_wastage = int(combined_wastage or 0)
+    total_ups = sum(item.allocated_ups for item in items) or 1
+    shares = {}
+    running = 0
+    ordered = sorted(items, key=lambda it: it.allocated_ups, reverse=True)
+    for index, item in enumerate(ordered):
+        if index == len(ordered) - 1:
+            shares[item.planning_job_id] = combined_wastage - running  # remainder to last
+        else:
+            share = round(combined_wastage * item.allocated_ups / total_ups)
+            shares[item.planning_job_id] = share
+            running += share
+    return shares
+
+
+def approve_merge_layout(group, actor=None, combined_wastage=None, material_origin=None):
     """Group-level production approval for a combined layout.
 
     Stands in for each member SKU's individual QC/PM/release gate. Requires every
-    member's master data to be complete, then creates and releases each member's
-    job card for the merged run so the shared sheet can print as one job.
+    member's master data to be complete AND one combined wastage + material origin
+    for the shared run. Those are reflected onto every member (material origin the
+    same; wastage divided by ups share) so each member card satisfies its own QC
+    fields and the whole sheet can print as one job.
     """
     from django.core.exceptions import ValidationError
 
@@ -1214,15 +1239,49 @@ def approve_merge_layout(group, actor=None):
             + lines
         )
 
-    with transaction.atomic():
-        for item in group.items.select_related('planning_job'):
-            job_card, _ = ensure_job_card_from_planning_job(item.planning_job, actor=actor)
-            approve_card_for_merged_run(job_card, group, actor=actor)
+    # Fall back to any value already captured on the group so re-approval works.
+    if combined_wastage in (None, ''):
+        combined_wastage = group.combined_wastage_sheets
+    if material_origin in (None, ''):
+        material_origin = group.purchase_material_origin
+    if combined_wastage in (None, ''):
+        raise ValidationError('Enter the combined run wastage (sheets) before approving the layout.')
+    valid_origins = {code for code, _ in PURCHASE_MATERIAL_ORIGIN_CHOICES}
+    if material_origin not in valid_origins:
+        raise ValidationError('Select the purchase material origin for the combined run.')
+    combined_wastage = int(combined_wastage)
 
-        group.status = 'layout_approved'
+    items = list(group.items.select_related('planning_job'))
+    wastage_shares = divide_combined_wastage(items, combined_wastage)
+
+    with transaction.atomic():
+        group.combined_wastage_sheets = combined_wastage
+        group.purchase_material_origin = material_origin
         group.layout_approved_by = actor
         group.layout_approved_at = timezone.now()
-        group.save(update_fields=['status', 'layout_approved_by', 'layout_approved_at'])
+
+        for item in items:
+            job = item.planning_job
+            # Reflect the combined inputs onto the member so its own QC fields pass.
+            job.wastage_sheets = wastage_shares.get(job.id, 0)
+            job.purchase_material_origin = material_origin
+            job.save(update_fields=['wastage_sheets', 'purchase_material_origin', 'updated_at'])
+
+            job_card, _ = ensure_job_card_from_planning_job(job, actor=actor)
+            approve_card_for_merged_run(job_card, group, actor=actor)
+
+        # Hand off to the graphics designer: create the one combined plate request
+        # into their queue and move the group to 'artwork_requested'. The designer
+        # builds the combined artwork on that request and sends it to the vendor.
+        from printing_plates.services import create_combined_plate_for_group
+
+        create_combined_plate_for_group(group, actor=actor)
+        group.status = 'artwork_requested'
+        group.designer_requested_at = timezone.now()
+        group.save(update_fields=[
+            'combined_wastage_sheets', 'purchase_material_origin', 'status',
+            'layout_approved_by', 'layout_approved_at', 'designer_requested_at',
+        ])
 
     return group
 

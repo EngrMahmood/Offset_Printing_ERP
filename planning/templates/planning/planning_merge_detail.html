@@ -42,11 +42,11 @@
                 <span class="merge-lifecycle__label">2. Layout approved</span>
                 {% if group.layout_approved_at %}{{ group.layout_approved_at|date:"d M" }} · {{ released_member_count }}/{{ member_count }} released{% else %}Pending{% endif %}
             </div>
-            <div class="merge-lifecycle__step {% if group.designer_requested_at %}is-done{% elif group.status == 'layout_approved' %}is-current{% endif %}">
-                <span class="merge-lifecycle__label">3. Artwork</span>
-                {% if group.designer_requested_at %}Requested {{ group.designer_requested_at|date:"d M" }}{% else %}Not requested{% endif %}
+            <div class="merge-lifecycle__step {% if group.status == 'artwork_ready' or combined_plate_issued or group.status == 'layout_done' %}is-done{% elif group.status == 'artwork_requested' %}is-current{% endif %}">
+                <span class="merge-lifecycle__label">3. Designer artwork</span>
+                {% if group.designer_requested_at %}Handed {{ group.designer_requested_at|date:"d M" }}{% else %}Pending approval{% endif %}
             </div>
-            <div class="merge-lifecycle__step {% if combined_plate_issued %}is-done{% elif group.status == 'artwork_requested' or group.status == 'artwork_ready' %}is-current{% endif %}">
+            <div class="merge-lifecycle__step {% if combined_plate_issued %}is-done{% elif group.status == 'artwork_ready' %}is-current{% endif %}">
                 <span class="merge-lifecycle__label">4. Combined plate</span>
                 {% if combined_plate %}#{{ combined_plate.pk }} · {{ combined_plate.get_status_display }}{% else %}Not raised{% endif %}
             </div>
@@ -151,6 +151,26 @@
         {% else %}
         <form method="post" action="{% url 'planning:merge_approve_layout' group.id %}">
             {% csrf_token %}
+            <div style="display:flex; gap:14px; align-items:end; flex-wrap:wrap; margin-bottom:10px;">
+                <div class="erp-form-field" style="min-width:220px;">
+                    <label>Combined run wastage (sheets)</label>
+                    <input type="number" name="combined_wastage" min="0" required
+                           value="{{ group.combined_wastage_sheets|default_if_none:'' }}"
+                           placeholder="total wastage for the whole run">
+                </div>
+                <div class="erp-form-field" style="min-width:200px;">
+                    <label>Purchase material origin</label>
+                    <select name="material_origin" required>
+                        {% for code, label in material_origin_choices %}
+                        <option value="{{ code }}" {% if group.purchase_material_origin == code %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+            <p class="erp-tiny" style="margin:0 0 10px; color:#666;">
+                One value for the whole shared run. The wastage is divided across the {{ member_count }} member
+                cards by their ups share; the material origin is applied to all of them.
+            </p>
             <button type="submit" class="erp-btn erp-btn-primary"
                     onclick="return confirm('Approve this combined layout and release all {{ member_count }} member cards for the merged run?');">
                 Approve combined layout for production
@@ -187,35 +207,23 @@
                 {% endfor %}
             </ul>
         </div>
-        {% if group.designer_requested_at %}
-            <p class="erp-section-desc">Requested {{ group.designer_requested_at }}. {{ group.designer_notes }}</p>
-        {% else %}
-        <form method="post" action="{% url 'planning:merge_request_artwork' group.id %}" style="display:flex; gap:10px; align-items:end; flex-wrap:wrap;">
-            {% csrf_token %}
-            <div class="erp-form-field" style="flex:1; min-width:260px;">
-                <label>Instructions for the designer</label>
-                <input type="text" name="designer_notes" placeholder="e.g. keep 3mm bleed between SKUs">
-            </div>
-            <button type="submit" class="erp-btn erp-btn-primary">Request combined artwork</button>
-        </form>
-        {% endif %}
-
         {% if combined_plate %}
-        <p class="erp-section-desc" style="margin-top:12px;">
-            Combined plate: <a href="{% url 'printing_plates:request_detail' combined_plate.pk %}">request #{{ combined_plate.pk }}</a>
-            ({{ combined_plate.get_status_display }}) — raised on lead job {{ group.lead_job.jc_number }}.
-        </p>
+        <div class="erp-alert erp-alert-info" style="margin-top:12px;">
+            <strong>Handed to graphics design.</strong>
+            The combined plate request
+            <a href="{% url 'printing_plates:request_detail' combined_plate.pk %}">#{{ combined_plate.pk }}</a>
+            ({{ combined_plate.get_status_display }}) is in the designer's queue. The designer builds the one
+            combined artwork ({{ group.artwork_code }}), fills the layout specs and sends it to the vendor.
+            Plate + artwork are the designer's domain — planning does not raise it manually.
+        </div>
         {% elif is_layout_approved %}
-        <form method="post" action="{% url 'planning:merge_raise_plate' group.id %}" style="margin-top:12px;">
-            {% csrf_token %}
-            <button type="submit" class="erp-btn erp-btn-primary">Artwork ready — raise combined plate</button>
-        </form>
-        <p class="erp-tiny" style="margin-top:4px;">
-            Raises ONE plate request on the lead job ({{ group.lead_job.jc_number }}) carrying
-            {{ group.artwork_code }}. Followers never raise their own.
+        <p class="erp-tiny" style="margin-top:12px;">
+            Combined plate handed to design; open the Printing Plates → Merged Layouts tab to track it.
         </p>
         {% else %}
-        <p class="erp-tiny" style="margin-top:12px;">Approve the combined layout above before raising its plate.</p>
+        <p class="erp-tiny" style="margin-top:12px;">
+            Approve the combined layout above — that hands the combined artwork + plate to the graphics designer.
+        </p>
         {% endif %}
         <p class="erp-tiny" style="margin-top:8px; color:#666;">
             The combined artwork code {{ group.artwork_code }} lives only on this group's plate —

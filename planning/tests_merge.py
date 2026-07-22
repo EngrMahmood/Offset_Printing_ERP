@@ -820,30 +820,66 @@ class MergeLayoutApprovalTests(TestCase):
         self.client.post(reverse('planning:merge_accept'), {'job_ids': [j.id for j in jobs]}, follow=True)
         return MergeGroup.objects.get(), jobs
 
+    def _approve(self, group):
+        return self.client.post(
+            reverse('planning:merge_approve_layout', args=[group.id]),
+            {'combined_wastage': 200, 'material_origin': 'local'}, follow=True,
+        )
+
     def test_approve_refuses_when_master_incomplete(self):
         from planning.services import approve_merge_layout
         from django.core.exceptions import ValidationError
         group, jobs = self._accepted_group(complete_master=False)
         with self.assertRaises(ValidationError):
-            approve_merge_layout(group, actor=self.user)
+            approve_merge_layout(group, actor=self.user, combined_wastage=200, material_origin='local')
         group.refresh_from_db()
         self.assertEqual(group.status, 'accepted')
 
-    def test_approve_production_approves_all_member_cards(self):
+    def test_approve_requires_wastage_and_material_origin(self):
+        from planning.services import approve_merge_layout
+        from django.core.exceptions import ValidationError
         group, jobs = self._accepted_group()
-        response = self.client.post(reverse('planning:merge_approve_layout', args=[group.id]), follow=True)
+        with self.assertRaises(ValidationError):
+            approve_merge_layout(group, actor=self.user)  # no wastage/origin
         group.refresh_from_db()
-        self.assertEqual(group.status, 'layout_approved')
-        # Approval clears the per-SKU QC/PM gate but stops short of released, so
-        # the lead can still raise the combined plate.
+        self.assertEqual(group.status, 'accepted')
+
+    def test_approve_divides_wastage_and_reflects_origin(self):
+        group, jobs = self._accepted_group()
+        self._approve(group)
+        members = [i.planning_job for i in group.items.select_related('planning_job')]
+        self.assertEqual(sum(m.wastage_sheets for m in members), 200)
+        self.assertTrue(all(m.purchase_material_origin == 'local' for m in members))
+
+    def test_approve_hands_off_to_designer(self):
+        from printing_plates.models import PlateRequest
+        group, jobs = self._accepted_group()
+        self._approve(group)
+        group.refresh_from_db()
+        # Approval production-approves members AND auto-creates the combined plate
+        # into the designer's queue; the group is handed to design.
+        self.assertEqual(group.status, 'artwork_requested')
         for item in group.items.select_related('planning_job__job_card'):
             self.assertEqual(item.planning_job.job_card.workflow_status, 'production_approved')
+        plate = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
+            status=PlateRequest.STATUS_ARCHIVED
+        ).first()
+        self.assertIsNotNone(plate)
+        self.assertEqual(plate.awc_no, group.artwork_code)
+
+    def test_no_combined_plate_before_approval(self):
+        from printing_plates.models import PlateRequest
+        group, jobs = self._accepted_group()
+        self.assertFalse(
+            PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
+                status=PlateRequest.STATUS_ARCHIVED
+            ).exists()
+        )
 
     def test_plate_receipt_releases_all_after_approval(self):
         from printing_plates.models import PlateRequest
         group, jobs = self._accepted_group()
-        self.client.post(reverse('planning:merge_approve_layout', args=[group.id]), follow=True)
-        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
+        self._approve(group)  # auto-creates the plate
         plate = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
             status=PlateRequest.STATUS_ARCHIVED
         ).first()
@@ -853,24 +889,17 @@ class MergeLayoutApprovalTests(TestCase):
             item.planning_job.job_card.refresh_from_db()
             self.assertEqual(item.planning_job.job_card.workflow_status, 'released')
 
-    def test_raise_plate_blocked_until_layout_approved(self):
+    def test_group_advances_to_artwork_ready_on_send(self):
         from printing_plates.models import PlateRequest
         group, jobs = self._accepted_group()
-        # Not approved yet -> raise plate refused.
-        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
-        self.assertFalse(
-            PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
-                status=PlateRequest.STATUS_ARCHIVED
-            ).exists()
-        )
-        # Approve, then raise plate works.
-        self.client.post(reverse('planning:merge_approve_layout', args=[group.id]), follow=True)
-        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
-        self.assertTrue(
-            PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
-                status=PlateRequest.STATUS_ARCHIVED
-            ).exists()
-        )
+        self._approve(group)
+        plate = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
+            status=PlateRequest.STATUS_ARCHIVED
+        ).first()
+        plate.status = PlateRequest.STATUS_SENT
+        plate.save()
+        group.refresh_from_db()
+        self.assertEqual(group.status, 'artwork_ready')
 
     def test_merge_context_carries_combined_run(self):
         from planning.services import build_job_card_merge_context
@@ -895,8 +924,7 @@ class MergeLayoutApprovalTests(TestCase):
         from core.models import Production
         from printing_plates.models import PlateRequest
         group, jobs = self._accepted_group()
-        self.client.post(reverse('planning:merge_approve_layout', args=[group.id]), follow=True)
-        self.client.post(reverse('planning:merge_raise_plate', args=[group.id]), follow=True)
+        self._approve(group)  # auto-creates the combined plate on the lead
         plate = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
             status=PlateRequest.STATUS_ARCHIVED
         ).first()
