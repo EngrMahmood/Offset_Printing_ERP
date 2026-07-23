@@ -922,26 +922,6 @@ class PlanningDispatchRun(models.Model):
         ordering = ['dispatch_index']
 
 
-class JobCardLayout(models.Model):
-    name = models.CharField(max_length=120, default='Job Card Layout')
-    layout = models.JSONField(blank=True, default=list)
-    is_active = models.BooleanField(default=False)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ['-is_active', '-updated_at']
-        verbose_name = 'Job Card Layout'
-        verbose_name_plural = 'Job Card Layouts'
-
-    def __str__(self):
-        return self.name
-
-    @classmethod
-    def get_active_layout(cls):
-        return cls.objects.filter(is_active=True).order_by('-updated_at').first()
-
-
 class PoDocument(models.Model):
     STATUS_CHOICES = [
         ('pending', 'Pending'),

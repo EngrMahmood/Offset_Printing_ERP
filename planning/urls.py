@@ -1,4 +1,5 @@
 from django.urls import path
+from django.views.generic import RedirectView
 
 from . import views
 
@@ -18,8 +19,10 @@ urlpatterns = [
     path('jobs/archived/', views.planning_jobs_archived, name='jobs_archived'),
     path('sku/', views.planning_sku_queue, name='sku_queue'),
     path('sku/recipes/', views.planning_sku_recipes_list, name='sku_recipes_list'),
-    path('reports/', views.planning_report, name='reports'),
-    path('job-cards/', views.planning_job_card_layout_builder, name='job_cards'),
+    # Job Card Preparation (layout builder) was removed as dead/unused code; this
+    # name stays wired to the main queue so legacy links (core.views.job_card_entry,
+    # job_card_records, and the Jobs Summary fallback link) keep working.
+    path('job-cards/', RedirectView.as_view(pattern_name='planning:jobs', permanent=False), name='job_cards'),
     path('merge/', views.planning_merge_board, name='merge_board'),
     path('merge/accept/', views.planning_merge_accept, name='merge_accept'),
     path('merge/<int:group_id>/', views.planning_merge_detail, name='merge_detail'),
@@ -30,7 +33,6 @@ urlpatterns = [
     path('merge/<int:group_id>/cancel/', views.planning_merge_cancel, name='merge_cancel'),
     path('scan/', views.planning_scan, name='scan'),
     path('scan/open/<str:jc_number>/', views.planning_scan_open, name='scan_open'),
-    path('report/', views.planning_report, name='report'),
     path('import-sheet/', views.import_planning_sheet, name='import_sheet'),
     path('job/<int:job_id>/', views.planning_job_detail, name='job_detail'),
     path('job/<int:job_id>/plate-request/cancel/', views.planning_job_plate_request_cancel, name='job_plate_request_cancel'),

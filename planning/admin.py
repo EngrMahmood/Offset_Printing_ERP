@@ -1,6 +1,6 @@
 ﻿from django.contrib import admin
 
-from .models import JobCardLayout, PlanningDispatchRun, PlanningJob, PlanningPrintRun, PoDocument, SkuRecipe
+from .models import PlanningDispatchRun, PlanningJob, PlanningPrintRun, PoDocument, SkuRecipe
 
 
 class PlanningPrintRunInline(admin.TabularInline):
@@ -28,14 +28,6 @@ class PlanningJobAdmin(admin.ModelAdmin):
     search_fields = ('jc_number', 'po_number', 'sku', 'job_name')
     list_filter = ('status', 'plan_month', 'department', 'machine_name')
     inlines = [PlanningPrintRunInline, PlanningDispatchRunInline]
-
-
-@admin.register(JobCardLayout)
-class JobCardLayoutAdmin(admin.ModelAdmin):
-    list_display = ('name', 'is_active', 'updated_at')
-    list_editable = ('is_active',)
-    search_fields = ('name',)
-    ordering = ('-is_active', '-updated_at')
 
 
 @admin.register(PoDocument)

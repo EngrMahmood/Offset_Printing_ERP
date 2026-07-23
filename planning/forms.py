@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from django import forms
 
-from .models import JobCardLayout, PLANNING_QC_GATE_STATUSES, PlanningJob, PURCHASE_MATERIAL_ORIGIN_CHOICES, SkuRecipe
+from .models import PLANNING_QC_GATE_STATUSES, PlanningJob, PURCHASE_MATERIAL_ORIGIN_CHOICES, SkuRecipe
 
 
 def _normalize_color_spec_value(raw_value):
@@ -427,12 +427,3 @@ class SkuRecipeForm(forms.ModelForm):
         if commit:
             recipe.save()
         return recipe
-
-
-class JobCardLayoutForm(forms.ModelForm):
-    class Meta:
-        model = JobCardLayout
-        fields = ['name', 'layout', 'is_active']
-        widgets = {
-            'layout': forms.HiddenInput(),
-        }

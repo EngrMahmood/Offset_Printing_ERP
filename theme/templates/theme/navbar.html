@@ -185,16 +185,6 @@
            class="erp-subnav-link {% if url == 'approval_queue' %}is-active{% endif %}">
             Job Card Workflow
         </a>
-        {% if nav.role == 'admin' or nav.role == 'manager' %}
-        <a href="{% url 'planning:reports' %}"
-           class="erp-subnav-link {% if url == 'reports' or url == 'report' %}is-active{% endif %}">
-            Reports
-        </a>
-        {% endif %}
-        <a href="{% url 'planning:job_cards' %}"
-           class="erp-subnav-link {% if url == 'job_cards' or url == 'job_card_layout_builder' %}is-active{% endif %}">
-            Job Card Preparation
-        </a>
     </div>
 
     {% include 'theme/planning_context_nav.html' %}

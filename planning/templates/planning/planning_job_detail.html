@@ -18,7 +18,6 @@
 
 {% block header_actions %}
     <a href="{% url 'planning:home' %}" class="erp-btn erp-btn-secondary">Back</a>
-    <a href="{% url 'planning:report' %}" class="erp-btn erp-btn-secondary">Report</a>
     {% if can_edit_job and user_can_plan %}
     <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-primary">Finalize Job</a>
     {% endif %}

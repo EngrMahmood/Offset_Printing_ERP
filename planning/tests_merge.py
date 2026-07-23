@@ -362,13 +362,6 @@ class JobCardMergeBannerTests(TestCase):
         # One plain Print button, same as a normal card.
         self.assertEqual(html.count('window.print()'), 1)
 
-    def test_layout_builder_registers_merge_fields(self):
-        from planning.views import _job_card_layout_field_labels
-        labels = _job_card_layout_field_labels()
-        for key in ['merge_code', 'merge_artwork_code', 'merge_role',
-                    'merge_allocated_ups', 'merge_run_sheets']:
-            self.assertIn(key, labels)
-
 
 class MergePlateUiTests(TestCase):
     def setUp(self):

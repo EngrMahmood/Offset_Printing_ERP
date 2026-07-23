@@ -141,14 +141,6 @@
                 <p class="erp-muted">No actions from planning screen</p>
                 <div class="erp-actions"><span class="erp-btn erp-btn-secondary" style="pointer-events:none; opacity:0.8;">Handled in QC</span></div>
             </div>
-            {% if can_view_reports %}
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">Planning Report</h3></div>
-                <p>Summary visibility by machine, department, and status for management tracking.</p>
-                <p class="erp-muted">Report Access</p>
-                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'planning:report' %}">Open</a></div>
-            </div>
-            {% endif %}
         </div>
     </div>
 
@@ -161,14 +153,6 @@
                 <p class="erp-muted">Production Support</p>
                 <div class="erp-actions"><a class="erp-btn erp-btn-primary" href="{% url 'planning:scan' %}">Open</a></div>
             </div>
-            {% if can_view_reports %}
-            <div class="erp-panel">
-                <div class="erp-panel__header"><h3 class="erp-panel__title">Operational Report</h3></div>
-                <p>Track completion progress and pending queue after card execution starts.</p>
-                <p class="erp-muted">Monitoring</p>
-                <div class="erp-actions"><a class="erp-btn erp-btn-secondary" href="{% url 'planning:report' %}">Open</a></div>
-            </div>
-            {% endif %}
         </div>
     </div>
 

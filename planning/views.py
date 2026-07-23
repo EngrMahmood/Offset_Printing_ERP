@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 from django.core.exceptions import ValidationError
 from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
-from django.db import OperationalError, transaction
+from django.db import transaction
 from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.deletion import ProtectedError
 from django.http import Http404, HttpResponse
@@ -58,7 +58,7 @@ from .merge_engine import (
     MergeConfig, allocate_ups, bucket_signature, build_suggestions, compute_savings,
     merge_blockers, normalise_material, size_key,
 )
-from .forms import JobCardLayoutForm, PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeForm
+from .forms import PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeForm
 from .services import (
     _user_is_admin, _planning_status_filter_values, _parse_date_filter,
     cancel_planning_job, request_job_cancellation, approve_job_cancellation,
@@ -112,7 +112,6 @@ from .models import (
     PLANNING_STAGE_CHOICES,
     PURCHASE_MATERIAL_ORIGIN_CHOICES,
     MERGE_GROUP_OPEN_STATUSES,
-    JobCardLayout,
     MergeGroup,
     MergeGroupItem,
     PlanningDispatchRun,
@@ -247,7 +246,6 @@ PLANNING_STATUSES = PLANNING_STATUS_CHOICES
 PLANNING_STATUS_SET = {value for value, _ in PLANNING_STATUSES}
 PLANNING_ACTIVE_STATUS_SET = {'released', 'in_production', 'completed', 'closed'}
 PLANNING_QUEUE_STATUS_SET = {'draft', 'pending_qc', 'qc_approved'}
-PLANNING_STATUS_LABELS = dict(PLANNING_STATUSES)
 PLANNING_STATUS_FILTER_ALIASES = {
     'draft': {'draft', 'open', 'pending'},
     'pending_qc': {'pending_qc', 'reviewed'},
@@ -288,13 +286,6 @@ def _normalize_purchase_material_origin(raw_value):
     if value in {'import', 'imported'}:
         return 'import'
     return ''
-
-
-def _get_active_job_card_layout():
-    try:
-        return JobCardLayout.get_active_layout()
-    except OperationalError:
-        return None
 
 
 def _effective_planning_status(job):
@@ -353,124 +344,6 @@ def _effective_planning_status_from_values(planning_status, job_card_status):
         return planning_status
 
     return planning_status if status_rank[planning_status] >= status_rank[job_card_status_mapped] else job_card_status_mapped
-
-
-def _job_card_layout_field_labels():
-    return {
-        'po_number': 'PO Number',
-        'pr_reference': 'PR Reference',
-        'order_qty': 'Order Qty',
-        'po_delivery_date': 'PO Delivery Date',
-        'delivery_date': 'Delivery Date',
-        'destination': 'Delivery Location',
-        'department': 'Department',
-        'job_name': 'Job Name',
-        'material_display': 'Material',
-        'color_spec_display': 'Print Color',
-        'number_of_colors': 'Color Count',
-        'application_display': 'Application',
-        'repeat_flag': 'Repeat Flag',
-        'print_sheet_size_display': 'Print Sheet',
-        'purchase_sheet_size_display': 'Purchase Sheet',
-        'purchase_sheet_ups_display': 'Purchase Sheet UPS',
-        'ups_display': 'UPS',
-        'total_sheet_quantity': 'Total Sheets',
-        'purchase_sheet_required_display': 'Purchase Sheet Qty',
-        'actual_sheet_required_display': 'Actual Sheet Req.',
-        'wastage_sheets': 'Wastage Sheets',
-        'machine_name': 'Machine',
-        'plate_set_no': 'Plate Set No.',
-        'awc_no_display': 'AWC No.',
-        'die_cutting_display': 'Die Cutting',
-        'purchase_material_origin': 'Purchase Origin',
-        'stock_qty': 'Stock Qty',
-        'mi_quantity': 'Issued Qty',
-        'mi_balance': 'Balance',
-        'remaining_sheet': 'Remaining Sheet',
-        # Smart layout merge (blank on non-merged jobs).
-        'merge_code': 'Merge Group',
-        'merge_artwork_code': 'Combined Artwork Code',
-        'merge_role': 'Merge Role',
-        'merge_allocated_ups': 'Merged UPS',
-        'merge_run_sheets': 'Merged Run Sheets',
-    }
-
-
-def _format_layout_field_value(value):
-    if value is None:
-        return None
-    if hasattr(value, 'strftime'):
-        try:
-            return value.strftime('%d %b %Y')
-        except Exception:
-            return str(value)
-    return value
-
-
-def _build_job_card_layout_context(job):
-    active_layout = _get_active_job_card_layout()
-    if not active_layout or not active_layout.layout:
-        return {'layout_enabled': False}
-
-    field_labels = _job_card_layout_field_labels()
-    field_values = {
-        'po_number': _format_layout_field_value(job.po_number),
-        'pr_reference': _format_layout_field_value(job.pr_reference),
-        'order_qty': _format_layout_field_value(job.order_qty),
-        'po_delivery_date': _format_layout_field_value(job.plan_date),
-        'delivery_date': _format_layout_field_value(job.delivery_date),
-        'destination': job.destination,
-        'department': job.department,
-        'job_name': job.job_name,
-        'material_display': job.material_display,
-        'color_spec_display': job.color_spec_display,
-        'number_of_colors': job.number_of_colors,
-        'application_display': job.application_display,
-        'repeat_flag': job.repeat_flag,
-        'print_sheet_size_display': job.print_sheet_size_display,
-        'purchase_sheet_size_display': job.purchase_sheet_size_display,
-        'purchase_sheet_ups_display': job.purchase_sheet_ups_display,
-        'ups_display': job.ups_display,
-        'total_sheet_quantity': job.total_sheet_quantity,
-        'purchase_sheet_required_display': job.purchase_sheet_required_display,
-        'actual_sheet_required_display': job.actual_sheet_required_display,
-        'wastage_sheets': job.wastage_sheets,
-        'machine_name': job.machine_name,
-        'plate_set_no': job.plate_set_no,
-        'awc_no_display': job.awc_no_display,
-        'die_cutting_display': job.die_cutting_display,
-        'purchase_material_origin': job.purchase_material_origin,
-        'stock_qty': job.stock_qty,
-        'mi_quantity': job.mi_quantity,
-        'mi_balance': job.mi_balance,
-        'remaining_sheet': job.remaining_sheet,
-    }
-    merge = build_job_card_merge_context(job)
-    if merge:
-        field_values.update({
-            'merge_code': merge['code'],
-            'merge_artwork_code': merge['artwork_code'],
-            'merge_role': merge['role_label'],
-            'merge_allocated_ups': merge['allocated_ups'],
-            'merge_run_sheets': merge['run_sheets'],
-        })
-    normalized_sections = []
-    for section in active_layout.layout:
-        normalized_fields = []
-        for field_id in section.get('fields', []):
-            normalized_fields.append({
-                'id': field_id,
-                'label': field_labels.get(field_id) or field_id.replace('_', ' ').title(),
-                'value': field_values.get(field_id, '-') or '-',
-            })
-        normalized_sections.append({
-            'title': section.get('title', ''),
-            'fields': normalized_fields,
-        })
-    return {
-        'layout_enabled': True,
-        'layout_sections': normalized_sections,
-    }
 
 
 def build_planning_readme_text():
@@ -652,87 +525,6 @@ def planning_readme(request):
 
 @login_required
 @permission_required('can_edit_jobcard')
-def planning_job_card_layout_builder(request):
-    active_layout = _get_active_job_card_layout()
-    if request.method == 'POST':
-        layout_data = request.POST.get('layout_data', '[]').strip()
-        name = (request.POST.get('name') or 'Job Card Layout').strip() or 'Job Card Layout'
-        try:
-            layout = json.loads(layout_data)
-        except (ValueError, TypeError, json.JSONDecodeError):
-            messages.error(request, 'Invalid layout JSON. Please save again from the layout editor.')
-            return redirect('planning:job_card_layout_builder')
-
-        try:
-            if active_layout:
-                active_layout.name = name
-                active_layout.layout = layout
-                active_layout.is_active = True
-                active_layout.save(update_fields=['name', 'layout', 'is_active', 'updated_at'])
-            else:
-                JobCardLayout.objects.create(name=name, layout=layout, is_active=True)
-            messages.success(request, 'Job card layout saved successfully.')
-        except OperationalError:
-            messages.error(request, 'Layout builder is not yet initialized. Run migrations before saving the layout.')
-        return redirect('planning:job_card_layout_builder')
-
-    available_fields = _job_card_layout_field_labels()
-    default_sections = [
-        {
-            'title': 'Software Data',
-            'fields': [
-                'po_number', 'pr_reference', 'order_qty', 'po_received_date',
-                'delivery_date', 'destination', 'department',
-                'job_name', 'material_display', 'color_spec_display',
-                'number_of_colors', 'application_display', 'repeat_flag',
-                'print_sheet_size_display', 'purchase_sheet_size_display',
-                'purchase_sheet_ups_display', 'ups_display', 'total_sheet_quantity',
-                'purchase_sheet_required_display', 'actual_sheet_required_display',
-                'wastage_sheets', 'machine_name', 'plate_set_no', 'awc_no_display',
-                'die_cutting_display', 'purchase_material_origin', 'stock_qty',
-            ],
-        },
-        {
-            'title': 'Operator Production Entry',
-            'fields': [
-                'mi_quantity', 'mi_balance', 'remaining_sheet',
-            ],
-        },
-    ]
-    layout_sections = active_layout.layout if active_layout else default_sections
-    # Normalize saved layout fields into objects with id and label for template rendering.
-    normalized_sections = []
-    for section in layout_sections:
-        normalized_fields = []
-        for field_item in section.get('fields', []):
-            if isinstance(field_item, dict):
-                field_id = field_item.get('id')
-            else:
-                field_id = field_item
-            if not field_id:
-                continue
-            normalized_fields.append({
-                'id': field_id,
-                'label': available_fields.get(field_id, field_id),
-            })
-        normalized_sections.append({
-            'title': section.get('title', 'Section'),
-            'fields': normalized_fields,
-        })
-    layout_sections = normalized_sections
-    return render(
-        request,
-        'planning/job_card_layout_builder.html',
-        {
-            'active_layout': active_layout,
-            'available_fields': available_fields,
-            'layout_sections': layout_sections,
-        },
-    )
-
-
-@login_required
-@permission_required('can_edit_jobcard')
 def download_planning_readme(request):
     content = build_planning_readme_text()
     response = HttpResponse(content, content_type='text/plain; charset=utf-8')
@@ -745,19 +537,16 @@ def planning_welcome(request):
     profile = getattr(request.user, 'profile', None)
     user_role = 'unassigned'
     can_edit_jobcard = False
-    can_view_reports = False
     can_manage_masters = False
 
     if profile is not None:
         user_role = (profile.role or 'unassigned').strip().lower()
         can_edit_jobcard = bool(profile.can_edit_jobcard())
-        can_view_reports = bool(profile.can_view_reports())
         can_manage_masters = bool(profile.can_manage_masters())
 
     context = {
         'user_role': user_role,
         'can_edit_jobcard': can_edit_jobcard,
-        'can_view_reports': can_view_reports,
         'can_manage_masters': can_manage_masters,
     }
     return render(request, 'planning/planning_welcome.html', context)
@@ -2861,65 +2650,6 @@ def approval_queue(request):
     }
     context['can_admin_actions'] = _user_is_admin(request.user)
     return render(request, 'planning/approval_queue.html', context)
-
-
-@login_required
-@permission_required('can_edit_jobcard')
-def planning_report(request):
-    queryset = PlanningJob.objects.filter(is_active=True)
-
-    from_date = _parse_date_filter(request.GET.get('from_date'))
-    to_date = _parse_date_filter(request.GET.get('to_date'))
-    if from_date:
-        queryset = queryset.filter(plan_date__gte=from_date)
-    if to_date:
-        queryset = queryset.filter(plan_date__lte=to_date)
-
-    totals = queryset.aggregate(
-        total_jobs=Count('id'),
-        total_order_qty=Sum('order_qty'),
-        released_jobs=Count('id', filter=Q(status__iexact='released')),
-        completed_jobs=Count('id', filter=Q(status__in=['completed', 'closed'])),
-    )
-
-    by_status_map = {}
-    for row in queryset.values('status').annotate(total=Count('id'), order_qty=Sum('order_qty')).order_by('status'):
-        normalized_status = _normalize_status(row['status'])
-        merged_row = by_status_map.setdefault(
-            normalized_status,
-            {
-                'status': normalized_status,
-                'status_label': PLANNING_STATUS_LABELS.get(normalized_status, normalized_status.replace('_', ' ').title()),
-                'total': 0,
-                'order_qty': 0,
-            },
-        )
-        merged_row['total'] += row['total'] or 0
-        merged_row['order_qty'] += row['order_qty'] or 0
-    status_order = {value: index for index, (value, _) in enumerate(PLANNING_STATUS_CHOICES)}
-    by_status = sorted(by_status_map.values(), key=lambda item: status_order.get(item['status'], len(status_order)))
-    by_department = (
-        queryset.values('department')
-        .annotate(total=Count('id'), order_qty=Sum('order_qty'))
-        .order_by('-total', 'department')[:20]
-    )
-    by_machine = (
-        queryset.values('machine_name')
-        .annotate(total=Count('id'), order_qty=Sum('order_qty'))
-        .order_by('-total', 'machine_name')[:20]
-    )
-
-    context = {
-        'totals': totals,
-        'by_status': by_status,
-        'by_department': by_department,
-        'by_machine': by_machine,
-        'filters': {
-            'from_date': request.GET.get('from_date', ''),
-            'to_date': request.GET.get('to_date', ''),
-        },
-    }
-    return render(request, 'planning/planning_report.html', context)
 
 
 @login_required
