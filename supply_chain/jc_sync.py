@@ -19,6 +19,22 @@ def _month_label(value):
     return value.strftime('%B %Y') if value else None
 
 
+def _is_released_to_production(job_card):
+    """True only once the planner has released the JC to production.
+
+    Statuses before release (planning/QC/PM approval, production_approved) must
+    NOT appear in issuance — material is issued only when the job actually goes
+    to production. 'released' and every downstream execution status qualify.
+    """
+    from core.models import (
+        JOB_CARD_EXECUTION_STATUSES,
+        JOB_CARD_PRODUCTION_START_STATUSES,
+    )
+
+    released_statuses = JOB_CARD_PRODUCTION_START_STATUSES | JOB_CARD_EXECUTION_STATUSES
+    return job_card.workflow_status in released_statuses
+
+
 def _planned_sheet_qty(job_card):
     """Planned sheets drawn for the job (required + wastage). Includes wastage."""
     try:
@@ -47,7 +63,8 @@ def sync_issuance_for_job_card_single(job_card):
     raw_sku = get_raw_material_sku_for_job_card(job_card)
     planned_qty = _planned_sheet_qty(job_card)
 
-    if not raw_sku or planned_qty <= 0:
+    # Only issue once the planner has released the JC to production.
+    if not raw_sku or planned_qty <= 0 or not _is_released_to_production(job_card):
         _clear()
         return None
 

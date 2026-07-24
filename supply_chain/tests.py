@@ -249,6 +249,33 @@ class JobCardIssuanceSyncTests(TestCase):
             self.job_card.stock_transactions.filter(source='JOB_CARD').count(), 1
         )
 
+    def test_unreleased_job_card_has_no_issuance(self):
+        # A JC that the planner has not yet released to production (e.g. only
+        # production-approved) must not appear in issuance.
+        self.job_card.status = 'production_approved'
+        self.job_card.save(update_fields=['status'])
+
+        txn = sync_issuance_for_job_card(self.job_card)
+        self.assertIsNone(txn)
+        self.assertEqual(
+            self.job_card.stock_transactions.filter(source='JOB_CARD').count(), 0
+        )
+
+        # Once released, the issuance row appears.
+        self.job_card.status = 'released'
+        self.job_card.save(update_fields=['status'])
+        txn = sync_issuance_for_job_card(self.job_card)
+        self.assertIsNotNone(txn)
+        self.assertEqual(txn.sheet_qty_pcs, 500)
+
+        # Reverting the release removes the issuance row again.
+        self.job_card.status = 'production_approved'
+        self.job_card.save(update_fields=['status'])
+        self.assertIsNone(sync_issuance_for_job_card(self.job_card))
+        self.assertEqual(
+            self.job_card.stock_transactions.filter(source='JOB_CARD').count(), 0
+        )
+
     def test_sync_job_card_bulk(self):
         Production.objects.create(
             job_card=self.job_card,
