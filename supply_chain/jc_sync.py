@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 from django.db import transaction
 from django.utils import timezone
 
@@ -35,12 +37,44 @@ def _is_released_to_production(job_card):
 
 
 def _planned_sheet_qty(job_card):
-    """Planned sheets drawn for the job (required + wastage). Includes wastage."""
+    """Planned PRESS sheets drawn for the job (required + wastage)."""
     try:
         planned = int(job_card.total_sheets_planned or 0)
     except (TypeError, ValueError):
         planned = 0
     return planned
+
+
+def _purchase_sheet_ups(job_card):
+    """Press sheets obtained from one purchase sheet (for unit conversion)."""
+    ups = job_card.purchase_sheet_ups
+    if not ups:
+        planning_job = getattr(job_card, 'planning_job', None)
+        if planning_job is not None:
+            ups = getattr(planning_job, 'purchase_sheet_ups_display', None)
+    try:
+        ups = int(ups or 0)
+    except (TypeError, ValueError):
+        ups = 0
+    return ups if ups > 0 else None
+
+
+def _planned_purchase_sheet_qty(job_card):
+    """Planned issuance quantity expressed in PURCHASE sheets.
+
+    Supply chain works entirely in purchase sheets (SKU purchase size,
+    opening/receiving/on-hand, demand gap). Job cards plan in press sheets, so
+    convert: purchase_sheets = ceil(press_sheets / purchase_sheet_ups). When the
+    purchase-sheet UPS is unknown we cannot convert, so fall back to the raw
+    planned quantity.
+    """
+    planned_press = _planned_sheet_qty(job_card)
+    if planned_press <= 0:
+        return 0
+    ups = _purchase_sheet_ups(job_card)
+    if ups:
+        return math.ceil(planned_press / ups)
+    return planned_press
 
 
 @transaction.atomic
@@ -65,7 +99,7 @@ def sync_issuance_for_job_card_single(job_card):
         ).delete()
 
     raw_sku = get_raw_material_sku_for_job_card(job_card)
-    planned_qty = _planned_sheet_qty(job_card)
+    planned_qty = _planned_purchase_sheet_qty(job_card)
 
     # Only issue for JCs released to production — the same set of jobs the
     # production module shows (released / in_production).

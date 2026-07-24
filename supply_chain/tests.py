@@ -276,6 +276,16 @@ class JobCardIssuanceSyncTests(TestCase):
             self.job_card.stock_transactions.filter(source='JOB_CARD').count(), 0
         )
 
+    def test_issuance_quantity_converted_to_purchase_sheets(self):
+        # Job card plans 500 press sheets; 2 press sheets come from one purchase
+        # sheet, so issuance (in purchase sheets) must be ceil(500 / 2) = 250.
+        self.job_card.purchase_sheet_ups = 2
+        self.job_card.save(update_fields=['purchase_sheet_ups'])
+
+        txn = sync_issuance_for_job_card(self.job_card)
+        self.assertIsNotNone(txn)
+        self.assertEqual(txn.sheet_qty_pcs, 250)
+
     def test_sync_job_card_bulk(self):
         Production.objects.create(
             job_card=self.job_card,
