@@ -35,6 +35,7 @@ from .models import (
     Machine,
     MachineWorkSchedule,
     Material,
+    Notification,
     Operator,
     PrintColor,
     ProductType,
@@ -1098,6 +1099,13 @@ def review_override_request(request, override_id):
             override.reviewed_by = request.user
             override.review_note = note
             override.reviewed_at = timezone.now()
+            entry_view_name = AUDIT_CONFIG.get(override.entity_type, {}).get(
+                'list_view', 'production_records'
+            ).replace('_records', '_entry')
+            try:
+                edit_link = f"{reverse(entry_view_name)}?edit={override.record_id}"
+            except Exception:
+                edit_link = reverse('my_override_requests')
             if action == 'approve':
                 override.status = 'approved'
                 override.expires_at = timezone.now() + timedelta(hours=OVERRIDE_EDIT_WINDOW_HOURS)
@@ -1106,9 +1114,36 @@ def review_override_request(request, override_id):
                     f'Override approved. {override.requested_by.get_full_name() or override.requested_by.username}'
                     f' can now edit the record for {OVERRIDE_EDIT_WINDOW_HOURS} hour(s).'
                 )
+                Notification.objects.create(
+                    user=override.requested_by,
+                    event_type='override.approved',
+                    title='Edit override approved',
+                    message=(
+                        f'Your request to edit {override.record_label} was approved. '
+                        f'You can edit it for the next {OVERRIDE_EDIT_WINDOW_HOURS} hour(s).'
+                        + (f' Note: {note}' if note else '')
+                    ),
+                    link=edit_link,
+                    entity_type=override.entity_type,
+                    entity_id=override.record_id,
+                    created_by=request.user,
+                )
             else:
                 override.status = 'rejected'
                 messages.success(request, 'Override request rejected.')
+                Notification.objects.create(
+                    user=override.requested_by,
+                    event_type='override.rejected',
+                    title='Edit override rejected',
+                    message=(
+                        f'Your request to edit {override.record_label} was rejected.'
+                        + (f' Reason: {note}' if note else '')
+                    ),
+                    link=reverse('my_override_requests'),
+                    entity_type=override.entity_type,
+                    entity_id=override.record_id,
+                    created_by=request.user,
+                )
             override.save()
             return redirect('override_requests')
 
@@ -1119,6 +1154,47 @@ def review_override_request(request, override_id):
     return render(request, 'review_override_request.html', context)
 
 
+@login_required
+def my_override_requests(request):
+    """Requester-facing list of the user's edit-override requests and status.
+
+    Shows what needs their action (approved & ready to edit), what is still
+    waiting on a manager, and a short history of resolved requests. Approved
+    items drop out of the actionable list once the edit is done (consumed_at)
+    or the window expires.
+    """
+    now = timezone.now()
+    qs = EditOverrideRequest.objects.filter(requested_by=request.user).order_by('-created_at')
+
+    def _edit_link(ov):
+        entry_view = AUDIT_CONFIG.get(ov.entity_type, {}).get(
+            'list_view', 'production_records'
+        ).replace('_records', '_entry')
+        try:
+            return f"{reverse(entry_view)}?edit={ov.record_id}"
+        except Exception:
+            return ''
+
+    actionable, pending, history = [], [], []
+    for ov in qs:
+        if ov.status == 'pending':
+            pending.append(ov)
+        elif ov.is_valid_for_edit:
+            ov.edit_link = _edit_link(ov)
+            actionable.append(ov)
+        else:
+            # rejected, consumed, or expired
+            if ov.status == 'approved' and ov.consumed_at is None and ov.expires_at and ov.expires_at <= now:
+                ov.is_expired = True
+            history.append(ov)
+
+    context = {
+        'actionable': actionable,
+        'pending': pending,
+        'history': history[:25],
+        'override_hours': OVERRIDE_EDIT_WINDOW_HOURS,
+    }
+    return render(request, 'my_override_requests.html', context)
 
 
 def build_erp_readme_text():

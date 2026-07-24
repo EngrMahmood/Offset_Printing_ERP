@@ -256,14 +256,31 @@ document.addEventListener('DOMContentLoaded', function(){
         single.removeAttribute('name');
         const suggested = info.suggested_pass || 1;
         const currentValue = window.EDIT_RECORD_PASS || suggested;
+        // In edit mode we never disable passes (the operator may be correcting an
+        // existing entry on any pass). For new entries, a non-final pass whose
+        // per-pass budget is used up is disabled so wrong data can't be logged.
+        const isEditMode = window.CURRENT_RECORD_ID !== null && window.CURRENT_RECORD_ID !== undefined;
+        const passRows = Array.isArray(info.pass_rows) ? info.pass_rows : [];
+        const usedByPass = {};
+        passRows.forEach(r => { usedByPass[parseNumber(r.pass_number)] = { used: parseNumber(r.used), budget: parseNumber(r.budget) }; });
         select.innerHTML = '';
         for (let passNo = 1; passNo <= passCount; passNo += 1) {
             const option = document.createElement('option');
             option.value = String(passNo);
-            option.textContent = passNo >= passCount ? `Pass ${passNo} (final)` : `Pass ${passNo}`;
+            const isFinal = passNo >= passCount;
+            const row = usedByPass[passNo];
+            const complete = !isFinal && row && row.budget > 0 && row.used >= row.budget;
+            option.textContent = isFinal
+                ? `Pass ${passNo} (final)`
+                : (complete ? `Pass ${passNo} — complete` : `Pass ${passNo}`);
+            if (complete && !isEditMode) {
+                option.disabled = true;
+            }
             select.appendChild(option);
         }
-        select.value = String(currentValue);
+        // Don't land on a disabled option — fall back to the suggested pass.
+        const target = select.querySelector(`option[value="${currentValue}"]`);
+        select.value = (target && !target.disabled) ? String(currentValue) : String(suggested);
         window.EDIT_RECORD_PASS = null;
     }
 
@@ -658,6 +675,17 @@ document.addEventListener('DOMContentLoaded', function(){
         if(!finalPass && outputVal > 0){
             actionStatus.textContent = 'Good sheets are only allowed on the final print pass.';
             return;
+        }
+        // Block logging onto a non-final pass that is already complete (new entries only).
+        const isEditMode = window.CURRENT_RECORD_ID !== null && window.CURRENT_RECORD_ID !== undefined;
+        if(!isEditMode && !finalPass){
+            const selPass = getSelectedPassNumber();
+            const info = window.JOB_INFO_MAP?.[jobSelect.value];
+            const row = (info?.pass_rows || []).find(r => parseNumber(r.pass_number) === selPass);
+            if(row && parseNumber(row.budget) > 0 && parseNumber(row.used) >= parseNumber(row.budget)){
+                actionStatus.textContent = `Pass ${selPass} is already complete — select the next pass.`;
+                return;
+            }
         }
         if(finalPass && outputVal <= 0){
             actionStatus.textContent = 'Enter good output sheets for the final print pass.';

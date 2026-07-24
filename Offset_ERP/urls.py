@@ -48,6 +48,7 @@ urlpatterns = [
     path('manage-user-roles/', views.manage_user_roles, name='manage_user_roles'),
     path('request-edit-override/<str:entity_type>/<int:record_id>/', views.request_edit_override, name='request_edit_override'),
     path('override-requests/', views.override_requests, name='override_requests'),
+    path('my-override-requests/', views.my_override_requests, name='my_override_requests'),
     path('review-override/<int:override_id>/', views.review_override_request, name='review_override_request'),
     path('shift-config/', views.shift_config, name='shift_config'),
     path('master-data/', views.master_data, name='master_data'),

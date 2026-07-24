@@ -1666,6 +1666,9 @@ class EditOverrideRequest(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
     expires_at = models.DateTimeField(null=True, blank=True)
+    # Set once the requester has actually used the approval to edit the record,
+    # so it drops out of the "action needed" lists.
+    consumed_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         ordering = ['-created_at']
@@ -1685,6 +1688,7 @@ class EditOverrideRequest(models.Model):
         from django.utils import timezone as _tz
         return (
             self.status == 'approved'
+            and self.consumed_at is None
             and self.expires_at is not None
             and self.expires_at > _tz.now()
         )

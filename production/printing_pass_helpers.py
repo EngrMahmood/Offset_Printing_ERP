@@ -299,15 +299,27 @@ def validate_print_pass_number(job_card, pass_number, exclude_production_id=None
     if pass_number < 1 or pass_number > total_passes:
         raise ValueError(f'Print pass must be between 1 and {total_passes} for this job.')
 
-    if pass_number > 1:
-        usage = get_pass_impression_usage(job_card, exclude_production_id)
-        prior_total = sum(usage.get(p, 0) for p in range(1, pass_number))
-        if prior_total <= 0:
-            raise ValueError(
-                f'Log Pass {pass_number - 1} impressions before starting Pass {pass_number}.'
-            )
-
     is_final = pass_number >= total_passes
+
+    if pass_number > 1 or not is_final:
+        usage = get_pass_impression_usage(job_card, exclude_production_id)
+        if pass_number > 1:
+            prior_total = sum(usage.get(p, 0) for p in range(1, pass_number))
+            if prior_total <= 0:
+                raise ValueError(
+                    f'Log Pass {pass_number - 1} impressions before starting Pass {pass_number}.'
+                )
+        # Block logging a NEW entry onto a non-final pass that is already
+        # complete (its per-pass budget is used up) — the operator should move
+        # to the next pass. Edits (exclude_production_id set) are never blocked
+        # here, so existing/legacy rows stay correctable.
+        if not is_final and exclude_production_id is None:
+            budget = get_per_pass_impression_budget(job_card)
+            if budget > 0 and usage.get(pass_number, 0) >= budget:
+                raise ValueError(
+                    f'Pass {pass_number} is already complete for this job — '
+                    f'select the next pass.'
+                )
     return {
         'total_passes': total_passes,
         'is_final_pass': is_final,

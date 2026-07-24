@@ -448,6 +448,16 @@ def printing_production_entry(request):
                     messages.success(request, f'Production record updated for Job Card {job_card.job_card_no}')
                 else:
                     messages.success(request, f'No changes detected for Job Card {job_card.job_card_no}')
+                # Consume any approval this edit was made under, so it drops off
+                # the requester's "My Override Requests" list.
+                EditOverrideRequest.objects.filter(
+                    entity_type='production',
+                    record_id=edit_record.pk,
+                    requested_by=request.user,
+                    status='approved',
+                    consumed_at__isnull=True,
+                    expires_at__gt=timezone.now(),
+                ).update(consumed_at=timezone.now())
                 return redirect('production_records')
 
             with transaction.atomic():
@@ -720,11 +730,15 @@ def production_records(request):
         user_overrides = EditOverrideRequest.objects.filter(
             entity_type='production',
             requested_by=request.user,
-        ).values('record_id', 'status', 'expires_at')
+        ).values('record_id', 'status', 'expires_at', 'consumed_at')
         for ov in user_overrides:
             if ov['status'] == 'pending':
                 pending_ids.add(ov['record_id'])
-            elif ov['status'] == 'approved' and ov['expires_at'] and ov['expires_at'] > timezone.now():
+            elif (
+                ov['status'] == 'approved'
+                and ov['consumed_at'] is None
+                and ov['expires_at'] and ov['expires_at'] > timezone.now()
+            ):
                 approved_ids.add(ov['record_id'])
 
     context = {
@@ -764,18 +778,31 @@ def production_records(request):
     return render(request, 'production/production_records.html', context)
 
 
+def user_can_set_pass_override(user):
+    """Supervisory roles allowed to set a per-job pass-count override.
+
+    Broader than the edit-lock override reviewers — includes the production
+    supervisor role — but mirrors the `nav.can_set_pass_override` gate.
+    """
+    if getattr(user, 'is_staff', False):
+        return True
+    profile = getattr(user, 'profile', None)
+    role = (getattr(profile, 'normalized_role', '') or '')
+    return role in {'admin', 'manager', 'production_manager', 'production'}
+
+
 @login_required
 def set_pass_override(request):
     """Authorised supervisor override of a job's print pass count.
 
     Used when a machine runs at reduced colour capacity (a unit under
     maintenance) so a job planned for e.g. 2 passes must physically run in 4.
-    Staff-only, requires a reason, and is audit-logged. Setting the override
-    also lifts the impression ceiling proportionally (see JobCard).
+    Requires a supervisory role, a reason, and is audit-logged. Setting the
+    override also lifts the impression ceiling proportionally (see JobCard).
     """
     if request.method != 'POST':
         return redirect('printing_production_entry')
-    if not user_can_bypass_edit_lock(request.user):
+    if not user_can_set_pass_override(request.user):
         messages.error(request, '❌ You do not have permission to override the pass count.')
         return redirect('printing_production_entry')
 

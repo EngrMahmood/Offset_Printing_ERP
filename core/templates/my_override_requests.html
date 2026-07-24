@@ -1,0 +1,122 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}My Override Requests - Offset ERP{% endblock %}
+{% block extra_head %}
+    <style>
+        .container { max-width: 1100px; margin: 0 auto; }
+        .card { background: #fff; border-radius: 10px; padding: 20px; box-shadow: 0 2px 10px rgba(0,0,0,0.08); margin-bottom: 18px; }
+        .card h2 { margin: 0 0 4px; font-size: 1.05rem; }
+        .card .sub { color: #697586; font-size: 0.85rem; margin: 0 0 12px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { padding: 9px 10px; border-bottom: 1px solid #e7ebef; text-align: left; font-size: 0.88rem; }
+        th { background: #f7f9fb; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: #697586; }
+        .muted { color: #697586; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; font-weight: 600; }
+        .badge-pending { background: #fef3c7; color: #92400e; }
+        .badge-approved { background: #dcfce7; color: #166534; }
+        .badge-rejected { background: #fee2e2; color: #7f1d1d; }
+        .badge-expired { background: #e5e7eb; color: #374151; }
+        .badge-done { background: #e0e7ff; color: #3730a3; }
+        .edit-btn { display: inline-block; padding: 5px 14px; border-radius: 6px; background: #16a34a; color: #fff; text-decoration: none; font-weight: 600; font-size: 0.82rem; }
+        .edit-btn:hover { background: #15803d; }
+        .empty { padding: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #166534; font-size: 0.86rem; }
+        .table-wrap { overflow-x: auto; }
+    </style>
+{% endblock %}
+{% block header_title %}My Override Requests{% endblock %}
+{% block header_subtitle %}Track your edit-override requests. When a manager approves one, it appears here ready to edit.{% endblock %}
+{% block content %}
+<div class="container">
+
+    <div class="card">
+        <h2>Ready to edit
+            {% if actionable %}<span class="badge badge-approved">{{ actionable|length }}</span>{% endif %}
+        </h2>
+        <p class="sub">Approved by a manager — open the record, make your correction, and save. It leaves this list once done or after the {{ override_hours }}-hour window ends.</p>
+        {% if actionable %}
+        <div class="table-wrap">
+        <table>
+            <thead>
+                <tr><th>Record</th><th>Type</th><th>Reason</th><th>Approved By</th><th>Expires</th><th>Note</th><th></th></tr>
+            </thead>
+            <tbody>
+                {% for ov in actionable %}
+                <tr>
+                    <td>{{ ov.record_label }}</td>
+                    <td>{{ ov.get_entity_type_display }}</td>
+                    <td>{{ ov.reason|truncatechars:60 }}</td>
+                    <td>{{ ov.reviewed_by.get_full_name|default:ov.reviewed_by.username|default:'-' }}</td>
+                    <td>{{ ov.expires_at|date:"d M H:i" }}</td>
+                    <td class="muted">{{ ov.review_note|default:'—' }}</td>
+                    <td>{% if ov.edit_link %}<a class="edit-btn" href="{{ ov.edit_link }}">Edit now</a>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <div class="empty">Nothing to edit right now.</div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>Waiting for approval
+            {% if pending %}<span class="badge badge-pending">{{ pending|length }}</span>{% endif %}
+        </h2>
+        <p class="sub">Submitted and awaiting a manager's review.</p>
+        {% if pending %}
+        <div class="table-wrap">
+        <table>
+            <thead><tr><th>Record</th><th>Type</th><th>Reason</th><th>Submitted</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for ov in pending %}
+                <tr>
+                    <td>{{ ov.record_label }}</td>
+                    <td>{{ ov.get_entity_type_display }}</td>
+                    <td>{{ ov.reason|truncatechars:60 }}</td>
+                    <td>{{ ov.created_at|date:"d M Y H:i" }}</td>
+                    <td><span class="badge badge-pending">Pending</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <div class="empty">No pending requests.</div>
+        {% endif %}
+    </div>
+
+    <div class="card">
+        <h2>History</h2>
+        <p class="sub">Resolved requests — rejected, already used, or expired.</p>
+        {% if history %}
+        <div class="table-wrap">
+        <table>
+            <thead><tr><th>Record</th><th>Type</th><th>Submitted</th><th>Reviewed By</th><th>Outcome</th><th>Note</th></tr></thead>
+            <tbody>
+                {% for ov in history %}
+                <tr>
+                    <td>{{ ov.record_label }}</td>
+                    <td>{{ ov.get_entity_type_display }}</td>
+                    <td>{{ ov.created_at|date:"d M Y H:i" }}</td>
+                    <td>{{ ov.reviewed_by.get_full_name|default:ov.reviewed_by.username|default:'-' }}</td>
+                    <td>
+                        {% if ov.status == 'rejected' %}<span class="badge badge-rejected">Rejected</span>
+                        {% elif ov.consumed_at %}<span class="badge badge-done">Edited</span>
+                        {% elif ov.is_expired %}<span class="badge badge-expired">Expired</span>
+                        {% else %}<span class="badge">{{ ov.get_status_display }}</span>{% endif %}
+                    </td>
+                    <td class="muted">{{ ov.review_note|default:'—' }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+        {% else %}
+        <div class="empty">No history yet.</div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

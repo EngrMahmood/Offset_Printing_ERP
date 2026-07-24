@@ -48,3 +48,8 @@ backups/
 # Local-only deployment scripts containing secrets (never commit)
 *.local.bat
 scripts/setup_server_task.local.bat
+
+# Local editor / tooling artifacts (not for git)
+.claude/
+NUL
+start server.bat

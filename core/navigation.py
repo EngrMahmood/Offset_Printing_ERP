@@ -53,6 +53,10 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
             return 0
 
     can_review_overrides = is_authenticated and (is_staff or role in {'admin', 'manager', 'production_manager'})
+    # Who may set a per-job pass-count override (supervisory, includes production).
+    can_set_pass_override = is_authenticated and (
+        is_staff or role in {'admin', 'manager', 'production_manager', 'production'}
+    )
 
     def _pending_override_reviews() -> int:
         if not can_review_overrides:
@@ -61,6 +65,23 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         from core.models import EditOverrideRequest
         try:
             return EditOverrideRequest.objects.filter(status='pending').count()
+        except Exception:
+            return 0
+
+    def _my_override_actionable() -> int:
+        """Count of the current user's override requests that are approved and
+        ready to act on (unexpired, not yet consumed)."""
+        if not is_authenticated:
+            return 0
+        from django.utils import timezone
+        from core.models import EditOverrideRequest
+        try:
+            return EditOverrideRequest.objects.filter(
+                requested_by=request.user,
+                status='approved',
+                consumed_at__isnull=True,
+                expires_at__gt=timezone.now(),
+            ).count()
         except Exception:
             return 0
 
@@ -86,4 +107,8 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         # Managers/admins who can approve edit-lock override requests.
         'can_review_overrides': can_review_overrides,
         'override_pending_count': _pending_override_reviews(),
+        # Supervisory set of roles who may set a per-job pass-count override.
+        'can_set_pass_override': can_set_pass_override,
+        # The current user's approved-and-ready override requests (for "My Requests").
+        'my_override_actionable_count': _my_override_actionable(),
     }
