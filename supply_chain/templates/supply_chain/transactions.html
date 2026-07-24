@@ -61,6 +61,15 @@
                     <h3 class="erp-section-title">Pending Issuance Queue</h3>
                     <p class="erp-section-desc">Review and approve stock issuances generated from production logs before they deduct from inventory.</p>
                 </div>
+                <form method="get" class="erp-table-filter">
+                    <div class="erp-input-group">
+                        <label class="erp-input-label" for="search">Search</label>
+                        <input id="search" name="search" type="text" value="{{ search }}" placeholder="JC no, material, SKU or size" class="erp-input">
+                    </div>
+                    {% if month_filter %}<input type="hidden" name="month" value="{{ month_filter }}">{% endif %}
+                    <button type="submit" class="erp-btn erp-btn-secondary">Search</button>
+                    <a href="{{ page_url }}" class="erp-btn erp-btn-secondary">Reset</a>
+                </form>
             </div>
 
             <form method="post" action="{% url 'supply_chain:issuance_bulk_approve' %}">
@@ -147,6 +156,10 @@
                     <div class="erp-input-group">
                         <label class="erp-input-label" for="month">Month filter</label>
                         <input id="month" name="month" type="text" value="{{ month_filter }}" placeholder="e.g. June 2026" class="erp-input">
+                    </div>
+                    <div class="erp-input-group">
+                        <label class="erp-input-label" for="history-search">Search</label>
+                        <input id="history-search" name="search" type="text" value="{{ search }}" placeholder="JC no, material, SKU or size" class="erp-input">
                     </div>
                     <button type="submit" class="erp-btn erp-btn-secondary">Filter</button>
                     <a href="{{ page_url }}" class="erp-btn erp-btn-secondary">Reset</a>

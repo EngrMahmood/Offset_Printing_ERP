@@ -79,7 +79,7 @@ from .reports import (
     build_month_wise_item_consumption,
     parse_report_filters,
 )
-from .services import demand_queryset, transaction_queryset
+from .services import apply_transaction_search, demand_queryset, transaction_queryset
 
 
 def is_supply_chain_admin(user):
@@ -397,7 +397,8 @@ def transaction_page(request, page_key):
 
     transaction_type = config['transaction_type']
     month_filter = (request.GET.get('month') or '').strip()
-    transactions = transaction_queryset(transaction_type, month_filter or None)
+    search = (request.GET.get('search') or '').strip()
+    transactions = transaction_queryset(transaction_type, month_filter or None, search or None)
 
     if request.method == 'POST':
         if request.POST.get('action') == 'import':
@@ -452,6 +453,7 @@ def transaction_page(request, page_key):
             .select_related('raw_material_sku', 'raw_material_sku__material', 'job_card', 'production')
             .order_by('-date', '-id')
         )
+        pending_transactions = apply_transaction_search(pending_transactions, search)
 
     if request.GET.get('export') == 'xlsx':
         return export_transactions(transaction_type, transactions, config['export_name'])
@@ -465,6 +467,7 @@ def transaction_page(request, page_key):
         'form': form,
         'upload_form': ExcelUploadForm(),
         'month_filter': month_filter,
+        'search': search,
         'show_jc_sync': page_key == 'issuance',
         'is_admin': is_supply_chain_admin(request.user),
     })
@@ -567,11 +570,15 @@ def jc_links(request):
         if action == 'sync_one':
             job_card_id = request.POST.get('job_card_id')
             job_card = get_object_or_404(JobCard, pk=job_card_id)
-            synced, skipped = sync_issuance_for_job_card(job_card)
-            messages.success(
-                request,
-                f'Synced {synced} issuance row(s) for {job_card.job_card_no}. Skipped {skipped}.',
-            )
+            txn = sync_issuance_for_job_card(job_card)
+            if txn:
+                messages.success(request, f'Synced issuance row for {job_card.job_card_no}.')
+            else:
+                messages.info(
+                    request,
+                    f'No issuance row for {job_card.job_card_no} '
+                    f'(needs an active production run, a linked SKU, and planned sheets).',
+                )
             return redirect('supply_chain:jc_links')
 
     link_rows = build_job_card_link_rows()

@@ -391,6 +391,32 @@ document.addEventListener('DOMContentLoaded', function(){
         }
 
         ji('summary_warnings').innerHTML = warnings.join('');
+
+        updatePassOverridePanel(jobId, info);
+    }
+
+    function updatePassOverridePanel(jobId, info) {
+        const card = document.getElementById('pass_override_card');
+        if (!card || !info) return;
+        card.classList.remove('is-hidden');
+        const jobIdInput = document.getElementById('pass_override_job_id');
+        if (jobIdInput) jobIdInput.value = jobId;
+
+        const hintEl = document.getElementById('pass_override_hint');
+        const countInput = document.getElementById('pass_override_count');
+        const parts = [];
+
+        if (info.pass_override) {
+            parts.push(`<div class="alert alert-info" style="margin:0 0 6px;">Active override: <strong>${info.pass_override} passes</strong>${info.pass_override_reason ? ' — ' + info.pass_override_reason : ''}. Submit with the field blank to clear it.</div>`);
+        }
+        const hint = info.machine_pass_hint;
+        if (hint) {
+            parts.push(`<div class="alert alert-warning" style="margin:0 0 6px;">Assigned machine <strong>${hint.machine_name}</strong> is running ${hint.effective_colors} of ${hint.default_colors} colours. This ${hint.colors_per_pass}-colour job needs about <strong>${hint.suggested_passes} passes</strong>. Suggested value pre-filled.</div>`);
+            if (countInput && !countInput.value && !info.pass_override) {
+                countInput.value = hint.suggested_passes;
+            }
+        }
+        if (hintEl) hintEl.innerHTML = parts.join('');
     }
 
     function ensureJobOption(jobId, label) {

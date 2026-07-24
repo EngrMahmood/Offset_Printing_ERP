@@ -52,7 +52,12 @@ from production.printing_entry_helpers import (
     printing_job_cards_queryset,
     resolve_related_machine,
 )
-from production.printing_pass_helpers import get_job_card_pass_count, validate_print_pass_number
+from production.printing_pass_helpers import (
+    MAX_PRINT_PASSES,
+    effective_print_pass_number,
+    get_job_card_pass_count,
+    validate_print_pass_number,
+)
 
 # Resolve the active user model
 User = get_user_model()
@@ -483,6 +488,16 @@ def printing_production_entry(request):
             messages.error(request, f'Error saving production data: {str(e)}')
 
     job_cards = list(printing_job_cards_queryset(edit_record)[:200])
+    # The queryset is ordered by -created_at and sliced to the 200 most recent
+    # cards, which can drop an *old* job card being edited (e.g. legacy records).
+    # Guarantee the edited record's job card is present so it pre-selects and its
+    # summary/pass data load.
+    if edit_record and edit_record.job_card_id and not any(
+        jc.id == edit_record.job_card_id for jc in job_cards
+    ):
+        edited_jc = JobCard.objects.filter(pk=edit_record.job_card_id).first()
+        if edited_jc:
+            job_cards.insert(0, edited_jc)
     machines = Machine.objects.filter(is_active=True)
     operators = Operator.objects.all()
     supervisors = Supervisor.objects.filter(is_active=True).order_by('name')
@@ -747,6 +762,162 @@ def production_records(request):
         'per_page': per_page,
     }
     return render(request, 'production/production_records.html', context)
+
+
+@login_required
+def set_pass_override(request):
+    """Authorised supervisor override of a job's print pass count.
+
+    Used when a machine runs at reduced colour capacity (a unit under
+    maintenance) so a job planned for e.g. 2 passes must physically run in 4.
+    Staff-only, requires a reason, and is audit-logged. Setting the override
+    also lifts the impression ceiling proportionally (see JobCard).
+    """
+    if request.method != 'POST':
+        return redirect('printing_production_entry')
+    if not user_can_bypass_edit_lock(request.user):
+        messages.error(request, '❌ You do not have permission to override the pass count.')
+        return redirect('printing_production_entry')
+
+    job_card = get_active_record_or_404(JobCard, request.POST.get('job_card_id'))
+    reason = (request.POST.get('reason') or '').strip()
+    raw = (request.POST.get('pass_count') or '').strip()
+
+    before_snapshot = build_audit_snapshot('job_card', job_card)
+
+    if not raw:
+        # Clearing the override (revert to planned passes).
+        if job_card.pass_count_override:
+            if not reason:
+                messages.error(request, 'A reason is required to clear the pass override.')
+                return redirect('printing_production_entry')
+            job_card.pass_count_override = None
+            job_card.pass_count_override_reason = None
+            job_card.pass_count_override_by = None
+            job_card.pass_count_override_at = None
+            job_card.save(update_fields=[
+                'pass_count_override', 'pass_count_override_reason',
+                'pass_count_override_by', 'pass_count_override_at',
+            ])
+            log_change('job_card', job_card, before_snapshot, request.user, 'update', reason)
+            messages.success(request, f'Pass override cleared for Job Card {job_card.job_card_no}.')
+        return redirect('printing_production_entry')
+
+    try:
+        pass_count = int(raw)
+    except (TypeError, ValueError):
+        messages.error(request, 'Pass count must be a whole number.')
+        return redirect('printing_production_entry')
+
+    if pass_count < 1 or pass_count > MAX_PRINT_PASSES:
+        messages.error(request, f'Pass count must be between 1 and {MAX_PRINT_PASSES}.')
+        return redirect('printing_production_entry')
+    if not reason:
+        messages.error(request, 'A reason is required to override the pass count.')
+        return redirect('printing_production_entry')
+
+    job_card.pass_count_override = pass_count
+    job_card.pass_count_override_reason = reason
+    job_card.pass_count_override_by = request.user
+    job_card.pass_count_override_at = timezone.now()
+    job_card.save(update_fields=[
+        'pass_count_override', 'pass_count_override_reason',
+        'pass_count_override_by', 'pass_count_override_at',
+    ])
+    log_change('job_card', job_card, before_snapshot, request.user, 'update', reason)
+    messages.success(
+        request,
+        f'Pass count for Job Card {job_card.job_card_no} overridden to {pass_count} passes.',
+    )
+    return redirect('printing_production_entry')
+
+
+@permission_required('can_edit_production')
+def production_data_anomalies(request):
+    """Read-only review list of printing entries that look mis-recorded.
+
+    Two categories:
+      * Zero-output jobs — a job card with impressions logged across its
+        printing entries but a total good-sheet output of 0. This is the
+        legacy "operator entered impressions but forgot output" case. It is
+        detected at the JOB-CARD level (not per row) so it also catches jobs
+        whose rows are all marked as intermediate passes with no final row.
+      * Missing impressions — an entry with good sheets recorded but 0
+        impressions.
+
+    Each entry links to the standard edit screen. Records older than the edit
+    lock are corrected either directly (staff/managers who bypass the lock) or
+    via the "Override" request flow on Production Records for other users —
+    nothing is changed automatically here.
+    """
+    printing_qs = Production.objects.filter(is_active=True, entry_type='printing')
+
+    def _row(row, total_passes):
+        pass_no = effective_print_pass_number(row, total_passes)
+        return {
+            'id': row.id,
+            'job_card_no': row.job_card.job_card_no if row.job_card else '-',
+            'date': row.date,
+            'shift': row.shift,
+            'machine': row.machine.name if row.machine else '-',
+            'pass_label': f'Pass {pass_no} of {total_passes}' + (' (final)' if pass_no >= total_passes else ''),
+            'impressions': row.impressions or 0,
+            'output_sheets': row.output_sheets or 0,
+            'status': row.get_status_display(),
+            'edit_url': f"{reverse('printing_production_entry')}?edit={row.id}",
+        }
+
+    # --- Zero-output jobs (job-card level) ---
+    # Aggregate output + impressions per job card, then keep the job cards that
+    # printed something (impressions > 0) but recorded no good sheets at all.
+    agg = printing_qs.values('job_card_id').annotate(
+        total_output=Sum('output_sheets'),
+        total_impressions=Sum('impressions'),
+    )
+    zero_output_jc_ids = [
+        a['job_card_id']
+        for a in agg
+        if (a['total_impressions'] or 0) > 0 and (a['total_output'] or 0) == 0
+    ]
+
+    zero_output_jobs = []
+    if zero_output_jc_ids:
+        jobs = JobCard.objects.filter(id__in=zero_output_jc_ids).order_by('job_card_no')
+        rows_by_jc = {}
+        for row in printing_qs.filter(job_card_id__in=zero_output_jc_ids).select_related(
+            'job_card', 'machine'
+        ).order_by('date', 'created_at'):
+            rows_by_jc.setdefault(row.job_card_id, []).append(row)
+        for jc in jobs:
+            total_passes = get_job_card_pass_count(jc)
+            jc_rows = rows_by_jc.get(jc.id, [])
+            zero_output_jobs.append({
+                'job_card_no': jc.job_card_no,
+                'sku': jc.SKU or '-',
+                'order_qty': jc.order_qty,
+                'total_impressions': sum(r.impressions or 0 for r in jc_rows),
+                'pass_count': total_passes,
+                'has_completed': any(r.status == 'completed' for r in jc_rows),
+                'rows': [_row(r, total_passes) for r in jc_rows],
+            })
+
+    # --- Missing impressions (row level) ---
+    missing_impression_rows = []
+    for row in printing_qs.filter(output_sheets__gt=0, impressions=0).select_related(
+        'job_card', 'machine'
+    ).order_by('job_card__job_card_no', 'date'):
+        if not row.job_card:
+            continue
+        missing_impression_rows.append(_row(row, get_job_card_pass_count(row.job_card)))
+
+    context = {
+        'zero_output_jobs': zero_output_jobs,
+        'missing_impression_rows': missing_impression_rows,
+        'zero_output_count': len(zero_output_jobs),
+        'missing_impression_count': len(missing_impression_rows),
+        'can_bypass_edit_lock': user_can_bypass_edit_lock(request.user),
+    }
+    return render(request, 'production/production_anomalies.html', context)
 
 
 @login_required

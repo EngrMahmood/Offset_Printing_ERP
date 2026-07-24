@@ -2,18 +2,49 @@
 
 from __future__ import annotations
 
+import math
 import re
 
 from django.db.models import Q, Sum
 
+from core.machine_routing import color_class
 from core.models import JOB_CARD_PRODUCTION_START_STATUSES, JobCard, Machine
 from core.services import compute_planned_minutes
 from production.printing_pass_helpers import (
+    MAX_PRINT_PASSES,
     build_pass_tracking_info,
     effective_print_pass_number,
     get_job_card_pass_count,
 )
 from printing_plates.services import job_is_waiting_for_plates
+
+
+def get_degraded_machine_pass_hint(job_card, machine, planned_passes):
+    """Suggest a pass-count override when the assigned machine is running at
+    reduced colour capacity (a colour unit under maintenance).
+
+    Returns ``None`` when the machine is at full capacity or the job's colours
+    fit the working units. The supervisor always confirms the final number —
+    this is only a hint, never applied automatically.
+    """
+    if machine is None:
+        return None
+    default_colors = int(getattr(machine, 'default_colors', 0) or 0)
+    effective = int(getattr(machine, 'effective_colors', 0) or 0)
+    if default_colors <= 0 or effective <= 0 or effective >= default_colors:
+        return None
+    colors_per_pass = int(color_class(job_card.colour) or 0)
+    if colors_per_pass <= effective:
+        return None
+    factor = math.ceil(colors_per_pass / effective)
+    suggested = min(MAX_PRINT_PASSES, max(int(planned_passes or 1), int(planned_passes or 1) * factor))
+    return {
+        'machine_name': machine.name,
+        'default_colors': default_colors,
+        'effective_colors': effective,
+        'colors_per_pass': colors_per_pass,
+        'suggested_passes': suggested,
+    }
 
 
 def resolve_related_machine(job_card):
@@ -158,6 +189,12 @@ def build_printing_job_card_maps(job_cards, edit_record=None):
             ),
             'pass_count': pass_count,
             'pass_type': f'{pass_count}-pass' if pass_count > 1 else 'Single-pass',
+            'pass_override': job_card.pass_count_override,
+            'pass_override_reason': job_card.pass_count_override_reason or '',
+            'planned_pass_baseline': job_card.planned_pass_baseline,
+            'machine_pass_hint': get_degraded_machine_pass_hint(
+                job_card, resolved_machine, job_card.planned_pass_baseline
+            ),
             'passes_from_planning': pass_tracking['passes_from_planning'],
             'passes_inferred': pass_tracking['passes_inferred'],
             'legacy_notice': pass_tracking['legacy_notice'],

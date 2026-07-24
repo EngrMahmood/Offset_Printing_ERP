@@ -347,6 +347,31 @@ class JobCard(models.Model):
         help_text="Uncheck for Cut & Pack jobs (no printing, dispatch directly against order qty)"
     )
 
+    pass_count_override = models.PositiveSmallIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Supervisor override for the number of print passes on this job "
+            "(e.g. 2→4 when a machine colour unit is under maintenance). "
+            "Leave blank to use the planned pass count."
+        ),
+    )
+    pass_count_override_reason = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        help_text="Why the pass count was overridden (required when an override is set).",
+    )
+    pass_count_override_by = models.ForeignKey(
+        'auth.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='pass_overrides_set',
+        editable=False,
+    )
+    pass_count_override_at = models.DateTimeField(null=True, blank=True, editable=False)
+
     created_by = models.ForeignKey(
         'auth.User',
         on_delete=models.SET_NULL,
@@ -601,9 +626,22 @@ class JobCard(models.Model):
         return 1
 
     @property
+    def planned_pass_baseline(self):
+        """Passes represented in the un-overridden impression allowance."""
+        if self.planning_job and self.planning_job.print_passes:
+            return max(1, int(self.planning_job.print_passes))
+        return max(1, int(self.impression_pass_multiplier))
+
+    @property
     def total_impressions_allowed_with_tolerance(self):
         tolerance = float(self.production_tolerance_percent or 0) / 100
-        return int(round(self.total_impressions_required * self.impression_pass_multiplier * (1 + tolerance)))
+        base = self.total_impressions_required * self.impression_pass_multiplier
+        if self.pass_count_override:
+            # Scale the impression ceiling to the actually-run pass count so a
+            # supervisor-authorised extra-pass run (e.g. a degraded machine forcing
+            # 2→4 passes) is not blocked by the planned-passes ceiling.
+            base = base * (int(self.pass_count_override) / self.planned_pass_baseline)
+        return int(round(base * (1 + tolerance)))
 
     @property
     def extra_sheets_used(self):

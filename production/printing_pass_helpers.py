@@ -85,6 +85,15 @@ def infer_pass_count_from_impressions(job_card):
 
 def resolve_pass_inference(job_card):
     """Return pass count plus how it was determined."""
+    override = getattr(job_card, 'pass_count_override', None)
+    if override:
+        return {
+            'passes': int(override),
+            'source': 'override',
+            'reason': 'supervisor pass-count override',
+            'uses_legacy_inference': False,
+        }
+
     if has_explicit_planning_passes(job_card):
         passes = int(job_card.planning_job.print_passes)
         return {

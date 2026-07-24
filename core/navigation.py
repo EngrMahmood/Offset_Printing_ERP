@@ -32,6 +32,7 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
     role = _role_from_request(request)
     is_authenticated = bool(getattr(getattr(request, 'user', None), 'is_authenticated', False))
     is_superuser = bool(getattr(getattr(request, 'user', None), 'is_superuser', False))
+    is_staff = bool(getattr(getattr(request, 'user', None), 'is_staff', False))
 
     if is_superuser:
         role = role or 'admin'
@@ -48,6 +49,18 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         from supply_chain.item_request_service import pending_review_count
         try:
             return pending_review_count(request.user)
+        except Exception:
+            return 0
+
+    can_review_overrides = is_authenticated and (is_staff or role in {'admin', 'manager', 'production_manager'})
+
+    def _pending_override_reviews() -> int:
+        if not can_review_overrides:
+            return 0
+        # Imported lazily to avoid a model import at module load time.
+        from core.models import EditOverrideRequest
+        try:
+            return EditOverrideRequest.objects.filter(status='pending').count()
         except Exception:
             return 0
 
@@ -70,4 +83,7 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_access_item_request': _allow(ITEM_REQUEST_NAV_ROLES),
         'can_access_maintenance': _allow(MAINTENANCE_NAV_ROLES),
         'can_access_tasks': is_authenticated,
+        # Managers/admins who can approve edit-lock override requests.
+        'can_review_overrides': can_review_overrides,
+        'override_pending_count': _pending_override_reviews(),
     }

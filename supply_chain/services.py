@@ -1,6 +1,19 @@
-from django.db.models import Sum
+from django.db.models import Q, Sum
 
 from .models import RawMaterialSku, StockDemand, StockTransaction
+
+
+def apply_transaction_search(qs, search):
+    """Filter a StockTransaction queryset by JC no / SKU / material / size."""
+    s = (search or '').strip()
+    if not s:
+        return qs
+    return qs.filter(
+        Q(gin_jc__icontains=s)
+        | Q(raw_material_sku__sku__icontains=s)
+        | Q(raw_material_sku__material__name__icontains=s)
+        | Q(raw_material_sku__purchase_sheet_size__icontains=s)
+    )
 
 
 def build_dashboard_data(items=None):
@@ -46,7 +59,7 @@ def build_dashboard_data(items=None):
     return dashboard_data
 
 
-def transaction_queryset(transaction_type, month_filter=None):
+def transaction_queryset(transaction_type, month_filter=None, search=None):
     qs = (
         StockTransaction.objects
         .filter(is_active=True, is_approved=True, transaction_type=transaction_type)
@@ -55,6 +68,7 @@ def transaction_queryset(transaction_type, month_filter=None):
     )
     if month_filter:
         qs = qs.filter(month_str__iexact=month_filter)
+    qs = apply_transaction_search(qs, search)
     return qs
 
 

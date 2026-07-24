@@ -233,14 +233,21 @@ class JobCardIssuanceSyncTests(TestCase):
         self.assertIsNotNone(txn)
         self.assertEqual(txn.source, 'JOB_CARD')
         self.assertEqual(txn.gin_jc, 'JC-1001')
-        self.assertEqual(txn.sheet_qty_pcs, 130)
+        # One issuance per JC using the planned sheet qty (500), not per-run output.
+        self.assertEqual(txn.sheet_qty_pcs, 500)
+        self.assertIsNone(txn.production)
         self.assertEqual(txn.job_card_id, self.job_card.id)
         self.assertEqual(txn.raw_material_sku_id, self.item.id)
 
+        # Logging more output does not change the planned issuance quantity.
         production.output_sheets = 150
         production.save()
         txn.refresh_from_db()
-        self.assertEqual(txn.sheet_qty_pcs, 160)
+        self.assertEqual(txn.sheet_qty_pcs, 500)
+        # Still exactly one issuance row for the JC.
+        self.assertEqual(
+            self.job_card.stock_transactions.filter(source='JOB_CARD').count(), 1
+        )
 
     def test_sync_job_card_bulk(self):
         Production.objects.create(
@@ -266,10 +273,11 @@ class JobCardIssuanceSyncTests(TestCase):
             run_time=27,
         )
 
-        synced, skipped = sync_issuance_for_job_card(self.job_card)
-        self.assertEqual(synced, 2)
-        self.assertEqual(skipped, 0)
-        self.assertEqual(self.job_card.stock_transactions.filter(source='JOB_CARD').count(), 2)
+        txn = sync_issuance_for_job_card(self.job_card)
+        self.assertIsNotNone(txn)
+        # Two production runs collapse into a single planned-qty issuance row.
+        self.assertEqual(self.job_card.stock_transactions.filter(source='JOB_CARD').count(), 1)
+        self.assertEqual(txn.sheet_qty_pcs, 500)
 
 
 class PhysicalStockCountTests(TestCase):
@@ -525,10 +533,10 @@ class IssuanceQueueAndApprovalTests(TestCase):
         txn.refresh_from_db()
         self.assertTrue(txn.is_approved)
 
-        # Verify it is now factored into stock levels
+        # Verify it is now factored into stock levels (planned qty = 500)
         row = build_dashboard_data([self.item])[0]
-        self.assertEqual(row['issuance'], 130)
-        self.assertEqual(row['closing'], -130)
+        self.assertEqual(row['issuance'], 500)
+        self.assertEqual(row['closing'], -500)
 
     def test_bulk_approval(self):
         production1 = Production.objects.create(
@@ -557,6 +565,8 @@ class IssuanceQueueAndApprovalTests(TestCase):
         txn1 = sync_issuance_from_production(production1)
         txn2 = sync_issuance_from_production(production2)
 
+        # Both runs map to the same single per-JC issuance row.
+        self.assertEqual(txn1.pk, txn2.pk)
         self.assertFalse(txn1.is_approved)
         self.assertFalse(txn2.is_approved)
 
@@ -572,7 +582,7 @@ class IssuanceQueueAndApprovalTests(TestCase):
         self.assertTrue(txn2.is_approved)
 
         row = build_dashboard_data([self.item])[0]
-        self.assertEqual(row['issuance'], 160)
+        self.assertEqual(row['issuance'], 500)
 
     def test_fallback_sync_when_no_productions(self):
         # JC has 500 total_sheet_quantity but 0 production runs.
@@ -607,12 +617,13 @@ class IssuanceQueueAndApprovalTests(TestCase):
         )
         
         sync_all_job_card_issuances()
-        
-        # Fallback should be deleted and replaced with actual production sync transaction
+
+        # Still a single per-JC row carrying the planned quantity; production runs
+        # never spawn additional rows.
         txns = StockTransaction.objects.filter(job_card=self.job_card)
         self.assertEqual(txns.count(), 1)
-        self.assertEqual(txns.first().production, production)
-        self.assertEqual(txns.first().sheet_qty_pcs, 130)
+        self.assertIsNone(txns.first().production)
+        self.assertEqual(txns.first().sheet_qty_pcs, 500)
 
 
 

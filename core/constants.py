@@ -10,6 +10,7 @@ AUDIT_CONFIG = {
             'order_qty', 'total_impressions_required', 'ups', 'wastage', 'print_sheet_size',
             'purchase_sheet_size', 'purchase_sheet_ups', 'machine_name', 'department', 'destination',
             'die_cutting', 'status', 'remarks',
+            'pass_count_override', 'pass_count_override_reason',
         ],
         'labels': {
             'job_card_no': 'Job Card No',
@@ -33,6 +34,8 @@ AUDIT_CONFIG = {
             'die_cutting': 'Die Cutting',
             'status': 'Status',
             'remarks': 'Remarks',
+            'pass_count_override': 'Pass Count Override',
+            'pass_count_override_reason': 'Pass Override Reason',
         },
     },
     'production': {
