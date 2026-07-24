@@ -107,15 +107,25 @@ def sync_issuance_for_job_card_single(job_card):
         _clear_pending()
         return None
 
-    # Remove any legacy per-production rows for this JC; we keep exactly one row.
+    # Collapse any legacy/duplicate rows for this JC (per-production rows from
+    # before the one-row-per-JC change, or duplicate production=None rows) into
+    # the single canonical row. Preserve approval: if ANY existing row was
+    # already approved, the consolidated row stays approved — we must never
+    # silently reverse a real stock deduction just by re-running the sync.
+    existing_rows = list(
+        StockTransaction.objects.filter(job_card=job_card, source='JOB_CARD')
+    )
+    is_approved = any(row.is_approved for row in existing_rows)
     StockTransaction.objects.filter(
         job_card=job_card, source='JOB_CARD', production__isnull=False
     ).delete()
-
-    existing = StockTransaction.objects.filter(
+    none_rows = StockTransaction.objects.filter(
         job_card=job_card, source='JOB_CARD', production__isnull=True
-    ).first()
-    is_approved = existing.is_approved if existing else False
+    )
+    if none_rows.count() > 1:
+        keep_pk = none_rows.order_by('id').first().pk
+        none_rows.exclude(pk=keep_pk).delete()
+
     issue_date = job_card.po_date or timezone.now().date()
 
     txn, _created = StockTransaction.objects.update_or_create(
