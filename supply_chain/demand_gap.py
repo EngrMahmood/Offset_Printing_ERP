@@ -6,7 +6,12 @@ from decimal import Decimal, ROUND_HALF_UP
 
 from django.db.models import Case, IntegerField, Prefetch, Sum, Value, When
 
-from core.models import Dispatch, Material, Production
+from core.models import (
+    JOB_CARD_PRODUCTION_START_STATUSES,
+    Dispatch,
+    Material,
+    Production,
+)
 from planning.models import PLANNING_STATUS_ALIASES, PlanningJob, SkuRecipe
 
 from .models import (
@@ -27,6 +32,19 @@ def normalize_planning_status(raw_value):
 
 def is_completed_planning_job(planning_job):
     return normalize_planning_status(planning_job.status) in COMPLETED_STATUSES
+
+
+def _is_released_job_row(row):
+    """True when the job's JobCard has been released to production.
+
+    Uses the same criterion as the production module and the issuance sync
+    (JOB_CARD_PRODUCTION_START_STATUSES). Jobs without a job card, or still in
+    planning/QC/approval, count as pre-release ("in planning") demand.
+    """
+    job_card = row.get('job_card')
+    if not job_card:
+        return False
+    return job_card.workflow_status in JOB_CARD_PRODUCTION_START_STATUSES
 
 
 def _get_job_card(planning_job):
@@ -606,6 +624,8 @@ def build_demand_gap_report(filters=None):
         'supply_chain_item': None,
         'on_hand': 0,
         'total_demand': 0,
+        'released_demand': 0,
+        'planning_demand': 0,
         'planning_full_demand': 0,
         'print_job_count': 0,
         'cut_pack_job_count': 0,
@@ -621,6 +641,8 @@ def build_demand_gap_report(filters=None):
         'supply_chain_item': None,
         'on_hand': None,
         'total_demand': 0,
+        'released_demand': 0,
+        'planning_demand': 0,
         'planning_full_demand': 0,
         'print_job_count': 0,
         'cut_pack_job_count': 0,
@@ -667,6 +689,10 @@ def build_demand_gap_report(filters=None):
                 bucket['on_hand'] = on_hand_by_sku.get(row['raw_material_sku'].pk, 0)
 
         bucket['total_demand'] += demand
+        if _is_released_job_row(row):
+            bucket['released_demand'] += demand
+        else:
+            bucket['planning_demand'] += demand
         bucket['planning_full_demand'] += planning_full
         bucket['job_count'] += 1
         if row['is_cut_and_pack']:

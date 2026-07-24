@@ -22,17 +22,16 @@ def _month_label(value):
 def _is_released_to_production(job_card):
     """True only once the planner has released the JC to production.
 
-    Statuses before release (planning/QC/PM approval, production_approved) must
-    NOT appear in issuance — material is issued only when the job actually goes
-    to production. 'released' and every downstream execution status qualify.
+    This mirrors the exact criterion the production module uses to decide which
+    job cards flow from planning into production (see
+    production/printing_entry_helpers.py and production/released_jobs.py, which
+    filter on ``status__in=JOB_CARD_PRODUCTION_START_STATUSES``). Statuses before
+    release (planning/QC/PM approval, production_approved) must NOT appear in
+    issuance — material is issued only when the job actually goes to production.
     """
-    from core.models import (
-        JOB_CARD_EXECUTION_STATUSES,
-        JOB_CARD_PRODUCTION_START_STATUSES,
-    )
+    from core.models import JOB_CARD_PRODUCTION_START_STATUSES
 
-    released_statuses = JOB_CARD_PRODUCTION_START_STATUSES | JOB_CARD_EXECUTION_STATUSES
-    return job_card.workflow_status in released_statuses
+    return job_card.workflow_status in JOB_CARD_PRODUCTION_START_STATUSES
 
 
 def _planned_sheet_qty(job_card):
@@ -57,15 +56,21 @@ def sync_issuance_for_job_card_single(job_card):
     if not job_card:
         return None
 
-    def _clear():
-        StockTransaction.objects.filter(job_card=job_card, source='JOB_CARD').delete()
+    def _clear_pending():
+        # Drop only unapproved rows. Approved issuance is a real stock deduction;
+        # once a job is completed/closed (dropping out of the production queue) or
+        # un-released, we must not silently reverse it.
+        StockTransaction.objects.filter(
+            job_card=job_card, source='JOB_CARD', is_approved=False
+        ).delete()
 
     raw_sku = get_raw_material_sku_for_job_card(job_card)
     planned_qty = _planned_sheet_qty(job_card)
 
-    # Only issue once the planner has released the JC to production.
+    # Only issue for JCs released to production — the same set of jobs the
+    # production module shows (released / in_production).
     if not raw_sku or planned_qty <= 0 or not _is_released_to_production(job_card):
-        _clear()
+        _clear_pending()
         return None
 
     # Remove any legacy per-production rows for this JC; we keep exactly one row.

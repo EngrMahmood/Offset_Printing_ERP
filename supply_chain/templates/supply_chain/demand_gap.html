@@ -123,8 +123,10 @@
                             <th>Purchase Size</th>
                             <th>Raw Material SKU</th>
                             <th>On Hand<br><small style="font-weight:normal;opacity:.7">(Purchase Sheets)</small></th>
+                            <th>Released Demand<br><small style="font-weight:normal;opacity:.7">(released to production)</small></th>
+                            <th>In-Planning Demand<br><small style="font-weight:normal;opacity:.7">(before release)</small></th>
                             <th>Total Demand<br><small style="font-weight:normal;opacity:.7">(Purchase Sheets)</small></th>
-                            <th>Gap<br><small style="font-weight:normal;opacity:.7">(Purchase Sheets)</small></th>
+                            <th>Gap<br><small style="font-weight:normal;opacity:.7">(Total Demand − On Hand)</small></th>
                             <th>Status</th>
                             <th>Print Jobs</th>
                             <th>Cut &amp; Pack Jobs</th>
@@ -144,6 +146,8 @@
                                 {% endif %}
                             </td>
                             <td>{% if row.on_hand is not None %}{{ row.on_hand }}{% else %}—{% endif %}</td>
+                            <td>{{ row.released_demand }}</td>
+                            <td>{{ row.planning_demand }}</td>
                             <td>{{ row.total_demand }}</td>
                             <td>
                                 {% if row.gap is not None %}
@@ -169,7 +173,7 @@
                         </tr>
                         {% if row.jobs %}
                         <tr>
-                            <td colspan="10" class="erp-table-nested">
+                            <td colspan="12" class="erp-table-nested">
                                 <details>
                                     <summary>View {{ row.job_count }} job contribution(s)</summary>
 
@@ -309,7 +313,7 @@
                         {% endif %}
                         {% empty %}
                         <tr>
-                            <td colspan="10" class="erp-table-empty">No demand gap rows match the current filters.</td>
+                            <td colspan="12" class="erp-table-empty">No demand gap rows match the current filters.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
