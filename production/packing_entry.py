@@ -143,7 +143,13 @@ def packing_job_card_search(request):
             'remaining_display': info['remaining_display'],
             'info': info,
         })
-    return JsonResponse({'results': results})
+
+    completed_matches = []
+    if not results:
+        from core.services import find_completed_job_card_matches
+        completed_matches = find_completed_job_card_matches(query)
+
+    return JsonResponse({'results': results, 'completed_matches': completed_matches})
 
 
 @login_required

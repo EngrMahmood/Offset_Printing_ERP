@@ -579,7 +579,13 @@ def printing_job_card_search(request):
             'machine': machine_map.get(job_id),
             'plan': plan_map.get(job_id),
         })
-    return JsonResponse({'results': results})
+
+    completed_matches = []
+    if not results:
+        from core.services import find_completed_job_card_matches
+        completed_matches = find_completed_job_card_matches(query)
+
+    return JsonResponse({'results': results, 'completed_matches': completed_matches})
 
 
 @login_required

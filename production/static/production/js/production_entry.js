@@ -479,11 +479,21 @@ document.addEventListener('DOMContentLoaded', function(){
         populateJobInfo();
     }
 
-    function renderSearchResults(results) {
+    function renderSearchResults(results, completedMatches) {
         if (!jobCardResults) return;
         jobCardResults.innerHTML = '';
         if (!results.length) {
             jobCardResults.style.display = 'block';
+            if (completedMatches && completedMatches.length) {
+                const names = completedMatches.map((m) => `${m.job_card_no} (${m.sku})`).join(', ');
+                jobCardSearchMeta.textContent = `${names} already Completed — no new printing entries needed.`;
+                const doneRow = document.createElement('div');
+                doneRow.className = 'dispatch-search-result-item';
+                doneRow.style.cursor = 'default';
+                doneRow.innerHTML = `<div class="result-main">✅ ${names}</div><div class="result-meta">Already Completed — see Production Records for its history.</div>`;
+                jobCardResults.appendChild(doneRow);
+                return;
+            }
             jobCardSearchMeta.textContent = 'No matching job cards found.';
             const noRow = document.createElement('div');
             noRow.className = 'dispatch-search-result-item';
@@ -555,7 +565,7 @@ document.addEventListener('DOMContentLoaded', function(){
             signal: activeSearchRequest.signal,
         })
             .then((response) => (response.ok ? response.json() : Promise.reject()))
-            .then((data) => renderSearchResults(data.results || []))
+            .then((data) => renderSearchResults(data.results || [], data.completed_matches || []))
             .catch((err) => {
                 if (err.name === 'AbortError') return;
                 renderSearchResults(filterPreloadedJobCards(query.toLowerCase()));

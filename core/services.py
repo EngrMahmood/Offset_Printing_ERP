@@ -1,12 +1,39 @@
 from datetime import datetime, date, timedelta
 import re
-from django.db.models import Sum
+from django.db.models import Q, Sum
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.conf import settings
 from django.contrib import messages
 from .models import Department, DeliveryLocation, ProductType, JobCard, Production, Dispatch, ChangeLog, EditOverrideRequest
 from .constants import AUDIT_CONFIG
+
+
+def find_completed_job_card_matches(query, limit=5):
+    """
+    Job cards matching a search query that are already Completed.
+
+    Entry-form job card search boxes only ever return jobs still eligible
+    for new entries, so a completed job simply looks "not found" — which
+    reads as broken/missing rather than "already finished". Callers use
+    this to add a clear "already Completed" note instead of a bare empty
+    result when that's the actual reason nothing matched.
+    """
+    query = (query or '').strip()
+    if not query:
+        return []
+
+    qs = JobCard.objects.filter(is_active=True, status='completed').filter(
+        Q(job_card_no__icontains=query)
+        | Q(SKU__icontains=query)
+        | Q(PO_No__icontains=query)
+        | Q(destination__icontains=query)
+    ).order_by('-updated_at')[:limit]
+
+    return [
+        {'job_card_no': jc.job_card_no, 'sku': jc.SKU or '-'}
+        for jc in qs
+    ]
 
 
 def collect_planning_department_names():
