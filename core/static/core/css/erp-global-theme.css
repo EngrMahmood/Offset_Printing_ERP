@@ -755,8 +755,8 @@ html, body {
 
 .plate-requests-table col.col-jc { width: 150px; }
 .plate-requests-table col.col-type { width: 72px; }
-.plate-requests-table col.col-sku { width: 120px; }
-.plate-requests-table col.col-job { width: 140px; }
+.plate-requests-table col.col-sku { width: 200px; }
+.plate-requests-table col.col-job { width: 220px; }
 .plate-requests-table col.col-set { width: 72px; }
 .plate-requests-table col.col-qty { width: 56px; }
 .plate-requests-table col.col-workflow { width: 110px; }
@@ -768,12 +768,12 @@ html, body {
 .plate-requests-table col.col-user { width: 90px; }
 
 .plate-requests-table {
-    min-width: 1350px;
+    min-width: 1510px;
     table-layout: fixed;
 }
 
 .erp-records-table-wrap .plate-requests-table {
-    min-width: 1350px;
+    min-width: 1510px;
 }
 
 .plate-requests-table thead th.plates-jc-cell,
@@ -1070,6 +1070,13 @@ html, body {
     color: #d69e2e;
     background: #fffff0;
     border: 1px solid #f6e05e;
+}
+
+.erp-plate-type-flag.is-replacement,
+.plate-queue-flag.is-replacement {
+    color: #c05621;
+    background: #fffaf0;
+    border: 1px solid #fbd38d;
 }
 
 .plate-queue-jc {

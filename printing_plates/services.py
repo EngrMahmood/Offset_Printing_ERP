@@ -753,7 +753,13 @@ def validate_plate_remake_request(job_card, reason, notes='', damaged_colors='')
 def request_plate_remake(job_card, actor=None, reason='', damaged_colors='', notes='', source=None):
     """
     Open a plate replacement request from Released Jobs (or on behalf of production).
-    Keeps prior plate sets visible (archived, not deleted). Multiple open requests allowed.
+
+    A replacement is a production-floor event (plate damaged mid-run, extra
+    plate needed to finish) — it does not invalidate the prior plate request,
+    which already completed successfully. The prior request keeps its real
+    status (available_for_production) and is linked via `replaces_request`
+    on the new row for traceability, rather than being archived as if it
+    were cancelled.
     """
     from workflow.services import _append_unique_note_line
 
@@ -774,10 +780,6 @@ def request_plate_remake(job_card, actor=None, reason='', damaged_colors='', not
     planning_job = getattr(job_card, 'planning_job', None)
 
     with transaction.atomic():
-        # Keep prior issued sets visible in history as archived (not deleted).
-        prior_qs = job_card_plate_requests_qs(job_card).filter(status=PlateRequest.STATUS_AVAILABLE)
-        prior_qs.update(status=PlateRequest.STATUS_ARCHIVED)
-
         if planning_job:
             planning_job.planning_stage = 'repeat_plate_making'
             planning_job.planning_stage_changed_at = timezone.now()

@@ -93,7 +93,10 @@ class PlateRequestListView(LoginRequiredMixin, GraphicsDesignerAccessMixin, List
                 Q(planning_job__job_name__icontains=q) |
                 Q(planning_job__sku__icontains=q) |
                 Q(sku_recipe__sku__icontains=q) |
-                Q(plate_color__icontains=q)
+                Q(plate_color__icontains=q) |
+                Q(awc_no__icontains=q) |
+                Q(set_no__icontains=q) |
+                Q(new_set_no__icontains=q)
             )
 
         return queryset
@@ -542,8 +545,10 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
             plate_request.plate_quantity = plate_quantity_value
             plate_request.remarks = remarks
 
+            from workflow.services import _append_unique_note_line
+
             if planning_job:
-                planning_job.remarks = remarks
+                planning_job.remarks = _append_unique_note_line(planning_job.remarks, remarks)
                 if resolved_print_color:
                     apply_print_color_to_planning_job(planning_job, resolved_print_color)
                     planning_job.save()
@@ -551,8 +556,8 @@ class PlateRequestActionView(LoginRequiredMixin, GraphicsDesignerAccessMixin, Vi
                     planning_job.save(update_fields=['remarks'])
 
             if recipe:
-                recipe.remarks = remarks
-                recipe.notes = remarks
+                recipe.remarks = _append_unique_note_line(recipe.remarks, remarks)
+                recipe.notes = _append_unique_note_line(recipe.notes, remarks)
                 if resolved_print_color:
                     apply_print_color_to_sku_recipe(recipe, resolved_print_color)
                     recipe.save()

@@ -1939,7 +1939,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
     department = payload.get('department', '')
 
     if not items:
-        return {'created': 0, 'updated': 0, 'locked': 0, 'missing_recipe': 0}
+        return {'created': 0, 'updated': 0, 'locked': 0, 'missing_recipe': 0, 'pr_matched': []}
 
     item_sku_keys = {_sku_key(item.get('sku')) for item in items if item.get('sku')}
     existing_any_jobs_skus = set()
@@ -1964,6 +1964,33 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
             key = _sku_key(job.sku)
             if key in item_sku_keys and key not in existing_jobs_by_sku:
                 existing_jobs_by_sku[key] = job
+
+    # Reconcile PR-only jobs (no po_number yet) with the arriving real PO:
+    # match by SKU + order qty so an urgent PR-based job gets this PO linked
+    # onto it instead of spawning a duplicate job card. Only auto-match when
+    # exactly one candidate exists — ambiguous matches fall through to the
+    # normal create-new path below.
+    pr_matched = []
+    if po_number:
+        for item in items:
+            sku_key = _sku_key(item.get('sku'))
+            if not sku_key or sku_key in existing_jobs_by_sku:
+                continue
+            qty = item.get('quantity')
+            item_order_qty = int(qty) if qty is not None else None
+            if item_order_qty is None:
+                continue
+            candidates = list(
+                PlanningJob.objects.filter(
+                    po_number='',
+                    sku__iexact=sku_key,
+                    order_qty=item_order_qty,
+                )
+            )
+            if len(candidates) == 1:
+                matched_job = candidates[0]
+                existing_jobs_by_sku[sku_key] = matched_job
+                pr_matched.append((matched_job.jc_number, matched_job.pr_reference, po_number))
 
     created_count = 0
     updated_count = 0
@@ -2077,7 +2104,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
 
         defaults = {
             'po_number': po_number,
-            'pr_reference': pr_number,
+            'pr_reference': pr_number or (existing_job.pr_reference if existing_job else ''),
             'sku': sku,
             'job_name': job_name_value,
             'order_qty': order_qty,
@@ -2156,6 +2183,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
         'updated': updated_count,
         'locked': locked_count,
         'missing_recipe': missing_recipe_count,
+        'pr_matched': pr_matched,
     }
 
 

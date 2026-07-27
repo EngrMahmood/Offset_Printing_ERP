@@ -498,7 +498,10 @@ class PlateWorkflowTestCase(TestCase):
         self.plate_request.refresh_from_db()
         self.planning_job.refresh_from_db()
 
-        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_ARCHIVED)
+        # The original plate request completed successfully (sent/received/issued);
+        # a replacement is an additional production-floor need, not a correction,
+        # so the original keeps its real status instead of being archived.
+        self.assertEqual(self.plate_request.status, PlateRequest.STATUS_AVAILABLE)
         self.assertEqual(replacement.source, PlateRequest.SOURCE_REPLACEMENT)
         self.assertEqual(replacement.replacement_reason, PlateRequest.REASON_DAMAGED_DURING_RUN)
         self.assertEqual(replacement.damaged_colors, 'Cyan, Black')

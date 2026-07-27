@@ -28,6 +28,12 @@
 
 {% block content %}
 <div class="erp-page-stack">
+    {% if job.pr_reference and job.po_number %}
+    <div class="erp-alert erp-alert-info">
+        This job started under PR <strong>{{ job.pr_reference }}</strong> and was later linked to PO
+        <strong>{{ job.po_number }}</strong>.
+    </div>
+    {% endif %}
     {% if retained_plate %}
     <div class="erp-alert erp-alert-info">
         <strong>A plate set for this SKU is on hold.</strong>

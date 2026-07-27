@@ -114,6 +114,11 @@
                     <div class="erp-info-item"><div class="erp-info-item__label">Requested By</div><div class="erp-info-item__value">{{ plate_request.requested_by.username|default:'—' }}</div></div>
                     <div class="erp-info-item"><div class="erp-info-item__label">Replaces Request</div><div class="erp-info-item__value">{% if plate_request.replaces_request %}<a href="{% url 'printing_plates:request_detail' plate_request.replaces_request_id %}">#{{ plate_request.replaces_request_id }}</a>{% else %}—{% endif %}</div></div>
                     {% endif %}
+                    {% if plate_request.replacement_requests.all %}
+                    <div class="erp-info-item"><div class="erp-info-item__label">Replaced By</div><div class="erp-info-item__value">
+                        {% for replacement in plate_request.replacement_requests.all %}<a href="{% url 'printing_plates:request_detail' replacement.pk %}">#{{ replacement.pk }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}
+                    </div></div>
+                    {% endif %}
                 </div>
             </section>
 

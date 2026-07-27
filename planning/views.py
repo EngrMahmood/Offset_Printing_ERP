@@ -4679,6 +4679,12 @@ def upload_po(request):
             if sync_result['missing_recipe']:
                 msg += f" SKU(s) pending approved master data: {sync_result['missing_recipe']}."
             messages.success(request, msg)
+        for jc_number, matched_pr, matched_po in sync_result.get('pr_matched', []):
+            messages.info(
+                request,
+                f'JC {jc_number} was opened under PR {matched_pr} — linked to PO {matched_po} now; '
+                f'no duplicate job card was created.',
+            )
         return redirect('qc:po_review', doc_id=po_doc.id)
 
     return render(request, 'planning/po_upload.html')
@@ -4773,6 +4779,12 @@ def manual_po_entry(request):
             )
         if sync_result['missing_recipe']:
             messages.warning(request, f'SKU(s) pending approved master data: {sync_result["missing_recipe"]}.')
+        for jc_number, matched_pr, matched_po in sync_result.get('pr_matched', []):
+            messages.info(
+                request,
+                f'JC {jc_number} was opened under PR {matched_pr} — linked to PO {matched_po} now; '
+                f'no duplicate job card was created.',
+            )
 
         return redirect('qc:po_review', doc_id=po_doc.id)
 
