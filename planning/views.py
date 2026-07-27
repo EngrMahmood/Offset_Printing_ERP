@@ -1729,6 +1729,11 @@ def planning_job_detail(request, job_id):
         printing_entries = job_card.productions.filter(is_active=True, entry_type='printing').select_related('machine', 'operator', 'supervisor').order_by('date', 'id')
         packing_entries = job_card.productions.filter(is_active=True, entry_type='packing').select_related('sorter', 'created_by').order_by('date', 'id')
         dispatch_entries = job_card.dispatch_set.filter(is_active=True).select_related('created_by').order_by('dispatch_date', 'id')
+    total_print_waste_sheets = sum(entry.waste_sheets or 0 for entry in printing_entries)
+    total_sorting_waste_qty = sum(entry.sorting_waste_qty or 0 for entry in packing_entries)
+
+    from core.services import compute_job_card_wastage_metrics
+    wastage_metrics = compute_job_card_wastage_metrics(job_card) if job_card else None
 
     from planning.sku_duplicate_alert import build_sku_duplicate_alert
 
@@ -1786,6 +1791,9 @@ def planning_job_detail(request, job_id):
             'printing_entries': printing_entries,
             'packing_entries': packing_entries,
             'dispatch_entries': dispatch_entries,
+            'total_print_waste_sheets': total_print_waste_sheets,
+            'total_sorting_waste_qty': total_sorting_waste_qty,
+            'wastage_metrics': wastage_metrics,
             'sku_duplicate_alert': sku_duplicate_alert,
         },
     )
@@ -2362,6 +2370,33 @@ def planning_job_card_pdf(request, job_id):
 
     response = HttpResponse(pdf_bytes, content_type='application/pdf')
     response['Content-Disposition'] = f'attachment; filename="{pdf_filename}.pdf"'
+    return response
+
+
+@login_required
+def planning_job_history_report_pdf(request, job_id):
+    """
+    Full recorded history for this JC (planning/PO reference, SKU master data,
+    plate requests, printing/packing/dispatch entries) as a downloadable PDF.
+    Unlike the Job Card (a blank traveler to fill by hand), this reports what
+    actually happened on the job — for review, audit, or sharing.
+    """
+    job = get_object_or_404(
+        PlanningJob.objects.select_related('job_card').prefetch_related('plate_requests'),
+        id=job_id,
+    )
+
+    from .services import build_job_history_report_pdf_bytes
+
+    try:
+        pdf_bytes = build_job_history_report_pdf_bytes(job)
+    except RuntimeError as exc:
+        messages.error(request, str(exc))
+        return redirect('planning:job_detail', job_id=job.id)
+
+    filename = f'{job.jc_number or "JOB"}-HISTORY-REPORT.pdf'
+    response = HttpResponse(pdf_bytes, content_type='application/pdf')
+    response['Content-Disposition'] = f'attachment; filename="{filename}"'
     return response
 
 

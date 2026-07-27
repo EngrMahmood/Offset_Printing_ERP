@@ -23,6 +23,22 @@ from .models import (
 from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note, _normalize_status, _to_int, _to_decimal, SKU_MASTER_APPROVAL_REQUIRED_FIELDS, _warning_master_fields
 from core.jc_numbering import allocate_next_jc_number
 
+try:
+    from reportlab.lib import colors as _rl_colors
+    from reportlab.lib.pagesizes import A4 as _RL_A4
+    from reportlab.lib.styles import ParagraphStyle as _RLParagraphStyle, getSampleStyleSheet as _rl_get_sample_stylesheet
+    from reportlab.lib.units import mm as _rl_mm
+    from reportlab.platypus import (
+        Paragraph as _RLParagraph,
+        SimpleDocTemplate as _RLSimpleDocTemplate,
+        Spacer as _RLSpacer,
+        Table as _RLTable,
+        TableStyle as _RLTableStyle,
+    )
+    REPORT_PDF_AVAILABLE = True
+except ImportError:
+    REPORT_PDF_AVAILABLE = False
+
 NEW_SKU_REQUIREMENT_NOTE = 'NEW SKU: Shade matching and setup verification required before production run.'
 
 
@@ -1473,6 +1489,267 @@ def _build_job_card_pdf_bytes(job, scan_url):
         doc.build(story)
     return buffer.getvalue()
 
+
+def build_job_history_report_pdf_bytes(job):
+    """
+    Full recorded history for one JC — planning/PO reference, SKU master data,
+    and every plate request, printing entry, packing entry, and dispatch entry
+    on file — as a single downloadable A4 PDF. Distinct from the blank Job
+    Card traveler (job_card_print/pdf): this is a read-only report of what
+    actually happened on the job, for review, audit, or sharing outside the
+    system.
+    """
+    if not REPORT_PDF_AVAILABLE:
+        raise RuntimeError('reportlab is required to generate the job history report PDF. Install reportlab and restart the server.')
+
+    colors = _rl_colors
+    mm = _rl_mm
+
+    def _fmt(value):
+        if value in (None, ''):
+            return '-'
+        return str(value)
+
+    def _p(value, style):
+        return _RLParagraph(_fmt(value).replace('\n', '<br/>'), style)
+
+    buffer = io.BytesIO()
+    doc = _RLSimpleDocTemplate(
+        buffer,
+        pagesize=_RL_A4,
+        leftMargin=12 * mm,
+        rightMargin=12 * mm,
+        topMargin=12 * mm,
+        bottomMargin=12 * mm,
+    )
+
+    styles = _rl_get_sample_stylesheet()
+    normal = styles['Normal']
+    normal.fontName = 'Helvetica'
+    normal.fontSize = 8.5
+    normal.leading = 10.5
+
+    title_style = _RLParagraphStyle('HRTitle', parent=normal, fontName='Helvetica-Bold', fontSize=16, leading=18)
+    subtitle_style = _RLParagraphStyle('HRSubtitle', parent=normal, fontName='Helvetica-Bold', fontSize=11, leading=13)
+    section_style = _RLParagraphStyle('HRSection', parent=normal, fontName='Helvetica-Bold', fontSize=10.5, leading=12, spaceBefore=6, spaceAfter=2, textColor=colors.HexColor('#1a1a1a'))
+    label_style = _RLParagraphStyle('HRLabel', parent=normal, fontName='Helvetica-Bold', fontSize=8, leading=9.5)
+    cell_style = _RLParagraphStyle('HRCell', parent=normal, fontSize=8, leading=9.5)
+    header_row_style = _RLParagraphStyle('HRHeaderRow', parent=normal, fontName='Helvetica-Bold', fontSize=8, leading=9.5, textColor=colors.white)
+
+    story = [
+        _RLParagraph('UTOPIA PRINTING & PACKAGING', title_style),
+        _RLSpacer(1, 3),
+        _RLParagraph('JOB HISTORY REPORT', subtitle_style),
+        _RLSpacer(1, 2),
+        _RLParagraph(f'Generated {timezone.now().strftime("%Y-%m-%d %H:%M")}', cell_style),
+        _RLSpacer(1, 10),
+    ]
+
+    def _grid_table(rows, col_widths):
+        table = _RLTable(rows, colWidths=col_widths, hAlign='LEFT')
+        table.setStyle(_RLTableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.35, colors.HexColor('#888888')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#dedede')),
+        ]))
+        return table
+
+    # --- Reference ---
+    story.append(_RLParagraph('PO INTAKE / PLANNING JOB', section_style))
+    ref_rows = [
+        [_p('JC No', label_style), _p(job.jc_number, cell_style), _p('PO Number', label_style), _p(job.po_number, cell_style)],
+        [_p('SKU', label_style), _p(job.sku, cell_style), _p('Job Name', label_style), _p(job.job_name, cell_style)],
+        [_p('PR Reference', label_style), _p(job.pr_reference, cell_style), _p('Order Quantity', label_style), _p(job.order_qty, cell_style)],
+        [_p('Status', label_style), _p(job.effective_status_label, cell_style), _p('Repeat Flag', label_style), _p(job.repeat_flag, cell_style)],
+        [_p('Planning Stage', label_style), _p(job.get_planning_stage_display() if job.planning_stage else '-', cell_style), _p('PO Approval Date', label_style), _p(job.po_approval_date, cell_style)],
+        [_p('Delivery Date', label_style), _p(job.delivery_date, cell_style), _p('Delivery Location', label_style), _p(job.destination, cell_style)],
+        [_p('Department', label_style), _p(job.department, cell_style), _p('Stock Qty (pcs)', label_style), _p(job.stock_qty, cell_style)],
+        [_p('Planned Wastage (Sheets)', label_style), _p(job.wastage_sheets, cell_style), '', ''],
+    ]
+    story.append(_grid_table(ref_rows, [30 * mm, 60 * mm, 30 * mm, 60 * mm]))
+    story.append(_RLSpacer(1, 10))
+
+    # --- SKU master data ---
+    recipe = job.approved_sku_recipe or job.sku_recipe
+    if recipe:
+        story.append(_RLParagraph('SKU MASTER DATA', section_style))
+        recipe_rows = [
+            [_p('Job Process', label_style), _p(recipe.get_job_process_type_display() if recipe.job_process_type else '-', cell_style), _p('Material', label_style), _p(recipe.material, cell_style)],
+            [_p('Print Color', label_style), _p(recipe.color_spec, cell_style), _p('Application', label_style), _p(recipe.application, cell_style)],
+            [_p('Product Type', label_style), _p(recipe.product_type, cell_style), _p('Machine Name', label_style), _p(recipe.machine_name, cell_style)],
+            [_p('No. of Passes', label_style), _p(recipe.print_passes, cell_style), _p('Plate Set No.', label_style), _p(recipe.plate_set_no, cell_style)],
+            [_p('Size W/H (mm)', label_style), _p(f'{_fmt(recipe.size_w_mm)} x {_fmt(recipe.size_h_mm)}', cell_style), _p('Print Sheet Size', label_style), _p(recipe.print_sheet_size, cell_style)],
+            [_p('Purchase Sheet Size', label_style), _p(recipe.purchase_sheet_size, cell_style), _p('Purchase Sheet Ups', label_style), _p(recipe.purchase_sheet_ups, cell_style)],
+            [_p('UPS', label_style), _p(recipe.ups, cell_style), _p('Daily Demand', label_style), _p(recipe.daily_demand, cell_style)],
+            [_p('Unit Cost', label_style), _p(recipe.default_unit_cost, cell_style), _p('AWC No.', label_style), _p(recipe.awc_no, cell_style)],
+            [_p('Die Cutting', label_style), _p(normalize_die_cutting(recipe.die_cutting), cell_style), _p('Recipe Status', label_style), _p(recipe.get_master_data_status_display() if recipe.master_data_status else '-', cell_style)],
+            [_p('SKU Remarks', label_style), _p(recipe.remarks, cell_style), _p('SKU Notes', label_style), _p(recipe.notes, cell_style)],
+        ]
+        story.append(_grid_table(recipe_rows, [30 * mm, 60 * mm, 30 * mm, 60 * mm]))
+        story.append(_RLSpacer(1, 10))
+
+    # --- Plate requests ---
+    plate_requests = list(job.plate_requests.select_related('requested_by').order_by('requested_at', 'created_at'))
+    story.append(_RLParagraph(f'PLATE REQUESTS ({len(plate_requests)})', section_style))
+    if plate_requests:
+        pr_rows = [[
+            _p('#', header_row_style), _p('Type', header_row_style), _p('Status', header_row_style),
+            _p('Set / AWC', header_row_style), _p('Requested', header_row_style), _p('By', header_row_style),
+            _p('Remarks', header_row_style),
+        ]]
+        for req in plate_requests:
+            pr_rows.append([
+                _p(req.pk, cell_style),
+                _p(req.plate_request_type, cell_style),
+                _p(req.status_label_display, cell_style),
+                _p(f'{_fmt(req.display_set_no)} / {_fmt(req.display_awc_no)}', cell_style),
+                _p(req.requested_at.strftime('%Y-%m-%d') if req.requested_at else '-', cell_style),
+                _p(req.requested_by.username if req.requested_by else '-', cell_style),
+                _p(req.remarks, cell_style),
+            ])
+        table = _RLTable(pr_rows, colWidths=[10 * mm, 22 * mm, 26 * mm, 26 * mm, 22 * mm, 18 * mm, 56 * mm], hAlign='LEFT', repeatRows=1)
+        table.setStyle(_RLTableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#aaaaaa')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#555555')),
+        ]))
+        story.append(table)
+    else:
+        story.append(_RLParagraph('No plate requests on file.', cell_style))
+    story.append(_RLSpacer(1, 10))
+
+    job_card = getattr(job, 'job_card', None)
+    printing_entries = []
+    packing_entries = []
+    dispatch_entries = []
+    wastage_metrics = None
+    if job_card:
+        printing_entries = list(job_card.productions.filter(is_active=True, entry_type='printing').select_related('machine', 'operator').order_by('date', 'id'))
+        packing_entries = list(job_card.productions.filter(is_active=True, entry_type='packing').select_related('sorter', 'created_by').order_by('date', 'id'))
+        dispatch_entries = list(job_card.dispatch_set.filter(is_active=True).select_related('created_by').order_by('dispatch_date', 'id'))
+        from core.services import compute_job_card_wastage_metrics
+        wastage_metrics = compute_job_card_wastage_metrics(job_card)
+
+    # --- Printing entries ---
+    story.append(_RLParagraph(f'PRINTING ENTRIES ({len(printing_entries)})', section_style))
+    total_good_sheets = 0
+    total_print_waste_sheets = 0
+    if printing_entries:
+        pe_rows = [[
+            _p('Date', header_row_style), _p('Pass', header_row_style), _p('Machine', header_row_style),
+            _p('Operator', header_row_style), _p('Shift', header_row_style), _p('Impressions', header_row_style),
+            _p('Good Sheets', header_row_style), _p('Waste', header_row_style), _p('Remarks', header_row_style),
+        ]]
+        for entry in printing_entries:
+            total_good_sheets += entry.output_sheets or 0
+            total_print_waste_sheets += entry.waste_sheets or 0
+            pe_rows.append([
+                _p(entry.date, cell_style),
+                _p(entry.print_pass_number, cell_style),
+                _p(entry.machine.name if entry.machine else '-', cell_style),
+                _p(entry.operator.name if entry.operator else '-', cell_style),
+                _p(entry.get_shift_display() if entry.shift else '-', cell_style),
+                _p(entry.impressions, cell_style),
+                _p(entry.output_sheets, cell_style),
+                _p(entry.waste_sheets, cell_style),
+                _p(entry.remark_notes, cell_style),
+            ])
+        table = _RLTable(pe_rows, colWidths=[22 * mm, 10 * mm, 18 * mm, 22 * mm, 11 * mm, 17 * mm, 17 * mm, 13 * mm, 46 * mm], hAlign='LEFT', repeatRows=1)
+        table.setStyle(_RLTableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#aaaaaa')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#555555')),
+        ]))
+        story.append(table)
+    else:
+        story.append(_RLParagraph('No printing entries on file.', cell_style))
+    story.append(_RLSpacer(1, 10))
+
+    # --- Packing entries ---
+    story.append(_RLParagraph(f'PACKING ENTRIES ({len(packing_entries)})', section_style))
+    total_packed = 0
+    total_sorting_waste = 0
+    if packing_entries:
+        pk_rows = [[
+            _p('Date', header_row_style), _p('Sorter', header_row_style), _p('Shift', header_row_style),
+            _p('Packed Qty', header_row_style), _p('Sorting Waste', header_row_style), _p('Remarks', header_row_style),
+        ]]
+        for entry in packing_entries:
+            total_packed += entry.packing_qty or 0
+            total_sorting_waste += entry.sorting_waste_qty or 0
+            pk_rows.append([
+                _p(entry.date, cell_style),
+                _p(entry.sorter.name if entry.sorter else '-', cell_style),
+                _p(entry.get_shift_display() if entry.shift else '-', cell_style),
+                _p(entry.packing_qty, cell_style),
+                _p(entry.sorting_waste_qty, cell_style),
+                _p(entry.remark_notes, cell_style),
+            ])
+        table = _RLTable(pk_rows, colWidths=[22 * mm, 26 * mm, 16 * mm, 24 * mm, 26 * mm, 66 * mm], hAlign='LEFT', repeatRows=1)
+        table.setStyle(_RLTableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#aaaaaa')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#555555')),
+        ]))
+        story.append(table)
+    else:
+        story.append(_RLParagraph('No packing entries on file.', cell_style))
+    story.append(_RLSpacer(1, 10))
+
+    # --- Dispatch entries ---
+    story.append(_RLParagraph(f'DISPATCH ENTRIES ({len(dispatch_entries)})', section_style))
+    total_dispatched = 0
+    if dispatch_entries:
+        dp_rows = [[
+            _p('Date', header_row_style), _p('DC No.', header_row_style), _p('Qty', header_row_style),
+            _p('Added By', header_row_style),
+        ]]
+        for entry in dispatch_entries:
+            total_dispatched += entry.dispatch_qty or 0
+            dp_rows.append([
+                _p(entry.dispatch_date, cell_style),
+                _p(entry.dc_no, cell_style),
+                _p(entry.dispatch_qty, cell_style),
+                _p(entry.created_by.username if entry.created_by else '-', cell_style),
+            ])
+        table = _RLTable(dp_rows, colWidths=[28 * mm, 40 * mm, 40 * mm, 40 * mm], hAlign='LEFT', repeatRows=1)
+        table.setStyle(_RLTableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor('#aaaaaa')),
+            ('BOX', (0, 0), (-1, -1), 0.5, colors.black),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#555555')),
+        ]))
+        story.append(table)
+    else:
+        story.append(_RLParagraph('No dispatch entries on file.', cell_style))
+    story.append(_RLSpacer(1, 10))
+
+    # --- Summary ---
+    story.append(_RLParagraph('SUMMARY', section_style))
+    order_qty = job.order_qty or 0
+    balance = order_qty - total_dispatched
+    summary_rows = [
+        [_p('Order Qty (pcs)', label_style), _p(order_qty, cell_style), _p('Total Printed (sheets)', label_style), _p(total_good_sheets, cell_style)],
+        [_p('Total Packed (pcs)', label_style), _p(total_packed, cell_style), _p('Total Dispatched (pcs)', label_style), _p(total_dispatched, cell_style)],
+        [_p('Total Print Waste (sheets)', label_style), _p(total_print_waste_sheets, cell_style), _p('Total Sorting Waste (pcs)', label_style), _p(total_sorting_waste, cell_style)],
+        [_p('Stock Qty (pcs)', label_style), _p(job.stock_qty, cell_style), _p('Balance Remaining (pcs)', label_style), _p(balance, cell_style)],
+    ]
+    if wastage_metrics:
+        summary_rows.append([
+            _p('Wastage Status', label_style), _p(wastage_metrics['wastage_status'], cell_style),
+            _p('Total Wastage (pcs)', label_style), _p(wastage_metrics['total_wastage_pcs'], cell_style),
+        ])
+        summary_rows.append([
+            _p('Total Wastage %', label_style), _p(f"{wastage_metrics['total_wastage_pct']}%", cell_style), '', '',
+        ])
+    story.append(_grid_table(summary_rows, [40 * mm, 40 * mm, 40 * mm, 40 * mm]))
+
+    doc.build(story)
+    return buffer.getvalue()
 
 
 def _sku_key(sku):

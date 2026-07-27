@@ -36,6 +36,49 @@ def find_completed_job_card_matches(query, limit=5):
     ]
 
 
+def compute_job_card_wastage_metrics(job_card):
+    """
+    Per-job wastage figures, matching the Wastage Report (reports/services.py
+    build_wastage_report_context) definition exactly: total wastage is not
+    just printing/sorting waste — it also includes the dispatch gap (planned
+    qty not yet dispatched), and status is Tentative until the job is
+    Completed/Closed (waste can still change until then).
+    """
+    if job_card is None:
+        return None
+
+    ups = job_card.ups or 1
+    plan_qty_pcs = int(job_card.total_sheets_planned * ups)
+
+    dispatch_qty_pcs = sum(d.dispatch_qty for d in job_card.dispatch_set.filter(is_active=True))
+    printing_waste_sheets = sum(
+        p.waste_sheets for p in job_card.productions.filter(is_active=True, entry_type='printing')
+    )
+    printing_waste_pcs = printing_waste_sheets * ups
+    sorting_waste_pcs = sum(
+        p.sorting_waste_qty for p in job_card.productions.filter(is_active=True, entry_type='packing')
+    )
+    dispatch_gap_pcs = max(plan_qty_pcs - dispatch_qty_pcs, 0)
+
+    is_completed = job_card.status in ('completed', 'closed') or job_card.job_status == 'Completed'
+    wastage_status = 'Finalized' if is_completed else 'Tentative'
+
+    total_wastage_pcs = printing_waste_pcs + sorting_waste_pcs + dispatch_gap_pcs
+    total_wastage_pct = round((total_wastage_pcs / plan_qty_pcs * 100), 2) if plan_qty_pcs > 0 else 0.0
+
+    return {
+        'plan_qty_pcs': plan_qty_pcs,
+        'dispatch_qty_pcs': dispatch_qty_pcs,
+        'printing_waste_sheets': printing_waste_sheets,
+        'printing_waste_pcs': printing_waste_pcs,
+        'sorting_waste_pcs': sorting_waste_pcs,
+        'dispatch_gap_pcs': dispatch_gap_pcs,
+        'wastage_status': wastage_status,
+        'total_wastage_pcs': total_wastage_pcs,
+        'total_wastage_pct': total_wastage_pct,
+    }
+
+
 def collect_planning_department_names():
     """Return distinct non-empty department names used in planning jobs and PO documents."""
     from planning.models import PlanningJob, PoDocument

@@ -42,6 +42,7 @@ urlpatterns = [
     path('job/<int:job_id>/priority/', views.planning_job_priority_update, name='job_priority_update'),
     path('job/<int:job_id>/print/', views.planning_job_card_print, name='job_card_print'),
     path('job/<int:job_id>/print/pdf/', views.planning_job_card_pdf, name='job_card_print_pdf'),
+    path('job/<int:job_id>/history-report/pdf/', views.planning_job_history_report_pdf, name='job_history_report_pdf'),
     path('approval-queue/', views.approval_queue, name='approval_queue'),
     path('readme/', views.planning_readme, name='planning_readme'),
     path('readme/download/', views.download_planning_readme, name='download_planning_readme'),
