@@ -753,27 +753,28 @@ html, body {
 .plates-records-table col.col-jc { width: 9%; }
 .plates-records-table col.col-type { width: 6%; }
 
-.plate-requests-table col.col-jc { width: 150px; }
-.plate-requests-table col.col-type { width: 72px; }
-.plate-requests-table col.col-sku { width: 200px; }
-.plate-requests-table col.col-job { width: 220px; }
-.plate-requests-table col.col-set { width: 72px; }
-.plate-requests-table col.col-qty { width: 56px; }
-.plate-requests-table col.col-workflow { width: 110px; }
-.plate-requests-table col.col-machine { width: 110px; }
-.plate-requests-table col.col-colors { width: 90px; }
-.plate-requests-table col.col-impression { width: 90px; }
-.plate-requests-table col.col-progress { width: 120px; }
-.plate-requests-table col.col-date { width: 130px; }
-.plate-requests-table col.col-user { width: 90px; }
+.plate-requests-table col.col-jc { width: 8%; }
+.plate-requests-table col.col-type { width: 5%; }
+.plate-requests-table col.col-sku { width: 14%; }
+.plate-requests-table col.col-job { width: 15%; }
+.plate-requests-table col.col-set { width: 5%; }
+.plate-requests-table col.col-awc { width: 7%; }
+.plate-requests-table col.col-qty { width: 4%; }
+.plate-requests-table col.col-workflow { width: 7%; }
+.plate-requests-table col.col-machine { width: 6%; }
+.plate-requests-table col.col-colors { width: 6%; }
+.plate-requests-table col.col-impression { width: 5%; }
+.plate-requests-table col.col-progress { width: 6%; }
+.plate-requests-table col.col-date { width: 6%; }
+.plate-requests-table col.col-user { width: 6%; }
 
 .plate-requests-table {
-    min-width: 1510px;
+    min-width: 1100px;
     table-layout: fixed;
 }
 
 .erp-records-table-wrap .plate-requests-table {
-    min-width: 1510px;
+    min-width: 1100px;
 }
 
 .plate-requests-table thead th.plates-jc-cell,
