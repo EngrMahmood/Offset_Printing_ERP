@@ -157,7 +157,7 @@
             <div class="erp-card-title-stack">
                 <div class="erp-eyebrow">Queue</div>
                 <h3 class="erp-section-title">Planning Jobs</h3>
-                <p class="erp-section-desc">{{ jobs.paginator.count }} active job{{ jobs.paginator.count|pluralize }}</p>
+                <p class="erp-section-desc">{% if filters.q %}{{ jobs.paginator.count }} result{{ jobs.paginator.count|pluralize }} for "{{ filters.q }}" (includes completed jobs, read-only){% else %}{{ jobs.paginator.count }} active job{{ jobs.paginator.count|pluralize }}{% endif %}</p>
             </div>
         </div>
         {% if filters.merged %}
@@ -303,6 +303,9 @@
                                         <span style="color:#999;">—</span>
                                     {% endif %}
                                 </div>
+                                {% if job.status == 'completed' %}
+                                <span class="erp-text-muted" style="font-size:11px;" title="Completed jobs are read-only. Reopen from Job Detail if this needs changes.">Completed — read-only</span>
+                                {% else %}
                                 <form method="post" action="{% url 'planning:jobs' %}" style="display:inline-block; width:100%;">
                                     {% csrf_token %}
                                     <input type="hidden" name="action" value="update_planning_stage">
@@ -315,12 +318,16 @@
                                         <option value="planning_done" {% if job.planning_stage == 'planning_done' or job.planning_stage == 'in_production' or job.planning_stage == '' and job.status == 'released' %}selected{% endif %}>Planning Done</option>
                                     </select>
                                 </form>
+                                {% endif %}
                             </div>
                         </td>
                         <td style="white-space:nowrap;">
                             <div class="erp-actions" style="gap:4px; align-items:center; flex-wrap:wrap;">
                                 <a href="{% url 'planning:job_detail' job.id %}" class="erp-btn erp-btn-secondary sm">View</a>
-                                {% if user_can_plan and job.effective_status == 'draft' %}
+                                {% if job.status == 'completed' %}
+                                <span class="erp-badge erp-badge-secondary" title="Completed jobs are read-only. Reopen from Job Detail if this needs changes.">Read-only</span>
+                                {% endif %}
+                                {% if job.status != 'completed' and user_can_plan and job.effective_status == 'draft' %}
                                     <a href="{% url 'planning:job_edit' job.id %}" class="erp-btn erp-btn-secondary sm">Edit</a>
                                     {% if job.can_submit_qc %}
                                         <form method="post" action="{% url 'planning:job_status_update' job.id %}" class="erp-inline-form">
@@ -331,7 +338,7 @@
                                         </form>
                                     {% endif %}
                                 {% endif %}
-                                {% if user_can_release and job.has_job_card and job.job_card_workflow_status == 'qc_approved' %}
+                                {% if job.status != 'completed' and user_can_release and job.has_job_card and job.job_card_workflow_status == 'qc_approved' %}
                                     {% if job.release_blocked_open_plate %}
                                     <span class="erp-badge erp-badge-warning" title="Complete or cancel plate request #{{ job.release_blocked_open_plate.pk }} before release.">
                                         Plate #{{ job.release_blocked_open_plate.pk }} open
@@ -346,7 +353,7 @@
                                     </form>
                                     {% endif %}
                                 {% endif %}
-                                {% if user_can_cancel %}
+                                {% if job.status != 'completed' and user_can_cancel %}
                                     {% with blockers=job.cancellation_blockers %}
                                     {% if blockers %}
                                         <span class="erp-badge erp-badge-secondary" title="{% for blocker in blockers %}{{ blocker }} {% endfor %}">Cancel blocked</span>
@@ -380,7 +387,7 @@
                                     {% endif %}
                                     {% endwith %}
                                 {% endif %}
-                                {% if can_admin_actions %}
+                                {% if job.status != 'completed' and can_admin_actions %}
                                     <form method="post" action="{% url 'planning:jobs' %}" class="erp-inline-form" onsubmit="return confirm('Delete planning job {{ job.jc_number }} and all related plate requests? This cannot be undone.');">
                                         {% csrf_token %}
                                         <input type="hidden" name="action" value="delete">
