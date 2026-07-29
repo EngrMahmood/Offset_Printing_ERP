@@ -104,6 +104,7 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_access_item_request': _allow(ITEM_REQUEST_NAV_ROLES),
         'can_access_maintenance': _allow(MAINTENANCE_NAV_ROLES),
         'can_access_tasks': is_authenticated,
+        'can_access_floor_dashboard': is_authenticated,
         # Managers/admins who can approve edit-lock override requests.
         'can_review_overrides': can_review_overrides,
         'override_pending_count': _pending_override_reviews(),

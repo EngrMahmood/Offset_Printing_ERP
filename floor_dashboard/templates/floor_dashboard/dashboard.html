@@ -1,0 +1,262 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Production Floor Dashboard</title>
+<style>
+* { box-sizing: border-box; }
+html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    background: #05070d; color: #f4f6fb;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    overflow: hidden;
+}
+.fd-shell { position: relative; width: 100vw; height: 100vh; }
+.fd-screen {
+    position: absolute; inset: 0; padding: 40px 60px;
+    display: none; flex-direction: column;
+    opacity: 0; transition: opacity 0.6s ease;
+}
+.fd-screen.active { display: flex; opacity: 1; }
+.fd-header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 24px; border-bottom: 3px solid #1e2a3f; padding-bottom: 16px; }
+.fd-title { font-size: 42px; font-weight: 800; letter-spacing: 1px; }
+.fd-clock { font-size: 26px; color: #8fa3c0; }
+.fd-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; flex: 1; }
+.fd-grid.cols-3 { grid-template-columns: repeat(3, 1fr); }
+.fd-grid.cols-2 { grid-template-columns: repeat(2, 1fr); }
+.fd-card {
+    background: linear-gradient(160deg, #101828, #0a101d);
+    border: 1px solid #1e2a3f; border-radius: 18px; padding: 26px;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    text-align: center;
+}
+.fd-card-label { font-size: 20px; color: #8fa3c0; text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px; }
+.fd-card-value { font-size: 64px; font-weight: 800; line-height: 1; }
+.fd-card-sub { font-size: 18px; color: #6b7f9e; margin-top: 8px; }
+.fd-green { color: #34d399; }
+.fd-yellow { color: #fbbf24; }
+.fd-red { color: #f87171; }
+.fd-blue { color: #60a5fa; }
+.fd-bar-track { width: 100%; height: 22px; background: #1e2a3f; border-radius: 12px; overflow: hidden; margin-top: 14px; }
+.fd-bar-fill { height: 100%; background: linear-gradient(90deg, #34d399, #10b981); border-radius: 12px; transition: width 0.8s ease; }
+.fd-leaderboard { list-style: none; margin: 0; padding: 0; width: 100%; }
+.fd-leaderboard li {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 26px; padding: 14px 10px; border-bottom: 1px solid #1e2a3f;
+}
+.fd-rank { display: inline-block; width: 40px; font-weight: 800; color: #fbbf24; }
+.fd-badges { display: flex; flex-wrap: wrap; gap: 24px; justify-content: center; align-items: center; flex: 1; }
+.fd-badge {
+    background: linear-gradient(160deg, #1a2540, #0d1526); border: 2px solid #2d3f5f;
+    border-radius: 20px; padding: 30px 40px; text-align: center; min-width: 320px;
+}
+.fd-badge-title { font-size: 22px; color: #8fa3c0; text-transform: uppercase; margin-bottom: 10px; }
+.fd-badge-name { font-size: 40px; font-weight: 800; }
+.fd-quote { font-size: 40px; text-align: center; margin: auto; font-style: italic; color: #cbd5e1; }
+.fd-dots { position: absolute; bottom: 24px; left: 0; right: 0; display: flex; justify-content: center; gap: 10px; }
+.fd-dot { width: 12px; height: 12px; border-radius: 50%; background: #1e2a3f; }
+.fd-dot.active { background: #34d399; }
+.fd-alert-ticker {
+    position: fixed; top: 24px; right: 24px; z-index: 50;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.fd-alert-toast {
+    background: #101828; border: 1px solid #34d399; border-radius: 10px;
+    padding: 14px 22px; font-size: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+    animation: fdFadeIn 0.3s ease;
+}
+@keyframes fdFadeIn { from { opacity: 0; transform: translateY(-10px); } to { opacity: 1; transform: translateY(0); } }
+.fd-note { font-size: 18px; color: #6b7f9e; margin-top: 16px; text-align: center; }
+</style>
+</head>
+<body>
+<div class="fd-shell" id="fd-shell">
+
+<section class="fd-screen active" data-screen="plant_overview">
+    <div class="fd-header">
+        <div class="fd-title">Plant Overview</div>
+        <div class="fd-clock" data-field="time">{{ data.plant_overview.time }}</div>
+    </div>
+    <div class="fd-note" data-field="display_date_note" style="text-align:left; margin-top:-14px; margin-bottom:14px;">
+        {% if data.is_fallback_date %}No activity logged yet today — showing the most recent active day: {{ data.display_date }}{% else %}Live data for {{ data.display_date }}{% endif %}
+    </div>
+    <div class="fd-grid">
+        <div class="fd-card"><div class="fd-card-label">Running Jobs</div><div class="fd-card-value fd-blue" data-field="running_jobs">{{ data.plant_overview.running_jobs }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Completed Jobs</div><div class="fd-card-value fd-green" data-field="completed_jobs">{{ data.plant_overview.completed_jobs }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Pending Jobs</div><div class="fd-card-value fd-yellow" data-field="pending_jobs">{{ data.plant_overview.pending_jobs }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Efficiency</div><div class="fd-card-value" data-field="efficiency_pct">{{ data.plant_overview.efficiency_pct }}%</div></div>
+        <div class="fd-card"><div class="fd-card-label">Printed</div><div class="fd-card-value fd-blue" data-field="printed_pcs">{{ data.plant_overview.printed_pcs }}</div><div class="fd-card-sub">pcs</div></div>
+        <div class="fd-card"><div class="fd-card-label">Dispatched</div><div class="fd-card-value fd-green" data-field="dispatched_pcs">{{ data.plant_overview.dispatched_pcs }}</div><div class="fd-card-sub">pcs</div></div>
+        <div class="fd-card"><div class="fd-card-label">Process Wastage</div><div class="fd-card-value fd-red" data-field="process_wastage_pct">{{ data.plant_overview.process_wastage_pct }}%</div></div>
+        <div class="fd-card"><div class="fd-card-label">Plant Utilization</div><div class="fd-card-value" data-field="plant_utilization_pct">{{ data.plant_overview.plant_utilization_pct }}%</div><div class="fd-card-sub" data-field="machines_sub">{{ data.plant_overview.active_machines }}/{{ data.plant_overview.total_machines }} machines</div></div>
+    </div>
+    <div class="fd-card" style="margin-top:24px;">
+        <div class="fd-card-label">Today's Target Progress <span data-field="target_estimated_tag">{% if data.plant_overview.target_is_estimated %}(estimated){% endif %}</span></div>
+        <div class="fd-card-value" data-field="target_progress_pct">{{ data.plant_overview.target_progress_pct }}%</div>
+        <div class="fd-bar-track"><div class="fd-bar-fill" data-field="target_progress_bar" style="width: {{ data.plant_overview.target_progress_pct }}%;"></div></div>
+        <div class="fd-card-sub"><span data-field="printed_of_target">{{ data.plant_overview.packed_pcs }}</span> / <span data-field="target_qty">{{ data.plant_overview.target_qty }}</span> pcs — remaining <span data-field="target_remaining">{{ data.plant_overview.target_remaining }}</span></div>
+    </div>
+</section>
+
+<section class="fd-screen" data-screen="period_summary">
+    <div class="fd-header"><div class="fd-title">Today · Yesterday · Week · Month</div></div>
+    <div class="fd-grid" data-field="periods">
+        {% for p in data.period_summary.periods %}
+        <div class="fd-card">
+            <div class="fd-card-label">{{ p.label }}<br><span style="font-size:14px;">{{ p.range_label }}</span></div>
+            <div class="fd-card-value fd-blue">{{ p.printed_pcs }}</div>
+            <div class="fd-card-sub">printed pcs</div>
+            <div class="fd-card-sub">Packed {{ p.packed_pcs }} · Dispatched {{ p.dispatched_pcs }}</div>
+            <div class="fd-card-sub">Wastage {{ p.process_wastage_pct }}% · Efficiency {{ p.efficiency_pct }}%</div>
+        </div>
+        {% endfor %}
+    </div>
+</section>
+
+<section class="fd-screen" data-screen="printing_performance">
+    <div class="fd-header"><div class="fd-title">Printing Performance</div></div>
+    <div class="fd-grid">
+        <div class="fd-card"><div class="fd-card-label">Impressions</div><div class="fd-card-value fd-blue" data-field="impressions_total">{{ data.printing_performance.impressions_total }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Output Sheets</div><div class="fd-card-value fd-green" data-field="output_sheets_total">{{ data.printing_performance.output_sheets_total }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Waste %</div><div class="fd-card-value fd-red" data-field="waste_pct">{{ data.printing_performance.waste_pct }}%</div></div>
+        <div class="fd-card"><div class="fd-card-label">Avg Run Speed</div><div class="fd-card-value" data-field="avg_run_speed">{{ data.printing_performance.avg_run_speed }}</div><div class="fd-card-sub">impr/hr</div></div>
+    </div>
+    <div class="fd-grid cols-2" style="margin-top:24px;">
+        <div class="fd-card" style="align-items:stretch;">
+            <div class="fd-card-label">Top Machines</div>
+            <ul class="fd-leaderboard" data-field="top_machines">
+                {% for m in data.printing_performance.top_machines %}
+                <li><span><span class="fd-rank">{{ forloop.counter }}</span>{{ m.name }}</span><span>{{ m.efficiency_pct }}%</span></li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="fd-card" style="align-items:stretch;">
+            <div class="fd-card-label">Top Operators</div>
+            <ul class="fd-leaderboard" data-field="top_operators">
+                {% for o in data.printing_performance.top_operators %}
+                <li><span><span class="fd-rank">{{ forloop.counter }}</span>{{ o.name }}</span><span>{{ o.efficiency_pct }}%</span></li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</section>
+
+<section class="fd-screen" data-screen="packing_performance">
+    <div class="fd-header"><div class="fd-title">Packing Performance</div></div>
+    <div class="fd-grid cols-3">
+        <div class="fd-card"><div class="fd-card-label">Packed Pieces</div><div class="fd-card-value fd-green" data-field="packed_pcs">{{ data.packing_performance.packed_pcs }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Sorting Waste</div><div class="fd-card-value fd-red" data-field="sorting_waste_pcs">{{ data.packing_performance.sorting_waste_pcs }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Target Achievement</div><div class="fd-card-value" data-field="target_progress_pct">{{ data.packing_performance.target_progress_pct }}%</div></div>
+    </div>
+    <div class="fd-card" style="margin-top:24px; align-items:stretch;">
+        <div class="fd-card-label">Top Sorters</div>
+        <ul class="fd-leaderboard" data-field="top_sorters">
+            {% for s in data.packing_performance.top_sorters %}
+            <li><span><span class="fd-rank">{{ forloop.counter }}</span>{{ s.name }}</span><span>{{ s.packed_qty }} pcs · {{ s.waste_pct }}% waste</span></li>
+            {% endfor %}
+        </ul>
+    </div>
+</section>
+
+<section class="fd-screen" data-screen="dispatch_performance">
+    <div class="fd-header"><div class="fd-title">Dispatch Performance</div></div>
+    <div class="fd-grid cols-3">
+        <div class="fd-card"><div class="fd-card-label">Dispatched Qty</div><div class="fd-card-value fd-green" data-field="dispatch_qty">{{ data.dispatch_performance.dispatch_qty }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Delivery Challans</div><div class="fd-card-value fd-blue" data-field="dc_count">{{ data.dispatch_performance.dc_count }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Completed vs Packed</div><div class="fd-card-value" data-field="completion_pct">{{ data.dispatch_performance.completion_pct }}%</div></div>
+    </div>
+    <div class="fd-note">{{ data.dispatch_performance.note }}</div>
+</section>
+
+<section class="fd-screen" data-screen="shift_comparison">
+    <div class="fd-header"><div class="fd-title">Shift Comparison</div></div>
+    <div class="fd-grid cols-2" data-field="shifts">
+        {% for s in data.shift_comparison.shifts %}
+        <div class="fd-card">
+            <div class="fd-card-label">{{ s.label }}</div>
+            <div class="fd-card-value">{{ s.efficiency_pct }}%</div>
+            <div class="fd-card-sub">Output {{ s.output_sheets }} sheets · Waste {{ s.waste_pct }}%</div>
+        </div>
+        {% endfor %}
+    </div>
+    <div class="fd-note" data-field="winning_shift">{% if data.shift_comparison.winning_shift %}Winning Shift: {{ data.shift_comparison.winning_shift }}{% endif %}</div>
+</section>
+
+<section class="fd-screen" data-screen="machine_leaderboard">
+    <div class="fd-header"><div class="fd-title">Machine Leaderboard</div></div>
+    <ul class="fd-leaderboard" data-field="machines">
+        {% for m in data.machine_leaderboard.machines %}
+        <li><span><span class="fd-rank">{{ forloop.counter }}</span>{{ m.name }}</span><span>{{ m.output_sheets }} sheets · {{ m.efficiency_pct }}% eff</span></li>
+        {% endfor %}
+    </ul>
+    <div class="fd-note" data-field="machine_of_the_day">{% if data.machine_leaderboard.machine_of_the_day %}🏆 Machine of the Day: {{ data.machine_leaderboard.machine_of_the_day }}{% endif %}</div>
+</section>
+
+<section class="fd-screen" data-screen="operator_leaderboard">
+    <div class="fd-header"><div class="fd-title">Operator Leaderboard</div></div>
+    <div class="fd-grid cols-2">
+        <div class="fd-card" style="align-items:stretch;">
+            <div class="fd-card-label">Printing Operators</div>
+            <ul class="fd-leaderboard" data-field="operators">
+                {% for o in data.operator_leaderboard.operators %}
+                <li><span><span class="fd-rank">{{ forloop.counter }}</span>{{ o.name }}</span><span>{{ o.output_sheets }} sheets</span></li>
+                {% endfor %}
+            </ul>
+        </div>
+        <div class="fd-card" style="align-items:stretch;">
+            <div class="fd-card-label">Packing Sorters</div>
+            <ul class="fd-leaderboard" data-field="sorters">
+                {% for s in data.operator_leaderboard.sorters %}
+                <li><span><span class="fd-rank">{{ forloop.counter }}</span>{{ s.name }}</span><span>{{ s.packed_qty }} pcs</span></li>
+                {% endfor %}
+            </ul>
+        </div>
+    </div>
+</section>
+
+<section class="fd-screen" data-screen="wastage_quality">
+    <div class="fd-header"><div class="fd-title">Quality &amp; Wastage</div></div>
+    <div class="fd-grid">
+        <div class="fd-card"><div class="fd-card-label">Printing Waste</div><div class="fd-card-value fd-red" data-field="printing_waste_pcs">{{ data.wastage_quality.printing_waste_pcs }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Sorting Waste</div><div class="fd-card-value fd-red" data-field="sorting_waste_pcs">{{ data.wastage_quality.sorting_waste_pcs }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Quality Score</div><div class="fd-card-value fd-green" data-field="quality_score">{{ data.wastage_quality.quality_score }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Flagged for Review</div><div class="fd-card-value fd-yellow" data-field="flagged_job_count">{{ data.wastage_quality.flagged_job_count }}</div></div>
+    </div>
+    <div class="fd-note">Consumption over tolerance or a large dispatch-gap after job completion — review flagged job cards in Production Records / Wastage Report.</div>
+</section>
+
+<section class="fd-screen" data-screen="target_achievement">
+    <div class="fd-header"><div class="fd-title">Target Achievement</div></div>
+    <div class="fd-grid cols-3">
+        <div class="fd-card"><div class="fd-card-label">Target <span data-field="target_estimated_tag">{% if data.target_achievement.target_is_estimated %}(estimated){% endif %}</span></div><div class="fd-card-value" data-field="target_qty">{{ data.target_achievement.target_qty }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Achieved</div><div class="fd-card-value fd-green" data-field="achieved_qty">{{ data.target_achievement.achieved_qty }}</div></div>
+        <div class="fd-card"><div class="fd-card-label">Remaining</div><div class="fd-card-value fd-yellow" data-field="remaining_qty">{{ data.target_achievement.remaining_qty }}</div></div>
+    </div>
+    <div class="fd-card" style="margin-top:24px;">
+        <div class="fd-card-label">Prediction</div>
+        <div class="fd-card-value" data-field="prediction">{{ data.target_achievement.prediction }}</div>
+        <div class="fd-card-sub">Forecast completion: <span data-field="forecast_qty">{{ data.target_achievement.forecast_qty }}</span> pcs at current rate (<span data-field="hourly_rate">{{ data.target_achievement.hourly_rate }}</span>/hr)</div>
+    </div>
+</section>
+
+<section class="fd-screen" data-screen="recognition">
+    <div class="fd-header"><div class="fd-title">Recognition &amp; Motivation</div></div>
+    <div class="fd-badges" data-field="badges">
+        {% for b in data.recognition.badges %}
+        <div class="fd-badge"><div class="fd-badge-title">{{ b.title }}</div><div class="fd-badge-name">{{ b.name }}</div><div class="fd-card-sub">{{ b.detail }}</div></div>
+        {% endfor %}
+    </div>
+    <div class="fd-quote" data-field="motivational_message">"{{ data.recognition.motivational_message }}"</div>
+</section>
+
+<div class="fd-dots" id="fd-dots"></div>
+</div>
+
+<div class="fd-alert-ticker" id="fd-alert-ticker"></div>
+
+{{ data|json_script:"fd-initial-data" }}
+<script src="{% static 'floor_dashboard/js/dashboard.js' %}"></script>
+</body>
+</html>

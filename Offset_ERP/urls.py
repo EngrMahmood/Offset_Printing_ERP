@@ -24,6 +24,7 @@ urlpatterns = [
     path('tasks/', include('tasks.urls', namespace='tasks')),
     path('backup/', include('backup.urls', namespace='backup')),
     path('maintenance/', include('maintenance.urls', namespace='maintenance')),
+    path('floor-dashboard/', include('floor_dashboard.urls', namespace='floor_dashboard')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),
 

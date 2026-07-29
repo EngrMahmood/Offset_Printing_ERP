@@ -57,6 +57,7 @@ INSTALLED_APPS = [
     'tasks',
     'backup',
     'maintenance',
+    'floor_dashboard',
 ]
 
 MIDDLEWARE = [
