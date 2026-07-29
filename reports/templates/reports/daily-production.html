@@ -145,6 +145,26 @@
                 <div class="dp-card-value">{{ data.totals.days }}</div>
                 <div class="dp-card-sub">{{ data.period_label }}</div>
             </div>
+            <div class="dp-card">
+                <div class="dp-card-label">Process Wastage</div>
+                <div class="dp-card-value">{{ data.totals.process_wastage_pcs|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.totals.process_wastage_pct }}% &middot; printing + sorting, real-time</div>
+            </div>
+            <div class="dp-card">
+                <div class="dp-card-label">Flagged For Review</div>
+                <div class="dp-card-value">
+                    <a href="{% url 'production_records' %}?date_from={{ data.date_from }}&date_to={{ data.date_to }}" title="Open Production Records for this period">{{ data.totals.flagged_job_count }}</a>
+                </div>
+                <div class="dp-card-sub">jobs over consumption tolerance</div>
+            </div>
+        </div>
+        <div class="erp-alert erp-alert-info mb-4" style="margin-top:12px;">
+            <strong>Process Wastage</strong> = printing + sorting waste as logged in real time. It excludes
+            dispatch-gap wastage, which only finalizes once a job completes — see the
+            <a href="{% url 'reports:detail' 'wastage-report' %}">Wastage Report</a> for the complete, finalized total per job.
+            <strong>Flagged For Review</strong> = jobs that consumed more sheets (output + waste) than their
+            planned allowance + tolerance — may indicate unreported waste, or legitimate extra output already
+            captured as stock. Review the job's printing/packing entries to confirm.
         </div>
     </section>
 
@@ -164,6 +184,9 @@
             <button type="button" class="erp-tab-btn" data-target="dp-tab-dispatch" data-tab-name="dispatch">
                 <i class="fa fa-truck"></i> Dispatch
             </button>
+            <button type="button" class="erp-tab-btn" data-target="dp-tab-wastage" data-tab-name="wastage">
+                <i class="fa fa-trash-alt"></i> Wastage By Week
+            </button>
         </div>
 
         <!-- OVERVIEW -->
@@ -181,6 +204,8 @@
                             <th class="dp-num">Packing Waste</th>
                             <th class="dp-num">Dispatched Pcs</th>
                             <th class="dp-num">DCs</th>
+                            <th class="dp-num">Process Wastage (Pcs)</th>
+                            <th class="dp-num">Process Wastage %</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -194,9 +219,11 @@
                             <td class="dp-num">{{ row.packing_waste|intcomma }}</td>
                             <td class="dp-num">{{ row.dispatch_qty|intcomma }}</td>
                             <td class="dp-num">{{ row.dc_count }}</td>
+                            <td class="dp-num">{{ row.process_wastage_pcs|intcomma }}</td>
+                            <td class="dp-num">{{ row.process_wastage_pct }}%</td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="8">No production or dispatch recorded in this period.</td></tr>
+                        <tr><td colspan="10">No production or dispatch recorded in this period.</td></tr>
                         {% endfor %}
                     </tbody>
                     {% if data.overview_rows %}
@@ -210,6 +237,8 @@
                             <th class="dp-num">{{ data.totals.packing_waste|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.dispatch_qty|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.dc_count }}</th>
+                            <th class="dp-num">{{ data.totals.process_wastage_pcs|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.process_wastage_pct }}%</th>
                         </tr>
                     </tfoot>
                     {% endif %}
@@ -394,6 +423,67 @@
                         </tr>
                         {% empty %}
                         <tr><td colspan="4">No dispatches recorded in this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- WASTAGE BY WEEK -->
+        <div id="dp-tab-wastage" class="erp-tab-content" style="display:none;">
+            {% include 'reports/_daily_production_exports.html' with slug=report.slug tab='wastage' qs=qs %}
+            <div class="erp-alert erp-alert-info mb-4">
+                Process Wastage = printing + sorting waste as logged in real time. Excludes dispatch-gap wastage,
+                which finalizes only once a job completes — see the
+                <a href="{% url 'reports:detail' 'wastage-report' %}">Wastage Report</a> for that figure.
+            </div>
+            <div class="erp-card-header mb-4">
+                <h3 class="erp-section-title">By Day</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th class="dp-num">Process Wastage (Pcs)</th>
+                            <th class="dp-num">Process Wastage %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.process_wastage_rows %}
+                        <tr>
+                            <td>{{ row.period_label }}</td>
+                            <td class="dp-num">{{ row.process_wastage_pcs|intcomma }}</td>
+                            <td class="dp-num">{{ row.process_wastage_pct }}%</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3">No production recorded in this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="erp-card-header mb-4 mt-4">
+                <h3 class="erp-section-title">By Week</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Week</th>
+                            <th class="dp-num">Process Wastage (Pcs)</th>
+                            <th class="dp-num">Process Wastage %</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.process_wastage_weekly %}
+                        <tr>
+                            <td>{{ row.period_label }}</td>
+                            <td class="dp-num">{{ row.process_wastage_pcs|intcomma }}</td>
+                            <td class="dp-num">{{ row.process_wastage_pct }}%</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="3">No production recorded in this period.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

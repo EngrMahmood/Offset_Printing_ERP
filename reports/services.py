@@ -1424,15 +1424,35 @@ def build_daily_production_context(request):
         * Coalesce(F('machine__standard_impressions_per_hour'), Value(0.0)),
         output_field=FloatField(),
     )
+    # Printing waste is recorded in sheets; converting to pcs (to combine
+    # with packing's pcs-native sorting waste into one "Process Wastage"
+    # figure) needs each row's own job_card.ups, done here as a DB
+    # expression rather than a Python join.
+    waste_pcs_expr = ExpressionWrapper(
+        Coalesce(F('waste_sheets'), Value(0)) * Coalesce(F('job_card__ups'), Value(1)),
+        output_field=FloatField(),
+    )
+    output_pcs_expr = ExpressionWrapper(
+        Coalesce(F('output_sheets'), Value(0)) * Coalesce(F('job_card__ups'), Value(1)),
+        output_field=FloatField(),
+    )
 
     printing_rows = list(
         productions.filter(entry_type='printing')
         .values('date')
         .annotate(
+            # waste_pcs/output_pcs/expected_impressions must be annotated
+            # before waste_sheets/output_sheets/run_time below — within a
+            # single .annotate() call, F() resolves against annotations
+            # already added earlier in the same call, and would otherwise
+            # pick up the Sum('waste_sheets') aggregate instead of the raw
+            # column (Django raises "is an aggregate" for that).
+            waste_pcs=Coalesce(Sum(waste_pcs_expr), Value(0.0)),
+            output_pcs=Coalesce(Sum(output_pcs_expr), Value(0.0)),
+            expected_impressions=Coalesce(Sum(expected_expr), Value(0.0)),
             impressions=Coalesce(Sum('impressions'), Value(0)),
             output_sheets=Coalesce(Sum('output_sheets'), Value(0)),
             waste_sheets=Coalesce(Sum('waste_sheets'), Value(0)),
-            expected_impressions=Coalesce(Sum(expected_expr), Value(0.0)),
             downtime_minutes=Coalesce(Sum('downtime_minutes'), Value(0.0)),
             entries=Count('id'),
         )
@@ -1487,6 +1507,8 @@ def build_daily_production_context(request):
         printing = printing_by_date.get(day, {})
         packing = packing_by_date.get(day, {})
         dispatch = dispatch_by_date.get(day, {})
+        day_waste_pcs = (printing.get('waste_pcs') or 0.0) + (packing.get('sorting_waste_qty') or 0)
+        day_gross_pcs = day_waste_pcs + (printing.get('output_pcs') or 0.0) + (packing.get('packing_qty') or 0)
         overview_rows.append({
             'date': day,
             'date_label': _label(day),
@@ -1497,6 +1519,8 @@ def build_daily_production_context(request):
             'packing_waste': packing.get('sorting_waste_qty', 0),
             'dispatch_qty': dispatch.get('dispatch_qty', 0),
             'dc_count': dispatch.get('dc_count', 0),
+            'process_wastage_pcs': int(round(day_waste_pcs)),
+            'process_wastage_pct': round((day_waste_pcs * 100.0 / day_gross_pcs), 2) if day_gross_pcs else 0.0,
         })
 
     def _total(rows, key):
@@ -1513,6 +1537,75 @@ def build_daily_production_context(request):
         'days': len(overview_rows),
     }
     totals['avg_impressions_per_day'] = round(totals['impressions'] / totals['days']) if totals['days'] else 0
+
+    # Process Wastage = printing waste (pcs) + sorting waste (pcs), as logged
+    # in real time on production entries. Deliberately excludes dispatch-gap
+    # wastage — that component can't be attributed to a specific day/week
+    # since a dispatch may land weeks after the production it settles; it
+    # stays exclusive to the Wastage Report, finalized only at job completion.
+    process_wastage_bucket = {}
+    for row in printing_rows:
+        day = row['date']
+        if not day:
+            continue
+        bucket = process_wastage_bucket.setdefault(day, {'output_pcs': 0.0, 'waste_pcs': 0.0})
+        bucket['output_pcs'] += row['output_pcs'] or 0.0
+        bucket['waste_pcs'] += row['waste_pcs'] or 0.0
+    for row in packing_rows:
+        day = row['date']
+        if not day:
+            continue
+        bucket = process_wastage_bucket.setdefault(day, {'output_pcs': 0.0, 'waste_pcs': 0.0})
+        bucket['output_pcs'] += row['packing_qty'] or 0
+        bucket['waste_pcs'] += row['sorting_waste_qty'] or 0
+
+    def _process_wastage_row(period_label, bucket):
+        gross = bucket['output_pcs'] + bucket['waste_pcs']
+        pct = round((bucket['waste_pcs'] * 100.0 / gross), 2) if gross else 0.0
+        return {
+            'period_label': period_label,
+            'process_wastage_pcs': int(round(bucket['waste_pcs'])),
+            'process_wastage_pct': pct,
+        }
+
+    process_wastage_rows = [
+        {**_process_wastage_row(_label(day), process_wastage_bucket[day]), 'date': day}
+        for day in sorted(process_wastage_bucket, reverse=True)
+    ]
+
+    weekly_bucket = {}
+    for day, bucket in process_wastage_bucket.items():
+        week_start = day - timedelta(days=day.weekday())
+        wk = weekly_bucket.setdefault(week_start, {'output_pcs': 0.0, 'waste_pcs': 0.0})
+        wk['output_pcs'] += bucket['output_pcs']
+        wk['waste_pcs'] += bucket['waste_pcs']
+
+    process_wastage_weekly = []
+    for week_start in sorted(weekly_bucket, reverse=True):
+        week_end = week_start + timedelta(days=6)
+        label = f"{week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')}"
+        process_wastage_weekly.append(_process_wastage_row(label, weekly_bucket[week_start]))
+
+    totals['process_wastage_pcs'] = sum(b['waste_pcs'] for b in process_wastage_bucket.values())
+    _process_gross = totals['process_wastage_pcs'] + sum(b['output_pcs'] for b in process_wastage_bucket.values())
+    totals['process_wastage_pct'] = (
+        round((totals['process_wastage_pcs'] * 100.0 / _process_gross), 2) if _process_gross else 0.0
+    )
+    totals['process_wastage_pcs'] = int(round(totals['process_wastage_pcs']))
+
+    # Consumption-anomaly flag: job cards, active in this window, that used
+    # more sheets (output + waste) than their planned allowance + tolerance.
+    # This is a correlation signal for possibly-unreported waste, not proof —
+    # there's no independent stock-issuance record to check against, only
+    # what operators logged. Surfaced here so it sits next to the wastage
+    # figures instead of only living on Production Records.
+    flagged_job_ids = set(productions.filter(entry_type='printing').values_list('job_card_id', flat=True))
+    flagged_job_count = 0
+    if flagged_job_ids:
+        for job_card in JobCard.objects.filter(id__in=flagged_job_ids, is_active=True):
+            if job_card.extra_sheets_used > job_card.tolerance_sheets:
+                flagged_job_count += 1
+    totals['flagged_job_count'] = flagged_job_count
 
     # Machine split for the printing tab.
     printing_by_machine = list(
@@ -1575,6 +1668,10 @@ def build_daily_production_context(request):
             ('date_label', 'Date'), ('entries', 'Dispatch Entries'),
             ('dc_count', 'Delivery Challans'), ('dispatch_qty', 'Dispatched Pcs'),
         ]),
+        'wastage': (process_wastage_rows, [
+            ('period_label', 'Date'), ('process_wastage_pcs', 'Process Wastage (Pcs)'),
+            ('process_wastage_pct', 'Process Wastage %'),
+        ]),
     }
     export_tab = (request.GET.get('tab') or 'overview').strip().lower()
     if export_tab not in export_tabs:
@@ -1594,6 +1691,8 @@ def build_daily_production_context(request):
         'printing_rows': printing_rows,
         'packing_rows': packing_rows,
         'dispatch_rows': dispatch_rows,
+        'process_wastage_rows': process_wastage_rows,
+        'process_wastage_weekly': process_wastage_weekly,
         'printing_by_machine': printing_by_machine,
         'totals': totals,
         'period': period,
@@ -1789,6 +1888,7 @@ def build_wastage_report_context(request):
     total_wastage_pcs = 0
     total_finalized_waste_pcs = 0
     total_tentative_waste_pcs = 0
+    jobs_needing_reconciliation = 0
 
     s_no_counter = 0
 
@@ -1854,6 +1954,14 @@ def build_wastage_report_context(request):
         if high_wastage_filter and total_waste_pct <= 5.0:
             continue
 
+        # Dispatch-gap is the part of total wastage that reported process
+        # wastage (printing + sorting) did NOT explain — it only becomes
+        # knowable once the job is Finalized and the real dispatch count is
+        # in. Flag it against the job's own planned tolerance so a wrong or
+        # understated in-process waste entry gets caught and pointed at.
+        tolerance_pct = float(job.production_tolerance_percent or 5)
+        needs_reconciliation_review = is_completed and dispatch_gap_pct > tolerance_pct
+
         s_no_counter += 1
 
         row = {
@@ -1874,6 +1982,7 @@ def build_wastage_report_context(request):
             'wastage_status': wastage_status,
             'total_wastage_pcs': job_total_waste_pcs,
             'total_wastage_pct': f"{total_waste_pct}%",
+            'needs_reconciliation_review': 'Yes' if needs_reconciliation_review else '',
         }
         wastage_rows.append(row)
 
@@ -1890,6 +1999,9 @@ def build_wastage_report_context(request):
         else:
             total_tentative_waste_pcs += job_total_waste_pcs
 
+        if needs_reconciliation_review:
+            jobs_needing_reconciliation += 1
+
     overall_wastage_pct = round((total_wastage_pcs / total_plan_qty * 100), 2) if total_plan_qty > 0 else 0.0
 
     summary = {
@@ -1902,6 +2014,7 @@ def build_wastage_report_context(request):
         'overall_wastage_pct': overall_wastage_pct,
         'finalized_wastage_pcs': total_finalized_waste_pcs,
         'tentative_wastage_pcs': total_tentative_waste_pcs,
+        'jobs_needing_reconciliation': jobs_needing_reconciliation,
     }
 
     headers = [
@@ -1922,6 +2035,7 @@ def build_wastage_report_context(request):
         'wastage_status',
         'total_wastage_pcs',
         'total_wastage_pct',
+        'needs_reconciliation_review',
     ]
 
     header_labels = {
@@ -1942,6 +2056,7 @@ def build_wastage_report_context(request):
         'wastage_status': 'Wastage Status',
         'total_wastage_pcs': 'Total Wastage (Pcs)',
         'total_wastage_pct': 'Total Wastage %',
+        'needs_reconciliation_review': 'Needs Review',
     }
 
     # Determine the date range to display in the report subtitle.

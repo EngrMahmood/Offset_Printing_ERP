@@ -66,6 +66,17 @@ def compute_job_card_wastage_metrics(job_card):
     total_wastage_pcs = printing_waste_pcs + sorting_waste_pcs + dispatch_gap_pcs
     total_wastage_pct = round((total_wastage_pcs / plan_qty_pcs * 100), 2) if plan_qty_pcs > 0 else 0.0
 
+    # The dispatch-gap component is exactly the part of total wastage that
+    # process wastage (printing + sorting) did NOT explain — it's what a
+    # wrong/understated waste entry during production shows up as once the
+    # real, final dispatch count comes in. Flag it once the job is finalized
+    # and the gap exceeds the job's own planned production tolerance, so a
+    # supervisor can go back and check that job's entries rather than the
+    # gap just sitting unexplained in the report.
+    dispatch_gap_pct = round((dispatch_gap_pcs / plan_qty_pcs * 100), 2) if plan_qty_pcs > 0 else 0.0
+    tolerance_pct = float(job_card.production_tolerance_percent or 5)
+    needs_reconciliation_review = wastage_status == 'Finalized' and dispatch_gap_pct > tolerance_pct
+
     return {
         'plan_qty_pcs': plan_qty_pcs,
         'dispatch_qty_pcs': dispatch_qty_pcs,
@@ -76,6 +87,7 @@ def compute_job_card_wastage_metrics(job_card):
         'wastage_status': wastage_status,
         'total_wastage_pcs': total_wastage_pcs,
         'total_wastage_pct': total_wastage_pct,
+        'needs_reconciliation_review': needs_reconciliation_review,
     }
 
 

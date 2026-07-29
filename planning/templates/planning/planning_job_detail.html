@@ -307,6 +307,13 @@
             <div class="erp-info-item"><div class="erp-info-item__label">Total Wastage %</div><div class="erp-info-item__value">{{ wastage_metrics.total_wastage_pct }}%</div></div>
             {% endif %}
         </div>
+        {% if wastage_metrics.needs_reconciliation_review %}
+        <div class="erp-alert erp-alert-warning mt-4">
+            Finalized wastage is higher than what was reported during production — the dispatch-gap portion of
+            Total Wastage exceeds this job's planned tolerance. Review this job's printing and packing entries;
+            edits use the existing change-reason workflow already required for entry edits.
+        </div>
+        {% endif %}
     </section>
 
     <section class="erp-section-shell">
