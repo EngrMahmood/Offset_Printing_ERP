@@ -1529,6 +1529,7 @@ def build_daily_production_context(request):
     totals = {
         'impressions': _total(printing_rows, 'impressions'),
         'output_sheets': _total(printing_rows, 'output_sheets'),
+        'printed_pcs': int(round(_total(printing_rows, 'output_pcs'))),
         'printing_waste': _total(printing_rows, 'waste_sheets'),
         'packing_qty': _total(packing_rows, 'packing_qty'),
         'packing_waste': _total(packing_rows, 'sorting_waste_qty'),
