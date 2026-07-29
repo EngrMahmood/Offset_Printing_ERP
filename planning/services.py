@@ -2259,7 +2259,7 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
                 continue
             candidates = list(
                 PlanningJob.objects.filter(
-                    po_number='',
+                    Q(po_number='') | Q(po_number='-'),
                     sku__iexact=sku_key,
                     order_qty=item_order_qty,
                 )

@@ -1989,6 +1989,50 @@ def build_wastage_report_context(request):
         'has_prev': current_page > 1,
     }
 
+    # Day / week rollups of the same wastage figures, mirroring the Daily
+    # Production report's day-by-day breakdown. Grouped from the already
+    # per-job wastage_rows (keyed on each job's resolved plan_date) rather
+    # than re-querying, since per-job UPS/plan_qty is only easy to resolve
+    # once, at the per-job level above.
+    daily_bucket = {}
+    weekly_bucket = {}
+    for row in wastage_rows:
+        if not row['plan_date']:
+            continue
+        day = datetime.strptime(row['plan_date'], '%Y-%m-%d').date()
+        week_start = day - timedelta(days=day.weekday())
+
+        d = daily_bucket.setdefault(day, {'plan_qty': 0, 'total_wastage_pcs': 0})
+        d['plan_qty'] += row['plan_qty']
+        d['total_wastage_pcs'] += row['total_wastage_pcs']
+
+        w = weekly_bucket.setdefault(week_start, {'plan_qty': 0, 'total_wastage_pcs': 0})
+        w['plan_qty'] += row['plan_qty']
+        w['total_wastage_pcs'] += row['total_wastage_pcs']
+
+    daily_wastage = []
+    for day in sorted(daily_bucket, reverse=True):
+        bucket = daily_bucket[day]
+        pct = round((bucket['total_wastage_pcs'] / bucket['plan_qty'] * 100), 2) if bucket['plan_qty'] > 0 else 0.0
+        daily_wastage.append({
+            'period_label': day.strftime('%Y-%m-%d (%a)'),
+            'plan_qty': bucket['plan_qty'],
+            'total_wastage_pcs': bucket['total_wastage_pcs'],
+            'total_wastage_pct': pct,
+        })
+
+    weekly_wastage = []
+    for week_start in sorted(weekly_bucket, reverse=True):
+        bucket = weekly_bucket[week_start]
+        week_end = week_start + timedelta(days=6)
+        pct = round((bucket['total_wastage_pcs'] / bucket['plan_qty'] * 100), 2) if bucket['plan_qty'] > 0 else 0.0
+        weekly_wastage.append({
+            'period_label': f"{week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')}",
+            'plan_qty': bucket['plan_qty'],
+            'total_wastage_pcs': bucket['total_wastage_pcs'],
+            'total_wastage_pct': pct,
+        })
+
     return {
         'report': next(item for item in REPORT_CATALOG if item['key'] == 'wastage-report'),
         'filters': {
@@ -2011,6 +2055,8 @@ def build_wastage_report_context(request):
         },
         'summary': summary,
         'wastage_rows': wastage_rows_paginated,
+        'daily_wastage': daily_wastage,
+        'weekly_wastage': weekly_wastage,
         'pagination': pagination_data,
         'status_choices': JobCard._meta.get_field('status').choices,
         'headers': headers,

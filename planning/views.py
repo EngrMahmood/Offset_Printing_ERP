@@ -4633,6 +4633,9 @@ def upload_po(request):
         pdf_file.seek(0)
 
         po_number = (extracted.get('po_number') or '').strip()
+        if po_number in ('-', '—', 'N/A', 'NA'):
+            po_number = ''
+            extracted['po_number'] = ''
         existing_doc = None
         if po_number:
             existing_doc = PoDocument.objects.filter(extracted_payload__po_number=po_number).order_by('-id').first()
@@ -4733,6 +4736,8 @@ def manual_po_entry(request):
     """Create a PO intake record manually without uploading a PDF."""
     if request.method == 'POST':
         po_number = (request.POST.get('po_number') or '').strip()
+        if po_number in ('-', '—', 'N/A', 'NA'):
+            po_number = ''
         pr_number = (request.POST.get('pr_number') or '').strip()
 
         if not po_number and not pr_number:
@@ -4938,6 +4943,8 @@ def po_review(request, doc_id):
 
         if action == 'update_po_number':
             manual_po_number = (request.POST.get('manual_po_number') or '').strip()
+            if manual_po_number in ('-', '—', 'N/A', 'NA'):
+                manual_po_number = ''
             if not manual_po_number:
                 messages.error(request, 'PO number is required to update the PO intake record.')
                 return redirect('qc:po_review', doc_id=po_doc.id)

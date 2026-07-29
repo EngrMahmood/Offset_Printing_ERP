@@ -1108,8 +1108,22 @@ class Production(models.Model):
                 super().save(*args, **kwargs)
                 from production.wip_service import evaluate_and_update_job_wip_status
                 evaluate_and_update_job_wip_status(self.job_card, user=self.created_by)
+                if self.entry_type == 'packing' and not self.merge_parent_id:
+                    self._sync_excess_production_to_stock()
         except IntegrityError:
             raise ValidationError("DB error while saving Production")
+
+    def _sync_excess_production_to_stock(self):
+        """Once packed qty reaches order qty, anything packed beyond it is
+        carried forward as stock for the next repeat run of this SKU."""
+        job_card = self.job_card
+        planning_job = getattr(job_card, 'planning_job', None)
+        if not planning_job or not job_card.order_qty:
+            return
+        excess = max(int(job_card.total_packed_pcs or 0) - int(job_card.order_qty), 0)
+        if int(planning_job.stock_qty or 0) != excess:
+            planning_job.stock_qty = excess
+            planning_job.save(update_fields=['stock_qty', 'updated_at'])
 
     # ===== OEE =====
 
@@ -1360,27 +1374,14 @@ class Dispatch(models.Model):
 
         total_after = existing_dispatch + (self.dispatch_qty or 0)
 
-        if self.job_card.is_print_job:
-            total_production = self.job_card.total_packed_pcs
-            if total_after > total_production:
-                if self.job_card.ups in (None, 0) and self.job_card.packing_productions.exists():
-                    errors['dispatch_qty'] = (
-                        "Dispatch cannot be validated because no packed quantity is recorded yet."
-                    )
-                elif self.job_card.ups in (None, 0) and self.job_card.printing_productions.exists():
-                    errors['dispatch_qty'] = (
-                        "Dispatch cannot be validated because print job UPS is missing. "
-                        "Please set UPS on the job card before dispatching."
-                    )
-                else:
-                    errors['dispatch_qty'] = "Dispatch cannot exceed total packed quantity!"
-        else:
-            # Cut & Pack jobs: dispatch directly against order qty (no production entry needed)
-            if total_after > self.job_card.order_qty:
-                errors['dispatch_qty'] = (
-                    f"Dispatch ({total_after}) cannot exceed order qty ({self.job_card.order_qty}) "
-                    f"for a Cut & Pack job!"
-                )
+        # Dispatch is bound to order qty — an operator's under-logged
+        # production entry must not block a dispatch that is otherwise valid.
+        # Packed/produced qty is checked only as a soft warning (surfaced by
+        # the entry form's UI), never a hard block.
+        if total_after > self.job_card.order_qty:
+            errors['dispatch_qty'] = (
+                f"Dispatch ({total_after}) cannot exceed order qty ({self.job_card.order_qty})!"
+            )
 
         if errors:
             raise ValidationError(errors)

@@ -114,6 +114,28 @@
                 <tbody id="data-body"></tbody>
             </table>
         </div>
+        <div id="bi-wastage-trend-container" style="display:none; margin-top:16px;">
+            <div class="bi-grid">
+                <div class="bi-chart-card">
+                    <h4 style="margin:0 0 8px;">Wastage By Day</h4>
+                    <div class="bi-table-wrap" style="max-height:320px;">
+                        <table class="bi-table">
+                            <thead><tr><th>Day</th><th>Plan Qty (Pcs)</th><th>Total Wastage (Pcs)</th><th>Total Wastage %</th></tr></thead>
+                            <tbody id="bi-daily-wastage-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+                <div class="bi-chart-card">
+                    <h4 style="margin:0 0 8px;">Wastage By Week</h4>
+                    <div class="bi-table-wrap" style="max-height:320px;">
+                        <table class="bi-table">
+                            <thead><tr><th>Week</th><th>Plan Qty (Pcs)</th><th>Total Wastage (Pcs)</th><th>Total Wastage %</th></tr></thead>
+                            <tbody id="bi-weekly-wastage-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
         <div id="bi-pagination-container" style="display: flex; align-items: center; justify-content: space-between; margin-top: 16px; padding: 12px 16px; background: white; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 13px; color: #475569; display: none;">
             <div>
                 Showing <span id="pag-start" style="font-weight: 600; color: #0f172a;">0</span> to <span id="pag-end" style="font-weight: 600; color: #0f172a;">0</span> of <span id="pag-total" style="font-weight: 600; color: #0f172a;">0</span> entries
@@ -303,6 +325,21 @@
         renderKPIs(summary);
         renderTable(rows, data.headers, data.header_labels);
         renderCharts(summary);
+        renderWastageTrends(data.daily_wastage, data.weekly_wastage);
+    }
+
+    function renderWastageTrends(daily, weekly) {
+        const container = document.getElementById('bi-wastage-trend-container');
+        if (!Array.isArray(daily) || !Array.isArray(weekly) || (!daily.length && !weekly.length)) {
+            if (container) container.style.display = 'none';
+            return;
+        }
+        container.style.display = 'block';
+        const dailyBody = document.getElementById('bi-daily-wastage-body');
+        const weeklyBody = document.getElementById('bi-weekly-wastage-body');
+        const row = (r) => `<tr><td>${r.period_label}</td><td>${(r.plan_qty ?? 0).toLocaleString()}</td><td>${(r.total_wastage_pcs ?? 0).toLocaleString()}</td><td>${r.total_wastage_pct}%</td></tr>`;
+        dailyBody.innerHTML = daily.length ? daily.map(row).join('') : '<tr><td colspan="4">No data.</td></tr>';
+        weeklyBody.innerHTML = weekly.length ? weekly.map(row).join('') : '<tr><td colspan="4">No data.</td></tr>';
     }
 
     const hiddenPageInput = document.getElementById('form-pag-page');

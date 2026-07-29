@@ -72,7 +72,9 @@ class DispatchValidationTests(TestCase):
 
         self.assertEqual(job_card.total_dispatch, 50)
 
-    def test_print_job_dispatch_exceeding_production_raises(self):
+    def test_print_job_dispatch_exceeding_production_is_allowed(self):
+        """Dispatch is bound to order qty, not packed qty — an operator's
+        under-logged production entry must not block a valid dispatch."""
         job_card = JobCard.objects.create(
             job_card_no='JC-02-26-0001',
             SKU='SKU-001',
@@ -116,6 +118,54 @@ class DispatchValidationTests(TestCase):
             dispatch_qty=60,
             created_by=self.user,
         )
+        dispatch.save()
+
+        self.assertEqual(job_card.total_dispatch, 60)
+
+    def test_print_job_dispatch_exceeding_order_qty_raises(self):
+        job_card = JobCard.objects.create(
+            job_card_no='JC-02-26-0002',
+            SKU='SKU-001',
+            order_qty=100,
+            ups=10,
+            is_print_job=True,
+            total_impressions_required=100,
+            status='in_production',
+            po_date=date(2026, 1, 1),
+            total_sheet_quantity=10,
+            total_colors=4,
+            plate_set_no='PLATE-1',
+            machine_name=self.machine,
+        )
+        Production.objects.create(
+            job_card=job_card,
+            entry_type='printing',
+            date='2026-01-01',
+            shift='A',
+            machine=self.machine,
+            output_sheets=10,
+            waste_sheets=0,
+            impressions=100,
+            planned_time=60,
+            run_time=60,
+        )
+        Production.objects.create(
+            job_card=job_card,
+            entry_type='packing',
+            date='2026-01-01',
+            shift='A',
+            packing_qty=100,
+            sorting_waste_qty=0,
+            sorter=self._ensure_sorter(),
+        )
+
+        dispatch = Dispatch(
+            job_card=job_card,
+            dc_no='DC-TEST-003',
+            dispatch_date='2026-01-02',
+            dispatch_qty=101,
+            created_by=self.user,
+        )
         with self.assertRaises(ValidationError):
             dispatch.save()
 
@@ -123,6 +173,62 @@ class DispatchValidationTests(TestCase):
         SequenceCounter.objects.all().delete()
         job_card_no = allocate_next_jc_number(date(2026, 6, 26))
         self.assertRegex(job_card_no, r'^JC-06-26-PP-\d{4}$')
+
+
+class ExcessProductionToStockTests(TestCase):
+    """Once packed qty passes order qty, the excess should be carried
+    forward as stock for the next repeat run of the same SKU."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username='stock_tester', password='testpass')
+        self.machine = Machine.objects.create(name='Stock Test Machine')
+
+    def _ensure_sorter(self):
+        from core.models import Sorter
+        sorter, _ = Sorter.objects.get_or_create(name='Stock Test Sorter')
+        return sorter
+
+    def _make_job(self, jc_number, order_qty):
+        planning_job = PlanningJob.objects.create(
+            jc_number=jc_number, order_qty=order_qty, status='released',
+            plan_date=date.today(), plan_month='July 2026', sku='SKU-STOCK-1',
+        )
+        printed_qty = order_qty + 15
+        job_card = JobCard.objects.create(
+            job_card_no=jc_number, planning_job=planning_job, order_qty=order_qty,
+            SKU='SKU-STOCK-1', ups=1, is_print_job=True, total_sheet_quantity=printed_qty,
+            total_colors=4, status='in_production', po_date=date(2026, 1, 1),
+            plate_set_no='PLATE-1', machine_name=self.machine,
+            total_impressions_required=printed_qty,
+        )
+        Production.objects.create(
+            job_card=job_card, entry_type='printing', date='2026-01-01', shift='A',
+            machine=self.machine, output_sheets=printed_qty, waste_sheets=0,
+            impressions=printed_qty, planned_time=60, run_time=60,
+        )
+        return planning_job, job_card
+
+    def test_packing_below_order_qty_leaves_stock_at_zero(self):
+        planning_job, job_card = self._make_job('JC-STOCK-0001', 100)
+        Production.objects.create(
+            job_card=job_card, entry_type='packing', date='2026-01-01', shift='A',
+            packing_qty=80, sorting_waste_qty=0, sorter=self._ensure_sorter(),
+        )
+        planning_job.refresh_from_db()
+        self.assertEqual(int(planning_job.stock_qty or 0), 0)
+
+    def test_packing_beyond_order_qty_carries_excess_to_stock(self):
+        planning_job, job_card = self._make_job('JC-STOCK-0002', 100)
+        Production.objects.create(
+            job_card=job_card, entry_type='packing', date='2026-01-01', shift='A',
+            packing_qty=100, sorting_waste_qty=0, sorter=self._ensure_sorter(),
+        )
+        Production.objects.create(
+            job_card=job_card, entry_type='packing', date='2026-01-02', shift='A',
+            packing_qty=15, sorting_waste_qty=0, sorter=self._ensure_sorter(),
+        )
+        planning_job.refresh_from_db()
+        self.assertEqual(int(planning_job.stock_qty or 0), 15)
 
 
 class DispatchFeatureTests(TestCase):
