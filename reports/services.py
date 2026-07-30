@@ -88,6 +88,12 @@ REPORT_CATALOG = [
         'description': 'Process-wise wastage analysis including printing, sorting, and dispatch gaps (tentative vs finalized).',
         'focus': 'Execution',
     },
+    {
+        'key': 'pending-work',
+        'title': 'Pending Work — Process Backlog',
+        'description': "Quantity still owed at printing, packing, and dispatch for open jobs, so month-end close can focus on what's stuck.",
+        'focus': 'Execution',
+    },
 ]
 
 
@@ -1497,21 +1503,63 @@ def build_daily_production_context(request):
     for row in dispatch_rows:
         row['date_label'] = _label(row['dispatch_date'])
 
-    # Align the three streams on the calendar date for the Overview tab.
+    # Planning stream: jobs newly released to production, sourced from the
+    # ChangeLog audit trail written by execute_job_card_action() at the
+    # single choke point every "Release to Production" action goes through
+    # (core/jobcard_service.py). There's no dedicated released_at field, so
+    # this is the only reliable way to know which day a job was released.
+    released_logs_qs = ChangeLog.objects.filter(entity_type='job_card', action='release')
+    if start and end:
+        released_logs_qs = released_logs_qs.filter(created_at__date__range=(start, end))
+    released_logs = list(released_logs_qs.order_by('-created_at'))
+    released_job_ids = [log.record_id for log in released_logs]
+    released_jobs_by_id = {
+        jc.id: jc
+        for jc in JobCard.objects.filter(id__in=released_job_ids).select_related('machine_name')
+    }
+
+    released_rows = []
+    for log in released_logs:
+        job_card = released_jobs_by_id.get(log.record_id)
+        if job_card is None:
+            continue
+        released_date = timezone.localtime(log.created_at).date()
+        released_rows.append({
+            'date': released_date,
+            'date_label': _label(released_date),
+            'released_time': timezone.localtime(log.created_at).strftime('%H:%M'),
+            'job_card_no': job_card.job_card_no,
+            'po_number': job_card.PO_No or '—',
+            'sku': job_card.SKU,
+            'machine': job_card.machine_name.name if job_card.machine_name else '—',
+            'order_qty': job_card.order_qty or 0,
+            'released_by': log.changed_by.get_full_name() or log.changed_by.username if log.changed_by else '—',
+        })
+
+    released_by_date = {}
+    for row in released_rows:
+        bucket = released_by_date.setdefault(row['date'], {'released_count': 0, 'released_qty': 0})
+        bucket['released_count'] += 1
+        bucket['released_qty'] += row['order_qty']
+
+    # Align the streams on the calendar date for the Overview tab.
     printing_by_date = {r['date']: r for r in printing_rows}
     packing_by_date = {r['date']: r for r in packing_rows}
     dispatch_by_date = {r['dispatch_date']: r for r in dispatch_rows}
 
     overview_rows = []
-    for day in sorted(set(printing_by_date) | set(packing_by_date) | set(dispatch_by_date), reverse=True):
+    for day in sorted(set(printing_by_date) | set(packing_by_date) | set(dispatch_by_date) | set(released_by_date), reverse=True):
         printing = printing_by_date.get(day, {})
         packing = packing_by_date.get(day, {})
         dispatch = dispatch_by_date.get(day, {})
+        released = released_by_date.get(day, {})
         day_waste_pcs = (printing.get('waste_pcs') or 0.0) + (packing.get('sorting_waste_qty') or 0)
         day_gross_pcs = day_waste_pcs + (printing.get('output_pcs') or 0.0) + (packing.get('packing_qty') or 0)
         overview_rows.append({
             'date': day,
             'date_label': _label(day),
+            'released_count': released.get('released_count', 0),
+            'released_qty': released.get('released_qty', 0),
             'impressions': printing.get('impressions', 0),
             'output_sheets': printing.get('output_sheets', 0),
             'printing_waste': printing.get('waste_sheets', 0),
@@ -1535,6 +1583,8 @@ def build_daily_production_context(request):
         'packing_waste': _total(packing_rows, 'sorting_waste_qty'),
         'dispatch_qty': _total(dispatch_rows, 'dispatch_qty'),
         'dc_count': _total(dispatch_rows, 'dc_count'),
+        'released_jobs': len(released_rows),
+        'released_qty': sum(row['order_qty'] for row in released_rows),
         'days': len(overview_rows),
     }
     totals['avg_impressions_per_day'] = round(totals['impressions'] / totals['days']) if totals['days'] else 0
@@ -1650,10 +1700,16 @@ def build_daily_production_context(request):
     # ?tab= selects which of the four tables gets exported.
     export_tabs = {
         'overview': (overview_rows, [
-            ('date_label', 'Date'), ('impressions', 'Impressions'),
+            ('date_label', 'Date'), ('released_count', 'Jobs Released'), ('released_qty', 'Released Qty'),
+            ('impressions', 'Impressions'),
             ('output_sheets', 'Printed Sheets'), ('printing_waste', 'Printing Waste'),
             ('packing_qty', 'Packed Pcs'), ('packing_waste', 'Packing Waste'),
             ('dispatch_qty', 'Dispatched Pcs'), ('dc_count', 'DCs'),
+        ]),
+        'released': (released_rows, [
+            ('date_label', 'Date'), ('released_time', 'Time'), ('job_card_no', 'JC No'),
+            ('po_number', 'PO No'), ('sku', 'SKU'), ('machine', 'Machine'),
+            ('order_qty', 'Order Qty'), ('released_by', 'Released By'),
         ]),
         'printing': (printing_rows, [
             ('date_label', 'Date'), ('entries', 'Entries'), ('impressions', 'Impressions'),
@@ -1692,6 +1748,7 @@ def build_daily_production_context(request):
         'printing_rows': printing_rows,
         'packing_rows': packing_rows,
         'dispatch_rows': dispatch_rows,
+        'released_rows': released_rows,
         'process_wastage_rows': process_wastage_rows,
         'process_wastage_weekly': process_wastage_weekly,
         'printing_by_machine': printing_by_machine,
@@ -2182,6 +2239,193 @@ def build_wastage_report_context(request):
     }
 
 
+PENDING_WORK_RELEASED_STATUSES = ('released', 'in_production')
+
+
+def build_pending_work_context(request):
+    """Process-wise pending-quantity backlog (printing / packing / dispatch)
+    for jobs already released to production, plus a separate list of jobs
+    still stuck before release, so month-end close can focus on what's stuck
+    on the floor without it being buried under jobs that haven't started yet.
+
+    Pending Printing = order qty (pcs) - printed pcs (print jobs only).
+    Pending Packing  = printed pcs (or order qty for Cut & Pack jobs) - packed pcs.
+    Pending Dispatch = packed pcs - dispatched pcs.
+    Each is clamped at 0 — a job that ran ahead of its own stage isn't "negative pending".
+    """
+    start, end, period, period_label, date_from, date_to = _parse_period_filter(request, default_period='month')
+
+    job_cards = JobCard.objects.filter(is_active=True).exclude(status__in=('completed', 'closed'))
+    if start and end:
+        job_cards = _filter_job_cards_by_period(job_cards, start, end)
+
+    job_cards = job_cards.select_related('planning_job', 'machine_name').prefetch_related(
+        Prefetch('productions', queryset=Production.objects.filter(is_active=True)),
+        Prefetch('dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
+    ).order_by('created_at')
+
+    today = timezone.localdate()
+    printing_rows, packing_rows, dispatch_rows, not_released_rows = [], [], [], []
+
+    # PlanningJobs still at 'draft' never get a JobCard at all (one is only
+    # created once the job is submitted to QC — see
+    # workflow.services.sync_job_card_for_planning_status), so they're invisible
+    # to the JobCard-based loop below no matter the period filter. Pull them in
+    # directly, the same way the main dashboard does.
+    draft_jobs = _filter_planning_jobs_by_period(
+        PlanningJob.objects.filter(
+            is_active=True, is_on_hold=False, issued_to_production=False,
+            status__in=PLANNING_NOT_RELEASED_STATUSES, job_card__isnull=True,
+        ),
+        start, end,
+    )
+    for job in draft_jobs:
+        not_released_rows.append({
+            'job_card_no': job.jc_number,
+            'po_number': job.po_number or '',
+            'sku': job.sku,
+            'status': job.workflow_status_label,
+            'order_qty_pcs': job.order_qty or 0,
+            'days_pending': (today - job.created_at.date()).days if job.created_at else '',
+        })
+
+    for job in job_cards:
+        if job.status not in PENDING_WORK_RELEASED_STATUSES:
+            not_released_rows.append({
+                'job_card_no': job.job_card_no,
+                'po_number': job.PO_No or '',
+                'sku': job.SKU,
+                'status': job.workflow_status_label,
+                'order_qty_pcs': job.order_qty or 0,
+                'days_pending': (today - job.created_at.date()).days if job.created_at else '',
+            })
+            continue
+
+        ups = job.ups or 1
+        order_qty_pcs = job.order_qty or 0
+
+        printed_pcs = 0
+        packed_pcs = 0
+        last_activity_date = None
+        for p in job.productions.all():
+            if p.entry_type == 'printing':
+                printed_pcs += p.output_sheets * (p.merge_allocated_ups or ups)
+            elif p.entry_type == 'packing':
+                packed_pcs += p.packing_qty
+            if last_activity_date is None or p.date > last_activity_date:
+                last_activity_date = p.date
+
+        dispatched_pcs = 0
+        for d in job.dispatch_set.all():
+            dispatched_pcs += d.dispatch_qty
+            if last_activity_date is None or d.dispatch_date > last_activity_date:
+                last_activity_date = d.dispatch_date
+
+        if last_activity_date is None and job.created_at:
+            last_activity_date = job.created_at.date()
+        days_pending = (today - last_activity_date).days if last_activity_date else None
+
+        packing_limit_pcs = printed_pcs if job.is_print_job else order_qty_pcs
+        pending_printing = max(order_qty_pcs - printed_pcs, 0) if job.is_print_job else 0
+        pending_packing = max(packing_limit_pcs - packed_pcs, 0)
+        pending_dispatch = max(packed_pcs - dispatched_pcs, 0)
+
+        if not (pending_printing or pending_packing or pending_dispatch):
+            continue
+
+        base_row = {
+            'job_card_no': job.job_card_no,
+            'po_number': job.PO_No or '',
+            'sku': job.SKU,
+            'machine': job.machine_name_display,
+            'status': job.workflow_status_label,
+            'order_qty_pcs': order_qty_pcs,
+            'printed_pcs': printed_pcs,
+            'packed_pcs': packed_pcs,
+            'dispatched_pcs': dispatched_pcs,
+            'days_pending': days_pending if days_pending is not None else '',
+        }
+
+        if pending_printing:
+            printing_rows.append({**base_row, 'pending_qty': pending_printing})
+        if pending_packing:
+            packing_rows.append({**base_row, 'pending_qty': pending_packing})
+        if pending_dispatch:
+            dispatch_rows.append({**base_row, 'pending_qty': pending_dispatch})
+
+    printing_rows.sort(key=lambda r: r['pending_qty'], reverse=True)
+    packing_rows.sort(key=lambda r: r['pending_qty'], reverse=True)
+    dispatch_rows.sort(key=lambda r: r['pending_qty'], reverse=True)
+    not_released_rows.sort(key=lambda r: r['order_qty_pcs'], reverse=True)
+
+    summary = {
+        'printing_jobs': len(printing_rows),
+        'printing_pcs': sum(r['pending_qty'] for r in printing_rows),
+        'packing_jobs': len(packing_rows),
+        'packing_pcs': sum(r['pending_qty'] for r in packing_rows),
+        'dispatch_jobs': len(dispatch_rows),
+        'dispatch_pcs': sum(r['pending_qty'] for r in dispatch_rows),
+        'not_released_jobs': len(not_released_rows),
+        'not_released_pcs': sum(r['order_qty_pcs'] for r in not_released_rows),
+    }
+
+    # `stage` selects which table an export link downloads — each of the three
+    # process tables, the not-yet-released list, or "all" (every job, tagged
+    # with its stage) when no stage is given. Part of the cache key (see
+    # reports/filters/universal.py) so per-stage exports never collide.
+    stage = (request.GET.get('stage') or '').strip().lower()
+    if stage == 'printing':
+        export_rows = printing_rows
+    elif stage == 'packing':
+        export_rows = packing_rows
+    elif stage == 'dispatch':
+        export_rows = dispatch_rows
+    elif stage == 'not_released':
+        export_rows = not_released_rows
+    else:
+        export_rows = [
+            {'stage': stage_name, **row}
+            for stage_name, rows in (
+                ('Printing', printing_rows), ('Packing', packing_rows), ('Dispatch', dispatch_rows),
+            )
+            for row in rows
+        ]
+
+    if stage == 'not_released':
+        headers = ['job_card_no', 'po_number', 'sku', 'status', 'order_qty_pcs', 'days_pending']
+    elif stage in ('printing', 'packing', 'dispatch'):
+        headers = ['job_card_no', 'po_number', 'sku', 'machine', 'status',
+                   'order_qty_pcs', 'printed_pcs', 'packed_pcs', 'dispatched_pcs', 'pending_qty', 'days_pending']
+    else:
+        headers = ['stage', 'job_card_no', 'po_number', 'sku', 'machine', 'status',
+                   'order_qty_pcs', 'printed_pcs', 'packed_pcs', 'dispatched_pcs', 'pending_qty', 'days_pending']
+    header_labels = {
+        'stage': 'Stage', 'job_card_no': 'Job Card', 'po_number': 'PO', 'sku': 'SKU', 'machine': 'Machine',
+        'status': 'Status', 'order_qty_pcs': 'Order Qty (Pcs)', 'printed_pcs': 'Printed (Pcs)',
+        'packed_pcs': 'Packed (Pcs)', 'dispatched_pcs': 'Dispatched (Pcs)', 'pending_qty': 'Pending (Pcs)',
+        'days_pending': 'Days Stuck',
+    }
+
+    return {
+        'report': next(item for item in REPORT_CATALOG if item['key'] == 'pending-work'),
+        'headers': headers,
+        'header_labels': header_labels,
+        'filters': {
+            'period': period,
+            'period_label': period_label,
+            'date_from': date_from,
+            'date_to': date_to,
+            'stage': stage,
+        },
+        'summary': summary,
+        'printing_rows': printing_rows,
+        'packing_rows': packing_rows,
+        'dispatch_rows': dispatch_rows,
+        'not_released_rows': not_released_rows,
+        'export_rows': export_rows,
+    }
+
+
 def build_report_context(report_type, request):
     builders = {
         'machine-planning': build_machine_planning_context,
@@ -2192,6 +2436,7 @@ def build_report_context(report_type, request):
         'dispatch-tracking': build_dispatch_tracking_context,
         'raw-material-cutting-request': build_raw_material_cutting_context,
         'wastage-report': build_wastage_report_context,
+        'pending-work': build_pending_work_context,
     }
     builder = builders.get(report_type)
     if builder is None:

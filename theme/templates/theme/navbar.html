@@ -225,6 +225,14 @@
            class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'wastage-report' %}is-active{% endif %}">
             Wastage Report
         </a>
+        <a href="{% url 'reports:detail' 'pending-work' %}"
+           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'pending-work' %}is-active{% endif %}">
+            Pending Work
+        </a>
+        <a href="{% url 'reports:detail' 'kpi-scorecard' %}"
+           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'kpi-scorecard' %}is-active{% endif %}">
+            KPI Scorecard
+        </a>
     </div>
 
     {% elif app == 'qc' and nav.can_access_qc %}

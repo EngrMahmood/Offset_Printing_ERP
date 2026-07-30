@@ -181,19 +181,52 @@
                 <input type="text" name="machine" placeholder="Machine Name" value="{{ filters.machine }}">
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                <select name="status">
-                    <option value="">All Statuses</option>
-                    {% for value, label in status_choices %}
-                    <option value="{{ value }}" {% if filters.status == value %}selected{% endif %}>{{ label }}</option>
-                    {% endfor %}
-                </select>
-                <select name="planning_stage">
-                    <option value="">All Stages</option>
-                    <option value="not_set" {% if filters.planning_stage == 'not_set' %}selected{% endif %}>Not Set</option>
-                    {% for value, label in stage_choices %}
-                    {% if value %}<option value="{{ value }}" {% if filters.planning_stage == value %}selected{% endif %}>{{ label }}</option>{% endif %}
-                    {% endfor %}
-                </select>
+                <div class="erp-msf" data-msf-placeholder="All Statuses">
+                    <button type="button" class="erp-msf-toggle" data-msf-toggle>
+                        <span data-msf-label>All Statuses</span><span class="erp-msf-caret">&#9662;</span>
+                    </button>
+                    <div class="erp-msf-panel" data-msf-panel hidden>
+                        <input type="text" class="erp-msf-search" data-msf-search placeholder="Search statuses...">
+                        <div class="erp-msf-quick">
+                            <button type="button" data-msf-all>Select all</button>
+                            <button type="button" data-msf-clear>Clear</button>
+                        </div>
+                        <div class="erp-msf-options">
+                            {% for value, label in status_choices %}
+                            <label class="erp-msf-option">
+                                <input type="checkbox" name="status" value="{{ value }}" {% if value in filters.status %}checked{% endif %}>
+                                <span>{{ label }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <div class="erp-msf" data-msf-placeholder="All Stages">
+                    <button type="button" class="erp-msf-toggle" data-msf-toggle>
+                        <span data-msf-label>All Stages</span><span class="erp-msf-caret">&#9662;</span>
+                    </button>
+                    <div class="erp-msf-panel" data-msf-panel hidden>
+                        <input type="text" class="erp-msf-search" data-msf-search placeholder="Search stages...">
+                        <div class="erp-msf-quick">
+                            <button type="button" data-msf-all>Select all</button>
+                            <button type="button" data-msf-clear>Clear</button>
+                        </div>
+                        <div class="erp-msf-options">
+                            <label class="erp-msf-option">
+                                <input type="checkbox" name="planning_stage" value="not_set" {% if 'not_set' in filters.planning_stage %}checked{% endif %}>
+                                <span>Not Set</span>
+                            </label>
+                            {% for value, label in stage_choices %}
+                            {% if value %}
+                            <label class="erp-msf-option">
+                                <input type="checkbox" name="planning_stage" value="{{ value }}" {% if value in filters.planning_stage %}checked{% endif %}>
+                                <span>{{ label }}</span>
+                            </label>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
             </div>
             <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
                 <div>

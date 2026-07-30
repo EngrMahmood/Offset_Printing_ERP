@@ -121,6 +121,11 @@
 
         <div class="dp-summary-grid">
             <div class="dp-card">
+                <div class="dp-card-label">Jobs Released to Production</div>
+                <div class="dp-card-value">{{ data.totals.released_jobs|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.totals.released_qty|intcomma }} pcs planned</div>
+            </div>
+            <div class="dp-card">
                 <div class="dp-card-label">Impressions</div>
                 <div class="dp-card-value">{{ data.totals.impressions|intcomma }}</div>
                 <div class="dp-card-sub">{{ data.totals.avg_impressions_per_day|intcomma }} / day avg</div>
@@ -175,6 +180,9 @@
             <button type="button" class="erp-tab-btn is-active" data-target="dp-tab-overview" data-tab-name="overview">
                 <i class="fa fa-layer-group"></i> Overview
             </button>
+            <button type="button" class="erp-tab-btn" data-target="dp-tab-released" data-tab-name="released">
+                <i class="fa fa-clipboard-check"></i> Released to Production
+            </button>
             <button type="button" class="erp-tab-btn" data-target="dp-tab-printing" data-tab-name="printing">
                 <i class="fa fa-print"></i> Printing
             </button>
@@ -197,6 +205,8 @@
                     <thead>
                         <tr>
                             <th>Date</th>
+                            <th class="dp-num">Jobs Released</th>
+                            <th class="dp-num">Released Qty</th>
                             <th class="dp-num">Impressions</th>
                             <th class="dp-num">Printed Sheets</th>
                             <th class="dp-num">Printing Waste</th>
@@ -212,6 +222,8 @@
                         {% for row in data.overview_rows %}
                         <tr>
                             <td>{{ row.date_label }}</td>
+                            <td class="dp-num">{{ row.released_count }}</td>
+                            <td class="dp-num">{{ row.released_qty|intcomma }}</td>
                             <td class="dp-num">{{ row.impressions|intcomma }}</td>
                             <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
                             <td class="dp-num">{{ row.printing_waste|intcomma }}</td>
@@ -223,13 +235,15 @@
                             <td class="dp-num">{{ row.process_wastage_pct }}%</td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="10">No production or dispatch recorded in this period.</td></tr>
+                        <tr><td colspan="12">No production or dispatch recorded in this period.</td></tr>
                         {% endfor %}
                     </tbody>
                     {% if data.overview_rows %}
                     <tfoot>
                         <tr>
                             <th>Total</th>
+                            <th class="dp-num">{{ data.totals.released_jobs|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.released_qty|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.impressions|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.output_sheets|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.printing_waste|intcomma }}</th>
@@ -242,6 +256,46 @@
                         </tr>
                     </tfoot>
                     {% endif %}
+                </table>
+            </div>
+        </div>
+
+        <!-- RELEASED TO PRODUCTION -->
+        <div id="dp-tab-released" class="erp-tab-content" style="display:none;">
+            {% include 'reports/_daily_production_exports.html' with slug=report.slug tab='released' qs=qs %}
+            <div class="erp-alert erp-alert-info mb-4">
+                Jobs newly released from Planning to the production floor in this period — the "plan" side of plan vs. execution.
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Time</th>
+                            <th>JC No</th>
+                            <th>PO No</th>
+                            <th>SKU</th>
+                            <th>Machine</th>
+                            <th class="dp-num">Order Qty</th>
+                            <th>Released By</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.released_rows %}
+                        <tr>
+                            <td>{{ row.date_label }}</td>
+                            <td>{{ row.released_time }}</td>
+                            <td>{{ row.job_card_no }}</td>
+                            <td>{{ row.po_number }}</td>
+                            <td>{{ row.sku }}</td>
+                            <td>{{ row.machine }}</td>
+                            <td class="dp-num">{{ row.order_qty|intcomma }}</td>
+                            <td>{{ row.released_by }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="8">No jobs were released to production in this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
                 </table>
             </div>
         </div>

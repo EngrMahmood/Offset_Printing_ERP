@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from reports.kpi_services import build_kpi_scorecard_context
 from reports.services import (
     build_daily_production_context,
     build_dispatch_tracking_context,
     build_job_planning_context,
     build_machine_planning_context,
+    build_pending_work_context,
     build_plates_planning_context,
     build_production_insights_context,
     build_qc_approvals_context,
@@ -49,6 +51,14 @@ def _raw_material_cutting_executor(request, filters):
 
 def _wastage_report_executor(request, filters):
     return build_wastage_report_context(request)
+
+
+def _pending_work_executor(request, filters):
+    return build_pending_work_context(request)
+
+
+def _kpi_scorecard_executor(request, filters):
+    return build_kpi_scorecard_context(request)
 
 
 registry.register(
@@ -219,5 +229,43 @@ registry.register(
         category='execution',
         navigation_group='operations',
         executor=_wastage_report_executor,
+    )
+)
+
+registry.register(
+    ReportDefinition(
+        slug='pending-work',
+        title='Pending Work — Process Backlog',
+        description="Quantity still owed at printing, packing, and dispatch for open jobs, so month-end close can focus on what's stuck.",
+        department='production',
+        permissions=('core.view_reports',),
+        filters=('date_range',),
+        supported_exports=('csv', 'xlsx', 'pdf'),
+        supported_charts=(),
+        drilldown_support=False,
+        cache_timeout=120,
+        icon='fa-hourglass-half',
+        category='execution',
+        navigation_group='operations',
+        executor=_pending_work_executor,
+    )
+)
+
+registry.register(
+    ReportDefinition(
+        slug='kpi-scorecard',
+        title='KPI Scorecard',
+        description='Order Fulfillment, Wastage Reduction, and Dispatch vs Production Alignment vs their Min/Target/Max ranges, monthly and quarterly, with auto action-plan suggestions.',
+        department='management',
+        permissions=('core.view_reports',),
+        filters=(),
+        supported_exports=('csv', 'xlsx', 'pdf'),
+        supported_charts=('bar',),
+        drilldown_support=False,
+        cache_timeout=120,
+        icon='fa-bullseye',
+        category='management',
+        navigation_group='operations',
+        executor=_kpi_scorecard_executor,
     )
 )

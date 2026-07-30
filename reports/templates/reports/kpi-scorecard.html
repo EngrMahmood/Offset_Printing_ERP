@@ -1,0 +1,190 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ report.title }} — Reports{% endblock %}
+{% block header_title %}{{ report.title }}{% endblock %}
+{% block header_subtitle %}Order Fulfillment, Wastage Reduction, and Dispatch vs Production Alignment against their Min/Target/Max ranges.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dp-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 18px; }
+    .kpi-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+        gap: 16px;
+        margin-bottom: 20px;
+    }
+    .kpi-card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-left: 6px solid #94a3b8;
+        border-radius: 8px;
+        padding: 16px 18px;
+    }
+    .kpi-card.is-green { border-left-color: #16a34a; }
+    .kpi-card.is-yellow { border-left-color: #d97706; }
+    .kpi-card.is-red { border-left-color: #dc2626; }
+    .kpi-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #64748b;
+        font-weight: 700;
+    }
+    .kpi-value { font-size: 30px; font-weight: 700; color: #0f172a; margin-top: 4px; }
+    .kpi-status-badge {
+        display: inline-block;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        padding: 2px 8px;
+        border-radius: 999px;
+        margin-left: 8px;
+        vertical-align: middle;
+    }
+    .kpi-status-badge.is-green { background: #dcfce7; color: #166534; }
+    .kpi-status-badge.is-yellow { background: #fef3c7; color: #92400e; }
+    .kpi-status-badge.is-red { background: #fee2e2; color: #991b1b; }
+    .kpi-range { font-size: 12px; color: #64748b; margin-top: 6px; }
+    .kpi-desc { font-size: 12px; color: #64748b; margin-top: 8px; }
+    .kpi-note textarea {
+        width: 100%;
+        box-sizing: border-box;
+        min-height: 70px;
+        margin-top: 10px;
+        font-size: 13px;
+        padding: 8px;
+        border: 1px solid #cbd5e1;
+        border-radius: 6px;
+    }
+    .dp-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .kpi-drilldown-links { margin-top: 6px; }
+    .kpi-drilldown-links a { font-size: 11px; margin-right: 10px; }
+    .trend-period-link { text-decoration: none; }
+    .trend-period-link .trend-dl { font-size: 10px; color: #64748b; margin-left: 6px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" class="dp-filters">
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="kpi-period-type">View</label>
+                <select name="period_type" id="kpi-period-type" class="erp-select">
+                    <option value="month" {% if data.period_type == 'month' %}selected{% endif %}>Monthly</option>
+                    <option value="quarter" {% if data.period_type == 'quarter' %}selected{% endif %}>Quarterly</option>
+                </select>
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="kpi-year">Year</label>
+                <select name="year" id="kpi-year" class="erp-select">
+                    {% for y in data.year_options %}
+                    <option value="{{ y }}" {% if data.year == y %}selected{% endif %}>{{ y }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-input-group" id="kpi-month-group" {% if data.period_type != 'month' %}style="display:none;"{% endif %}>
+                <label class="erp-input-label" for="kpi-month">Month</label>
+                <select name="month" id="kpi-month" class="erp-select">
+                    {% for num, name in data.month_options %}
+                    <option value="{{ num }}" {% if data.month == num %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-input-group" id="kpi-quarter-group" {% if data.period_type != 'quarter' %}style="display:none;"{% endif %}>
+                <label class="erp-input-label" for="kpi-quarter">Quarter</label>
+                <select name="quarter" id="kpi-quarter" class="erp-select">
+                    {% for q in data.quarter_options %}
+                    <option value="{{ q }}" {% if data.quarter == q %}selected{% endif %}>Q{{ q }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+            </div>
+        </form>
+        <script>
+        (function () {
+            var typeSel = document.getElementById('kpi-period-type');
+            var monthGroup = document.getElementById('kpi-month-group');
+            var quarterGroup = document.getElementById('kpi-quarter-group');
+            if (!typeSel) { return; }
+            typeSel.addEventListener('change', function () {
+                var isMonth = typeSel.value === 'month';
+                monthGroup.style.display = isMonth ? '' : 'none';
+                quarterGroup.style.display = isMonth ? 'none' : '';
+            });
+        })();
+        </script>
+
+        <p class="erp-muted" style="margin-bottom:16px;">Showing <strong>{{ data.period_label }}</strong>.</p>
+
+        <div class="kpi-grid">
+            {% for kpi in data.kpis %}
+            <div class="kpi-card is-{{ kpi.status }}">
+                <div class="kpi-label">{{ kpi.label }} <span class="kpi-status-badge is-{{ kpi.status }}">{{ kpi.status }}</span></div>
+                <div class="kpi-value">{{ kpi.value }}{{ kpi.uom|default:'%' }}</div>
+                <div class="kpi-range">Min {{ kpi.min_value }}% &middot; Target {{ kpi.target_value }}% &middot; Max {{ kpi.max_value }}% &middot; Weightage {{ kpi.weightage_pct }}%</div>
+                {% if kpi.description %}<div class="kpi-desc">{{ kpi.description }}</div>{% endif %}
+                <div class="kpi-drilldown-links">
+                    Supporting data:
+                    <a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=xlsx&kpi={{ kpi.slug }}&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">Excel</a>
+                    <a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=pdf&kpi={{ kpi.slug }}&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">PDF</a>
+                    &middot; Quarterly detail:
+                    <a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=xlsx&kpi={{ kpi.slug }}&detail=quarterly&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">Excel</a>
+                    <a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=pdf&kpi={{ kpi.slug }}&detail=quarterly&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">PDF</a>
+                </div>
+                <form method="post" action="{% url 'reports:kpi_save_note' %}" class="kpi-note">
+                    {% csrf_token %}
+                    <input type="hidden" name="kpi_slug" value="{{ kpi.slug }}">
+                    <input type="hidden" name="period_type" value="{{ data.period_type }}">
+                    <input type="hidden" name="period_key" value="{{ data.period_key }}">
+                    <input type="hidden" name="status" value="{{ kpi.status }}">
+                    <input type="hidden" name="return_query" value="period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">
+                    <label class="erp-input-label">Action Plan {% if kpi.note_saved %}(saved){% else %}(suggested — edit &amp; save){% endif %}</label>
+                    <textarea name="note">{{ kpi.note_text }}</textarea>
+                    <div class="erp-actions" style="margin-top:8px;">
+                        <button type="submit" class="erp-btn erp-btn-secondary sm">Save Action Plan</button>
+                    </div>
+                </form>
+            </div>
+            {% empty %}
+            <div class="erp-empty">No KPI targets configured for {{ data.year }} yet — add them via Django admin.</div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-card-header"><h3 class="erp-section-title">Trend — last {{ data.trend|length }} {{ data.period_type }}s</h3></div>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Period</th>
+                        <th class="dp-num">Order Fulfillment %</th>
+                        <th class="dp-num">Wastage Reduction %</th>
+                        <th class="dp-num">Dispatch Alignment %</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data.trend %}
+                    <tr>
+                        <td>
+                            {{ row.label }}
+                            <span class="trend-dl">
+                                (<a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=xlsx&kpi=all&period_type={{ data.period_type }}&year={{ row.year }}&{% if data.period_type == 'month' %}month={{ row.key_number }}{% else %}quarter={{ row.key_number }}{% endif %}">Excel</a> &middot; <a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=pdf&kpi=all&period_type={{ data.period_type }}&year={{ row.year }}&{% if data.period_type == 'month' %}month={{ row.key_number }}{% else %}quarter={{ row.key_number }}{% endif %}">PDF</a>)
+                            </span>
+                        </td>
+                        <td class="dp-num">{{ row.order_fulfillment }}%</td>
+                        <td class="dp-num">{{ row.wastage_reduction }}%</td>
+                        <td class="dp-num">{{ row.dispatch_alignment }}%</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

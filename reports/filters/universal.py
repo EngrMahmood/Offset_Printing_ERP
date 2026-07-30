@@ -27,4 +27,16 @@ def parse_universal_filters(request) -> dict:
         'tab': (request.GET.get('tab') or '').strip(),
         'page': (request.GET.get('page') or '').strip(),
         'high_wastage': (request.GET.get('high_wastage') or '').strip(),
+        # KPI Scorecard's month/quarter selector — without these in the cache
+        # key, every period selection collided on the same cached payload.
+        'period_type': (request.GET.get('period_type') or '').strip(),
+        'year': (request.GET.get('year') or '').strip(),
+        'month': (request.GET.get('month') or '').strip(),
+        'quarter': (request.GET.get('quarter') or '').strip(),
+        # Pending Work's per-stage export selector.
+        'stage': (request.GET.get('stage') or '').strip(),
+        # KPI Scorecard drill-down export selector (which KPI's supporting data).
+        'kpi': (request.GET.get('kpi') or '').strip(),
+        # KPI Scorecard quarterly-detail export selector.
+        'detail': (request.GET.get('detail') or '').strip(),
     }

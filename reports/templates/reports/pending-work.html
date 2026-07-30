@@ -1,0 +1,273 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ report.title }} — Reports{% endblock %}
+{% block header_title %}{{ report.title }}{% endblock %}
+{% block header_subtitle %}Quantity still owed at printing, packing, and dispatch — focus the team on what's stuck before month-end close.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dp-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+    .dp-card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 14px 16px;
+    }
+    .dp-card-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #64748b;
+        font-weight: 700;
+    }
+    .dp-card-value { font-size: 24px; font-weight: 700; color: #0f172a; margin-top: 4px; }
+    .dp-card-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .dp-filters { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 18px; }
+    .dp-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .pw-days-old { color: #b91c1c; font-weight: 600; }
+    .pw-export-links { display: flex; gap: 8px; margin-bottom: 10px; }
+    .pw-section-header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+    .pw-card-link { cursor: pointer; }
+    .pw-card-link:hover { border-color: #94a3b8; }
+</style>
+{% endblock %}
+
+{% block content %}
+{% with qs="period="|add:data.filters.period|add:"&date_from="|add:data.filters.date_from|add:"&date_to="|add:data.filters.date_to %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" class="dp-filters">
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="pw-period">Period</label>
+                <select name="period" id="pw-period" class="erp-select">
+                    <option value="today" {% if data.filters.period == 'today' %}selected{% endif %}>Today</option>
+                    <option value="week" {% if data.filters.period == 'week' %}selected{% endif %}>This Week</option>
+                    <option value="month" {% if data.filters.period == 'month' %}selected{% endif %}>This Month</option>
+                    <option value="custom" {% if data.filters.period == 'custom' %}selected{% endif %}>Custom Range</option>
+                    <option value="all" {% if data.filters.period == 'all' %}selected{% endif %}>All Time</option>
+                </select>
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="pw-from">From</label>
+                <input type="date" id="pw-from" name="date_from" class="erp-input" value="{{ data.filters.date_from }}">
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="pw-to">To</label>
+                <input type="date" id="pw-to" name="date_to" class="erp-input" value="{{ data.filters.date_to }}">
+            </div>
+            <div class="erp-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+                <a href="{% url 'reports:detail' report.slug %}" class="erp-btn erp-btn-secondary">Reset</a>
+            </div>
+        </form>
+        <p class="erp-muted" style="margin-top:-10px; margin-bottom:16px;">
+            Jobs are matched by when they entered the system (Plan Date) — {{ data.filters.period_label }}.
+            The three tables below only include jobs already <strong>Released</strong> or <strong>In Production</strong>;
+            jobs still earlier in planning are listed separately under "Not Yet Released".
+        </p>
+
+        <div class="dp-summary-grid">
+            <div class="dp-card pw-card-link" onclick="window.erpActivateTabByName('printing')">
+                <div class="dp-card-label">Pending Printing</div>
+                <div class="dp-card-value">{{ data.summary.printing_pcs|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.summary.printing_jobs }} job{{ data.summary.printing_jobs|pluralize }} pcs still owed</div>
+            </div>
+            <div class="dp-card pw-card-link" onclick="window.erpActivateTabByName('packing')">
+                <div class="dp-card-label">Pending Packing</div>
+                <div class="dp-card-value">{{ data.summary.packing_pcs|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.summary.packing_jobs }} job{{ data.summary.packing_jobs|pluralize }} pcs still owed</div>
+            </div>
+            <div class="dp-card pw-card-link" onclick="window.erpActivateTabByName('dispatch')">
+                <div class="dp-card-label">Pending Dispatch</div>
+                <div class="dp-card-value">{{ data.summary.dispatch_pcs|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.summary.dispatch_jobs }} job{{ data.summary.dispatch_jobs|pluralize }} pcs still owed</div>
+            </div>
+            <div class="dp-card pw-card-link" onclick="window.erpActivateTabByName('not_released')">
+                <div class="dp-card-label">Not Yet Released</div>
+                <div class="dp-card-value">{{ data.summary.not_released_pcs|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.summary.not_released_jobs }} job{{ data.summary.not_released_jobs|pluralize }} still in planning</div>
+            </div>
+        </div>
+
+        <div class="pw-export-links">
+            <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=xlsx&stage=all&{{ qs }}" class="erp-btn erp-btn-secondary sm">Export All (Excel)</a>
+            <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=pdf&stage=all&{{ qs }}" class="erp-btn erp-btn-secondary sm">Export All (PDF)</a>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-tabs">
+            <button type="button" class="erp-tab-btn is-active" data-target="pw-tab-printing" data-tab-name="printing">
+                <i class="fa fa-print"></i> Pending Printing <span class="erp-tab-count">{{ data.summary.printing_jobs }}</span>
+            </button>
+            <button type="button" class="erp-tab-btn" data-target="pw-tab-packing" data-tab-name="packing">
+                <i class="fa fa-box"></i> Pending Packing <span class="erp-tab-count">{{ data.summary.packing_jobs }}</span>
+            </button>
+            <button type="button" class="erp-tab-btn" data-target="pw-tab-dispatch" data-tab-name="dispatch">
+                <i class="fa fa-truck"></i> Pending Dispatch <span class="erp-tab-count">{{ data.summary.dispatch_jobs }}</span>
+            </button>
+            <button type="button" class="erp-tab-btn" data-target="pw-tab-not-released" data-tab-name="not_released">
+                <i class="fa fa-hourglass-half"></i> Not Yet Released <span class="erp-tab-count">{{ data.summary.not_released_jobs }}</span>
+            </button>
+        </div>
+
+        <div id="pw-tab-printing" class="erp-tab-content">
+            <div class="pw-section-header">
+                <h3 class="erp-section-title">Pending Printing</h3>
+                <div class="pw-export-links">
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=xlsx&stage=printing&{{ qs }}" class="erp-btn erp-btn-secondary sm">Excel</a>
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=pdf&stage=printing&{{ qs }}" class="erp-btn erp-btn-secondary sm">PDF</a>
+                </div>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Status</th>
+                            <th class="dp-num">Order Qty (Pcs)</th><th class="dp-num">Printed (Pcs)</th>
+                            <th class="dp-num">Pending (Pcs)</th><th class="dp-num">Days Stuck</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.printing_rows %}
+                        <tr>
+                            <td>{{ row.job_card_no }}</td>
+                            <td>{{ row.po_number|default:'—' }}</td>
+                            <td>{{ row.sku }}</td>
+                            <td>{{ row.machine|default:'—' }}</td>
+                            <td>{{ row.status }}</td>
+                            <td class="dp-num">{{ row.order_qty_pcs|intcomma }}</td>
+                            <td class="dp-num">{{ row.printed_pcs|intcomma }}</td>
+                            <td class="dp-num"><strong>{{ row.pending_qty|intcomma }}</strong></td>
+                            <td class="dp-num {% if row.days_pending|default:0 > 7 %}pw-days-old{% endif %}">{{ row.days_pending }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="9">Nothing pending at printing.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="pw-tab-packing" class="erp-tab-content" style="display:none;">
+            <div class="pw-section-header">
+                <h3 class="erp-section-title">Pending Packing</h3>
+                <div class="pw-export-links">
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=xlsx&stage=packing&{{ qs }}" class="erp-btn erp-btn-secondary sm">Excel</a>
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=pdf&stage=packing&{{ qs }}" class="erp-btn erp-btn-secondary sm">PDF</a>
+                </div>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Status</th>
+                            <th class="dp-num">Printed (Pcs)</th><th class="dp-num">Packed (Pcs)</th>
+                            <th class="dp-num">Pending (Pcs)</th><th class="dp-num">Days Stuck</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.packing_rows %}
+                        <tr>
+                            <td>{{ row.job_card_no }}</td>
+                            <td>{{ row.po_number|default:'—' }}</td>
+                            <td>{{ row.sku }}</td>
+                            <td>{{ row.machine|default:'—' }}</td>
+                            <td>{{ row.status }}</td>
+                            <td class="dp-num">{{ row.printed_pcs|intcomma }}</td>
+                            <td class="dp-num">{{ row.packed_pcs|intcomma }}</td>
+                            <td class="dp-num"><strong>{{ row.pending_qty|intcomma }}</strong></td>
+                            <td class="dp-num {% if row.days_pending|default:0 > 7 %}pw-days-old{% endif %}">{{ row.days_pending }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="9">Nothing pending at packing.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="pw-tab-dispatch" class="erp-tab-content" style="display:none;">
+            <div class="pw-section-header">
+                <h3 class="erp-section-title">Pending Dispatch</h3>
+                <div class="pw-export-links">
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=xlsx&stage=dispatch&{{ qs }}" class="erp-btn erp-btn-secondary sm">Excel</a>
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=pdf&stage=dispatch&{{ qs }}" class="erp-btn erp-btn-secondary sm">PDF</a>
+                </div>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Status</th>
+                            <th class="dp-num">Packed (Pcs)</th><th class="dp-num">Dispatched (Pcs)</th>
+                            <th class="dp-num">Pending (Pcs)</th><th class="dp-num">Days Stuck</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.dispatch_rows %}
+                        <tr>
+                            <td>{{ row.job_card_no }}</td>
+                            <td>{{ row.po_number|default:'—' }}</td>
+                            <td>{{ row.sku }}</td>
+                            <td>{{ row.machine|default:'—' }}</td>
+                            <td>{{ row.status }}</td>
+                            <td class="dp-num">{{ row.packed_pcs|intcomma }}</td>
+                            <td class="dp-num">{{ row.dispatched_pcs|intcomma }}</td>
+                            <td class="dp-num"><strong>{{ row.pending_qty|intcomma }}</strong></td>
+                            <td class="dp-num {% if row.days_pending|default:0 > 7 %}pw-days-old{% endif %}">{{ row.days_pending }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="9">Nothing pending at dispatch.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="pw-tab-not-released" class="erp-tab-content" style="display:none;">
+            <div class="pw-section-header">
+                <h3 class="erp-section-title">Not Yet Released</h3>
+                <div class="pw-export-links">
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=xlsx&stage=not_released&{{ qs }}" class="erp-btn erp-btn-secondary sm">Excel</a>
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=pdf&stage=not_released&{{ qs }}" class="erp-btn erp-btn-secondary sm">PDF</a>
+                </div>
+            </div>
+            <p class="erp-muted" style="margin-top:-6px; margin-bottom:12px;">
+                Still in planning/QC/approval — not yet released for printing, so not counted in the backlog above.
+            </p>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Status</th>
+                            <th class="dp-num">Order Qty (Pcs)</th><th class="dp-num">Days Since Entry</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.not_released_rows %}
+                        <tr>
+                            <td>{{ row.job_card_no }}</td>
+                            <td>{{ row.po_number|default:'—' }}</td>
+                            <td>{{ row.sku }}</td>
+                            <td>{{ row.status }}</td>
+                            <td class="dp-num">{{ row.order_qty_pcs|intcomma }}</td>
+                            <td class="dp-num {% if row.days_pending|default:0 > 7 %}pw-days-old{% endif %}">{{ row.days_pending }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="6">Nothing waiting on release.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+</div>
+{% endwith %}
+{% endblock %}

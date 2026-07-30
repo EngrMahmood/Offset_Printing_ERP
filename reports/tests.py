@@ -1116,3 +1116,618 @@ class PeriodFilterPrecedenceTests(TestCase):
         self.assertEqual(period, 'custom')
         self.assertEqual(start, date(2026, 7, 10))
         self.assertEqual(end, date(2026, 7, 12))
+
+
+class PendingWorkReportTests(TestCase):
+    """Process-wise pending backlog: printing/packing/dispatch gaps per job."""
+
+    def setUp(self):
+        import datetime
+        from core.models import JobCard, Machine, Production, Dispatch, Sorter
+        from planning.models import PlanningJob
+
+        User = get_user_model()
+        self.user = User.objects.create_user(username='report_user', password='pass12345')
+        profile = UserProfile.objects.get(user=self.user)
+        profile.role = 'manager'
+        profile.save(update_fields=['role'])
+        from django.contrib.auth.models import Permission
+        from django.contrib.contenttypes.models import ContentType
+        content_type = ContentType.objects.get_for_model(UserProfile)
+        permission, _ = Permission.objects.get_or_create(
+            codename='view_reports', name='Can view reports', content_type=content_type,
+        )
+        self.user.user_permissions.add(permission)
+
+        today = datetime.date.today()
+        machine = Machine.objects.create(name='PW Test Machine', is_active=True)
+        sorter = Sorter.objects.create(name='PW Test Sorter', is_active=True)
+
+        # Job A: fully printed (600 pcs) but nothing packed/dispatched yet.
+        # Expect: pending_printing = 0, pending_packing = 600, no dispatch row
+        # (dispatch backlog is against packed stock, and nothing's packed yet).
+        pj_a = PlanningJob.objects.create(
+            jc_number='JC-PW-A', order_qty=600, status='in_production',
+            plan_date=today, plan_month='Test',
+        )
+        self.jc_a = JobCard.objects.create(
+            job_card_no='JC-PW-A', planning_job=pj_a, order_qty=600, ups=2,
+            total_sheet_quantity=300, status='in_production', is_active=True,
+            SKU='SKU-PW-A', po_date=today, total_colors=4, total_impressions_required=600,
+            machine_name=machine,
+        )
+        Production.objects.create(
+            entry_type='printing', job_card=self.jc_a, date=today, shift='A',
+            output_sheets=300, waste_sheets=0, status='completed',
+        )
+
+        # Job B: fully printed and packed (500 pcs) but nothing dispatched yet.
+        # Expect: pending_printing = 0, pending_packing = 0, pending_dispatch = 500.
+        pj_b = PlanningJob.objects.create(
+            jc_number='JC-PW-B', order_qty=500, status='in_production',
+            plan_date=today, plan_month='Test',
+        )
+        self.jc_b = JobCard.objects.create(
+            job_card_no='JC-PW-B', planning_job=pj_b, order_qty=500, ups=1,
+            total_sheet_quantity=500, status='in_production', is_active=True,
+            SKU='SKU-PW-B', po_date=today, total_colors=4, total_impressions_required=500,
+            machine_name=machine,
+        )
+        Production.objects.create(
+            entry_type='printing', job_card=self.jc_b, date=today, shift='A',
+            output_sheets=500, waste_sheets=0, status='completed',
+        )
+        Production.objects.create(
+            entry_type='packing', job_card=self.jc_b, date=today, shift='A',
+            packing_qty=500, sorting_waste_qty=0, status='completed', sorter=sorter,
+        )
+
+        # Job C: fully closed out (printed, packed, dispatched, status completed)
+        # — must never appear anywhere despite matching quantities exactly.
+        pj_c = PlanningJob.objects.create(
+            jc_number='JC-PW-C', order_qty=200, status='completed',
+            plan_date=today, plan_month='Test',
+        )
+        self.jc_c = JobCard.objects.create(
+            job_card_no='JC-PW-C', planning_job=pj_c, order_qty=200, ups=1,
+            total_sheet_quantity=200, status='in_production', is_active=True,
+            SKU='SKU-PW-C', po_date=today, total_colors=4, total_impressions_required=200,
+            machine_name=machine,
+        )
+        Production.objects.create(
+            entry_type='printing', job_card=self.jc_c, date=today, shift='A',
+            output_sheets=200, waste_sheets=0, status='completed',
+        )
+        Production.objects.create(
+            entry_type='packing', job_card=self.jc_c, date=today, shift='A',
+            packing_qty=200, sorting_waste_qty=0, status='completed', sorter=sorter,
+        )
+        Dispatch.objects.create(
+            job_card=self.jc_c, dc_no='DC-PW-C', dispatch_date=today, dispatch_qty=200, is_active=True,
+        )
+        # Flip to 'completed' after the production/dispatch rows exist, bypassing
+        # full_clean's release-sequence validation (only relevant on JobCard creation).
+        JobCard.objects.filter(pk=self.jc_c.pk).update(status='completed')
+
+        # Job D: still in planning (qc_approved), not yet released — must never
+        # appear in the printing/packing/dispatch backlog tables, only in the
+        # separate "Not Yet Released" list.
+        pj_d = PlanningJob.objects.create(
+            jc_number='JC-PW-D', order_qty=900, status='qc_approved',
+            plan_date=today, plan_month='Test',
+        )
+        self.jc_d = JobCard.objects.create(
+            job_card_no='JC-PW-D', planning_job=pj_d, order_qty=900, ups=1,
+            total_sheet_quantity=900, status='qc_approved', is_active=True,
+            SKU='SKU-PW-D', po_date=today, total_colors=4, total_impressions_required=900,
+            machine_name=machine,
+        )
+
+        # Job E: still a plain draft — never submitted to QC, so it has no
+        # JobCard at all yet (one is only created on submit-to-QC). Must still
+        # surface under "Not Yet Released", not just disappear.
+        self.pj_e = PlanningJob.objects.create(
+            jc_number='JC-PW-E', po_number='PO-PW-E', sku='SKU-PW-E', order_qty=300,
+            status='draft', plan_date=today, plan_month='Test',
+        )
+
+        # Job F: machine changed by production supervisor after planning —
+        # JobCard.machine_name should win over PlanningJob.machine_name.
+        supervisor_machine = Machine.objects.create(name='PW Supervisor Machine', is_active=True)
+        pj_f = PlanningJob.objects.create(
+            jc_number='JC-PW-F', order_qty=400, status='in_production',
+            plan_date=today, plan_month='Test', machine_name='Planner Machine (text)',
+        )
+        self.jc_f = JobCard.objects.create(
+            job_card_no='JC-PW-F', planning_job=pj_f, order_qty=400, ups=1,
+            total_sheet_quantity=400, status='in_production', is_active=True,
+            SKU='SKU-PW-F', po_date=today, total_colors=4, total_impressions_required=400,
+            machine_name=supervisor_machine,
+        )
+
+    def _run(self, **params):
+        self.client.login(username='report_user', password='pass12345')
+        response = self.client.get(reverse('reports:reports_api:run_report', args=['pending-work']), params)
+        self.assertEqual(response.status_code, 200)
+        return response.json()['payload']['data']
+
+    def test_printed_but_unpacked_job_shows_pending_packing_only(self):
+        data = self._run()
+        printing_jcs = {r['job_card_no'] for r in data['printing_rows']}
+        packing_jcs = {r['job_card_no']: r for r in data['packing_rows']}
+        dispatch_jcs = {r['job_card_no'] for r in data['dispatch_rows']}
+
+        self.assertNotIn('JC-PW-A', printing_jcs)
+        self.assertIn('JC-PW-A', packing_jcs)
+        self.assertEqual(packing_jcs['JC-PW-A']['pending_qty'], 600)
+        self.assertNotIn('JC-PW-A', dispatch_jcs)
+
+    def test_packed_but_undispatched_job_shows_pending_dispatch_only(self):
+        data = self._run()
+        printing_jcs = {r['job_card_no'] for r in data['printing_rows']}
+        packing_jcs = {r['job_card_no'] for r in data['packing_rows']}
+        dispatch_jcs = {r['job_card_no']: r for r in data['dispatch_rows']}
+
+        self.assertNotIn('JC-PW-B', printing_jcs)
+        self.assertNotIn('JC-PW-B', packing_jcs)
+        self.assertIn('JC-PW-B', dispatch_jcs)
+        self.assertEqual(dispatch_jcs['JC-PW-B']['pending_qty'], 500)
+
+    def test_completed_job_excluded_entirely(self):
+        data = self._run()
+        all_jcs = (
+            {r['job_card_no'] for r in data['printing_rows']}
+            | {r['job_card_no'] for r in data['packing_rows']}
+            | {r['job_card_no'] for r in data['dispatch_rows']}
+        )
+        self.assertNotIn('JC-PW-C', all_jcs)
+
+    def test_summary_totals(self):
+        data = self._run()
+        self.assertEqual(data['summary']['packing_pcs'], 600)
+        self.assertEqual(data['summary']['dispatch_pcs'], 500)
+
+    def test_not_released_job_excluded_from_backlog_and_listed_separately(self):
+        data = self._run()
+        backlog_jcs = (
+            {r['job_card_no'] for r in data['printing_rows']}
+            | {r['job_card_no'] for r in data['packing_rows']}
+            | {r['job_card_no'] for r in data['dispatch_rows']}
+        )
+        self.assertNotIn('JC-PW-D', backlog_jcs)
+
+        not_released = {r['job_card_no']: r for r in data['not_released_rows']}
+        self.assertIn('JC-PW-D', not_released)
+        self.assertEqual(not_released['JC-PW-D']['order_qty_pcs'], 900)
+        # Job E (draft, no JobCard yet) also belongs here — see
+        # test_draft_job_with_no_job_card_shows_in_not_released for that case.
+        self.assertEqual(data['summary']['not_released_jobs'], 2)
+        self.assertEqual(data['summary']['not_released_pcs'], 1200)
+
+    def test_draft_job_with_no_job_card_shows_in_not_released(self):
+        # Regression: a JobCard is only created once a PlanningJob is submitted
+        # to QC, so a plain 'draft' job was invisible to the JobCard-only query
+        # regardless of period filter.
+        data = self._run()
+        not_released = {r['job_card_no']: r for r in data['not_released_rows']}
+        self.assertIn('JC-PW-E', not_released)
+        self.assertEqual(not_released['JC-PW-E']['order_qty_pcs'], 300)
+        self.assertEqual(not_released['JC-PW-E']['po_number'], 'PO-PW-E')
+
+        data_all_time = self._run(period='all')
+        not_released_all = {r['job_card_no'] for r in data_all_time['not_released_rows']}
+        self.assertIn('JC-PW-E', not_released_all)
+
+    def test_supervisor_assigned_machine_wins_over_planner_text(self):
+        data = self._run()
+        printing_row = next(r for r in data['printing_rows'] if r['job_card_no'] == 'JC-PW-F')
+        self.assertEqual(printing_row['machine'], 'PW Supervisor Machine')
+
+    def test_stage_param_selects_export_rows_and_does_not_collide_in_cache(self):
+        printing_only = self._run(stage='printing')['export_rows']
+        self.assertEqual({row['job_card_no'] for row in printing_only}, {'JC-PW-F'})
+
+        not_released_only = self._run(stage='not_released')['export_rows']
+        self.assertEqual({row['job_card_no'] for row in not_released_only}, {'JC-PW-D', 'JC-PW-E'})
+
+        combined = self._run()['export_rows']
+        self.assertTrue(all('stage' in row for row in combined))
+        self.assertEqual(
+            {row['job_card_no'] for row in combined},
+            {'JC-PW-A', 'JC-PW-B', 'JC-PW-F'},
+        )
+
+
+class KPIScorecardServiceTests(TestCase):
+    """Order Fulfillment / Wastage Reduction / Dispatch Alignment computation
+    and Red/Yellow/Green banding against seeded KPITarget rows."""
+
+    def setUp(self):
+        import datetime
+        from core.models import JobCard, Machine, Production, Dispatch, Sorter
+        from planning.models import PlanningJob
+        from reports.models import KPITarget
+
+        self.start = datetime.date(2026, 7, 1)
+        self.end = datetime.date(2026, 7, 31)
+
+        KPITarget.objects.update_or_create(
+            kpi_slug='order_fulfillment', year=2026,
+            defaults={'min_value': 80, 'target_value': 85, 'max_value': 100, 'higher_is_better': True, 'weightage_pct': 20},
+        )
+        KPITarget.objects.update_or_create(
+            kpi_slug='wastage_reduction', year=2026,
+            defaults={'min_value': 0, 'target_value': 5, 'max_value': 8, 'higher_is_better': False, 'weightage_pct': 20},
+        )
+        KPITarget.objects.update_or_create(
+            kpi_slug='dispatch_alignment', year=2026,
+            defaults={'min_value': 80, 'target_value': 95, 'max_value': 130, 'higher_is_better': True, 'weightage_pct': 15},
+        )
+
+        pj = PlanningJob.objects.create(
+            jc_number='JC-KPI-1', order_qty=1000, status='in_production',
+            plan_date=self.start, plan_month='July 2026', po_approval_date=self.start,
+        )
+        machine = Machine.objects.create(name='KPI Test Machine', is_active=True)
+        jc = JobCard.objects.create(
+            job_card_no='JC-KPI-1', planning_job=pj, order_qty=1000, ups=2,
+            total_sheet_quantity=500, status='in_production', is_active=True,
+            SKU='SKU-KPI-1', po_date=self.start, total_colors=4, total_impressions_required=1000,
+            machine_name=machine,
+        )
+        # 100 waste sheets * 2 ups = 200 waste pcs from printing.
+        Production.objects.create(
+            entry_type='printing', job_card=jc, date=self.start, shift='A',
+            output_sheets=400, waste_sheets=100, status='completed',
+        )
+        # 700 packed, 10 pcs sorting waste.
+        sorter = Sorter.objects.create(name='KPI Test Sorter', is_active=True)
+        Production.objects.create(
+            entry_type='packing', job_card=jc, date=self.start, shift='A',
+            packing_qty=700, sorting_waste_qty=10, status='completed', sorter=sorter,
+        )
+        Dispatch.objects.create(
+            job_card=jc, dc_no='DC-KPI-1', dispatch_date=self.start, dispatch_qty=650, is_active=True,
+        )
+
+    def test_order_fulfillment_is_dispatched_over_order_qty(self):
+        from reports.kpi_services import compute_order_fulfillment
+        value, detail = compute_order_fulfillment(self.start, self.end)
+        # 650 dispatched / 1000 order qty = 65%
+        self.assertEqual(value, 65.0)
+        self.assertEqual(detail['order_qty'], 1000)
+        self.assertEqual(detail['dispatched_pcs'], 650)
+
+    def test_wastage_reduction_is_total_waste_over_order_qty(self):
+        from reports.kpi_services import compute_wastage_reduction
+        value, detail = compute_wastage_reduction(self.start, self.end)
+        # (200 printing waste + 10 sorting waste) / 1000 order qty = 21%
+        self.assertEqual(value, 21.0)
+        self.assertEqual(detail['wastage_pcs'], 210)
+
+    def test_dispatch_alignment_is_dispatched_over_packed(self):
+        from reports.kpi_services import compute_dispatch_alignment
+        value, detail = compute_dispatch_alignment(self.start, self.end)
+        # 650 dispatched / 700 packed = 92.86%
+        self.assertEqual(value, 92.86)
+        self.assertEqual(detail['packed_pcs'], 700)
+
+    def test_status_banding_higher_is_better(self):
+        from reports.kpi_services import _status_for
+        from reports.models import KPITarget
+        target = KPITarget.objects.get(kpi_slug='dispatch_alignment', year=2026)
+        self.assertEqual(_status_for(target, 60), 'red')     # below min (80)
+        self.assertEqual(_status_for(target, 90), 'yellow')  # between min and target
+        self.assertEqual(_status_for(target, 95), 'green')   # at target
+        self.assertEqual(_status_for(target, 140), 'yellow') # above max — overshoot caution
+
+    def test_status_banding_lower_is_better(self):
+        from reports.kpi_services import _status_for
+        from reports.models import KPITarget
+        target = KPITarget.objects.get(kpi_slug='wastage_reduction', year=2026)
+        self.assertEqual(_status_for(target, 3), 'green')   # at/below target (5)
+        self.assertEqual(_status_for(target, 7), 'yellow')  # between target and max (8)
+        self.assertEqual(_status_for(target, 12), 'red')    # above max
+
+
+class KPITargetSeedMigrationTests(TestCase):
+    """The 0005 migration re-bands Order Fulfillment to min 95 / max 150."""
+
+    def test_order_fulfillment_2026_target_uses_updated_band(self):
+        from reports.models import KPITarget
+        target = KPITarget.objects.get(kpi_slug='order_fulfillment', year=2026)
+        self.assertEqual(float(target.min_value), 95)
+        self.assertEqual(float(target.max_value), 150)
+        self.assertGreaterEqual(float(target.target_value), float(target.min_value))
+
+
+class KPIScorecardViewTests(TestCase):
+    def setUp(self):
+        User = get_user_model()
+        self.user = User.objects.create_user(username='kpi_user', password='pass12345')
+        profile = UserProfile.objects.get(user=self.user)
+        profile.role = 'manager'
+        profile.save(update_fields=['role'])
+        from django.contrib.auth.models import Permission
+        from django.contrib.contenttypes.models import ContentType
+        content_type = ContentType.objects.get_for_model(UserProfile)
+        permission, _ = Permission.objects.get_or_create(
+            codename='view_reports', name='Can view reports', content_type=content_type,
+        )
+        self.user.user_permissions.add(permission)
+        self.client.login(username='kpi_user', password='pass12345')
+
+    def test_kpi_scorecard_report_loads(self):
+        response = self.client.get(reverse('reports:detail', args=['kpi-scorecard']))
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'KPI Scorecard')
+
+    def test_save_note_persists_and_is_picked_up_on_next_get(self):
+        response = self.client.post(reverse('reports:kpi_save_note'), {
+            'kpi_slug': 'wastage_reduction',
+            'period_type': 'month',
+            'period_key': '2026-07',
+            'status': 'yellow',
+            'note': 'Review setup waste on Machine 3.',
+            'return_query': 'period_type=month&year=2026&month=7',
+        })
+        self.assertEqual(response.status_code, 302)
+
+        from reports.models import KPIActionNote
+        note = KPIActionNote.objects.get(kpi_slug='wastage_reduction', period_type='month', period_key='2026-07')
+        self.assertEqual(note.note, 'Review setup waste on Machine 3.')
+        self.assertEqual(note.status, 'yellow')
+
+        response = self.client.get(reverse('reports:detail', args=['kpi-scorecard']), {'period_type': 'month', 'year': 2026, 'month': 7})
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Review setup waste on Machine 3.')
+
+    def test_different_months_are_not_served_from_the_same_cache_entry(self):
+        """Regression guard: period_type/year/month/quarter were missing from
+        parse_universal_filters, so every month/quarter selection shared one
+        cache key and always showed whichever period was computed first."""
+        import datetime
+        from core.models import JobCard, Machine, Production
+        from planning.models import PlanningJob
+
+        machine = Machine.objects.create(name='KPI Cache Test Machine', is_active=True)
+        may = datetime.date(2026, 5, 15)
+        pj_may = PlanningJob.objects.create(
+            jc_number='JC-KPI-CACHE-MAY', order_qty=1000, status='in_production',
+            plan_date=may, plan_month='May 2026', po_approval_date=may,
+        )
+        jc_may = JobCard.objects.create(
+            job_card_no='JC-KPI-CACHE-MAY', planning_job=pj_may, order_qty=1000, ups=1,
+            total_sheet_quantity=1000, status='in_production', is_active=True,
+            SKU='SKU-KPI-CACHE-MAY', po_date=may, total_colors=4, total_impressions_required=1000,
+            machine_name=machine,
+        )
+        Production.objects.create(
+            entry_type='printing', job_card=jc_may, date=may, shift='A',
+            output_sheets=1000, waste_sheets=0, status='completed',
+        )
+
+        response_may = self.client.get(
+            reverse('reports:reports_api:run_report', args=['kpi-scorecard']),
+            {'period_type': 'month', 'year': 2026, 'month': 5},
+        )
+        response_jun = self.client.get(
+            reverse('reports:reports_api:run_report', args=['kpi-scorecard']),
+            {'period_type': 'month', 'year': 2026, 'month': 6},
+        )
+        data_may = response_may.json()['payload']['data']
+        data_jun = response_jun.json()['payload']['data']
+
+        self.assertEqual(data_may['period_label'], 'May 2026')
+        self.assertEqual(data_jun['period_label'], 'June 2026')
+        may_fulfillment = next(k for k in data_may['kpis'] if k['slug'] == 'order_fulfillment')
+        jun_fulfillment = next(k for k in data_jun['kpis'] if k['slug'] == 'order_fulfillment')
+        # May has the 1000-pc order in it, June has none — a stale shared
+        # cache entry would show the same order_qty for both.
+        self.assertEqual(may_fulfillment['detail']['order_qty'], 1000)
+        self.assertEqual(jun_fulfillment['detail']['order_qty'], 0)
+
+
+class KPIDrilldownExportTests(TestCase):
+    """Clicking a KPI's percent (or a trend period) downloads the raw
+    job-level rows the percentage was computed from, for manual reconciliation."""
+
+    def setUp(self):
+        import datetime
+        from core.models import JobCard, Machine, Production, Dispatch
+        from planning.models import PlanningJob
+
+        User = get_user_model()
+        self.user = User.objects.create_user(username='kpi_drill_user', password='pass12345')
+        profile = UserProfile.objects.get(user=self.user)
+        profile.role = 'manager'
+        profile.save(update_fields=['role'])
+        from django.contrib.auth.models import Permission
+        from django.contrib.contenttypes.models import ContentType
+        content_type = ContentType.objects.get_for_model(UserProfile)
+        permission, _ = Permission.objects.get_or_create(
+            codename='view_reports', name='Can view reports', content_type=content_type,
+        )
+        self.user.user_permissions.add(permission)
+        self.client.login(username='kpi_drill_user', password='pass12345')
+
+        self.start = datetime.date(2026, 7, 1)
+        machine = Machine.objects.create(name='Drill Test Machine', is_active=True)
+        pj = PlanningJob.objects.create(
+            jc_number='JC-DRILL-1', order_qty=500, status='in_production',
+            plan_date=self.start, plan_month='July 2026', po_approval_date=self.start,
+        )
+        jc = JobCard.objects.create(
+            job_card_no='JC-DRILL-1', planning_job=pj, order_qty=500, ups=1,
+            total_sheet_quantity=500, status='in_production', is_active=True,
+            SKU='SKU-DRILL-1', po_date=self.start, total_colors=4, total_impressions_required=500,
+            machine_name=machine,
+        )
+        Dispatch.objects.create(
+            job_card=jc, dc_no='DC-DRILL-1', dispatch_date=self.start, dispatch_qty=400, is_active=True,
+        )
+
+        # A second job in a different month of the same quarter (Q3 2026), so
+        # the quarterly-detail export has more than one month's rows to prove
+        # it actually spans the whole quarter, not just the selected month.
+        aug = datetime.date(2026, 8, 15)
+        pj2 = PlanningJob.objects.create(
+            jc_number='JC-DRILL-2', po_number='PO-DRILL-2', order_qty=200, status='in_production',
+            plan_date=aug, plan_month='August 2026', po_approval_date=aug,
+        )
+        jc2 = JobCard.objects.create(
+            job_card_no='JC-DRILL-2', planning_job=pj2, order_qty=200, ups=1,
+            total_sheet_quantity=200, status='in_production', is_active=True,
+            SKU='SKU-DRILL-2', po_date=aug, total_colors=4, total_impressions_required=200,
+            machine_name=machine,
+        )
+        Dispatch.objects.create(
+            job_card=jc2, dc_no='DC-DRILL-2', dispatch_date=aug, dispatch_qty=150, is_active=True,
+        )
+
+    def test_quarterly_detail_export_spans_whole_quarter_with_totals(self):
+        response = self.client.get(
+            reverse('reports:reports_api:run_report', args=['kpi-scorecard']),
+            {'period_type': 'month', 'year': 2026, 'month': 7, 'kpi': 'order_fulfillment', 'detail': 'quarterly'},
+        )
+        data = response.json()['payload']['data']
+        rows = data['export_rows']
+        self.assertEqual(data['headers'][:3], ['quarter', 'process', 'month'])
+
+        jc_rows = {row['job_card_no']: row for row in rows if row.get('job_card_no')}
+        self.assertIn('JC-DRILL-1', jc_rows)
+        self.assertIn('JC-DRILL-2', jc_rows)
+        self.assertEqual(jc_rows['JC-DRILL-2']['month'], 'August')
+        self.assertEqual(jc_rows['JC-DRILL-2']['machine'], 'Drill Test Machine')
+
+        processes = {row['process'] for row in rows}
+        self.assertIn('Total', processes)
+        self.assertIn('Order Fulfillment Efficiency %', processes)
+
+    def test_kpi_param_returns_supporting_rows_for_that_kpi_only(self):
+        response = self.client.get(
+            reverse('reports:reports_api:run_report', args=['kpi-scorecard']),
+            {'period_type': 'month', 'year': 2026, 'month': 7, 'kpi': 'order_fulfillment'},
+        )
+        data = response.json()['payload']['data']
+        rows = data['export_rows']
+        self.assertTrue(rows)
+        row_types = {row['row_type'] for row in rows}
+        self.assertEqual(row_types, {'Order (Planned)', 'Dispatch (Actual)'})
+        dispatch_row = next(r for r in rows if r['row_type'] == 'Dispatch (Actual)')
+        self.assertEqual(dispatch_row['qty_pcs'], 400)
+        self.assertEqual(dispatch_row['job_card_no'], 'JC-DRILL-1')
+
+    def test_kpi_all_combines_every_kpis_supporting_rows(self):
+        response = self.client.get(
+            reverse('reports:reports_api:run_report', args=['kpi-scorecard']),
+            {'period_type': 'month', 'year': 2026, 'month': 7, 'kpi': 'all'},
+        )
+        data = response.json()['payload']['data']
+        rows = data['export_rows']
+        kpi_labels = {row['kpi'] for row in rows}
+        self.assertEqual(
+            kpi_labels,
+            {'Order Fulfillment Efficiency', 'Wastage Reduction Efficiency', 'Dispatch vs Production Alignment'},
+        )
+
+    def test_export_xlsx_download_succeeds(self):
+        response = self.client.get(
+            reverse('reports:reports_api:export_report', args=['kpi-scorecard']),
+            {'type': 'xlsx', 'period_type': 'month', 'year': 2026, 'month': 7, 'kpi': 'order_fulfillment'},
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(
+            response['Content-Type'],
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+
+
+class DailyProductionReleasedToProductionTests(TestCase):
+    """Daily Production's "Released to Production" stream is sourced from the
+    ChangeLog audit trail written when a job is released, not a raw status
+    field — so the fixture must drive a real release action, not just set
+    status='released' directly, to prove the wiring end to end."""
+
+    def setUp(self):
+        import datetime
+        from core.models import JobCard, Machine
+        from planning.models import PlanningJob
+
+        User = get_user_model()
+        self.user = User.objects.create_user(username='dp_report_user', password='pass12345')
+        profile = UserProfile.objects.get(user=self.user)
+        profile.role = 'manager'
+        profile.save(update_fields=['role'])
+        from django.contrib.auth.models import Permission
+        from django.contrib.contenttypes.models import ContentType
+        content_type = ContentType.objects.get_for_model(UserProfile)
+        permission, _ = Permission.objects.get_or_create(
+            codename='view_reports', name='Can view reports', content_type=content_type,
+        )
+        self.user.user_permissions.add(permission)
+        self.client.login(username='dp_report_user', password='pass12345')
+
+        self.today = datetime.date.today()
+        self.machine = Machine.objects.create(name='DP Released Test Machine', is_active=True)
+
+        pj = PlanningJob.objects.create(
+            jc_number='JC-DP-RELEASED-1', order_qty=800, status='qc_approved',
+            plan_date=self.today, plan_month='Test',
+        )
+        self.jc = JobCard.objects.create(
+            job_card_no='JC-DP-RELEASED-1', planning_job=pj, order_qty=800, ups=1,
+            total_sheet_quantity=800, status='production_approved', is_active=True,
+            SKU='SKU-DP-RELEASED-1', PO_No='PO-DP-1', po_date=self.today, total_colors=4,
+            total_impressions_required=800, wastage=0, machine_name=self.machine,
+        )
+
+    def _release(self):
+        from core.jobcard_service import execute_job_card_action
+        self.jc.refresh_from_db()
+        execute_job_card_action(self.jc, 'release_for_production', actor=self.user, reason='Test release')
+
+    def test_released_job_appears_in_released_rows_and_overview_and_totals(self):
+        self._release()
+        response = self.client.get(
+            reverse('reports:reports_api:run_report', args=['daily-production']),
+            {'period': 'today'},
+        )
+        data = response.json()['payload']['data']
+
+        released_rows = data['released_rows']
+        self.assertEqual(len(released_rows), 1)
+        row = released_rows[0]
+        self.assertEqual(row['job_card_no'], 'JC-DP-RELEASED-1')
+        self.assertEqual(row['po_number'], 'PO-DP-1')
+        self.assertEqual(row['sku'], 'SKU-DP-RELEASED-1')
+        self.assertEqual(row['machine'], 'DP Released Test Machine')
+        self.assertEqual(row['order_qty'], 800)
+        self.assertIn('dp_report_user', row['released_by'])
+
+        overview_rows = data['overview_rows']
+        self.assertEqual(len(overview_rows), 1)
+        self.assertEqual(overview_rows[0]['released_count'], 1)
+        self.assertEqual(overview_rows[0]['released_qty'], 800)
+
+        self.assertEqual(data['totals']['released_jobs'], 1)
+        self.assertEqual(data['totals']['released_qty'], 800)
+
+    def test_release_outside_the_filtered_period_is_excluded(self):
+        self._release()
+        response = self.client.get(
+            reverse('reports:reports_api:run_report', args=['daily-production']),
+            {'period': 'custom', 'date_from': '2020-01-01', 'date_to': '2020-01-31'},
+        )
+        data = response.json()['payload']['data']
+        self.assertEqual(data['released_rows'], [])
+        self.assertEqual(data['totals']['released_jobs'], 0)
+
+    def test_no_release_action_means_no_released_rows(self):
+        response = self.client.get(
+            reverse('reports:reports_api:run_report', args=['daily-production']),
+            {'period': 'today'},
+        )
+        data = response.json()['payload']['data']
+        self.assertEqual(data['released_rows'], [])
+        self.assertEqual(data['totals']['released_jobs'], 0)

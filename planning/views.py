@@ -998,8 +998,8 @@ def planning_home(request):
                 return redirect('planning:jobs')
 
     q = (request.GET.get('q') or '').strip()
-    status_filter = _normalize_status(request.GET.get('status'), default='')
-    stage_filter = (request.GET.get('planning_stage') or '').strip()
+    status_values = [v for v in request.GET.getlist('status') if v and v.strip()]
+    stage_values = [v for v in request.GET.getlist('planning_stage') if v and v.strip()]
     department_filter = (request.GET.get('department') or '').strip()
     machine_filter = (request.GET.get('machine') or '').strip()
     from_date = _parse_date_filter(request.GET.get('from_date'))
@@ -1013,21 +1013,25 @@ def planning_home(request):
             | Q(sku__icontains=q)
             | Q(job_name__icontains=q)
         )
-    if status_filter:
-        queryset = queryset.filter(status__in=_planning_status_filter_values(status_filter))
+    if status_values:
+        expanded_statuses = set()
+        for value in status_values:
+            expanded_statuses.update(_planning_status_filter_values(value))
+        queryset = queryset.filter(status__in=sorted(expanded_statuses))
     elif not q:
         queryset = queryset.exclude(status='completed')
     # else: searching without an explicit status filter — leave completed jobs in
     # results so a specific job can never "vanish" from search (read-only in the template).
-    if stage_filter:
-        if stage_filter == 'planning_done':
-            queryset = queryset.filter(
-                Q(planning_stage='planning_done') | Q(planning_stage='in_production')
-            )
-        elif stage_filter == 'not_set':
-            queryset = queryset.filter(planning_stage='')
-        else:
-            queryset = queryset.filter(planning_stage=stage_filter)
+    if stage_values:
+        stage_q = Q()
+        for stage_filter in stage_values:
+            if stage_filter == 'planning_done':
+                stage_q |= Q(planning_stage='planning_done') | Q(planning_stage='in_production')
+            elif stage_filter == 'not_set':
+                stage_q |= Q(planning_stage='')
+            else:
+                stage_q |= Q(planning_stage=stage_filter)
+        queryset = queryset.filter(stage_q)
     if department_filter:
         queryset = queryset.filter(department__icontains=department_filter)
     if machine_filter:
@@ -1321,8 +1325,8 @@ def planning_home(request):
             'cancel_reason_choices': PLANNING_CANCEL_REASON_CHOICES,
             'filters': {
                 'q': q,
-                'status': status_filter,
-                'planning_stage': stage_filter,
+                'status': status_values,
+                'planning_stage': stage_values,
                 'department': department_filter,
                 'machine': machine_filter,
                 'from_date': request.GET.get('from_date', ''),
