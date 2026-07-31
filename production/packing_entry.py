@@ -268,7 +268,7 @@ def packing_production_entry(request):
 
 
 @login_required
-@permission_required('can_edit_production')
+@permission_required('can_view_production_records')
 def packing_records(request):
     """Packing production records ledger."""
     from datetime import datetime, timedelta
@@ -280,18 +280,14 @@ def packing_records(request):
         get_record_edit_lock_cutoff,
         user_can_bypass_edit_lock,
         run_bulk_permanent_delete,
-        user_can_archive_records,
     )
     from core.views import add_unique_message
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         if action == 'bulk_delete':
-            if request.user.profile.role != 'admin':
-                add_unique_message(request, messages.ERROR, '❌ Only admin can run bulk delete.')
-                return redirect('packing_records')
-            if not user_can_archive_records(request.user):
-                add_unique_message(request, messages.ERROR, '❌ You do not have permission to delete records.')
+            if not request.user.is_superuser:
+                add_unique_message(request, messages.ERROR, '❌ Only a superuser can run bulk delete.')
                 return redirect('packing_records')
 
             selected_ids = request.POST.getlist('selected_ids')

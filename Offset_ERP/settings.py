@@ -10,10 +10,13 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/6.0/ref/settings/
 """
 
+import os
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
+
+REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')
 
 
 # Quick-start development settings - unsuitable for production
@@ -34,6 +37,7 @@ MEDIA_ROOT = BASE_DIR / 'media'
 # Application definition
 
 INSTALLED_APPS = [
+    'daphne',  # must precede staticfiles so Channels' runserver substitution takes effect
     'django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
@@ -41,6 +45,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.humanize',
     'django.contrib.staticfiles',
+    'channels',
+    'rest_framework',
     'core',
     'planning',
     'printing_plates',
@@ -58,6 +64,7 @@ INSTALLED_APPS = [
     'backup',
     'maintenance',
     'floor_dashboard',
+    'chat',
 ]
 
 MIDDLEWARE = [
@@ -94,6 +101,40 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'Offset_ERP.wsgi.application'
+ASGI_APPLICATION = 'Offset_ERP.asgi.application'
+
+# NOTE: the Redis instance already running on this dev machine is v5.0.14, which
+# predates the RESP3 HELLO handshake (Redis 6+) that redis-py negotiates by
+# default — hence `protocol: 2` (RESP2) below. Drop this once Redis is upgraded.
+CHANNEL_LAYERS = {
+    'default': {
+        'BACKEND': 'channels_redis.core.RedisChannelLayer',
+        'CONFIG': {
+            'hosts': [{'address': f'{REDIS_URL}/0', 'protocol': 2}],
+        },
+    },
+}
+
+CACHES = {
+    'default': {
+        'BACKEND': 'django.core.cache.backends.redis.RedisCache',
+        'LOCATION': f'{REDIS_URL}/1',
+        'OPTIONS': {
+            'protocol': 2,
+        },
+    },
+}
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.CursorPagination',
+    'PAGE_SIZE': 30,
+}
 
 
 # Database
@@ -161,4 +202,15 @@ ERP_SOFTWARE_RELEASE_DATE = '2026-07-03'
 
 # Lock older operational records from edit for non-managerial roles.
 ERP_RECORD_EDIT_LOCK_DAYS = 2
+
+# Chat module
+CHAT_ICE_SERVERS = [
+    {'urls': ['stun:stun.l.google.com:19302']},
+    # Future (remote/VPN users): add a TURN entry here, e.g.
+    # {'urls': ['turn:lan-turn-server:3478'], 'username': '...', 'credential': '...'}
+]
+CHAT_MEDIA_SUBDIR = 'chat_media'
+CHAT_MAX_ATTACHMENT_MB = 25
+CHAT_ATTACHMENT_RETENTION_DAYS = 180
+CHAT_MESSAGE_EDIT_WINDOW_MINUTES = 15
 

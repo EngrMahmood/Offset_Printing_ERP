@@ -210,7 +210,7 @@
                         </div>
                     </div>
 
-                    {% if user.profile.role == 'admin' %}
+                    {% if user.is_superuser %}
                     <form id="bulk_archive_form_packing" method="POST" class="erp-actions" style="margin-bottom:10px;">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="bulk_delete">
@@ -225,7 +225,7 @@
                         <table class="erp-table erp-table-dense production-records-table">
                             <thead>
                                 <tr>
-                                    {% if user.profile.role == 'admin' %}<th><input type="checkbox" id="select_all_packing"></th>{% endif %}
+                                    {% if user.is_superuser %}<th><input type="checkbox" id="select_all_packing"></th>{% endif %}
                                     <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Date</a></th>
                                     <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&sorter={{ sorter }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Job Card</a></th>
                                     <th>SKU</th>
@@ -242,7 +242,7 @@
                             <tbody>
                                 {% for row in records %}
                                 <tr>
-                                    {% if user.profile.role == 'admin' %}
+                                    {% if user.is_superuser %}
                                     <td><input type="checkbox" class="bulk-check-packing" name="selected_ids" value="{{ row.id }}" form="bulk_archive_form_packing"></td>
                                     {% endif %}
                                     <td>{{ row.date }}</td>

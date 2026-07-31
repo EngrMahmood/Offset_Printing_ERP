@@ -666,17 +666,14 @@ def dispatch_dc_duplicate_check(request):
 
 
 @login_required
-@permission_required('can_approve_dispatch')
+@permission_required('can_view_dispatch_records')
 def dispatch_records(request):
     """Dispatch records list page"""
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         if action == 'bulk_delete':
-            if request.user.profile.role != 'admin':
-                add_unique_message(request, messages.ERROR, '❌ Only admin can run bulk delete.')
-                return redirect('dispatch_records')
-            if not user_can_archive_records(request.user):
-                add_unique_message(request, messages.ERROR, '❌ You do not have permission to delete records.')
+            if not request.user.is_superuser:
+                add_unique_message(request, messages.ERROR, '❌ Only a superuser can run bulk delete.')
                 return redirect('dispatch_records')
 
             selected_ids = request.POST.getlist('selected_ids')
@@ -1394,8 +1391,12 @@ def master_data(request):
         record = get_object_or_404(model, pk=machine_id) if (model and machine_id) else None
         is_admin_user = bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin')
 
-        if action in {'rename_machine', 'edit_master', 'delete_master', 'create_master'} and not is_admin_user:
-            messages.error(request, 'Only admin can edit or delete master values.')
+        if action == 'delete_master' and not request.user.is_superuser:
+            messages.error(request, 'Only a superuser can delete master values.')
+            return redirect('master_data')
+
+        if action in {'rename_machine', 'edit_master', 'create_master'} and not is_admin_user:
+            messages.error(request, 'Only admin can edit master values.')
             return redirect('master_data')
 
         if action == 'create_master' and entity_type in model_map:
@@ -1789,6 +1790,7 @@ def master_data(request):
         'vendor_rows': vendor_rows,
         'print_color_rows': print_color_rows,
         'is_admin_user': bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin'),
+        'is_superuser_user': bool(request.user.is_superuser),
     }
     return render(request, 'master_data.html', context)
 
@@ -1823,9 +1825,12 @@ def manage_user_roles(request):
             messages.error(request, f'❌ Error updating role: {str(e)}')
         return redirect('manage_user_roles')
     
+    from core.models import Role
+    role_choices = list(Role.objects.order_by('display_name').values_list('slug', 'display_name'))
+
     context = {
         'users': users,
-        'role_choices': UserProfile.ROLE_CHOICES,
+        'role_choices': role_choices,
     }
     return render(request, 'manage_user_roles.html', context)
 
@@ -2069,7 +2074,10 @@ def notification_settings_home(request):
         messages.error(request, "You are not authorized to view settings.")
         return redirect('home')
 
-    from core.models import NotificationEvent, NotificationRule, WorkflowTransition, NotificationRuleAuditLog, Department
+    from core.models import (
+        NotificationEvent, NotificationRule, WorkflowTransition, NotificationRuleAuditLog, Department,
+        Role, Permission, UserPermissionOverride, AccessControlAuditLog,
+    )
     from django.contrib.auth import get_user_model
     User = get_user_model()
 
@@ -2090,10 +2098,66 @@ def notification_settings_home(request):
                 })
         audit.changes_list = changes
         audits.append(audit)
-    
+
     departments = Department.objects.all().order_by('name')
     users = User.objects.filter(is_active=True).order_by('username')
     roles = UserProfile.ROLE_CHOICES
+
+    # --- Access control tab data ---
+    access_roles = Role.objects.all().prefetch_related('permissions').order_by('display_name')
+    all_permissions = Permission.objects.filter(is_active=True).order_by('category', 'name')
+    permission_categories = {}
+    for perm in all_permissions:
+        permission_categories.setdefault(perm.category, []).append(perm)
+
+    selected_role_id = request.GET.get('role_id')
+    selected_role = None
+    selected_role_codes = set()
+    if selected_role_id:
+        selected_role = access_roles.filter(id=selected_role_id).first()
+    if selected_role is None:
+        selected_role = access_roles.first()
+    if selected_role is not None:
+        selected_role_codes = set(selected_role.permissions.values_list('code', flat=True))
+
+    role_category_open = {
+        category: any(perm.code in selected_role_codes for perm in perms)
+        for category, perms in permission_categories.items()
+    }
+
+    selected_user_id = request.GET.get('user_id')
+    selected_override_user = None
+    override_rows = []
+    override_categories = {}
+    if selected_user_id:
+        selected_override_user = users.filter(id=selected_user_id).first()
+    if selected_override_user is not None:
+        target_profile = getattr(selected_override_user, 'profile', None)
+        target_role = access_roles.filter(slug=(getattr(target_profile, 'role', '') or '').strip().lower()).first()
+        role_codes = set(target_role.permissions.values_list('code', flat=True)) if target_role else set()
+        override_by_code = {
+            o.permission.code: o.granted
+            for o in UserPermissionOverride.objects.filter(user=selected_override_user).select_related('permission')
+        }
+        for perm in all_permissions:
+            from_role = perm.code in role_codes
+            override = override_by_code.get(perm.code)
+            effective = override if override is not None else from_role
+            row = {
+                'permission': perm,
+                'from_role': from_role,
+                'is_override': override is not None,
+                'effective': effective,
+            }
+            override_rows.append(row)
+            override_categories.setdefault(perm.category, []).append(row)
+
+    override_category_open = {
+        category: any(row['effective'] for row in rows)
+        for category, rows in override_categories.items()
+    }
+
+    access_audits_raw = AccessControlAuditLog.objects.all().select_related('changed_by').order_by('-timestamp')[:50]
 
     context = {
         'events': events,
@@ -2103,8 +2167,141 @@ def notification_settings_home(request):
         'departments': departments,
         'users': users,
         'roles': roles,
+        'access_roles': access_roles,
+        'permission_categories': permission_categories,
+        'selected_role': selected_role,
+        'selected_role_codes': selected_role_codes,
+        'role_category_open': role_category_open,
+        'selected_override_user': selected_override_user,
+        'override_rows': override_rows,
+        'override_categories': override_categories,
+        'override_category_open': override_category_open,
+        'access_audits': access_audits_raw,
     }
     return render(request, 'notification_settings.html', context)
+
+
+@require_role('admin')
+@require_POST
+def access_role_create(request):
+    from django.utils.text import slugify
+    from core.models import Role, AccessControlAuditLog
+
+    slug = slugify((request.POST.get('slug') or '').strip())[:30]
+    display_name = (request.POST.get('display_name') or '').strip()
+    description = (request.POST.get('description') or '').strip()
+
+    if not slug or not display_name:
+        messages.error(request, "Role slug and display name are required.")
+        return redirect('notification_settings_home')
+
+    role, created = Role.objects.get_or_create(
+        slug=slug,
+        defaults={'display_name': display_name, 'description': description},
+    )
+    if not created:
+        messages.error(request, f"A role with slug '{slug}' already exists.")
+    else:
+        AccessControlAuditLog.objects.create(
+            changed_by=request.user, action='create', target_type='role',
+            target_label=role.display_name,
+            new_values={'slug': slug, 'display_name': display_name, 'description': description},
+        )
+        messages.success(request, f"Role '{role.display_name}' created. Tick its permissions below.")
+    return redirect(f"/settings/?role_id={role.id}#access-control")
+
+
+@require_role('admin')
+@require_POST
+def access_role_delete(request, role_id):
+    from core.models import Role, AccessControlAuditLog
+
+    role = get_object_or_404(Role, id=role_id)
+    if role.is_system:
+        messages.error(request, "Built-in roles cannot be deleted.")
+        return redirect('notification_settings_home')
+
+    AccessControlAuditLog.objects.create(
+        changed_by=request.user, action='delete', target_type='role',
+        target_label=role.display_name,
+        old_values={'slug': role.slug, 'display_name': role.display_name},
+    )
+    role.delete()
+    messages.success(request, "Role deleted.")
+    return redirect('notification_settings_home')
+
+
+@require_role('admin')
+@require_POST
+def access_role_permissions_edit(request):
+    from core.models import Role, Permission, AccessControlAuditLog
+
+    role = get_object_or_404(Role, id=request.POST.get('role_id'))
+    old_codes = sorted(role.permissions.values_list('code', flat=True))
+    new_codes = sorted(set(request.POST.getlist('permission_codes')))
+
+    role.permissions.set(Permission.objects.filter(code__in=new_codes))
+
+    if old_codes != new_codes:
+        AccessControlAuditLog.objects.create(
+            changed_by=request.user, action='update', target_type='role',
+            target_label=role.display_name,
+            old_values={'permissions': old_codes},
+            new_values={'permissions': new_codes},
+        )
+    messages.success(request, f"Permissions updated for role '{role.display_name}'.")
+    return redirect(f"/settings/?role_id={role.id}#access-control")
+
+
+@require_role('admin')
+@require_POST
+def access_user_overrides_edit(request):
+    from django.contrib.auth import get_user_model
+    from core.models import Role, Permission, UserPermissionOverride, AccessControlAuditLog
+
+    User = get_user_model()
+    target_user = get_object_or_404(User, id=request.POST.get('user_id'))
+
+    profile = getattr(target_user, 'profile', None)
+    role = Role.objects.filter(slug=(getattr(profile, 'role', '') or '').strip().lower()).first()
+    role_codes = set(role.permissions.values_list('code', flat=True)) if role else set()
+
+    checked_codes = set(request.POST.getlist('permission_codes'))
+    existing_overrides = {
+        o.permission.code: o
+        for o in UserPermissionOverride.objects.filter(user=target_user).select_related('permission')
+    }
+
+    old_snapshot = {code: o.granted for code, o in existing_overrides.items()}
+    new_snapshot = {}
+
+    for perm in Permission.objects.filter(is_active=True):
+        checked = perm.code in checked_codes
+        in_role = perm.code in role_codes
+        existing = existing_overrides.get(perm.code)
+
+        if checked == in_role:
+            if existing is not None:
+                existing.delete()
+            continue
+
+        granted = checked
+        if existing is None or existing.granted != granted:
+            UserPermissionOverride.objects.update_or_create(
+                user=target_user, permission=perm,
+                defaults={'granted': granted, 'created_by': request.user},
+            )
+        new_snapshot[perm.code] = granted
+
+    if old_snapshot != new_snapshot or new_snapshot:
+        AccessControlAuditLog.objects.create(
+            changed_by=request.user, action='update', target_type='user_override',
+            target_label=target_user.username,
+            old_values=old_snapshot,
+            new_values=new_snapshot,
+        )
+    messages.success(request, f"Access overrides updated for {target_user.username}.")
+    return redirect(f"/settings/?user_id={target_user.id}#access-control")
 
 
 @login_required

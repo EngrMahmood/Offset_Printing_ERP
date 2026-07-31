@@ -514,7 +514,7 @@ def _report_validation_error(request, exc, prefix=''):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def planning_readme(request):
     return render(
         request,
@@ -524,7 +524,7 @@ def planning_readme(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def download_planning_readme(request):
     content = build_planning_readme_text()
     response = HttpResponse(content, content_type='text/plain; charset=utf-8')
@@ -553,25 +553,25 @@ def planning_welcome(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def planning_po_root(request):
     return redirect('planning:po_inbox')
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def planning_pending_actions(request):
     return redirect(f"{reverse('planning:jobs')}?status=draft")
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def planning_jobs_drafts(request):
     return redirect(f"{reverse('planning:jobs')}?status=draft")
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def planning_jobs_locked(request):
     return redirect(f"{reverse('planning:jobs')}?status=qc_approved")
 
@@ -706,13 +706,13 @@ def planning_jobs_summary(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def planning_sku_queue(request):
     return redirect('planning:pending_skus')
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def planning_sku_recipes_list(request):
     return redirect('planning:sku_recipes')
 
@@ -2189,7 +2189,7 @@ def planning_job_priority_update(request, job_id):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def planning_job_card_print(request, job_id):
     job = get_object_or_404(
         PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs'),
@@ -2331,7 +2331,7 @@ def planning_job_card_print(request, job_id):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def planning_job_card_pdf(request, job_id):
     job = get_object_or_404(
         PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs'),
@@ -3501,7 +3501,7 @@ def sku_recipe_bulk_upload(request):
 
 
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def sku_recipe_template_download(request):
     """Return a CSV template for bulk SKU recipe upload."""
     headers = [

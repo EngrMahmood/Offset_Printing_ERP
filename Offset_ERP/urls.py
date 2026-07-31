@@ -25,6 +25,8 @@ urlpatterns = [
     path('backup/', include('backup.urls', namespace='backup')),
     path('maintenance/', include('maintenance.urls', namespace='maintenance')),
     path('floor-dashboard/', include('floor_dashboard.urls', namespace='floor_dashboard')),
+    path('chat/', include('chat.urls', namespace='chat')),
+    path('api/chat/', include('chat.api_urls')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),
 
@@ -67,6 +69,10 @@ urlpatterns = [
     path('settings/rules/<int:rule_id>/delete/', views.notification_rule_delete, name='notification_rule_delete'),
     path('settings/transitions/add/', views.workflow_transition_add, name='workflow_transition_add'),
     path('settings/transitions/<int:transition_id>/delete/', views.workflow_transition_delete, name='workflow_transition_delete'),
+    path('settings/access-control/roles/add/', views.access_role_create, name='access_role_create'),
+    path('settings/access-control/roles/<int:role_id>/delete/', views.access_role_delete, name='access_role_delete'),
+    path('settings/access-control/roles/permissions/', views.access_role_permissions_edit, name='access_role_permissions_edit'),
+    path('settings/access-control/user-overrides/', views.access_user_overrides_edit, name='access_user_overrides_edit'),
     path('forgot-password/', views.forgot_password, name='forgot_password'),
 ]
 

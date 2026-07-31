@@ -447,7 +447,7 @@
 
                         </div>
 
-                        {% if user.profile.role == 'admin' %}
+                        {% if user.is_superuser %}
 
                         <form id="bulk_archive_form_dispatch" method="POST" class="erp-actions" style="margin:0;">
 
@@ -471,7 +471,7 @@
 
                                 <tr>
 
-                                    {% if user.profile.role == 'admin' %}<th style="width:36px;"><input type="checkbox" id="select_all_dispatch" aria-label="Select all"></th>{% endif %}
+                                    {% if user.is_superuser %}<th style="width:36px;"><input type="checkbox" id="select_all_dispatch" aria-label="Select all"></th>{% endif %}
 
                                     <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Date</a></th>
 
@@ -501,7 +501,7 @@
 
                                 <tr>
 
-                                    {% if user.profile.role == 'admin' %}
+                                    {% if user.is_superuser %}
 
                                     <td><input type="checkbox" class="bulk-check-dispatch" name="selected_ids" value="{{ row.id }}" form="bulk_archive_form_dispatch" aria-label="Select dispatch {{ row.id }}"></td>
 
@@ -589,7 +589,7 @@
 
                                 <tr>
 
-                                    <td colspan="{% if user.profile.role == 'admin' %}10{% else %}9{% endif %}">
+                                    <td colspan="{% if user.is_superuser %}10{% else %}9{% endif %}">
 
                                         <div class="dispatch-records-empty">
 

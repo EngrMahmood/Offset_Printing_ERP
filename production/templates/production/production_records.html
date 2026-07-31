@@ -231,7 +231,7 @@
                         </div>
                     </div>
 
-                    {% if user.profile.role == 'admin' %}
+                    {% if user.is_superuser %}
                     <form id="bulk_archive_form_production" method="POST" class="erp-actions" style="margin-bottom:10px;">
                         {% csrf_token %}
                         <input type="hidden" name="action" value="bulk_delete">
@@ -246,7 +246,7 @@
                         <table class="erp-table erp-table-dense production-records-table">
                             <thead>
                                 <tr>
-                                    {% if user.profile.role == 'admin' %}<th><input type="checkbox" id="select_all_production"></th>{% endif %}
+                                    {% if user.is_superuser %}<th><input type="checkbox" id="select_all_production"></th>{% endif %}
                                     <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Date</a></th>
                                     <th>Type</th>
                                     <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Job Card</a></th>
@@ -272,7 +272,7 @@
                             <tbody>
                                 {% for row in records %}
                                 <tr>
-                                    {% if user.profile.role == 'admin' %}
+                                    {% if user.is_superuser %}
                                     <td><input type="checkbox" class="bulk-check-production" name="selected_ids" value="{{ row.id }}" form="bulk_archive_form_production"></td>
                                     {% endif %}
                                     <td>{{ row.date }}</td>

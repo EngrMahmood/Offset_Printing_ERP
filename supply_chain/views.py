@@ -87,10 +87,8 @@ def is_supply_chain_admin(user):
         return False
     if user.is_superuser:
         return True
-    profile = getattr(user, 'profile', None)
-    if profile:
-        return profile.role in ('admin', 'manager')
-    return False
+    from core.permissions import user_has_permission
+    return user_has_permission(user, 'action.supply_chain_admin')
 
 
 def serialize_cleaned_data(cleaned_data):

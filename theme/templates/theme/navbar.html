@@ -91,6 +91,15 @@
                 Tasks
             </a>
             {% endif %}
+            {% if nav.can_access_chat %}
+            <a href="{% url 'chat:shell' %}" id="chat-nav-link"
+               data-room-list-url="{% url 'room-list' %}"
+               data-chat-url="{% url 'chat:shell' %}"
+               data-current-user-id="{{ request.user.id }}"
+               class="erp-topnav-module {% if app == 'chat' %}is-active{% endif %}">
+                <i class="fas fa-comments"></i> Chat<span class="erp-nav-badge" id="chat-nav-badge" style="display:none;"></span>
+            </a>
+            {% endif %}
             {% if nav.can_access_migration %}
             <a href="{% url 'migration:dashboard' %}"
                class="erp-topnav-module {% if app == 'migration' %}is-active{% endif %}">

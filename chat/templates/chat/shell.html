@@ -1,0 +1,123 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}Chat — Offset ERP{% endblock %}
+
+{% block header_actions %}
+{% if can_create_group %}
+<button type="button" class="erp-btn erp-btn-secondary" data-modal-open="chat-new-group-modal"><i class="fas fa-users"></i> New Group</button>
+{% endif %}
+<button type="button" class="erp-btn erp-btn-primary" data-modal-open="chat-new-dm-modal"><i class="fas fa-plus"></i> New Chat</button>
+{% endblock %}
+
+{% block content %}
+<div id="chat-app-root"
+     class="chat-app"
+     data-ice-config-url="{% url 'ice-config' %}"
+     data-current-user-id="{{ current_user_id }}"
+     data-current-username="{{ current_username }}"
+     data-can-create-group="{{ can_create_group|yesno:'1,0' }}"
+     data-can-initiate-call="{{ can_initiate_call|yesno:'1,0' }}">
+
+    <aside class="chat-room-list" id="chat-room-list">
+        <div class="chat-room-list__header">
+            <input type="search" id="chat-room-search" placeholder="Search chats..." class="erp-input">
+        </div>
+        <div class="chat-room-list__items" id="chat-room-items">
+            <div class="chat-empty-note">Loading conversations…</div>
+        </div>
+    </aside>
+
+    <section class="chat-thread" id="chat-thread">
+        <div class="chat-thread__empty" id="chat-thread-empty">
+            <i class="fas fa-comments"></i>
+            <p>Select a conversation to start chatting.</p>
+        </div>
+
+        <div class="chat-thread__active" id="chat-thread-active" hidden>
+            <header class="chat-thread__header">
+                <div class="chat-thread__title">
+                    <span id="chat-thread-name">—</span>
+                    <span class="chat-thread__typing" id="chat-thread-typing"></span>
+                </div>
+                <div class="chat-thread__actions">
+                    <button type="button" id="chat-call-audio-btn" class="erp-btn erp-btn-icon" title="Voice call"><i class="fas fa-phone"></i></button>
+                    <button type="button" id="chat-call-video-btn" class="erp-btn erp-btn-icon" title="Video call"><i class="fas fa-video"></i></button>
+                    <button type="button" id="chat-room-info-btn" class="erp-btn erp-btn-icon" title="Room info"><i class="fas fa-info-circle"></i></button>
+                </div>
+            </header>
+
+            <div class="chat-thread__messages" id="chat-thread-messages"></div>
+
+            <form class="chat-thread__composer" id="chat-composer">
+                {% csrf_token %}
+                <button type="button" id="chat-attach-btn" class="erp-btn erp-btn-icon" title="Attach file"><i class="fas fa-paperclip"></i></button>
+                <input type="file" id="chat-file-input" hidden>
+                <input type="text" id="chat-message-input" class="erp-input" placeholder="Type a message…" autocomplete="off">
+                <button type="submit" class="erp-btn erp-btn-primary"><i class="fas fa-paper-plane"></i></button>
+            </form>
+            <div class="chat-upload-progress" id="chat-upload-progress" hidden></div>
+        </div>
+    </section>
+
+    <div class="chat-call-overlay" id="chat-call-overlay" hidden>
+        {% include 'chat/widgets/call_overlay.html' %}
+    </div>
+</div>
+
+<div class="erp-modal" id="chat-new-dm-modal">
+    <div class="erp-modal-backdrop" data-modal-close></div>
+    <div class="erp-modal-dialog">
+        <div class="erp-modal-header"><strong>New Direct Message</strong></div>
+        <div class="erp-modal-body">
+            <label class="erp-form-label" for="chat-dm-user-select">User</label>
+            <select id="chat-dm-user-select" class="erp-input"></select>
+        </div>
+        <div class="erp-modal-footer">
+            <button type="button" class="erp-btn erp-btn-secondary" data-modal-close>Cancel</button>
+            <button type="button" id="chat-dm-start-btn" class="erp-btn erp-btn-primary">Start Chat</button>
+        </div>
+    </div>
+</div>
+
+{% if can_create_group %}
+<div class="erp-modal" id="chat-new-group-modal">
+    <div class="erp-modal-backdrop" data-modal-close></div>
+    <div class="erp-modal-dialog">
+        <div class="erp-modal-header"><strong>New Group Chat</strong></div>
+        <div class="erp-modal-body">
+            <label class="erp-form-label" for="chat-group-name-input">Group name</label>
+            <input type="text" id="chat-group-name-input" class="erp-input" placeholder="e.g. Production Team">
+            <label class="erp-form-label" style="margin-top:12px;">Members</label>
+            <select id="chat-group-members-select" class="erp-input" multiple size="8"></select>
+        </div>
+        <div class="erp-modal-footer">
+            <button type="button" class="erp-btn erp-btn-secondary" data-modal-close>Cancel</button>
+            <button type="button" id="chat-group-create-btn" class="erp-btn erp-btn-primary">Create Group</button>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block extra_js %}
+<link rel="stylesheet" href="{% static 'chat/css/chat.css' %}?v=2">
+<script>
+    window.CHAT_URLS = {
+        roomList: "{% url 'room-list' %}",
+        roomDetail: "{% url 'room-detail' 0 %}",
+        roomAddParticipant: "{% url 'room-add-participant' 0 %}",
+        roomRemoveParticipant: "{% url 'room-remove-participant' 0 0 %}",
+        roomLeave: "{% url 'room-leave' 0 %}",
+        roomRead: "{% url 'room-mark-read' 0 %}",
+        messages: "{% url 'message-list-create' 0 %}",
+        messageDetail: "{% url 'message-detail' 0 0 %}",
+        attachments: "{% url 'attachment-upload' 0 %}",
+        calls: "{% url 'call-list' 0 %}",
+        users: "{% url 'chattable-users' %}"
+    };
+</script>
+<script src="{% static 'chat/js/chat_socket.js' %}?v=2"></script>
+<script src="{% static 'chat/js/chat_upload.js' %}?v=2"></script>
+<script src="{% static 'chat/js/webrtc_call.js' %}?v=2"></script>
+{% endblock %}

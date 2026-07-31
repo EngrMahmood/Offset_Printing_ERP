@@ -12,7 +12,8 @@ def is_manager_or_admin(user):
     profile = getattr(user, 'profile', None)
     if not profile:
         return user.is_supertype or user.is_staff
-    return profile.role in ['admin', 'manager']
+    from core.permissions import user_has_permission
+    return user_has_permission(user, 'action.manage_tasks')
 
 @login_required
 def dashboard(request):

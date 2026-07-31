@@ -1520,20 +1520,24 @@ class UserProfile(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    def _has_permission(self, code):
+        from core.permissions import user_has_permission
+        return user_has_permission(self.user, code)
+
     def can_view_plate_queue(self):
-        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
+        return self._has_permission('action.view_plate_queue')
 
     def can_create_plate_request(self):
-        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
+        return self._has_permission('action.create_plate_request')
 
     def can_send_plate(self):
-        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
+        return self._has_permission('action.send_plate')
 
     def can_receive_plate(self):
-        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
+        return self._has_permission('action.receive_plate')
 
     def can_archive_plate(self):
-        return self.normalized_role in ('admin', 'manager', 'planner', 'graphics_designer')
+        return self._has_permission('action.archive_plate')
     updated_at = models.DateTimeField(auto_now=True)
     
     class Meta:
@@ -1550,91 +1554,100 @@ class UserProfile(models.Model):
     # Permission helpers
     def can_edit_jobcard(self):
         """Can create/edit job cards"""
-        return self.normalized_role in ('admin', 'manager', 'planner', 'production_manager')
+        return self._has_permission('action.edit_jobcard')
+
+    def can_view_jobcard(self):
+        """Can view job card / SKU recipe reference pages (read-only, no edit rights required)."""
+        return self._has_permission('action.view_jobcard')
+
+    def can_view_production_records(self):
+        """Can view the production/packing records ledger (read-only)."""
+        return self._has_permission('action.view_production_records')
+
+    def can_view_dispatch_records(self):
+        """Can view the dispatch records ledger (read-only)."""
+        return self._has_permission('action.view_dispatch_records')
 
     def can_approve_planning(self):
         """Can approve the planning queue."""
-        return self.normalized_role in ('admin', 'manager', 'planner')
+        return self._has_permission('action.approve_planning')
 
     def can_cancel_planning_job(self):
         """Can cancel a planning job the customer no longer needs."""
-        return self.normalized_role in ('admin', 'manager', 'planner')
-    
+        return self._has_permission('action.cancel_planning_job')
+
     def can_edit_production(self):
         """Can log production data"""
-        return self.normalized_role in ('admin', 'manager', 'production_manager', 'production', 'operator')
+        return self._has_permission('action.edit_production')
 
     def can_start_production(self):
         """Can move a released JobCard into production execution."""
-        return self.normalized_role in ('admin', 'manager', 'production_manager', 'production')
-    
+        return self._has_permission('action.start_production')
+
     def can_approve_dispatch(self):
         """Can approve/edit dispatch"""
-        return self.normalized_role in ('admin', 'manager', 'dispatch')
-    
+        return self._has_permission('action.approve_dispatch')
+
     def can_view_analytics(self):
         """Can view dashboard and analytics"""
-        return self.normalized_role in ('admin', 'manager', 'planner', 'production', 'dispatch', 'finance')
-    
+        return self._has_permission('action.view_analytics')
+
     def can_manage_masters(self):
         """Can manage machines, operators, materials, departments"""
-        return self.normalized_role in ('admin', 'manager', 'production_manager')
-    
+        return self._has_permission('action.manage_masters')
+
     def can_approve_qc(self):
         """Can perform QC checks"""
-        return self.normalized_role in ('admin', 'qc', 'manager')
+        return self._has_permission('action.approve_qc')
 
     def can_approve_pm(self):
         """Can perform production manager approval."""
-        return self.normalized_role in ('admin', 'manager', 'production_manager')
+        return self._has_permission('action.approve_pm')
 
     def can_view_planning_queue(self):
-        return self.normalized_role in ('admin', 'manager', 'planner', 'production_manager', 'qc')
+        return self._has_permission('action.view_planning_queue')
 
     def can_view_qc_queue(self):
-        return self.normalized_role in ('admin', 'manager', 'qc', 'production_manager')
+        return self._has_permission('action.view_qc_queue')
 
     def can_view_pm_queue(self):
-        return self.normalized_role in ('admin', 'manager', 'production_manager')
+        return self._has_permission('action.view_pm_queue')
 
     def can_plan(self):
         """Can create, edit, and manage planning jobs (planner role)."""
-        return self.normalized_role in ('admin', 'manager', 'planner')
+        return self._has_permission('action.plan')
 
     def can_view_approval_queue(self):
         """Can access the approval queue page (view-only or with actions)."""
-        return self.normalized_role in ('admin', 'manager', 'planner', 'qc', 'production_manager')
-    
+        return self._has_permission('action.view_approval_queue')
+
     def can_view_sku_master_review_queue(self):
-        """Can view SKU master review queue - role-based or custom permission."""
+        """Can view SKU master review queue - legacy per-user flag or soft-coded permission."""
         if self.can_view_sku_master_review:
             return True
-        return self.normalized_role in ('admin', 'qc', 'manager', 'planner')
-    
+        return self._has_permission('action.view_sku_master_review_queue')
+
     def can_approve_sku_master_review(self):
-        """Can approve/reject SKUs in master review - role-based or custom permission."""
+        """Can approve/reject SKUs in master review - legacy per-user flag or soft-coded permission."""
         if self.can_approve_sku_master:
             return True
-        return self.normalized_role in ('admin', 'qc', 'manager')
-    
+        return self._has_permission('action.approve_sku_master_review')
+
     def can_manage_operators(self):
         """Can assign operators to shifts/jobs"""
-        return self.normalized_role in ('admin', 'manager', 'production_manager', 'production')
+        return self._has_permission('action.manage_operators')
 
     def can_archive_records(self):
         """Can archive and restore operational records"""
-        return self.normalized_role in ('admin', 'manager', 'production_manager')
-    
+        return self._has_permission('action.archive_records')
+
     def can_view_job_summary(self):
         """Can view the Jobs Summary dashboard."""
-        return self.normalized_role in (
-            'admin', 'manager', 'planner', 'production_manager',
-            'production', 'qc', 'dispatch'
-        )
+        return self._has_permission('action.view_job_summary')
 
     def can_view_reports(self):
         """Can view financial/operational reports"""
-        return self.normalized_role in ('admin', 'manager', 'finance')
+        return self._has_permission('action.view_reports')
 
 
 # =========================
@@ -1879,6 +1892,93 @@ class NotificationRuleAuditLog(models.Model):
 
     def __str__(self):
         return f"Rule {self.rule_id or 'Deleted'} {self.action} by {self.changed_by} at {self.timestamp}"
+
+
+# =========================
+# SOFT-CODED ACCESS CONTROL
+# =========================
+
+class Role(models.Model):
+    """A soft-coded role. Seeded with the legacy UserProfile.ROLE_CHOICES slugs;
+    admins can create additional custom roles from Settings."""
+
+    slug = models.SlugField(max_length=30, unique=True)
+    display_name = models.CharField(max_length=100)
+    description = models.CharField(max_length=255, blank=True)
+    is_system = models.BooleanField(
+        default=False,
+        help_text="Built-in role tied to legacy code paths — cannot be deleted."
+    )
+    permissions = models.ManyToManyField('Permission', blank=True, related_name='roles')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['display_name']
+
+    def __str__(self):
+        return self.display_name
+
+
+class Permission(models.Model):
+    """A single togglable access right (e.g. a nav module) shown in the
+    Roles & Permissions checklist, grouped by category."""
+
+    code = models.CharField(max_length=100, unique=True, db_index=True)
+    name = models.CharField(max_length=150)
+    description = models.CharField(max_length=255, blank=True)
+    category = models.CharField(max_length=100, default='General')
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['category', 'name']
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+
+class UserPermissionOverride(models.Model):
+    """Per-user exception on top of their role: grant an extra right, or
+    revoke one the role would otherwise give them."""
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='permission_overrides')
+    permission = models.ForeignKey(Permission, on_delete=models.CASCADE, related_name='user_overrides')
+    granted = models.BooleanField(default=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+'
+    )
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'permission')
+        ordering = ['user__username']
+
+    def __str__(self):
+        verb = 'Grant' if self.granted else 'Revoke'
+        return f"{verb} {self.permission.code} for {self.user.username}"
+
+
+class AccessControlAuditLog(models.Model):
+    TARGET_CHOICES = [
+        ('role', 'Role'),
+        ('user_override', 'User Override'),
+    ]
+
+    changed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name='access_control_audits'
+    )
+    action = models.CharField(max_length=50)  # 'create', 'update', 'delete'
+    target_type = models.CharField(max_length=20, choices=TARGET_CHOICES)
+    target_label = models.CharField(max_length=200)
+    old_values = models.JSONField(default=dict, blank=True)
+    new_values = models.JSONField(default=dict, blank=True)
+    timestamp = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-timestamp']
+
+    def __str__(self):
+        return f"{self.target_label} {self.action} by {self.changed_by} at {self.timestamp}"
 
 
 class PasswordResetRequest(models.Model):

@@ -1,4 +1,5 @@
 {% extends 'theme/base.html' %}
+{% load core_extras %}
 
 {% block title %}Settings - Offset Printing ERP{% endblock %}
 
@@ -17,6 +18,9 @@
             </button>
             <button onclick="switchTab('transitions')" id="tab-transitions" class="tab-btn pb-3 text-sm font-medium text-slate-500 hover:text-slate-700 transition-all focus:outline-none">
                 <i class="fas fa-random mr-2"></i>Workflow Transitions
+            </button>
+            <button onclick="switchTab('access-control')" id="tab-access-control" class="tab-btn pb-3 text-sm font-medium text-slate-500 hover:text-slate-700 transition-all focus:outline-none">
+                <i class="fas fa-user-shield mr-2"></i>Roles &amp; Access Control
             </button>
             <button onclick="switchTab('audits')" id="tab-audits" class="tab-btn pb-3 text-sm font-medium text-slate-500 hover:text-slate-700 transition-all focus:outline-none">
                 <i class="fas fa-history mr-2"></i>Configuration Audit Logs
@@ -292,6 +296,153 @@
         </div>
     </div>
 
+    <!-- Tab: Roles & Access Control -->
+    <div id="content-access-control" class="tab-content hidden space-y-6">
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Roles list -->
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden h-fit">
+                <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                    <h3 class="font-bold text-slate-800 text-lg">Roles</h3>
+                    <span class="bg-brand-50 text-brand-700 text-xs px-2.5 py-1 rounded-full font-semibold">{{ access_roles|length }} Total</span>
+                </div>
+                <div class="divide-y divide-slate-100 max-h-[50vh] overflow-y-auto">
+                    {% for r in access_roles %}
+                    <a href="?role_id={{ r.id }}#access-control" class="block p-4 hover:bg-slate-50/40 transition-all {% if selected_role.id == r.id %}bg-brand-50/60{% endif %}">
+                        <div class="flex items-center justify-between gap-2">
+                            <div>
+                                <div class="font-semibold text-sm text-slate-800">{{ r.display_name }}</div>
+                                <div class="text-xs text-slate-400">{{ r.slug }} &middot; {{ r.permissions.count }} permission{{ r.permissions.count|pluralize }}</div>
+                            </div>
+                            {% if r.is_system %}
+                                <span class="bg-slate-100 text-slate-500 text-[10px] px-2 py-0.5 rounded-full font-medium">Built-in</span>
+                            {% else %}
+                                <form method="post" action="{% url 'access_role_delete' r.id %}" onsubmit="return confirm('Delete role {{ r.display_name }}? Users on this role will lose all access until reassigned.');">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100/70 p-1.5 rounded-lg transition-all text-xs">
+                                        <i class="fas fa-trash-alt"></i>
+                                    </button>
+                                </form>
+                            {% endif %}
+                        </div>
+                    </a>
+                    {% endfor %}
+                </div>
+                <form method="post" action="{% url 'access_role_create' %}" class="p-4 border-t border-slate-100 space-y-2 bg-slate-50/50">
+                    {% csrf_token %}
+                    <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider">New Role</label>
+                    <input type="text" name="display_name" placeholder="Display name (e.g. Regional Manager)" required class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-brand-500 transition-all">
+                    <input type="text" name="slug" placeholder="Slug (e.g. regional_manager)" required class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-brand-500 transition-all">
+                    <input type="text" name="description" placeholder="Description (optional)" class="w-full p-2 bg-white border border-slate-200 rounded-lg text-sm focus:border-brand-500 transition-all">
+                    <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 rounded-lg shadow-sm flex items-center justify-center gap-2 text-sm transition-all">
+                        <i class="fas fa-plus"></i><span>Create Role</span>
+                    </button>
+                </form>
+            </div>
+
+            <!-- Permission checklist for selected role -->
+            <div class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+                {% if selected_role %}
+                <div class="flex items-center justify-between">
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-lg">Permissions for "{{ selected_role.display_name }}"</h3>
+                        <p class="text-xs text-slate-500 mt-1">Tick everything this role should have access to, then save.</p>
+                    </div>
+                </div>
+                <form method="post" action="{% url 'access_role_permissions_edit' %}" class="space-y-5">
+                    {% csrf_token %}
+                    <input type="hidden" name="role_id" value="{{ selected_role.id }}">
+                    {% for category, perms in permission_categories.items %}
+                    <details class="group border border-slate-100 rounded-lg" {% if role_category_open|get_item:category %}open{% endif %}>
+                        <summary class="flex items-center justify-between cursor-pointer select-none px-3 py-2 bg-slate-50/70 rounded-lg group-open:rounded-b-none">
+                            <span class="text-xs font-semibold text-slate-600 uppercase tracking-wider">{{ category }}</span>
+                            <span class="flex items-center gap-2">
+                                <span class="text-[10px] text-slate-400">{{ perms|length }} permission{{ perms|length|pluralize }}</span>
+                                <i class="fas fa-chevron-down text-slate-400 text-xs transition-transform group-open:rotate-180"></i>
+                            </span>
+                        </summary>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 p-3">
+                            {% for perm in perms %}
+                            <label class="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                                <input type="checkbox" name="permission_codes" value="{{ perm.code }}" {% if perm.code in selected_role_codes %}checked{% endif %} class="rounded text-brand-600 focus:ring-brand-500">
+                                <span class="text-sm text-slate-700">{{ perm.name }}</span>
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </details>
+                    {% endfor %}
+                    <div class="pt-4 border-t border-slate-100">
+                        <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white font-medium py-2.5 px-6 rounded-lg shadow-sm flex items-center justify-center gap-2 text-sm transition-all">
+                            <i class="fas fa-save"></i><span>Save Role Permissions</span>
+                        </button>
+                    </div>
+                </form>
+                {% else %}
+                <div class="p-8 text-center text-slate-400">
+                    <i class="fas fa-user-shield text-4xl mb-3 text-slate-200"></i>
+                    <p class="text-sm">Create a role on the left to get started.</p>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Per-user overrides -->
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-6 space-y-4">
+            <div>
+                <h3 class="font-bold text-slate-800 text-lg">Extra Rights for a Specific User</h3>
+                <p class="text-xs text-slate-500 mt-1">Grant a permission beyond what the user's role allows, or revoke one the role would normally give them.</p>
+            </div>
+            <form method="get" action="#access-control" class="flex items-center gap-3">
+                <select name="user_id" onchange="this.form.submit()" class="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
+                    <option value="">-- Choose a user --</option>
+                    {% for u in users %}
+                        <option value="{{ u.id }}" {% if selected_override_user.id == u.id %}selected{% endif %}>{{ u.username }} ({{ u.profile.get_role_display }})</option>
+                    {% endfor %}
+                </select>
+                {% if selected_role %}<input type="hidden" name="role_id" value="{{ selected_role.id }}">{% endif %}
+            </form>
+
+            {% if selected_override_user %}
+            <form method="post" action="{% url 'access_user_overrides_edit' %}" class="space-y-5">
+                {% csrf_token %}
+                <input type="hidden" name="user_id" value="{{ selected_override_user.id }}">
+                <div class="space-y-3">
+                    {% for category, rows in override_categories.items %}
+                    <details class="group border border-slate-100 rounded-lg" {% if override_category_open|get_item:category %}open{% endif %}>
+                        <summary class="flex items-center justify-between cursor-pointer select-none px-3 py-2 bg-slate-50/70 rounded-lg group-open:rounded-b-none">
+                            <span class="text-xs font-semibold text-slate-600 uppercase tracking-wider">{{ category }}</span>
+                            <span class="flex items-center gap-2">
+                                <span class="text-[10px] text-slate-400">{{ rows|length }} permission{{ rows|length|pluralize }}</span>
+                                <i class="fas fa-chevron-down text-slate-400 text-xs transition-transform group-open:rotate-180"></i>
+                            </span>
+                        </summary>
+                        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 p-3">
+                            {% for row in rows %}
+                            <label class="flex items-center gap-2 p-2 rounded-lg hover:bg-slate-50 cursor-pointer">
+                                <input type="checkbox" name="permission_codes" value="{{ row.permission.code }}" {% if row.effective %}checked{% endif %} class="rounded text-brand-600 focus:ring-brand-500">
+                                <span class="text-sm text-slate-700">{{ row.permission.name }}</span>
+                                {% if row.is_override and row.effective and not row.from_role %}
+                                    <span class="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase">Extra</span>
+                                {% elif row.is_override and not row.effective and row.from_role %}
+                                    <span class="bg-red-50 text-red-700 border border-red-100 text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase">Revoked</span>
+                                {% elif row.from_role %}
+                                    <span class="text-slate-400 text-[9px] uppercase">via role</span>
+                                {% endif %}
+                            </label>
+                            {% endfor %}
+                        </div>
+                    </details>
+                    {% endfor %}
+                </div>
+                <div class="pt-4 border-t border-slate-100">
+                    <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white font-medium py-2.5 px-6 rounded-lg shadow-sm flex items-center justify-center gap-2 text-sm transition-all">
+                        <i class="fas fa-save"></i><span>Save Overrides for {{ selected_override_user.username }}</span>
+                    </button>
+                </div>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+
     <!-- Tab 3: Configuration Audit Logs -->
     <div id="content-audits" class="tab-content hidden space-y-6">
         <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
@@ -372,6 +523,58 @@
                 </table>
             </div>
         </div>
+
+        <div class="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h3 class="font-bold text-slate-800 text-lg">Access Control Audit Trail</h3>
+                <span class="bg-brand-50 text-brand-700 text-xs px-2.5 py-1 rounded-full font-semibold">Latest changes</span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-sm text-slate-600">
+                    <thead class="bg-slate-50 text-xs font-bold text-slate-500 uppercase border-b border-slate-200">
+                        <tr>
+                            <th class="p-4">Timestamp</th>
+                            <th class="p-4">User</th>
+                            <th class="p-4">Action</th>
+                            <th class="p-4">Target</th>
+                            <th class="p-4">Snapshot Changes</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-100">
+                        {% if access_audits %}
+                            {% for audit in access_audits %}
+                            <tr class="hover:bg-slate-50/40 transition-all">
+                                <td class="p-4 font-mono text-xs whitespace-nowrap">{{ audit.timestamp|date:"Y-m-d H:i:s" }}</td>
+                                <td class="p-4 font-semibold text-slate-800">{{ audit.changed_by.username }}</td>
+                                <td class="p-4">
+                                    {% if audit.action == 'create' %}
+                                        <span class="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] px-2 py-0.5 rounded font-semibold uppercase">Created</span>
+                                    {% elif audit.action == 'update' %}
+                                        <span class="bg-amber-50 text-amber-700 border border-amber-100 text-[10px] px-2 py-0.5 rounded font-semibold uppercase">Updated</span>
+                                    {% else %}
+                                        <span class="bg-red-50 text-red-700 border border-red-100 text-[10px] px-2 py-0.5 rounded font-semibold uppercase">Deleted</span>
+                                    {% endif %}
+                                </td>
+                                <td class="p-4 font-semibold text-slate-700">{{ audit.get_target_type_display }}: {{ audit.target_label }}</td>
+                                <td class="p-4 text-xs max-w-md break-all">
+                                    <span class="text-red-500">{{ audit.old_values }}</span>
+                                    <i class="fas fa-long-arrow-alt-right text-slate-400 mx-1"></i>
+                                    <span class="text-emerald-600 font-semibold">{{ audit.new_values }}</span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        {% else %}
+                            <tr>
+                                <td colspan="5" class="p-8 text-center text-slate-400">
+                                    <i class="fas fa-user-shield text-4xl mb-3 text-slate-200"></i>
+                                    <p class="text-sm">No access control changes have been logged yet.</p>
+                                </td>
+                            </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}
@@ -395,6 +598,14 @@
         });
         document.getElementById('content-' + tabId).classList.remove('hidden');
     }
+
+    // Keep the Roles & Access Control tab active after role/user selection reloads the page.
+    document.addEventListener('DOMContentLoaded', function () {
+        var params = new URLSearchParams(window.location.search);
+        if (window.location.hash === '#access-control' || params.has('role_id') || params.has('user_id')) {
+            switchTab('access-control');
+        }
+    });
 
     function toggleRecipientFields(recipientType) {
         document.querySelectorAll('.recipient-field').forEach(field => {

@@ -589,17 +589,14 @@ def printing_job_card_search(request):
 
 
 @login_required
-@permission_required('can_edit_production')
+@permission_required('can_view_production_records')
 def production_records(request):
     """Production records list page"""
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         if action == 'bulk_delete':
-            if request.user.profile.role != 'admin':
-                add_unique_message(request, messages.ERROR, '❌ Only admin can run bulk delete.')
-                return redirect('production_records')
-            if not user_can_archive_records(request.user):
-                add_unique_message(request, messages.ERROR, '❌ You do not have permission to delete records.')
+            if not request.user.is_superuser:
+                add_unique_message(request, messages.ERROR, '❌ Only a superuser can run bulk delete.')
                 return redirect('production_records')
 
             selected_ids = request.POST.getlist('selected_ids')

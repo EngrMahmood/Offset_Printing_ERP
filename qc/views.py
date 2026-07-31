@@ -1784,7 +1784,7 @@ def sku_recipe_bulk_upload(request):
 
 # MOVED TO QC APP (temporary compatibility layer)
 @login_required
-@permission_required('can_edit_jobcard')
+@permission_required('can_view_jobcard')
 def sku_recipe_template_download(request):
     """Return a CSV template for bulk SKU recipe upload."""
     headers = [

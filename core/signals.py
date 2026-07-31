@@ -1,6 +1,6 @@
 import logging
 
-from django.db.models.signals import post_save
+from django.db.models.signals import post_save, post_delete, m2m_changed
 from django.dispatch import receiver
 from django.contrib.auth import get_user_model
 from django.db import IntegrityError
@@ -37,6 +37,23 @@ def ensure_user_profile_exists(sender, instance, **kwargs):
 
 
 from django.db.models.signals import pre_save
+
+@receiver([post_save, post_delete], sender='core.Role')
+@receiver([post_save, post_delete], sender='core.Permission')
+@receiver([post_save, post_delete], sender='core.UserPermissionOverride')
+def invalidate_access_control_cache(sender, instance, **kwargs):
+    from core.permissions import bump_cache_version
+    bump_cache_version()
+
+
+from .models import Role as _Role
+
+
+@receiver(m2m_changed, sender=_Role.permissions.through)
+def invalidate_access_control_cache_m2m(sender, **kwargs):
+    from core.permissions import bump_cache_version
+    bump_cache_version()
+
 
 @receiver(pre_save, sender='planning.PlanningJob')
 def capture_previous_status(sender, instance, **kwargs):
@@ -170,6 +187,12 @@ def split_merge_group_printing_entry(sender, instance, created, **kwargs):
         if not member_card:
             continue  # member has no job card yet; nothing to attribute
         try:
+            if member_card.workflow_status == 'released':
+                from workflow.services import start_production
+                start_production(
+                    member_card, actor=instance.created_by,
+                    reason='Auto-started via merge-group split run',
+                )
             Production.objects.create(
                 job_card=member_card,
                 entry_type='printing',

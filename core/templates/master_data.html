@@ -166,7 +166,7 @@
                                 <input type="hidden" name="record_id" value="{{ row.record.id }}">
                                 <button type="submit" class="btn btn-amber">{% if row.record.is_active %}Deactivate{% else %}Activate{% endif %}</button>
                             </form>
-                            {% if is_admin_user %}
+                            {% if is_superuser_user %}
                             <form method="POST" style="display:inline;" onsubmit="return confirm('Delete machine {{ row.record.name|escapejs }} permanently?');">
                                 {% csrf_token %}
                                 <input type="hidden" name="entity_type" value="machine">
@@ -248,7 +248,7 @@
                                 <input type="hidden" name="record_id" value="{{ row.record.id }}">
                                 <button type="submit" class="btn btn-amber">{% if row.record.is_active %}Deactivate{% else %}Activate{% endif %}</button>
                             </form>
-                            {% if is_admin_user %}
+                            {% if is_superuser_user %}
                             <form method="POST" style="display:inline;" onsubmit="return confirm('Delete operator {{ row.record.name|escapejs }} permanently?');">
                                 {% csrf_token %}
                                 <input type="hidden" name="entity_type" value="operator">
@@ -322,7 +322,7 @@
                                 <input type="hidden" name="record_id" value="{{ row.record.id }}">
                                 <button type="submit" class="btn btn-amber">{% if row.record.is_active %}Deactivate{% else %}Activate{% endif %}</button>
                             </form>
-                            {% if is_admin_user %}
+                            {% if is_superuser_user %}
                             <form method="POST" style="display:inline;" onsubmit="return confirm('Delete supervisor {{ row.record.name|escapejs }} permanently?');">
                                 {% csrf_token %}
                                 <input type="hidden" name="entity_type" value="supervisor">
@@ -381,7 +381,7 @@
                     </td>
                     <td>{{ row.job_card_count }}</td>
                     <td>
-                        {% if is_admin_user %}
+                        {% if is_superuser_user %}
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete material {{ row.record.name|escapejs }} permanently?');">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="material">
@@ -443,7 +443,7 @@
                     <td>{{ row.planning_job_count }}</td>
                     <td>{{ row.job_card_count }}</td>
                     <td>
-                        {% if is_admin_user %}
+                        {% if is_superuser_user %}
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete department {{ row.record.name|escapejs }} permanently?');">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="department">
@@ -505,7 +505,7 @@
                     <td>{{ row.planning_job_count }}</td>
                     <td>{{ row.job_card_count }}</td>
                     <td>
-                        {% if is_admin_user %}
+                        {% if is_superuser_user %}
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete delivery location {{ row.record.name|escapejs }} permanently?');">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="delivery_location">
@@ -567,7 +567,7 @@
                     <td>{{ row.planning_job_count }}</td>
                     <td>{{ row.sku_recipe_count }}</td>
                     <td>
-                        {% if is_admin_user %}
+                        {% if is_superuser_user %}
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete product type {{ row.record.name|escapejs }} permanently?');">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="product_type">
@@ -626,7 +626,7 @@
                         {% endif %}
                     </td>
                     <td>
-                        {% if is_admin_user %}
+                        {% if is_superuser_user %}
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete application type {{ row.record.name|escapejs }} permanently?');">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="application">
@@ -691,7 +691,7 @@
                     <td>{{ row.sku_recipe_count }}</td>
                     <td>{{ row.planning_job_count }}</td>
                     <td>
-                        {% if is_admin_user %}
+                        {% if is_superuser_user %}
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete print color {{ row.record.name|escapejs }} permanently?');">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="print_color">
@@ -751,7 +751,7 @@
                     </td>
                     <td>{{ row.plate_request_count }}</td>
                     <td>
-                        {% if is_admin_user %}
+                        {% if is_superuser_user %}
                         <form method="POST" style="display:inline;" onsubmit="return confirm('Delete vendor {{ row.record.name|escapejs }} permanently?');">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="vendor">

@@ -203,6 +203,17 @@ class MergeDownstreamTests(TestCase):
         profile.save()
         self.user = user
         self.client.force_login(user)
+        # The soft-coded access-control system (core/permissions.py) has no
+        # seed data in a fresh test DB (Role/Permission rows are created by
+        # the seed_access_control management command, not by a migration),
+        # so grant this test user the specific permission its views require.
+        from core.models import Permission, UserPermissionOverride
+        permission, _ = Permission.objects.get_or_create(
+            code='action.plan', defaults={'name': 'Plan'},
+        )
+        UserPermissionOverride.objects.get_or_create(
+            user=user, permission=permission, defaults={'granted': True},
+        )
 
     def _accept_group(self):
         jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
@@ -256,7 +267,8 @@ class MergeDownstreamTests(TestCase):
         self.assertEqual(entry.merge_allocated_ups, 2)
         self.assertEqual(entry.pcs_produced, 10000)
 
-        # Each follower card received a derived entry at its allocated ups (1).
+        # Each follower card received a derived entry at its allocated ups (1),
+        # and was auto-started out of 'released' so it becomes dispatchable.
         for item in group.items.filter(is_lead=False):
             follower_entries = Production.objects.filter(
                 job_card__planning_job=item.planning_job, entry_type='printing',
@@ -267,6 +279,15 @@ class MergeDownstreamTests(TestCase):
             self.assertEqual(fe.merge_allocated_ups, 1)
             self.assertEqual(fe.pcs_produced, 5000)
             self.assertEqual(fe.impressions, 0)
+
+            follower_card = cards[item.planning_job_id]
+            follower_card.refresh_from_db()
+            self.assertEqual(follower_card.status, 'in_production')
+
+        from core.models import JOB_CARD_DISPATCHABLE_STATUSES
+        for item in group.items.filter(is_lead=False):
+            follower_card = cards[item.planning_job_id]
+            self.assertIn(follower_card.status, JOB_CARD_DISPATCHABLE_STATUSES)
 
     def test_split_does_not_recurse(self):
         from core.models import JobCard, Production
