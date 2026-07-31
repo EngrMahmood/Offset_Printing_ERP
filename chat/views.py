@@ -6,6 +6,8 @@ from django.shortcuts import render
 
 from core.permissions import user_has_permission
 
+from .permissions import can_manage_group
+
 
 @login_required
 def shell(request):
@@ -18,6 +20,8 @@ def shell(request):
     context = {
         'can_create_group': can_create_group,
         'can_initiate_call': can_initiate_call,
+        'can_manage_group': can_manage_group(request.user),
+        'is_superuser': request.user.is_superuser,
         'current_user_id': request.user.id,
         'current_username': request.user.username,
     }

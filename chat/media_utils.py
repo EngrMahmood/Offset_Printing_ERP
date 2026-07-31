@@ -9,6 +9,8 @@ THUMBNAIL_MAX_SIZE = (320, 320)
 def classify_file_type(content_type):
     if content_type in IMAGE_CONTENT_TYPES:
         return 'image'
+    if content_type.startswith('audio/'):
+        return 'audio'
     if content_type in {
         'application/pdf', 'application/msword', 'text/plain',
         'application/vnd.openxmlformats-officedocument.wordprocessingml.document',

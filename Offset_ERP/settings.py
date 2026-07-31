@@ -30,6 +30,16 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
+# Self-signed HTTPS is served directly by Daphne on 8443 (see DEPLOYMENT.md) so
+# that WebRTC's getUserMedia works from LAN clients other than the server box
+# itself (browsers require a secure context — https or localhost — for camera/
+# mic access). Django enforces Origin-header checking on unsafe HTTP methods,
+# so the https origin needs to be explicitly trusted here.
+CSRF_TRUSTED_ORIGINS = os.environ.get(
+    'CSRF_TRUSTED_ORIGINS',
+    'https://192.168.88.30:8443',
+).split(',')
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = BASE_DIR / 'media'
 
@@ -110,7 +120,18 @@ CHANNEL_LAYERS = {
     'default': {
         'BACKEND': 'channels_redis.core.RedisChannelLayer',
         'CONFIG': {
-            'hosts': [{'address': f'{REDIS_URL}/0', 'protocol': 2}],
+            'hosts': [{
+                'address': f'{REDIS_URL}/0',
+                'protocol': 2,
+                'socket_connect_timeout': 5,
+                'socket_timeout': 10,
+                'retry_on_timeout': True,
+            }],
+            'capacity': 1500,
+            'expiry': 60,
+            'channel_capacity': {
+                'chat_presence': 200,
+            },
         },
     },
 }

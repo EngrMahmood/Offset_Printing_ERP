@@ -17,6 +17,26 @@
         uploadFile(file);
     });
 
+    const messageInput = document.getElementById('chat-message-input');
+    if (messageInput) {
+        messageInput.addEventListener('paste', function (event) {
+            const items = (event.clipboardData || window.clipboardData || {}).items || [];
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.type && item.type.indexOf('image/') === 0) {
+                    event.preventDefault();
+                    const file = item.getAsFile();
+                    if (!file) return;
+                    const ext = item.type.split('/')[1] || 'png';
+                    const named = new File([file], 'pasted-image-' + Date.now() + '.' + ext, { type: item.type });
+                    uploadFile(named);
+                    return;
+                }
+            }
+            // No image in the clipboard — let the default text-paste behavior proceed.
+        });
+    }
+
     function uploadFile(file) {
         const app = window.ChatApp;
         const roomId = app.currentRoomId;
@@ -61,4 +81,8 @@
 
         xhr.send(formData);
     }
+
+    // Exposed so voice_message.js can reuse this exact upload pipeline for
+    // recorded audio blobs, without duplicating the XHR/progress logic.
+    window.ChatApp.uploadFile = uploadFile;
 })();

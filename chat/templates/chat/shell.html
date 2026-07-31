@@ -17,7 +17,9 @@
      data-current-user-id="{{ current_user_id }}"
      data-current-username="{{ current_username }}"
      data-can-create-group="{{ can_create_group|yesno:'1,0' }}"
-     data-can-initiate-call="{{ can_initiate_call|yesno:'1,0' }}">
+     data-can-initiate-call="{{ can_initiate_call|yesno:'1,0' }}"
+     data-can-manage-group="{{ can_manage_group|yesno:'1,0' }}"
+     data-is-superuser="{{ is_superuser|yesno:'1,0' }}">
 
     <aside class="chat-room-list" id="chat-room-list">
         <div class="chat-room-list__header">
@@ -38,24 +40,38 @@
             <header class="chat-thread__header">
                 <div class="chat-thread__title">
                     <span id="chat-thread-name">—</span>
+                    <span class="chat-thread__presence" id="chat-thread-presence"></span>
                     <span class="chat-thread__typing" id="chat-thread-typing"></span>
                 </div>
                 <div class="chat-thread__actions">
+                    <button type="button" id="chat-buzz-btn" class="erp-btn erp-btn-icon" title="Send a buzz"><i class="fas fa-bolt"></i></button>
                     <button type="button" id="chat-call-audio-btn" class="erp-btn erp-btn-icon" title="Voice call"><i class="fas fa-phone"></i></button>
                     <button type="button" id="chat-call-video-btn" class="erp-btn erp-btn-icon" title="Video call"><i class="fas fa-video"></i></button>
                     <button type="button" id="chat-room-info-btn" class="erp-btn erp-btn-icon" title="Room info"><i class="fas fa-info-circle"></i></button>
                 </div>
             </header>
 
+            <div class="chat-thread__pinned" id="chat-thread-pinned" hidden></div>
+
             <div class="chat-thread__messages" id="chat-thread-messages"></div>
 
+            <div class="chat-mention-suggestions" id="chat-mention-suggestions" hidden></div>
             <form class="chat-thread__composer" id="chat-composer">
                 {% csrf_token %}
                 <button type="button" id="chat-attach-btn" class="erp-btn erp-btn-icon" title="Attach file"><i class="fas fa-paperclip"></i></button>
                 <input type="file" id="chat-file-input" hidden>
+                <button type="button" id="chat-voice-btn" class="erp-btn erp-btn-icon" title="Record voice message"><i class="fas fa-microphone"></i></button>
+                <button type="button" id="chat-emoji-btn" class="erp-btn erp-btn-icon" title="Emoji"><i class="fas fa-smile"></i></button>
                 <input type="text" id="chat-message-input" class="erp-input" placeholder="Type a message…" autocomplete="off">
                 <button type="submit" class="erp-btn erp-btn-primary"><i class="fas fa-paper-plane"></i></button>
             </form>
+            <div class="chat-voice-recording" id="chat-voice-recording" hidden>
+                <span class="chat-voice-recording__dot"></span>
+                <span class="chat-voice-recording__timer" id="chat-voice-timer">0:00</span>
+                <span class="chat-voice-recording__label">Recording…</span>
+                <button type="button" id="chat-voice-cancel-btn" class="erp-btn erp-btn-secondary">Cancel</button>
+                <button type="button" id="chat-voice-stop-btn" class="erp-btn erp-btn-primary"><i class="fas fa-paper-plane"></i> Send</button>
+            </div>
             <div class="chat-upload-progress" id="chat-upload-progress" hidden></div>
         </div>
     </section>
@@ -76,6 +92,47 @@
         <div class="erp-modal-footer">
             <button type="button" class="erp-btn erp-btn-secondary" data-modal-close>Cancel</button>
             <button type="button" id="chat-dm-start-btn" class="erp-btn erp-btn-primary">Start Chat</button>
+        </div>
+    </div>
+</div>
+
+<div class="erp-modal" id="chat-forward-modal">
+    <div class="erp-modal-backdrop" data-modal-close></div>
+    <div class="erp-modal-dialog">
+        <div class="erp-modal-header"><strong>Forward Message</strong></div>
+        <div class="erp-modal-body">
+            <label class="erp-form-label" for="chat-forward-room-select">Send to</label>
+            <select id="chat-forward-room-select" class="erp-input"></select>
+        </div>
+        <div class="erp-modal-footer">
+            <button type="button" class="erp-btn erp-btn-secondary" data-modal-close>Cancel</button>
+            <button type="button" id="chat-forward-send-btn" class="erp-btn erp-btn-primary">Forward</button>
+        </div>
+    </div>
+</div>
+
+<div class="erp-modal" id="chat-group-settings-modal">
+    <div class="erp-modal-backdrop" data-modal-close></div>
+    <div class="erp-modal-dialog">
+        <div class="erp-modal-header"><strong>Room Info</strong></div>
+        <div class="erp-modal-body">
+            <div class="chat-group-settings__avatar-row">
+                <div class="chat-group-settings__avatar" id="chat-group-settings-avatar-preview"></div>
+                <input type="file" id="chat-group-settings-avatar-input" accept="image/*" hidden>
+                <button type="button" class="erp-btn erp-btn-secondary" id="chat-group-settings-avatar-btn">Change photo</button>
+            </div>
+            <label class="erp-form-label" for="chat-group-settings-name">Group name</label>
+            <input type="text" id="chat-group-settings-name" class="erp-input">
+            <label class="erp-form-label" style="margin-top:12px;" for="chat-group-settings-description">Description</label>
+            <textarea id="chat-group-settings-description" class="erp-input" rows="3"></textarea>
+            <div class="chat-group-settings__danger-zone" id="chat-group-settings-danger" hidden>
+                <hr>
+                <button type="button" class="erp-btn erp-btn-danger" id="chat-group-settings-delete-btn">Delete Group</button>
+            </div>
+        </div>
+        <div class="erp-modal-footer">
+            <button type="button" class="erp-btn erp-btn-secondary" data-modal-close>Close</button>
+            <button type="button" id="chat-group-settings-save-btn" class="erp-btn erp-btn-primary">Save Changes</button>
         </div>
     </div>
 </div>
@@ -101,7 +158,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<link rel="stylesheet" href="{% static 'chat/css/chat.css' %}?v=2">
+<link rel="stylesheet" href="{% static 'chat/css/chat.css' %}?v=5">
 <script>
     window.CHAT_URLS = {
         roomList: "{% url 'room-list' %}",
@@ -114,10 +171,18 @@
         messageDetail: "{% url 'message-detail' 0 0 %}",
         attachments: "{% url 'attachment-upload' 0 %}",
         calls: "{% url 'call-list' 0 %}",
-        users: "{% url 'chattable-users' %}"
+        users: "{% url 'chattable-users' %}",
+        presenceOnline: "{% url 'presence-online' %}",
+        messageReadBy: "{% url 'message-read-by' 0 0 %}",
+        roomUpdateSettings: "{% url 'room-update-settings' 0 %}",
+        roomPin: "{% url 'room-pin' 0 %}",
+        roomBuzz: "{% url 'room-buzz' 0 %}",
+        messageReactions: "{% url 'message-reactions' 0 0 %}"
     };
 </script>
-<script src="{% static 'chat/js/chat_socket.js' %}?v=2"></script>
-<script src="{% static 'chat/js/chat_upload.js' %}?v=2"></script>
-<script src="{% static 'chat/js/webrtc_call.js' %}?v=2"></script>
+<script src="{% static 'chat/js/emoji_picker.js' %}?v=1"></script>
+<script src="{% static 'chat/js/chat_socket.js' %}?v=8"></script>
+<script src="{% static 'chat/js/chat_upload.js' %}?v=4"></script>
+<script src="{% static 'chat/js/voice_message.js' %}?v=1"></script>
+<script src="{% static 'chat/js/webrtc_call.js' %}?v=3"></script>
 {% endblock %}

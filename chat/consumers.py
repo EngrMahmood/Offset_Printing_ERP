@@ -73,14 +73,18 @@ class PresenceConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
             await self.close(code=4403)
             return
 
+        from . import presence
+
         self.user_group = f'chat_user_{user.id}'
         await self.channel_layer.group_add(self.user_group, self.channel_name)
         await self.channel_layer.group_add('chat_presence', self.channel_name)
         await self.accept()
-        await self.channel_layer.group_send('chat_presence', {
-            'type': 'chat.event',
-            'payload': {'event': 'presence_online', 'user_id': user.id},
-        })
+        became_online = await database_sync_to_async(presence.mark_online)(user.id)
+        if became_online:
+            await self.channel_layer.group_send('chat_presence', {
+                'type': 'chat.event',
+                'payload': {'event': 'presence_online', 'user_id': user.id},
+            })
 
     async def disconnect(self, close_code):
         user = self.scope.get('user')
@@ -88,10 +92,13 @@ class PresenceConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
             await self.channel_layer.group_discard(self.user_group, self.channel_name)
             await self.channel_layer.group_discard('chat_presence', self.channel_name)
         if user and getattr(user, 'is_authenticated', False):
-            await self.channel_layer.group_send('chat_presence', {
-                'type': 'chat.event',
-                'payload': {'event': 'presence_offline', 'user_id': user.id},
-            })
+            from . import presence
+            became_offline = await database_sync_to_async(presence.mark_offline)(user.id)
+            if became_offline:
+                await self.channel_layer.group_send('chat_presence', {
+                    'type': 'chat.event',
+                    'payload': {'event': 'presence_offline', 'user_id': user.id},
+                })
 
     async def chat_event(self, event):
         await self.send_json(event['payload'])

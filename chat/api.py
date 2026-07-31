@@ -10,7 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .media_utils import build_thumbnail, classify_file_type
-from .models import Attachment, CallSession, ChatParticipant, ChatRoom, Message
+from .models import Attachment, CallSession, ChatParticipant, ChatRoom, Message, MessageReaction
 from .permissions import (
     CanCreateGroup,
     ChatAccessPermission,
@@ -21,6 +21,7 @@ from .realtime import broadcast_room_event, notify_users
 
 MESSAGE_EDIT_WINDOW_MINUTES = getattr(settings, 'CHAT_MESSAGE_EDIT_WINDOW_MINUTES', 15)
 MAX_ATTACHMENT_MB = getattr(settings, 'CHAT_MAX_ATTACHMENT_MB', 25)
+BUZZ_COOLDOWN_SECONDS = 5
 
 
 def _active_participant(room, user):
@@ -42,7 +43,33 @@ def _mark_own_message_read(room, user, message_id):
     )
 
 
-def _notify_new_message(room, message, sender, preview):
+def _parse_and_set_mentions(room, message):
+    """Server-side @name parsing: match @token substrings in the message body
+    against the room's active participants (username or full name), and set
+    Message.mentions accordingly. Client re-highlights against the returned
+    mentions list rather than a naive regex, so an @word matching a
+    non-participant is never mistakenly highlighted."""
+    import re
+
+    tokens = set(re.findall(r'@(\w[\w .]{0,40})', message.body))
+    if not tokens:
+        message.mentions.clear()
+        return []
+
+    participants = room.participants.filter(left_at__isnull=True).select_related('user')
+    matched_ids = []
+    for participant in participants:
+        user = participant.user
+        candidates = {user.username.lower(), (user.get_full_name() or '').lower()}
+        for token in tokens:
+            if token.strip().lower() in candidates and token.strip():
+                matched_ids.append(user.id)
+                break
+    message.mentions.set(matched_ids)
+    return matched_ids
+
+
+def _notify_new_message(room, message, sender, preview, mentioned_user_ids=None):
     """Push a toast-worthy event (site-wide, not just to open chat tabs) to
     every other active participant. Room label mirrors ChatRoom.display_name_for:
     the sender's name for a DM, the group name for a group."""
@@ -60,6 +87,7 @@ def _notify_new_message(room, message, sender, preview):
         'sender_name': sender.get_full_name() or sender.username,
         'message_id': message.id,
         'preview': preview[:140],
+        'mentioned_user_ids': mentioned_user_ids or [],
     })
 
 
@@ -81,7 +109,9 @@ class RoomViewSet(viewsets.ViewSet):
         from .serializers import ChatRoomListSerializer
 
         rooms = (
-            ChatRoom.objects.filter(participants__user=request.user, participants__left_at__isnull=True)
+            ChatRoom.objects.filter(
+                participants__user=request.user, participants__left_at__isnull=True, is_archived=False,
+            )
             .distinct()
             .order_by('-last_message_at', '-created_at')
         )
@@ -175,6 +205,105 @@ class RoomViewSet(viewsets.ViewSet):
         broadcast_room_event(room.id, 'participant_removed', {'user_id': request.user.id})
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    def update_settings(self, request, pk=None):
+        from .serializers import ChatRoomDetailSerializer
+
+        room = self.get_room_or_404(request, pk)
+        if room is None:
+            return Response({'detail': 'Not a member of this room.'}, status=status.HTTP_403_FORBIDDEN)
+        if room.room_type != 'group':
+            return Response({'detail': 'Only group rooms have settings.'}, status=status.HTTP_400_BAD_REQUEST)
+        if not can_manage_group(request.user):
+            return Response({'detail': 'You do not have permission to manage this group.'}, status=status.HTTP_403_FORBIDDEN)
+
+        update_fields = []
+        if 'name' in request.data:
+            name = (request.data.get('name') or '').strip()
+            if not name:
+                return Response({'detail': 'Group name cannot be empty.'}, status=status.HTTP_400_BAD_REQUEST)
+            room.name = name
+            update_fields.append('name')
+        if 'description' in request.data:
+            room.description = (request.data.get('description') or '').strip()
+            update_fields.append('description')
+        if 'avatar' in request.FILES:
+            room.avatar = request.FILES['avatar']
+            update_fields.append('avatar')
+        if update_fields:
+            room.save(update_fields=update_fields)
+
+        serializer = ChatRoomDetailSerializer(room, context={'request': request})
+        broadcast_room_event(room.id, 'group_updated', {'room': serializer.data})
+        return Response(serializer.data)
+
+    def destroy(self, request, pk=None):
+        room = self.get_room_or_404(request, pk)
+        if room is None:
+            return Response({'detail': 'Not a member of this room.'}, status=status.HTTP_403_FORBIDDEN)
+        if room.room_type != 'group':
+            return Response({'detail': 'Only group rooms can be deleted.'}, status=status.HTTP_400_BAD_REQUEST)
+        # Deliberately a higher trust tier than can_manage_group — deleting a
+        # group is materially more destructive than renaming/describing it.
+        if not request.user.is_superuser:
+            return Response({'detail': 'Only a superuser can delete a group.'}, status=status.HTTP_403_FORBIDDEN)
+
+        room.is_archived = True
+        room.save(update_fields=['is_archived'])
+        member_ids = list(room.participants.filter(left_at__isnull=True).values_list('user_id', flat=True))
+        broadcast_room_event(room.id, 'group_deleted', {'room_id': room.id})
+        notify_users(member_ids, 'group_deleted', {'room_id': room.id})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def pin_message(self, request, pk=None):
+        room = self.get_room_or_404(request, pk)
+        if room is None:
+            return Response({'detail': 'Not a member of this room.'}, status=status.HTTP_403_FORBIDDEN)
+        if room.room_type == 'group' and not can_manage_group(request.user):
+            return Response({'detail': 'You do not have permission to pin messages in this group.'}, status=status.HTTP_403_FORBIDDEN)
+
+        message_id = request.data.get('message_id')
+        message = get_object_or_404(Message, pk=message_id, room=room, is_deleted=False)
+        room.pinned_message = message
+        room.save(update_fields=['pinned_message'])
+
+        from .serializers import MessageSerializer
+        payload = MessageSerializer(message, context={'request': request}).data
+        broadcast_room_event(room.id, 'pin_updated', {'pinned_message': payload})
+        return Response(payload)
+
+    def unpin_message(self, request, pk=None):
+        room = self.get_room_or_404(request, pk)
+        if room is None:
+            return Response({'detail': 'Not a member of this room.'}, status=status.HTTP_403_FORBIDDEN)
+        if room.room_type == 'group' and not can_manage_group(request.user):
+            return Response({'detail': 'You do not have permission to unpin messages in this group.'}, status=status.HTTP_403_FORBIDDEN)
+
+        room.pinned_message = None
+        room.save(update_fields=['pinned_message'])
+        broadcast_room_event(room.id, 'pin_updated', {'pinned_message': None})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def buzz(self, request, pk=None):
+        from django.core.cache import cache
+
+        room = self.get_room_or_404(request, pk)
+        if room is None:
+            return Response({'detail': 'Not a member of this room.'}, status=status.HTTP_403_FORBIDDEN)
+
+        cooldown_key = f'chat:buzz_cooldown:{room.id}:{request.user.id}'
+        if cache.get(cooldown_key):
+            return Response({'detail': 'Please wait before buzzing again.'}, status=status.HTTP_429_TOO_MANY_REQUESTS)
+        cache.set(cooldown_key, True, timeout=BUZZ_COOLDOWN_SECONDS)
+
+        sender_name = request.user.get_full_name() or request.user.username
+        other_user_ids = list(
+            room.participants.filter(left_at__isnull=True).exclude(user=request.user).values_list('user_id', flat=True)
+        )
+        payload = {'room_id': room.id, 'from_user_id': request.user.id, 'from_display_name': sender_name}
+        broadcast_room_event(room.id, 'buzz', payload)
+        notify_users(other_user_ids, 'buzz', payload)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     def mark_read(self, request, pk=None):
         room = self.get_room_or_404(request, pk)
         if room is None:
@@ -185,6 +314,12 @@ class RoomViewSet(viewsets.ViewSet):
             participant.last_read_message_id = last_message.id
             participant.save(update_fields=['last_read_message_id'])
         notify_users([request.user.id], 'unread_count_changed', {'room_id': room.id, 'unread_count': 0})
+        # Tell other participants their message has now been seen up to here,
+        # so senders can show a live "Seen" indicator without a manual refresh.
+        broadcast_room_event(room.id, 'read_receipt_updated', {
+            'user_id': request.user.id,
+            'last_read_message_id': last_message.id if last_message else None,
+        })
         return Response(status=status.HTTP_200_OK)
 
 
@@ -218,21 +353,40 @@ class MessageListCreateView(APIView):
         if room is None:
             return Response({'detail': 'Not a member of this room.'}, status=status.HTTP_403_FORBIDDEN)
 
-        body = (request.data.get('body') or '').strip()
+        forwarded_from_id = request.data.get('forwarded_from_message_id')
+        source_message = None
+        if forwarded_from_id:
+            source_message = Message.objects.filter(pk=forwarded_from_id, is_deleted=False).select_related('room').first()
+            if source_message is None or _active_participant(source_message.room, request.user) is None:
+                return Response({'detail': 'That message is not available to forward.'}, status=status.HTTP_403_FORBIDDEN)
+
+        body = (request.data.get('body') or (source_message.body if source_message else '')).strip()
         reply_to_id = request.data.get('reply_to')
-        if not body:
+        if not body and not (source_message and source_message.attachments.exists()):
             return Response({'detail': 'Message body cannot be empty.'}, status=status.HTTP_400_BAD_REQUEST)
 
         message = Message.objects.create(
-            room=room, sender=request.user, body=body, message_type='text',
+            room=room, sender=request.user, body=body,
+            message_type=source_message.message_type if source_message else 'text',
             reply_to_id=reply_to_id or None,
+            forwarded_from=source_message,
         )
+        if source_message:
+            for att in source_message.attachments.all():
+                # Re-reference the same underlying file — no re-upload round trip.
+                Attachment.objects.create(
+                    message=message, file=att.file.name, original_filename=att.original_filename,
+                    content_type=att.content_type, file_type=att.file_type,
+                    thumbnail=att.thumbnail.name if att.thumbnail else None,
+                    size_bytes=att.size_bytes, uploaded_by=request.user,
+                )
         room.touch_last_message(message.created_at)
         _mark_own_message_read(room, request.user, message.id)
+        mentioned_ids = _parse_and_set_mentions(room, message) if room.room_type == 'group' else []
 
         serializer = MessageSerializer(message, context={'request': request})
         broadcast_room_event(room.id, 'message_created', {'message': serializer.data})
-        _notify_new_message(room, message, request.user, preview=body)
+        _notify_new_message(room, message, request.user, preview=body, mentioned_user_ids=mentioned_ids)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -265,6 +419,8 @@ class MessageDetailView(APIView):
         message.body = body
         message.edited_at = timezone.now()
         message.save(update_fields=['body', 'edited_at'])
+        if room.room_type == 'group':
+            _parse_and_set_mentions(room, message)
 
         serializer = MessageSerializer(message, context={'request': request})
         broadcast_room_event(room.id, 'message_edited', {'message': serializer.data})
@@ -337,6 +493,66 @@ class AttachmentUploadView(APIView):
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 
+class MessageReactionView(APIView):
+    """Toggle the current user's reaction on a message: picking the same
+    emoji again removes it, picking a different one replaces it — one
+    reaction per user per message, matching WhatsApp."""
+
+    permission_classes = [IsAuthenticated, ChatAccessPermission]
+
+    def post(self, request, room_id, message_id):
+        room = get_object_or_404(ChatRoom, pk=room_id)
+        if _active_participant(room, request.user) is None:
+            return Response({'detail': 'Not a member of this room.'}, status=status.HTTP_403_FORBIDDEN)
+        message = get_object_or_404(Message, pk=message_id, room=room, is_deleted=False)
+
+        emoji = (request.data.get('emoji') or '').strip()
+        if not emoji:
+            return Response({'detail': 'emoji is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        existing = MessageReaction.objects.filter(message=message, user=request.user).first()
+        if existing and existing.emoji == emoji:
+            existing.delete()
+        elif existing:
+            existing.emoji = emoji
+            existing.save(update_fields=['emoji'])
+        else:
+            MessageReaction.objects.create(message=message, user=request.user, emoji=emoji)
+
+        payload = {'message_id': message.id, 'reactions': self._aggregate(message)}
+        broadcast_room_event(room.id, 'reaction_updated', payload)
+        return Response(payload)
+
+    def _aggregate(self, message):
+        grouped = {}
+        for r in message.reactions.all():
+            grouped.setdefault(r.emoji, []).append(r.user_id)
+        return [{'emoji': emoji, 'user_ids': user_ids} for emoji, user_ids in grouped.items()]
+
+
+class MessageReadByView(APIView):
+    """Who has read a given message, derived from ChatParticipant's
+    per-room watermark (no per-message receipt table — see plan addendum
+    for the trade-off: shows 'seen up to here', not an exact per-message
+    read timestamp)."""
+
+    permission_classes = [IsAuthenticated, ChatAccessPermission]
+
+    def get(self, request, room_id, message_id):
+        room = get_object_or_404(ChatRoom, pk=room_id)
+        if _active_participant(room, request.user) is None:
+            return Response({'detail': 'Not a member of this room.'}, status=status.HTTP_403_FORBIDDEN)
+        message = get_object_or_404(Message, pk=message_id, room=room)
+
+        readers = ChatParticipant.objects.filter(
+            room=room, left_at__isnull=True, last_read_message_id__gte=message.id,
+        ).exclude(user_id=message.sender_id).select_related('user')
+        return Response([
+            {'id': p.user.id, 'display_name': p.user.get_full_name() or p.user.username}
+            for p in readers
+        ])
+
+
 class CallSessionListView(APIView):
     permission_classes = [IsAuthenticated, ChatAccessPermission]
 
@@ -357,6 +573,18 @@ class IceConfigView(APIView):
 
     def get(self, request):
         return Response({'ice_servers': getattr(settings, 'CHAT_ICE_SERVERS', [])})
+
+
+class OnlineUsersView(APIView):
+    """Snapshot of currently-online user ids, for a client's initial state on
+    page load — presence deltas afterward arrive via PresenceConsumer's
+    presence_online/presence_offline WebSocket broadcasts."""
+
+    permission_classes = [IsAuthenticated, ChatAccessPermission]
+
+    def get(self, request):
+        from . import presence
+        return Response({'online_user_ids': presence.get_online_user_ids()})
 
 
 class ChattableUserListView(APIView):

@@ -28,10 +28,15 @@ class ChatRoom(models.Model):
 
     room_type = models.CharField(max_length=10, choices=ROOM_TYPE_CHOICES)
     name = models.CharField(max_length=150, blank=True)
+    description = models.TextField(blank=True)
+    avatar = models.ImageField(upload_to='chat_group_avatars/', null=True, blank=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='chat_rooms_created')
     created_at = models.DateTimeField(auto_now_add=True)
     is_archived = models.BooleanField(default=False)
     last_message_at = models.DateTimeField(null=True, blank=True, db_index=True)
+    # Single pinned message per room (not a list) — simpler UX for the common
+    # case; extendable to a M2M later if a team actually needs multiple pins.
+    pinned_message = models.ForeignKey('Message', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
 
     class Meta:
         ordering = ['-last_message_at', '-created_at']
@@ -109,6 +114,8 @@ class Message(models.Model):
     body = models.TextField(blank=True)
     message_type = models.CharField(max_length=10, choices=MESSAGE_TYPE_CHOICES, default='text')
     reply_to = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='replies')
+    forwarded_from = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    mentions = models.ManyToManyField(User, blank=True, related_name='chat_mentions')
     created_at = models.DateTimeField(auto_now_add=True, db_index=True)
     edited_at = models.DateTimeField(null=True, blank=True)
     is_deleted = models.BooleanField(default=False)
@@ -131,9 +138,25 @@ class Message(models.Model):
         self.save(update_fields=['is_deleted', 'deleted_at', 'body'])
 
 
+class MessageReaction(models.Model):
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name='reactions')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='chat_message_reactions')
+    emoji = models.CharField(max_length=16)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        # One reaction per user per message (WhatsApp-style): picking a new
+        # emoji replaces the existing one rather than stacking multiple.
+        unique_together = ('message', 'user')
+
+    def __str__(self):
+        return f'{self.user_id} reacted {self.emoji} to message {self.message_id}'
+
+
 class Attachment(models.Model):
     FILE_TYPE_CHOICES = [
         ('image', 'Image'),
+        ('audio', 'Audio'),
         ('doc', 'Document'),
         ('other', 'Other'),
     ]

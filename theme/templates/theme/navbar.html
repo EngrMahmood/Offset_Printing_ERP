@@ -99,6 +99,9 @@
                class="erp-topnav-module {% if app == 'chat' %}is-active{% endif %}">
                 <i class="fas fa-comments"></i> Chat<span class="erp-nav-badge" id="chat-nav-badge" style="display:none;"></span>
             </a>
+            <button type="button" id="chat-sound-toggle-btn" class="erp-topnav-module" title="Mute chat sounds">
+                <i class="fas fa-volume-up"></i>
+            </button>
             {% endif %}
             {% if nav.can_access_migration %}
             <a href="{% url 'migration:dashboard' %}"

@@ -93,6 +93,24 @@
 }
 .chat-dock-win__open-full:hover { color: #2563eb; }
 
+.chat-dock-msg__bubble audio { width: 220px; max-width: 100%; display: block; margin-top: 2px; }
+.chat-dock-msg__reactions { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 2px; }
+.chat-dock-msg__reaction-pill { font-size: 10px; background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 0 5px; }
+
+.chat-dock-win.is-mentioned-flash .chat-dock-win__header { animation: chat-dock-mention-flash 1.4s ease-in-out 2; }
+@keyframes chat-dock-mention-flash {
+    0%, 100% { background: #1a2332; }
+    50% { background: #b45309; }
+}
+
+.chat-dock-win.chat-buzz-shake { animation: chat-buzz-shake 0.6s cubic-bezier(.36,.07,.19,.97) both; }
+@keyframes chat-buzz-shake {
+    10%, 90% { transform: translate3d(-1px, 0, 0); }
+    20%, 80% { transform: translate3d(2px, 0, 0); }
+    30%, 50%, 70% { transform: translate3d(-6px, 0, 0); }
+    40%, 60% { transform: translate3d(6px, 0, 0); }
+}
+
 @media (max-width: 640px) {
     #chat-dock-container { right: 0; left: 0; align-items: stretch; flex-direction: column-reverse; }
     .chat-dock-win { width: 100%; border-radius: 0; }

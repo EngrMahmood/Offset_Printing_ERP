@@ -9,6 +9,8 @@
 
     const csrfToken = (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || getCookie('csrftoken');
     const currentUserId = parseInt(root.dataset.currentUserId, 10);
+    const canManageGroup = root.dataset.canManageGroup === '1';
+    const isSuperuser = root.dataset.isSuperuser === '1';
     const urls = window.CHAT_URLS || {};
 
     const state = {
@@ -18,6 +20,8 @@
         presenceSocket: null,
         typingTimeout: null,
         oldestLoadedMessageId: null,
+        onlineUserIds: new Set(),
+        currentRoomDetail: null,
     };
 
     function escapeHtml(value) {
@@ -49,6 +53,20 @@
         return scheme + '://' + window.location.host + path;
     }
 
+    // urls.messageDetail is templated from {% url 'message-detail' 0 0 %}, i.e.
+    // ".../rooms/0/messages/0/" — replace each 0 positionally (room id first).
+    function messageDetailUrl(roomId, messageId) {
+        return (urls.messageDetail || '').replace('rooms/0/', 'rooms/' + roomId + '/').replace('messages/0/', 'messages/' + messageId + '/');
+    }
+
+    function messageReadByUrl(roomId, messageId) {
+        return (urls.messageReadBy || '').replace('rooms/0/', 'rooms/' + roomId + '/').replace('messages/0/', 'messages/' + messageId + '/');
+    }
+
+    function messageReactionsUrl(roomId, messageId) {
+        return (urls.messageReactions || '').replace('rooms/0/', 'rooms/' + roomId + '/').replace('messages/0/', 'messages/' + messageId + '/');
+    }
+
     // ---- Room list -------------------------------------------------------
 
     function loadRoomList() {
@@ -75,9 +93,11 @@
             const preview = room.last_message ? escapeHtml(room.last_message.body || '[Attachment]') : 'No messages yet';
             const badge = room.unread_count > 0
                 ? '<span class="chat-room-item__badge">' + (room.unread_count > 99 ? '99+' : room.unread_count) + '</span>' : '';
+            const isOnline = room.other_user_id && state.onlineUserIds.has(room.other_user_id);
+            const avatarClass = 'chat-room-item__avatar' + (isOnline ? ' is-online' : '');
             return (
                 '<div class="chat-room-item' + active + '" data-room-id="' + room.id + '">' +
-                '<div class="chat-room-item__avatar">' + escapeHtml(initials(room.display_name)) + '</div>' +
+                '<div class="' + avatarClass + '">' + escapeHtml(initials(room.display_name)) + '</div>' +
                 '<div class="chat-room-item__body">' +
                 '<div class="chat-room-item__name">' + escapeHtml(room.display_name) + '</div>' +
                 '<div class="chat-room-item__preview">' + preview + '</div>' +
@@ -85,6 +105,19 @@
                 '</div>'
             );
         }).join('');
+    }
+
+    function updatePresenceLabel() {
+        const room = state.rooms.find(function (r) { return r.id === state.currentRoomId; });
+        const label = document.getElementById('chat-thread-presence');
+        if (!label) return;
+        if (room && room.other_user_id && state.onlineUserIds.has(room.other_user_id)) {
+            label.textContent = 'Online';
+            label.classList.add('is-online');
+        } else {
+            label.textContent = '';
+            label.classList.remove('is-online');
+        }
     }
 
     function upsertRoomInList(roomId, patch) {
@@ -113,18 +146,28 @@
         document.getElementById('chat-thread-active').hidden = false;
         document.getElementById('chat-thread-messages').innerHTML = '<div class="chat-empty-note">Loading…</div>';
 
-        api(urls.roomDetail.replace('/0/', '/' + roomId + '/')).then(function (room) {
+        const roomDetailPromise = api(urls.roomDetail.replace('/0/', '/' + roomId + '/')).then(function (room) {
             document.getElementById('chat-thread-name').textContent = room.display_name;
+            upsertRoomInList(roomId, { other_user_id: room.other_user_id });
+            updatePresenceLabel();
+            state.currentRoomDetail = room;
+            renderPinnedBanner(room.pinned_message);
         });
 
-        loadMessages(roomId);
+        // Mention highlighting needs state.currentRoomDetail.participants (for
+        // display-name lookup), so wait for room detail before rendering
+        // messages rather than racing the two requests.
+        roomDetailPromise.then(function () {
+            loadMessages(roomId).then(function () { seedSeenIndicator(state.currentRoomDetail); });
+        });
         markRead(roomId);
         connectRoomSocket(roomId);
         window.ChatApp.currentRoomId = roomId;
+        updatePresenceLabel();
     }
 
     function loadMessages(roomId) {
-        api((urls.messages || '').replace('/0/', '/' + roomId + '/')).then(function (page) {
+        return api((urls.messages || '').replace('/0/', '/' + roomId + '/')).then(function (page) {
             const messages = (page.results || []).slice().reverse();
             const container = document.getElementById('chat-thread-messages');
             container.innerHTML = '';
@@ -132,6 +175,24 @@
             if (messages.length) state.oldestLoadedMessageId = messages[0].id;
             scrollToBottom();
         });
+    }
+
+    // Read receipts only broadcast live (read_receipt_updated) — a sender who
+    // opens the room later, after the reader already marked it read while
+    // disconnected, would otherwise never see "Seen". Seed it from the room's
+    // participant watermarks (already in ChatRoomDetailSerializer) instead.
+    function seedSeenIndicator(room) {
+        if (!room || !room.participants) return;
+        let bestReaderId = null;
+        let bestWatermark = 0;
+        room.participants.forEach(function (p) {
+            if (p.user.id === currentUserId || !p.last_read_message_id) return;
+            if (p.last_read_message_id > bestWatermark) {
+                bestWatermark = p.last_read_message_id;
+                bestReaderId = p.user.id;
+            }
+        });
+        if (bestReaderId) updateSeenIndicator(bestReaderId, bestWatermark);
     }
 
     function scrollToBottom() {
@@ -145,8 +206,58 @@
             return '<div class="chat-msg__attachment"><a href="' + escapeHtml(att.url) + '" target="_blank" rel="noopener">' +
                 '<img src="' + escapeHtml(att.thumbnail_url || att.url) + '" alt="' + escapeHtml(att.original_filename) + '"></a></div>';
         }
+        if (att.file_type === 'audio') {
+            return '<div class="chat-msg__attachment"><audio controls preload="none" src="' + escapeHtml(att.url) + '"></audio></div>';
+        }
         return '<div class="chat-msg__attachment"><a href="' + escapeHtml(att.url) + '" target="_blank" rel="noopener">' +
             '<i class="fas fa-file"></i> ' + escapeHtml(att.original_filename) + '</a></div>';
+    }
+
+    // ---- @mentions ---------------------------------------------------------
+
+    function mentionDisplayNames(mentionUserIds) {
+        if (!mentionUserIds || !mentionUserIds.length || !state.currentRoomDetail || !state.currentRoomDetail.participants) return [];
+        const idSet = new Set(mentionUserIds);
+        return state.currentRoomDetail.participants
+            .filter(function (p) { return idSet.has(p.user.id); })
+            .map(function (p) { return p.user.display_name; });
+    }
+
+    function highlightMentions(escapedBody, mentionUserIds) {
+        const names = mentionDisplayNames(mentionUserIds);
+        if (!names.length) return escapedBody;
+        let result = escapedBody;
+        names.forEach(function (name) {
+            const escapedName = escapeHtml(name).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            result = result.replace(new RegExp('@' + escapedName, 'g'), '<span class="chat-msg__mention">@' + escapeHtml(name) + '</span>');
+        });
+        return result;
+    }
+
+    function renderMentionSuggestions(query) {
+        const box = document.getElementById('chat-mention-suggestions');
+        if (!state.currentRoomDetail || state.currentRoomDetail.room_type !== 'group' || !state.currentRoomDetail.participants) {
+            box.hidden = true;
+            return;
+        }
+        const q = query.toLowerCase();
+        const matches = state.currentRoomDetail.participants
+            .filter(function (p) { return p.user.id !== currentUserId && p.user.display_name.toLowerCase().indexOf(q) !== -1; })
+            .slice(0, 6);
+        if (!matches.length) { box.hidden = true; return; }
+        box.hidden = false;
+        box.innerHTML = matches.map(function (p) {
+            return '<div class="chat-mention-suggestions__item" data-name="' + escapeHtml(p.user.display_name) + '">' + escapeHtml(p.user.display_name) + '</div>';
+        }).join('');
+    }
+
+    function renderReactionPills(reactions) {
+        if (!reactions || !reactions.length) return '<div class="chat-msg__reactions"></div>';
+        return '<div class="chat-msg__reactions">' + reactions.map(function (r) {
+            const mine = r.user_ids.indexOf(currentUserId) !== -1;
+            return '<button type="button" class="chat-msg__reaction-pill' + (mine ? ' is-mine' : '') + '" data-emoji="' + escapeHtml(r.emoji) + '">' +
+                r.emoji + ' <span>' + r.user_ids.length + '</span></button>';
+        }).join('') + '</div>';
     }
 
     function appendMessage(msg, prepend) {
@@ -158,18 +269,27 @@
 
         const isOwn = msg.sender && msg.sender.id === currentUserId;
         const wrap = document.createElement('div');
-        wrap.className = 'chat-msg ' + (isOwn ? 'is-own' : 'is-other') + (msg.is_deleted ? ' is-deleted' : '');
+        const isMentioned = (msg.mentions || []).indexOf(currentUserId) !== -1;
+        wrap.className = 'chat-msg ' + (isOwn ? 'is-own' : 'is-other') + (msg.is_deleted ? ' is-deleted' : '') + (isMentioned ? ' is-mentioning-me' : '');
         wrap.dataset.messageId = msg.id;
 
         const senderLine = !isOwn ? '<div class="chat-msg__sender">' + escapeHtml(msg.sender ? msg.sender.display_name : 'Unknown') + '</div>' : '';
-        const bodyText = msg.is_deleted ? 'Message deleted' : escapeHtml(msg.body);
+        const bodyText = msg.is_deleted ? 'Message deleted' : highlightMentions(escapeHtml(msg.body), msg.mentions);
         const attachments = msg.is_deleted ? '' : (msg.attachments || []).map(renderAttachment).join('');
         const time = new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
         const editedTag = msg.edited_at ? ' (edited)' : '';
+        const menuBtn = !msg.is_deleted
+            ? '<button type="button" class="chat-msg__menu-btn" title="Message options"><i class="fas fa-ellipsis-v"></i></button>' : '';
+        const reactBtn = !msg.is_deleted
+            ? '<button type="button" class="chat-msg__react-btn" title="React"><i class="far fa-smile"></i></button>' : '';
+        const forwardedTag = msg.forwarded_from ? '<div class="chat-msg__forwarded"><i class="fas fa-share"></i> Forwarded</div>' : '';
 
-        wrap.innerHTML = senderLine +
-            '<div class="chat-msg__bubble">' + bodyText + attachments + '</div>' +
-            '<div class="chat-msg__meta">' + time + editedTag + '</div>';
+        wrap.innerHTML = senderLine + forwardedTag +
+            '<div class="chat-msg__bubble-row">' +
+            '<div class="chat-msg__bubble">' + bodyText + attachments + '</div>' + reactBtn + menuBtn +
+            '</div>' +
+            renderReactionPills(msg.reactions) +
+            '<div class="chat-msg__meta"><span class="chat-msg__meta-text">' + time + editedTag + '</span></div>';
 
         if (prepend) {
             container.insertBefore(wrap, container.firstChild);
@@ -177,6 +297,149 @@
             container.appendChild(wrap);
         }
     }
+
+    // ---- Edit / delete own messages ------------------------------------------
+
+    function applyDeletedState(el) {
+        el.classList.add('is-deleted');
+        const bubble = el.querySelector('.chat-msg__bubble');
+        if (bubble) bubble.textContent = 'Message deleted';
+        const menuBtn = el.querySelector('.chat-msg__menu-btn');
+        if (menuBtn) menuBtn.remove();
+    }
+
+    function closeOpenMenu() {
+        const open = document.querySelector('.chat-msg__menu.open');
+        if (open) open.remove();
+    }
+
+    function enterEditMode(el, msgId) {
+        closeOpenMenu();
+        const bubble = el.querySelector('.chat-msg__bubble');
+        if (!bubble || el.classList.contains('is-editing')) return;
+        el.classList.add('is-editing');
+        const originalHtml = bubble.innerHTML;
+        const originalText = bubble.textContent;
+
+        bubble.innerHTML =
+            '<textarea class="chat-msg__edit-input erp-input">' + escapeHtml(originalText) + '</textarea>' +
+            '<div class="chat-msg__edit-actions">' +
+            '<button type="button" class="erp-btn erp-btn-secondary chat-msg__edit-cancel">Cancel</button>' +
+            '<button type="button" class="erp-btn erp-btn-primary chat-msg__edit-save">Save</button>' +
+            '</div>';
+
+        const textarea = bubble.querySelector('.chat-msg__edit-input');
+        textarea.focus();
+        textarea.setSelectionRange(textarea.value.length, textarea.value.length);
+
+        function cancel() {
+            el.classList.remove('is-editing');
+            bubble.innerHTML = originalHtml;
+        }
+
+        bubble.querySelector('.chat-msg__edit-cancel').addEventListener('click', cancel);
+        bubble.querySelector('.chat-msg__edit-save').addEventListener('click', function () {
+            const newBody = textarea.value.trim();
+            if (!newBody) { alert('Message cannot be empty.'); return; }
+            api(messageDetailUrl(state.currentRoomId, msgId), {
+                method: 'PATCH',
+                body: { body: newBody },
+            }).then(function (updated) {
+                el.classList.remove('is-editing');
+                bubble.innerHTML = highlightMentions(escapeHtml(updated.body), updated.mentions) + (updated.attachments || []).map(renderAttachment).join('');
+                const meta = el.querySelector('.chat-msg__meta-text');
+                if (meta && !/\(edited\)$/.test(meta.textContent)) meta.textContent += ' (edited)';
+            }).catch(function (err) {
+                alert((err.data && err.data.detail) || 'Could not edit message.');
+                cancel();
+            });
+        });
+
+        textarea.addEventListener('keydown', function (event) {
+            if (event.key === 'Escape') cancel();
+        });
+    }
+
+    function deleteMessage(el, msgId) {
+        closeOpenMenu();
+        if (!confirm('Delete this message?')) return;
+        api(messageDetailUrl(state.currentRoomId, msgId), {
+            method: 'DELETE',
+        }).then(function () {
+            applyDeletedState(el);
+        }).catch(function (err) {
+            alert((err.data && err.data.detail) || 'Could not delete message.');
+        });
+    }
+
+    function sendReaction(msgId, emoji) {
+        if (!state.currentRoomId) return;
+        api(messageReactionsUrl(state.currentRoomId, msgId), {
+            method: 'POST',
+            body: { emoji: emoji },
+        }).catch(function () { /* ignore */ });
+    }
+
+    function applyReactionUpdate(messageId, reactions) {
+        const el = document.querySelector('.chat-msg[data-message-id="' + messageId + '"]');
+        if (!el) return;
+        const container = el.querySelector('.chat-msg__reactions');
+        if (container) container.outerHTML = renderReactionPills(reactions);
+    }
+
+    document.getElementById('chat-thread-messages').addEventListener('click', function (event) {
+        const reactBtn = event.target.closest('.chat-msg__react-btn');
+        if (reactBtn && window.ChatEmojiPicker) {
+            event.stopPropagation();
+            const el = reactBtn.closest('.chat-msg');
+            window.ChatEmojiPicker.open(reactBtn, function (ch) {
+                sendReaction(el.dataset.messageId, ch);
+            });
+            return;
+        }
+        const pill = event.target.closest('.chat-msg__reaction-pill');
+        if (pill) {
+            const el = pill.closest('.chat-msg');
+            sendReaction(el.dataset.messageId, pill.dataset.emoji);
+            return;
+        }
+        const menuBtn = event.target.closest('.chat-msg__menu-btn');
+        if (menuBtn) {
+            event.stopPropagation();
+            const existing = menuBtn.parentElement.querySelector('.chat-msg__menu');
+            if (existing) { existing.remove(); return; }
+            closeOpenMenu();
+            const el = menuBtn.closest('.chat-msg');
+            const msgId = el.dataset.messageId;
+            const isOwnMsg = el.classList.contains('is-own');
+            const isPinned = state.currentRoomDetail && state.currentRoomDetail.pinned_message
+                && String(state.currentRoomDetail.pinned_message.id) === String(msgId);
+            const canPin = state.currentRoomDetail && state.currentRoomDetail.room_type === 'group' ? canManageGroup : true;
+            const menu = document.createElement('div');
+            menu.className = 'chat-msg__menu open';
+            menu.innerHTML =
+                (isOwnMsg ? '<button type="button" class="chat-msg__menu-item" data-action="edit">Edit</button>' : '') +
+                (isOwnMsg ? '<button type="button" class="chat-msg__menu-item chat-msg__menu-item--danger" data-action="delete">Delete</button>' : '') +
+                '<button type="button" class="chat-msg__menu-item" data-action="forward">Forward</button>' +
+                (canPin ? '<button type="button" class="chat-msg__menu-item" data-action="' + (isPinned ? 'unpin' : 'pin') + '">' + (isPinned ? 'Unpin' : 'Pin') + '</button>' : '');
+            menuBtn.parentElement.appendChild(menu);
+            return;
+        }
+        const actionBtn = event.target.closest('.chat-msg__menu-item');
+        if (actionBtn) {
+            const el = actionBtn.closest('.chat-msg');
+            const msgId = el.dataset.messageId;
+            const action = actionBtn.dataset.action;
+            if (action === 'edit') enterEditMode(el, msgId);
+            else if (action === 'delete') deleteMessage(el, msgId);
+            else if (action === 'pin') pinMessage(msgId);
+            else if (action === 'unpin') unpinMessage();
+            else if (action === 'forward') openForwardModal(msgId);
+            closeOpenMenu();
+            return;
+        }
+        closeOpenMenu();
+    });
 
     function markRead(roomId) {
         api((urls.roomRead || '').replace('/0/', '/' + roomId + '/'), { method: 'POST' }).then(function () {
@@ -199,6 +462,7 @@
             body: { body: body },
         }).then(function (msg) {
             input.value = '';
+            document.getElementById('chat-mention-suggestions').hidden = true;
             appendMessage(msg, false);
             scrollToBottom();
             loadRoomList();
@@ -207,10 +471,52 @@
         });
     });
 
+    const emojiBtn = document.getElementById('chat-emoji-btn');
+    if (emojiBtn && window.ChatEmojiPicker) {
+        emojiBtn.addEventListener('click', function () {
+            const input = document.getElementById('chat-message-input');
+            window.ChatEmojiPicker.open(emojiBtn, function (ch) {
+                const start = input.selectionStart || input.value.length;
+                const end = input.selectionEnd || input.value.length;
+                input.value = input.value.slice(0, start) + ch + input.value.slice(end);
+                input.focus();
+                input.setSelectionRange(start + ch.length, start + ch.length);
+            });
+        });
+    }
+
     document.getElementById('chat-message-input').addEventListener('input', function () {
         sendTyping(true);
         clearTimeout(state.typingTimeout);
         state.typingTimeout = setTimeout(function () { sendTyping(false); }, 2000);
+
+        const input = this;
+        const cursor = input.selectionStart;
+        const textBeforeCursor = input.value.slice(0, cursor);
+        const match = textBeforeCursor.match(/@([\w .]{0,30})$/);
+        if (match) {
+            renderMentionSuggestions(match[1]);
+        } else {
+            document.getElementById('chat-mention-suggestions').hidden = true;
+        }
+    });
+
+    document.getElementById('chat-mention-suggestions').addEventListener('click', function (event) {
+        const item = event.target.closest('.chat-mention-suggestions__item');
+        if (!item) return;
+        const input = document.getElementById('chat-message-input');
+        const cursor = input.selectionStart;
+        const textBeforeCursor = input.value.slice(0, cursor);
+        const match = textBeforeCursor.match(/@([\w .]{0,30})$/);
+        if (!match) return;
+        const before = input.value.slice(0, match.index);
+        const after = input.value.slice(cursor);
+        const insertion = '@' + item.dataset.name + ' ';
+        input.value = before + insertion + after;
+        input.focus();
+        const newPos = (before + insertion).length;
+        input.setSelectionRange(newPos, newPos);
+        this.hidden = true;
     });
 
     function sendTyping(isTyping) {
@@ -251,18 +557,19 @@
             loadRoomList();
         } else if (payload.event === 'message_edited') {
             const el = document.querySelector('.chat-msg[data-message-id="' + payload.message.id + '"]');
-            if (el) {
+            if (el && !el.classList.contains('is-editing')) {
                 const bubble = el.querySelector('.chat-msg__bubble');
-                bubble.innerHTML = escapeHtml(payload.message.body) + (payload.message.attachments || []).map(renderAttachment).join('');
-                const meta = el.querySelector('.chat-msg__meta');
-                meta.textContent = meta.textContent.replace(/\s*\(edited\)$/, '') + ' (edited)';
+                bubble.innerHTML = highlightMentions(escapeHtml(payload.message.body), payload.message.mentions) + (payload.message.attachments || []).map(renderAttachment).join('');
+                const meta = el.querySelector('.chat-msg__meta-text');
+                if (meta && !/\(edited\)$/.test(meta.textContent)) meta.textContent += ' (edited)';
             }
         } else if (payload.event === 'message_deleted') {
             const el = document.querySelector('.chat-msg[data-message-id="' + payload.message_id + '"]');
-            if (el) {
-                el.classList.add('is-deleted');
-                el.querySelector('.chat-msg__bubble').textContent = 'Message deleted';
-            }
+            if (el) applyDeletedState(el);
+        } else if (payload.event === 'reaction_updated') {
+            applyReactionUpdate(payload.message_id, payload.reactions);
+        } else if (payload.event === 'read_receipt_updated') {
+            updateSeenIndicator(payload.user_id, payload.last_read_message_id);
         } else if (payload.event === 'typing') {
             const label = document.getElementById('chat-thread-typing');
             if (payload.user_id !== currentUserId) {
@@ -272,23 +579,280 @@
             api(urls.roomDetail.replace('/0/', '/' + roomId + '/')).then(function (room) {
                 document.getElementById('chat-thread-name').textContent = room.display_name;
             });
+        } else if (payload.event === 'group_updated') {
+            state.currentRoomDetail = payload.room;
+            document.getElementById('chat-thread-name').textContent = payload.room.display_name;
+            loadRoomList();
+        } else if (payload.event === 'group_deleted') {
+            closeModal(groupSettingsModal);
+            document.getElementById('chat-thread-active').hidden = true;
+            document.getElementById('chat-thread-empty').hidden = false;
+            state.currentRoomId = null;
+            window.ChatApp.currentRoomId = null;
+            alert('This group was deleted.');
+            loadRoomList();
+        } else if (payload.event === 'pin_updated') {
+            renderPinnedBanner(payload.pinned_message);
+            if (state.currentRoomDetail) state.currentRoomDetail.pinned_message = payload.pinned_message;
+        } else if (payload.event === 'buzz') {
+            triggerBuzzShake();
+            if (payload.from_user_id !== currentUserId && window.ChatSound) window.ChatSound.playBuzz();
         }
     }
+
+    // ---- Buzz ---------------------------------------------------------------
+
+    let buzzShakeTimeout = null;
+    function triggerBuzzShake() {
+        const target = document.getElementById('chat-thread-active');
+        if (!target) return;
+        target.classList.remove('chat-buzz-shake');
+        // Force reflow so re-adding the class restarts the animation on repeat buzzes.
+        void target.offsetWidth;
+        target.classList.add('chat-buzz-shake');
+        clearTimeout(buzzShakeTimeout);
+        buzzShakeTimeout = setTimeout(function () { target.classList.remove('chat-buzz-shake'); }, 600);
+    }
+
+    // ---- Read receipts ---------------------------------------------------
+
+    function updateSeenIndicator(readerUserId, lastReadMessageId) {
+        if (readerUserId === currentUserId) return; // ignore our own mark-read
+        const container = document.getElementById('chat-thread-messages');
+        container.querySelectorAll('.chat-msg__seen').forEach(function (el) { el.remove(); });
+        if (!lastReadMessageId) return;
+
+        const ownMsgs = Array.from(container.querySelectorAll('.chat-msg.is-own'));
+        let target = null;
+        for (let i = ownMsgs.length - 1; i >= 0; i--) {
+            if (parseInt(ownMsgs[i].dataset.messageId, 10) <= lastReadMessageId) { target = ownMsgs[i]; break; }
+        }
+        if (!target) return;
+
+        const meta = target.querySelector('.chat-msg__meta');
+        const seen = document.createElement('span');
+        seen.className = 'chat-msg__seen';
+        seen.textContent = ' · Seen';
+        seen.title = 'Click to see who';
+        seen.addEventListener('click', function (event) {
+            event.stopPropagation();
+            showReadBy(target, target.dataset.messageId);
+        });
+        meta.appendChild(seen);
+    }
+
+    function showReadBy(el, msgId) {
+        const existing = el.querySelector('.chat-msg__seen-popover');
+        if (existing) { existing.remove(); return; }
+        const popover = document.createElement('div');
+        popover.className = 'chat-msg__seen-popover';
+        popover.textContent = 'Loading…';
+        el.querySelector('.chat-msg__meta').appendChild(popover);
+        api(messageReadByUrl(state.currentRoomId, msgId)).then(function (readers) {
+            popover.textContent = readers.length
+                ? 'Seen by ' + readers.map(function (r) { return r.display_name; }).join(', ')
+                : 'Not seen yet';
+        }).catch(function () {
+            popover.textContent = 'Could not load read status.';
+        });
+    }
+
+    // ---- Pinned message ---------------------------------------------------
+
+    function renderPinnedBanner(pinnedMessage) {
+        const banner = document.getElementById('chat-thread-pinned');
+        if (!pinnedMessage) {
+            banner.hidden = true;
+            banner.innerHTML = '';
+            return;
+        }
+        const canUnpin = state.currentRoomDetail && state.currentRoomDetail.room_type === 'group' ? canManageGroup : true;
+        banner.hidden = false;
+        banner.innerHTML =
+            '<i class="fas fa-thumbtack"></i>' +
+            '<span class="chat-thread__pinned-text">' + escapeHtml((pinnedMessage.body || '[Attachment]').slice(0, 120)) + '</span>' +
+            (canUnpin ? '<button type="button" class="chat-thread__pinned-unpin" title="Unpin">&times;</button>' : '');
+        banner.dataset.messageId = pinnedMessage.id;
+    }
+
+    // ---- Forward message ---------------------------------------------------
+
+    const forwardModal = document.getElementById('chat-forward-modal');
+    let forwardMessageId = null;
+
+    function openForwardModal(msgId) {
+        forwardMessageId = msgId;
+        const select = document.getElementById('chat-forward-room-select');
+        select.innerHTML = state.rooms.map(function (r) {
+            return '<option value="' + r.id + '">' + escapeHtml(r.display_name) + '</option>';
+        }).join('') || '<option value="">No conversations available</option>';
+        forwardModal.classList.add('open');
+    }
+
+    document.getElementById('chat-forward-send-btn').addEventListener('click', function () {
+        const targetRoomId = document.getElementById('chat-forward-room-select').value;
+        if (!targetRoomId || !forwardMessageId) return;
+        api((urls.messages || '').replace('/0/', '/' + targetRoomId + '/'), {
+            method: 'POST',
+            body: { forwarded_from_message_id: forwardMessageId },
+        }).then(function () {
+            closeModal(forwardModal);
+            if (String(targetRoomId) === String(state.currentRoomId)) loadMessages(state.currentRoomId);
+            loadRoomList();
+        }).catch(function (err) {
+            alert((err.data && err.data.detail) || 'Could not forward message.');
+        });
+    });
+
+    function pinMessage(msgId) {
+        if (!state.currentRoomId) return;
+        api((urls.roomPin || '').replace('/0/', '/' + state.currentRoomId + '/'), {
+            method: 'POST',
+            body: { message_id: msgId },
+        }).catch(function (err) { alert((err.data && err.data.detail) || 'Could not pin message.'); });
+    }
+
+    function unpinMessage() {
+        if (!state.currentRoomId) return;
+        api((urls.roomPin || '').replace('/0/', '/' + state.currentRoomId + '/'), { method: 'DELETE' })
+            .catch(function () { /* ignore */ });
+    }
+
+    document.getElementById('chat-thread-pinned').addEventListener('click', function (event) {
+        if (event.target.closest('.chat-thread__pinned-unpin')) {
+            event.stopPropagation();
+            if (!state.currentRoomId) return;
+            api((urls.roomPin || '').replace('/0/', '/' + state.currentRoomId + '/'), { method: 'DELETE' }).catch(function () { /* ignore */ });
+            return;
+        }
+        const msgId = this.dataset.messageId;
+        const el = document.querySelector('.chat-msg[data-message-id="' + msgId + '"]');
+        if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            el.classList.add('is-highlighted');
+            setTimeout(function () { el.classList.remove('is-highlighted'); }, 1500);
+        }
+    });
+
+    // ---- Buzz button --------------------------------------------------------
+
+    const buzzBtn = document.getElementById('chat-buzz-btn');
+    if (buzzBtn) {
+        buzzBtn.addEventListener('click', function () {
+            if (!state.currentRoomId || buzzBtn.disabled) return;
+            buzzBtn.disabled = true;
+            setTimeout(function () { buzzBtn.disabled = false; }, 5000);
+            triggerBuzzShake();
+            api((urls.roomBuzz || '').replace('/0/', '/' + state.currentRoomId + '/'), { method: 'POST' })
+                .catch(function () { /* cooldown or transient failure — button re-enables on its own timer */ });
+        });
+    }
+
+    // ---- Group settings panel ---------------------------------------------
+
+    const groupSettingsModal = document.getElementById('chat-group-settings-modal');
+    let pendingAvatarFile = null;
+
+    document.getElementById('chat-room-info-btn').addEventListener('click', function () {
+        const room = state.currentRoomDetail;
+        if (!room || room.room_type !== 'group') return;
+        pendingAvatarFile = null;
+        document.getElementById('chat-group-settings-name').value = room.name || '';
+        document.getElementById('chat-group-settings-description').value = room.description || '';
+        document.getElementById('chat-group-settings-name').disabled = !canManageGroup;
+        document.getElementById('chat-group-settings-description').disabled = !canManageGroup;
+        document.getElementById('chat-group-settings-avatar-btn').hidden = !canManageGroup;
+        document.getElementById('chat-group-settings-save-btn').hidden = !canManageGroup;
+        const preview = document.getElementById('chat-group-settings-avatar-preview');
+        preview.style.backgroundImage = room.avatar_url ? 'url(' + room.avatar_url + ')' : '';
+        preview.textContent = room.avatar_url ? '' : initials(room.name);
+        document.getElementById('chat-group-settings-danger').hidden = !isSuperuser;
+        groupSettingsModal.classList.add('open');
+    });
+
+    document.getElementById('chat-group-settings-avatar-btn').addEventListener('click', function () {
+        document.getElementById('chat-group-settings-avatar-input').click();
+    });
+    document.getElementById('chat-group-settings-avatar-input').addEventListener('change', function () {
+        const file = this.files[0];
+        if (!file) return;
+        pendingAvatarFile = file;
+        const preview = document.getElementById('chat-group-settings-avatar-preview');
+        preview.style.backgroundImage = 'url(' + URL.createObjectURL(file) + ')';
+        preview.textContent = '';
+    });
+
+    document.getElementById('chat-group-settings-save-btn').addEventListener('click', function () {
+        if (!state.currentRoomId) return;
+        const formData = new FormData();
+        formData.append('name', document.getElementById('chat-group-settings-name').value.trim());
+        formData.append('description', document.getElementById('chat-group-settings-description').value.trim());
+        if (pendingAvatarFile) formData.append('avatar', pendingAvatarFile);
+
+        api((urls.roomUpdateSettings || '').replace('/0/', '/' + state.currentRoomId + '/'), {
+            method: 'PATCH',
+            body: formData,
+        }).then(function (room) {
+            state.currentRoomDetail = room;
+            document.getElementById('chat-thread-name').textContent = room.display_name;
+            closeModal(groupSettingsModal);
+            loadRoomList();
+        }).catch(function (err) {
+            alert((err.data && err.data.detail) || 'Could not update group.');
+        });
+    });
+
+    document.getElementById('chat-group-settings-delete-btn').addEventListener('click', function () {
+        if (!state.currentRoomId) return;
+        if (!confirm('Delete this group? This hides it for everyone; message history is preserved.')) return;
+        api(urls.roomDetail.replace('/0/', '/' + state.currentRoomId + '/'), { method: 'DELETE' })
+            .then(function () {
+                closeModal(groupSettingsModal);
+            }).catch(function (err) {
+                alert((err.data && err.data.detail) || 'Could not delete group.');
+            });
+    });
 
     function connectPresenceSocket() {
         const socket = new WebSocket(wsUrl('/ws/chat/presence/'));
         socket.onmessage = function (event) {
             const payload = JSON.parse(event.data);
             if (payload.event === 'unread_count_changed' || payload.event === 'new_message') {
+                if (payload.event === 'new_message' && payload.room_id !== state.currentRoomId && window.ChatSound) {
+                    window.ChatSound.playMessageDing();
+                }
                 loadRoomList();
             } else if (payload.event === 'incoming_call') {
                 window.ChatApp.onIncomingCall(payload);
+            } else if (payload.event === 'presence_online') {
+                state.onlineUserIds.add(payload.user_id);
+                renderRoomList();
+                updatePresenceLabel();
+            } else if (payload.event === 'presence_offline') {
+                state.onlineUserIds.delete(payload.user_id);
+                renderRoomList();
+                updatePresenceLabel();
+            } else if (payload.event === 'group_deleted') {
+                if (payload.room_id === state.currentRoomId) {
+                    handleRoomEvent(payload.room_id, payload);
+                } else {
+                    loadRoomList();
+                }
             }
         };
         socket.onclose = function () {
             setTimeout(connectPresenceSocket, 4000);
         };
         state.presenceSocket = socket;
+    }
+
+    function loadOnlineSnapshot() {
+        if (!urls.presenceOnline) return;
+        api(urls.presenceOnline).then(function (data) {
+            state.onlineUserIds = new Set(data.online_user_ids || []);
+            renderRoomList();
+            updatePresenceLabel();
+        }).catch(function () { /* ignore */ });
     }
 
     // ---- New DM / group modals -------------------------------------------
@@ -377,6 +941,7 @@
     };
 
     loadRoomList();
+    loadOnlineSnapshot();
     connectPresenceSocket();
 
     // Deep link from a toast notification, e.g. /chat/?room=12

@@ -2,6 +2,10 @@
 without importing channels directly everywhere. No-ops safely if the channel
 layer isn't configured (e.g. Channels not installed yet in Phase 1)."""
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 def _get_layer():
     try:
@@ -16,7 +20,14 @@ def _send(group, payload):
     if layer is None:
         return
     from asgiref.sync import async_to_sync
-    async_to_sync(layer.group_send)(group, {'type': 'chat.event', 'payload': payload})
+    try:
+        async_to_sync(layer.group_send)(group, {'type': 'chat.event', 'payload': payload})
+    except Exception:
+        # The DB write behind this event has already committed by the time
+        # views call broadcast_room_event/notify_user(s) — a flaky Redis
+        # connection should never turn into a 500 on message send/edit/
+        # delete. Clients resync via reconnect + room reload/loadRoomList().
+        logger.warning('chat realtime broadcast to %s failed', group, exc_info=True)
 
 
 def broadcast_room_event(room_id, event_type, data):

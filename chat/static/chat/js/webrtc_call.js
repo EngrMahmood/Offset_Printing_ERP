@@ -12,6 +12,7 @@
     const declineBtn = document.getElementById('chat-call-decline-btn');
     const declineLabel = document.getElementById('chat-call-decline-label');
     const muteBtn = document.getElementById('chat-call-mute-btn');
+    const screenshareBtn = document.getElementById('chat-call-screenshare-btn');
     const audioBtn = document.getElementById('chat-call-audio-btn');
     const videoBtn = document.getElementById('chat-call-video-btn');
 
@@ -38,6 +39,8 @@
         videosEl.innerHTML = '';
         acceptBtn.hidden = true;
         muteBtn.hidden = true;
+        screenshareBtn.hidden = true;
+        screenshareBtn.classList.remove('is-active');
         declineLabel.textContent = 'Decline';
     }
 
@@ -76,7 +79,29 @@
         }
     }
 
+    function describeMediaError(err) {
+        if (err && err.code === 'insecure-context') {
+            return 'This page must be loaded over HTTPS to use the camera/microphone. Ask an admin for the https:// link to this ERP.';
+        }
+        const name = err && err.name;
+        if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+            return 'Camera/microphone access was denied. Check this site\'s permissions in your browser settings and try again.';
+        }
+        if (name === 'NotFoundError' || name === 'OverconstrainedError') {
+            return 'No camera/microphone was found on this device.';
+        }
+        if (name === 'NotReadableError' || name === 'TrackStartError') {
+            return 'Your camera/microphone is already in use by another application.';
+        }
+        return 'Could not access microphone/camera.';
+    }
+
     async function getLocalStream(callType) {
+        if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+            const err = new Error('Insecure context: camera/microphone unavailable.');
+            err.code = 'insecure-context';
+            throw err;
+        }
         const constraints = { audio: true, video: callType === 'video' };
         call.localStream = await navigator.mediaDevices.getUserMedia(constraints);
         addVideoEl(currentUserId, call.localStream, true);
@@ -149,11 +174,12 @@
         showOverlay('Calling…');
         declineLabel.textContent = 'Cancel';
         muteBtn.hidden = false;
+        screenshareBtn.hidden = false;
 
         try {
             await getLocalStream(callType);
         } catch (e) {
-            alert('Could not access microphone/camera.');
+            alert(describeMediaError(e));
             endCall(false);
             return;
         }
@@ -167,14 +193,16 @@
 
     async function acceptIncomingCall() {
         if (!call.isIncoming) return;
+        if (window.ChatSound) window.ChatSound.stopRingtone();
         showOverlay('Connecting…');
         acceptBtn.hidden = true;
         muteBtn.hidden = false;
+        screenshareBtn.hidden = false;
 
         try {
             await getLocalStream(call.callType);
         } catch (e) {
-            alert('Could not access microphone/camera.');
+            alert(describeMediaError(e));
             endCall(true);
             return;
         }
@@ -184,6 +212,7 @@
     }
 
     function endCall(sendDecline) {
+        if (window.ChatSound) window.ChatSound.stopRingtone();
         if (call.socket) {
             send({ event: sendDecline ? 'call-decline' : 'hangup', call_id: call.callId });
             call.socket.close();
@@ -192,13 +221,65 @@
         if (call.localStream) {
             call.localStream.getTracks().forEach(function (t) { t.stop(); });
         }
+        if (call.screenStream) {
+            call.screenStream.getTracks().forEach(function (t) { t.stop(); });
+        }
         call.active = false;
         call.roomId = null;
         call.callId = null;
         call.socket = null;
         call.peers = {};
         call.localStream = null;
+        call.screenStream = null;
+        call.cameraTrack = null;
         resetCallUI();
+    }
+
+    // ---- Screen sharing ----------------------------------------------------
+
+    function replaceOutgoingVideoTrack(newTrack) {
+        Object.values(call.peers).forEach(function (pc) {
+            const sender = pc.getSenders().find(function (s) { return s.track && s.track.kind === 'video'; });
+            if (sender) {
+                sender.replaceTrack(newTrack);
+            } else if (newTrack) {
+                pc.addTrack(newTrack, call.localStream);
+            }
+        });
+    }
+
+    async function startScreenShare() {
+        if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+            alert('This page must be loaded over HTTPS to share your screen.');
+            return;
+        }
+        let stream;
+        try {
+            stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+        } catch (e) {
+            return; // user cancelled the browser's share picker
+        }
+        const screenTrack = stream.getVideoTracks()[0];
+        call.screenStream = stream;
+        call.cameraTrack = call.localStream.getVideoTracks()[0] || null; // may be null if call started audio-only
+
+        replaceOutgoingVideoTrack(screenTrack);
+        addVideoEl(currentUserId, stream, true);
+        screenshareBtn.classList.add('is-active');
+
+        screenTrack.addEventListener('ended', function () {
+            stopScreenShare();
+        });
+    }
+
+    function stopScreenShare() {
+        if (!call.screenStream) return;
+        call.screenStream.getTracks().forEach(function (t) { t.stop(); });
+        call.screenStream = null;
+        screenshareBtn.classList.remove('is-active');
+
+        replaceOutgoingVideoTrack(call.cameraTrack || null);
+        if (call.localStream) addVideoEl(currentUserId, call.localStream, true);
     }
 
     audioBtn.addEventListener('click', function () {
@@ -209,6 +290,10 @@
     });
     declineBtn.addEventListener('click', function () { endCall(true); });
     acceptBtn.addEventListener('click', acceptIncomingCall);
+    screenshareBtn.addEventListener('click', function () {
+        if (call.screenStream) stopScreenShare();
+        else startScreenShare();
+    });
     muteBtn.addEventListener('click', function () {
         if (!call.localStream) return;
         call.isMuted = !call.isMuted;
@@ -228,5 +313,6 @@
         showOverlay('Incoming ' + call.callType + ' call…');
         acceptBtn.hidden = false;
         declineLabel.textContent = 'Decline';
+        if (window.ChatSound) window.ChatSound.playRingtone();
     };
 })();

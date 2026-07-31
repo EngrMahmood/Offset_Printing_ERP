@@ -72,7 +72,7 @@
         }).catch(function () { /* ignore */ });
     }
 
-    function showToast(title, message, link) {
+    function showToast(title, message, link, onClose) {
         if (!toastStack) return;
         const toast = document.createElement('div');
         toast.className = 'erp-toast';
@@ -83,9 +83,14 @@
             '<a class="erp-toast__link" href="' + escapeHtml(link) + '">Open</a>' +
             '<button type="button" class="erp-toast__close">Dismiss</button>' +
             '</div>';
-        toast.querySelector('.erp-toast__close').addEventListener('click', function () { toast.remove(); });
+        function close() {
+            toast.remove();
+            if (onClose) onClose();
+        }
+        toast.querySelector('.erp-toast__close').addEventListener('click', close);
+        toast.querySelector('.erp-toast__link').addEventListener('click', close);
         toastStack.appendChild(toast);
-        window.setTimeout(function () { toast.remove(); }, 8000);
+        window.setTimeout(close, 8000);
     }
 
     // ---- Docked window persistence -------------------------------------------
@@ -238,6 +243,15 @@
         return el;
     }
 
+    function renderDockReactions(reactions) {
+        // Read-only in dock popups — reacting requires the full chat page,
+        // consistent with the "glance and reply" scope of docked windows.
+        if (!reactions || !reactions.length) return '';
+        return '<div class="chat-dock-msg__reactions">' + reactions.map(function (r) {
+            return '<span class="chat-dock-msg__reaction-pill">' + r.emoji + ' ' + r.user_ids.length + '</span>';
+        }).join('') + '</div>';
+    }
+
     function appendDockMessage(win, msg) {
         if (!win) return;
         const container = win.el.querySelector('.chat-dock-win__messages');
@@ -247,8 +261,10 @@
         const wrap = document.createElement('div');
         wrap.className = 'chat-dock-msg ' + (isOwn ? 'is-own' : 'is-other');
         wrap.dataset.messageId = msg.id;
-        const bodyText = msg.is_deleted ? 'Message deleted' : escapeHtml(msg.body || (msg.attachments && msg.attachments.length ? '📎 Attachment' : ''));
-        wrap.innerHTML = '<div class="chat-dock-msg__bubble">' + bodyText + '</div>';
+        const audioAttachment = !msg.is_deleted && (msg.attachments || []).find(function (a) { return a.file_type === 'audio'; });
+        const bodyText = msg.is_deleted ? 'Message deleted' : escapeHtml(msg.body || (msg.attachments && msg.attachments.length && !audioAttachment ? '📎 Attachment' : ''));
+        const audioHtml = audioAttachment ? '<audio controls preload="none" src="' + escapeHtml(audioAttachment.url) + '"></audio>' : '';
+        wrap.innerHTML = '<div class="chat-dock-msg__bubble">' + bodyText + audioHtml + '</div>' + renderDockReactions(msg.reactions);
         container.appendChild(wrap);
         scrollToBottom(win);
         win.lastActivity = Date.now();
@@ -259,6 +275,15 @@
     function scrollToBottom(win) {
         const container = win.el.querySelector('.chat-dock-win__messages');
         container.scrollTop = container.scrollHeight;
+    }
+
+    function shakeDockWindow(win) {
+        if (!win || !win.el) return;
+        win.el.classList.remove('chat-buzz-shake');
+        void win.el.offsetWidth;
+        win.el.classList.add('chat-buzz-shake');
+        setTimeout(function () { win.el.classList.remove('chat-buzz-shake'); }, 600);
+        if (win.minimized) setMinimized(win, false);
     }
 
     function fetchRoomDetail(win) {
@@ -280,10 +305,41 @@
             const payload = JSON.parse(event.data);
             if (payload.event === 'message_created') {
                 appendDockMessage(dockWindows.get(win.roomId), payload.message);
+            } else if (payload.event === 'message_edited') {
+                const el = win.el.querySelector('.chat-dock-msg[data-message-id="' + payload.message.id + '"]');
+                if (el) {
+                    const bubble = el.querySelector('.chat-dock-msg__bubble');
+                    bubble.textContent = payload.message.body || (payload.message.attachments && payload.message.attachments.length ? '📎 Attachment' : '');
+                }
+            } else if (payload.event === 'message_deleted') {
+                const el = win.el.querySelector('.chat-dock-msg[data-message-id="' + payload.message_id + '"]');
+                if (el) {
+                    el.classList.add('is-deleted');
+                    el.querySelector('.chat-dock-msg__bubble').textContent = 'Message deleted';
+                }
+            } else if (payload.event === 'reaction_updated') {
+                const el = win.el.querySelector('.chat-dock-msg[data-message-id="' + payload.message_id + '"]');
+                if (el) {
+                    const existing = el.querySelector('.chat-dock-msg__reactions');
+                    const html = renderDockReactions(payload.reactions);
+                    if (existing) existing.outerHTML = html;
+                    else if (html) el.querySelector('.chat-dock-msg__bubble').insertAdjacentHTML('afterend', html);
+                }
+            } else if (payload.event === 'group_updated') {
+                const current = dockWindows.get(win.roomId);
+                if (current) {
+                    current.roomLabel = payload.room.display_name;
+                    current.el.querySelector('.chat-dock-win__title').firstChild.textContent = payload.room.display_name;
+                }
             } else if (payload.event === 'typing') {
                 const label = win.el.querySelector('.chat-dock-win__typing');
                 if (String(payload.user_id) !== String(currentUserId)) {
                     label.textContent = payload.is_typing ? 'typing…' : '';
+                }
+            } else if (payload.event === 'buzz') {
+                if (String(payload.from_user_id) !== String(currentUserId)) {
+                    shakeDockWindow(dockWindows.get(win.roomId));
+                    if (window.ChatSound) window.ChatSound.playBuzz();
                 }
             }
         };
@@ -313,12 +369,33 @@
             const payload = JSON.parse(event.data);
             if (payload.event === 'new_message') {
                 refreshBadge();
+                const mentioned = (payload.mentioned_user_ids || []).map(String).indexOf(String(currentUserId)) !== -1;
                 if (isViewingRoomElsewhere(payload.room_id)) return;
-                openDockWindow(payload.room_id, payload.room_label);
+                if (window.ChatSound) window.ChatSound.playMessageDing();
+                const win = openDockWindow(payload.room_id, payload.room_label);
+                if (mentioned && win) win.el.classList.add('is-mentioned-flash');
+                if (mentioned) {
+                    showToast('You were mentioned', (payload.sender_name || 'Someone') + ' mentioned you in ' + (payload.room_label || 'a chat'), chatUrl + '?room=' + payload.room_id);
+                }
             } else if (payload.event === 'unread_count_changed') {
                 refreshBadge();
+            } else if (payload.event === 'group_deleted') {
+                if (dockWindows.has(payload.room_id)) closeDockWindow(payload.room_id);
+                refreshBadge();
             } else if (payload.event === 'incoming_call' && !isViewingRoomElsewhere(payload.room_id)) {
-                showToast('Incoming call', 'Call in ' + (payload.room_label || 'a chat'), chatUrl + '?room=' + payload.room_id);
+                if (window.ChatSound) window.ChatSound.playRingtone();
+                showToast('Incoming call', 'Call in ' + (payload.room_label || 'a chat'), chatUrl + '?room=' + payload.room_id, function () {
+                    if (window.ChatSound) window.ChatSound.stopRingtone();
+                });
+            } else if (payload.event === 'buzz' && !isViewingRoomElsewhere(payload.room_id)) {
+                // The room's own socket (if a dock window is already open) handles
+                // the shake itself — this branch only covers the "not open yet"
+                // case, same split as new_message's dock-open-vs-badge handling.
+                if (!dockWindows.has(payload.room_id)) {
+                    if (window.ChatSound) window.ChatSound.playBuzz();
+                    const win = openDockWindow(payload.room_id, payload.from_display_name);
+                    setTimeout(function () { shakeDockWindow(win); }, 50);
+                }
             }
         };
         socket.onclose = function () {

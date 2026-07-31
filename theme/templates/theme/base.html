@@ -23,7 +23,7 @@
     <link rel="stylesheet" href="{% static 'theme/css/planning_phase2.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/production.css' %}?v=3">
     <link rel="stylesheet" href="{% static 'theme/css/notifications.css' %}?v=1">
-    <link rel="stylesheet" href="{% static 'chat/css/chat_dock.css' %}?v=1">
+    <link rel="stylesheet" href="{% static 'chat/css/chat_dock.css' %}?v=4">
     {% include 'includes/ui/theme_colors.html' %}
     <style>
         /* Two-tier topnav — override Tailwind CDN and any cache */
@@ -158,7 +158,8 @@
     <script src="{% static 'theme/js/tabs.js' %}"></script>
     {% if request.user.is_authenticated %}
     <script src="{% static 'theme/js/notifications.js' %}?v=1"></script>
-    <script src="{% static 'chat/js/chat_dock.js' %}?v=1"></script>
+    <script src="{% static 'chat/js/chat_sound.js' %}?v=2"></script>
+    <script src="{% static 'chat/js/chat_dock.js' %}?v=4"></script>
     {% endif %}
     {% block extra_js %}{% endblock %}
     <script src="{% static 'production/js/production_entry.js' %}?v=12"></script>

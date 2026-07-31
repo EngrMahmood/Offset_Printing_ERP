@@ -99,6 +99,42 @@ real reboot test — restart the machine and check
 `logs\server_startup.log` for a clean startup with Redis reachable, with no
 one logged in.
 
+### 6. Enable HTTPS for calling (self-signed certificate)
+
+WebRTC's camera/microphone access (`getUserMedia`) only works in a browser
+"secure context" — `https:` or `localhost`/`127.0.0.1`. Since this server is
+reached over plain `http://192.168.88.30:8000` from other LAN PCs, calling
+silently fails everywhere except the server machine itself. Fix: serve a
+second Daphne listener over HTTPS with a self-signed certificate.
+
+Generate a cert (PowerShell, using OpenSSL if available, or the .NET
+`New-SelfSignedCertificate` cmdlet — either works; example with OpenSSL):
+
+```bash
+openssl req -x509 -newkey rsa:2048 -nodes -keyout chat_key.pem -out chat_cert.pem -days 3650 -subj "/CN=192.168.88.30" -addext "subjectAltName=IP:192.168.88.30"
+```
+
+Store `chat_key.pem`/`chat_cert.pem` **outside the git repo** (e.g. next to
+`logs/` under `E:\Offset_Printing_ERP\certs\`) — never commit private keys.
+
+Add a second Daphne bind alongside the existing plain-HTTP one in
+`start_server_task.bat` / `start server.bat`:
+
+```bash
+daphne -b 0.0.0.0 -p 8443 -e ssl:8443:privateKey=E:\Offset_Printing_ERP\certs\chat_key.pem:certKey=E:\Offset_Printing_ERP\certs\chat_cert.pem Offset_ERP.asgi:application
+```
+
+(Keep the plain `:8000` listener running too, or run both from one process
+via Daphne's multi-endpoint `-e` flags — either is fine.) `Offset_ERP/settings.py`
+already trusts `https://192.168.88.30:8443` via `CSRF_TRUSTED_ORIGINS`
+(overridable with the `CSRF_TRUSTED_ORIGINS` env var if the port/IP differ).
+
+On each LAN PC, the first visit to `https://192.168.88.30:8443` shows a
+"Your connection is not private" warning (expected for a self-signed cert on
+an internal LAN) — click **Advanced → Proceed**. This is a one-time step per
+browser per machine. Bookmark/share the `https://` link, not the old `http://`
+one, so calling works.
+
 ## If something breaks
 
 - **Chat page loads but messages don't send/appear live**: check Redis is
