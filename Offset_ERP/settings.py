@@ -30,14 +30,14 @@ DEBUG = True
 
 ALLOWED_HOSTS = ['*']
 
-# Self-signed HTTPS is served directly by Daphne on 8443 (see DEPLOYMENT.md) so
+# Self-signed HTTPS is served directly by Daphne on 8000 (see DEPLOYMENT.md) so
 # that WebRTC's getUserMedia works from LAN clients other than the server box
 # itself (browsers require a secure context — https or localhost — for camera/
 # mic access). Django enforces Origin-header checking on unsafe HTTP methods,
 # so the https origin needs to be explicitly trusted here.
 CSRF_TRUSTED_ORIGINS = os.environ.get(
     'CSRF_TRUSTED_ORIGINS',
-    'https://192.168.88.30:8443',
+    'https://192.168.88.30:8000',
 ).split(',')
 
 MEDIA_URL = '/media/'

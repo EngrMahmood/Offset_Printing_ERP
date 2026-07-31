@@ -78,3 +78,7 @@ urlpatterns = [
 
 if settings.DEBUG:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
+    # runserver auto-serves STATIC_URL, but the standalone `daphne` process used
+    # for the HTTPS listener (see DEPLOYMENT.md step 6) doesn't, so serve it here.
+    from django.contrib.staticfiles.urls import staticfiles_urlpatterns
+    urlpatterns += staticfiles_urlpatterns()

@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 /media/
+/certs/
 
 .env
 venv/

@@ -24,6 +24,19 @@
         if (ctx && ctx.state === 'suspended') ctx.resume().catch(function () { /* ignore */ });
     }
 
+    // Incoming ring/buzz events arrive over the WebSocket with no user
+    // gesture attached, so the one-time click/keydown unlock below may not
+    // have fired yet. Retry the resume right before every sound plays too —
+    // cheap and idempotent, and covers the common case where the user has
+    // interacted with the page *some* other way since load (e.g. clicked
+    // into a different tab of the app) that the browser already counts as
+    // activation even though our own once-listeners already detached.
+    function ensureRunning() {
+        const ctx = getContext();
+        if (ctx && ctx.state === 'suspended') ctx.resume().catch(function () { /* ignore */ });
+        return ctx;
+    }
+
     function isMuted() {
         try { return localStorage.getItem(STORAGE_KEY) === '1'; } catch (e) { return false; }
     }
@@ -58,7 +71,7 @@
 
     function playMessageDing() {
         if (isMuted()) return;
-        const ctx = getContext();
+        const ctx = ensureRunning();
         if (!ctx) return;
         const now = ctx.currentTime;
         playTone(880, now, 0.12, 0.15);
@@ -66,7 +79,7 @@
     }
 
     function ringBurst() {
-        const ctx = getContext();
+        const ctx = ensureRunning();
         if (!ctx) return;
         const now = ctx.currentTime;
         // Classic two-tone phone ring (~440Hz + 480Hz), two short bursts.
@@ -94,7 +107,7 @@
         // sawtooth trill rather than the smooth sine tones used elsewhere,
         // so it reads as an attention-grabbing nudge, not a normal chime.
         if (isMuted()) return;
-        const ctx = getContext();
+        const ctx = ensureRunning();
         if (!ctx) return;
         const now = ctx.currentTime;
         for (let i = 0; i < 6; i++) {
@@ -113,8 +126,10 @@
         }
     }
 
-    document.addEventListener('click', unlock, { once: true });
-    document.addEventListener('keydown', unlock, { once: true });
+    document.addEventListener('click', unlock);
+    document.addEventListener('keydown', unlock);
+    document.addEventListener('pointerdown', unlock);
+    document.addEventListener('touchstart', unlock);
 
     window.ChatSound = {
         isMuted: isMuted,
