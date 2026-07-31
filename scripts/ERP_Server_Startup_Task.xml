@@ -7,7 +7,7 @@
   <Triggers>
     <BootTrigger>
       <Enabled>true</Enabled>
-      <Delay>PT30S</Delay>
+      <Delay>PT90S</Delay>
     </BootTrigger>
   </Triggers>
   <Principals>
@@ -22,7 +22,7 @@
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <AllowHardTerminate>true</AllowHardTerminate>
     <StartWhenAvailable>true</StartWhenAvailable>
-    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
     <AllowStartOnDemand>true</AllowStartOnDemand>
     <Enabled>true</Enabled>
     <Hidden>false</Hidden>

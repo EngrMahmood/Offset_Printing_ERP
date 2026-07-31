@@ -20,6 +20,24 @@ set "BIND=192.168.88.30:8000"
 
 cd /d "%PROJECT_DIR%"
 
+REM --- Wait for 192.168.88.30 to actually be bound to a network adapter
+REM     before trying to listen on it. At boot, the task's 30s delay isn't
+REM     always enough for the NIC to finish coming up, which made Daphne
+REM     fail immediately with WinError 10049 ("address not valid in its
+REM     context") — a transient timing issue, not a real misconfiguration.
+REM     Poll for up to 60s; if it's still not there we start anyway and let
+REM     Task Scheduler's RestartOnFailure retry the whole script.
+set "IP_WAIT_TRIES=0"
+:wait_for_ip
+powershell -NoProfile -Command "if (Get-NetIPAddress -IPAddress 192.168.88.30 -ErrorAction SilentlyContinue) { exit 0 } else { exit 1 }"
+if not errorlevel 1 goto ip_ready
+set /a IP_WAIT_TRIES+=1
+if %IP_WAIT_TRIES% GEQ 12 goto ip_ready
+echo [%date% %time%] Waiting for 192.168.88.30 to come up (try %IP_WAIT_TRIES%/12)... >> "%PROJECT_DIR%\backups\server.log"
+timeout /t 5 /nobreak >nul
+goto wait_for_ip
+:ip_ready
+
 REM --- Companion redirect listener on port 80: catches plain-HTTP requests
 REM     (old bookmarks, or someone typing the bare IP) and 301s them to the
 REM     HTTPS site above, since a TLS-only socket can't itself explain
