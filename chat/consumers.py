@@ -192,11 +192,21 @@ class CallSignalingConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(self.group_name, {'type': 'chat.event', 'payload': content})
 
     async def _notify_other_participants(self, sender, event_type, data):
+        # `data` (the original client message) still carries its own 'event'
+        # key (e.g. 'call-invite') — spreading it after 'event': event_type
+        # in a dict literal lets that stale key win (later duplicate keys
+        # override earlier ones), silently mislabeling the payload so the
+        # receiver's client never recognizes it as 'incoming_call'. Building
+        # the payload from data first and overwriting 'event' after avoids
+        # that collision.
         member_ids = await database_sync_to_async(self._other_participant_ids)(sender)
         for uid in member_ids:
+            payload = dict(data)
+            payload['event'] = event_type
+            payload['room_id'] = int(self.room_id)
             await self.channel_layer.group_send(f'chat_user_{uid}', {
                 'type': 'chat.event',
-                'payload': {'event': event_type, 'room_id': int(self.room_id), **data},
+                'payload': payload,
             })
 
     def _other_participant_ids(self, sender):
