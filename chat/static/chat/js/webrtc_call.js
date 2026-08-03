@@ -32,6 +32,8 @@
         peers: {}, // userId -> RTCPeerConnection
         isIncoming: false,
         isMuted: false,
+        connectedAt: null,
+        timerInterval: null,
     };
 
     function resetCallUI() {
@@ -42,11 +44,42 @@
         screenshareBtn.hidden = true;
         screenshareBtn.classList.remove('is-active');
         declineLabel.textContent = 'Decline';
+        stopCallTimer();
     }
 
     function showOverlay(title) {
         overlay.hidden = false;
         titleEl.textContent = title;
+    }
+
+    function formatDuration(totalSeconds) {
+        const m = Math.floor(totalSeconds / 60);
+        const s = totalSeconds % 60;
+        return (m < 10 ? '0' : '') + m + ':' + (s < 10 ? '0' : '') + s;
+    }
+
+    function startCallTimer() {
+        if (call.timerInterval) return; // already running
+        call.connectedAt = Date.now();
+        titleEl.textContent = '00:00';
+        call.timerInterval = setInterval(function () {
+            titleEl.textContent = formatDuration(Math.floor((Date.now() - call.connectedAt) / 1000));
+        }, 1000);
+    }
+
+    function stopCallTimer() {
+        if (call.timerInterval) { clearInterval(call.timerInterval); call.timerInterval = null; }
+        call.connectedAt = null;
+    }
+
+    // Any single peer actually reaching 'connected' is enough to consider the
+    // call live — a group call's other legs may still be negotiating, but the
+    // user watching this overlay already has working audio/video with at
+    // least one participant.
+    function onPeerConnectionStateChange(pc) {
+        if (pc.connectionState === 'connected' && !call.timerInterval) {
+            startCallTimer();
+        }
     }
 
     function addVideoEl(userId, stream, isLocal) {
@@ -121,8 +154,30 @@
                 send({ event: 'ice-candidate', to_user_id: remoteUserId, candidate: event.candidate, call_id: call.callId });
             }
         };
+        pc.onconnectionstatechange = function () { onPeerConnectionStateChange(pc); };
+        // Fires whenever a track is added/removed mid-call (e.g. starting
+        // screen share on a call that began audio-only) — without this, the
+        // new track is attached locally but the already-negotiated remote
+        // side never learns about it, so nothing shows up on their end.
+        pc.onnegotiationneeded = function () { renegotiate(remoteUserId, pc); };
         call.peers[remoteUserId] = pc;
         return pc;
+    }
+
+    async function renegotiate(remoteUserId, pc) {
+        // Only for mid-call renegotiation (e.g. adding a screen-share track).
+        // The initial offer/answer handshake is driven explicitly by
+        // offerTo()/the 'offer' handler below; onnegotiationneeded also fires
+        // for that first exchange (adding the initial tracks triggers it),
+        // so skip until the call has actually connected once, and only when
+        // no offer/answer is already in flight, to avoid a duplicate/racing
+        // offer colliding with the explicit initial handshake.
+        if (!call.connectedAt || pc.signalingState !== 'stable') return;
+        try {
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+            send({ event: 'offer', to_user_id: remoteUserId, sdp: offer, call_id: call.callId, call_type: call.callType });
+        } catch (e) { /* ignore — a subsequent negotiationneeded will retry */ }
     }
 
     async function offerTo(remoteUserId) {
@@ -137,7 +192,11 @@
 
         if (payload.event === 'offer' && (payload.to_user_id === undefined || payload.to_user_id === currentUserId)) {
             call.callId = payload.call_id || call.callId;
-            const pc = createPeerConnection(fromUserId);
+            // Reuse the existing connection for this peer if one's already up
+            // (a mid-call renegotiation, e.g. screen share starting) — creating
+            // a fresh RTCPeerConnection here would tear down the working call
+            // instead of just adding the new track to it.
+            const pc = call.peers[fromUserId] || createPeerConnection(fromUserId);
             await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);

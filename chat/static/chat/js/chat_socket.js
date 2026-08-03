@@ -560,7 +560,15 @@
             appendMessage(payload.message, false);
             scrollToBottom();
             if (payload.message.sender && payload.message.sender.id !== currentUserId) {
-                markRead(roomId);
+                // Only counts as "seen" if the tab is actually visible and
+                // focused right now — otherwise this room being merely the
+                // "current" one in JS state (e.g. a background/minimized tab)
+                // would mark messages read that the user never actually saw.
+                // If it's not, markReadIfVisible() below catches up once the
+                // tab is actually looked at again.
+                if (document.visibilityState === 'visible' && document.hasFocus()) {
+                    markRead(roomId);
+                }
             }
             loadRoomList();
         } else if (payload.event === 'message_edited') {
@@ -940,9 +948,15 @@
     ['mousemove', 'keydown', 'click', 'touchstart'].forEach(function (evt) {
         document.addEventListener(evt, pingActivity, { passive: true });
     });
+    function markReadIfVisible() {
+        if (document.visibilityState === 'visible' && document.hasFocus() && state.currentRoomId) {
+            markRead(state.currentRoomId);
+        }
+    }
     document.addEventListener('visibilitychange', function () {
-        if (document.visibilityState === 'visible') pingActivity();
+        if (document.visibilityState === 'visible') { pingActivity(); markReadIfVisible(); }
     });
+    window.addEventListener('focus', markReadIfVisible);
 
     // ---- Online users panel ------------------------------------------------
 
