@@ -61,9 +61,9 @@
 
             <div class="chat-thread__messages" id="chat-thread-messages"></div>
 
-            <div class="chat-mention-suggestions" id="chat-mention-suggestions" hidden></div>
             <form class="chat-thread__composer" id="chat-composer">
                 {% csrf_token %}
+                <div class="chat-mention-suggestions" id="chat-mention-suggestions" hidden></div>
                 <button type="button" id="chat-attach-btn" class="erp-btn erp-btn-icon" title="Attach file"><i class="fas fa-paperclip"></i></button>
                 <input type="file" id="chat-file-input" hidden>
                 <button type="button" id="chat-voice-btn" class="erp-btn erp-btn-icon" title="Record voice message"><i class="fas fa-microphone"></i></button>
@@ -131,6 +131,16 @@
             <input type="text" id="chat-group-settings-name" class="erp-input">
             <label class="erp-form-label" style="margin-top:12px;" for="chat-group-settings-description">Description</label>
             <textarea id="chat-group-settings-description" class="erp-input" rows="3"></textarea>
+
+            <label class="erp-form-label" style="margin-top:12px;">Members (<span id="chat-group-settings-member-count">0</span>)</label>
+            <div class="chat-group-settings__members" id="chat-group-settings-members"></div>
+            <div class="chat-group-settings__add-member" id="chat-group-settings-add-row" hidden>
+                <select id="chat-group-settings-add-select" class="erp-input">
+                    <option value="">Add a member…</option>
+                </select>
+                <button type="button" class="erp-btn erp-btn-secondary" id="chat-group-settings-add-btn">Add</button>
+            </div>
+
             <div class="chat-group-settings__danger-zone" id="chat-group-settings-danger" hidden>
                 <hr>
                 <button type="button" class="erp-btn erp-btn-danger" id="chat-group-settings-delete-btn">Delete Group</button>
@@ -164,7 +174,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<link rel="stylesheet" href="{% static 'chat/css/chat.css' %}?v=7">
+<link rel="stylesheet" href="{% static 'chat/css/chat.css' %}?v=8">
 <script>
     window.CHAT_URLS = {
         roomList: "{% url 'room-list' %}",
@@ -187,7 +197,7 @@
     };
 </script>
 <script src="{% static 'chat/js/emoji_picker.js' %}?v=1"></script>
-<script src="{% static 'chat/js/chat_socket.js' %}?v=11"></script>
+<script src="{% static 'chat/js/chat_socket.js' %}?v=12"></script>
 <script src="{% static 'chat/js/chat_upload.js' %}?v=4"></script>
 <script src="{% static 'chat/js/voice_message.js' %}?v=1"></script>
 <script src="{% static 'chat/js/webrtc_call.js' %}?v=4"></script>

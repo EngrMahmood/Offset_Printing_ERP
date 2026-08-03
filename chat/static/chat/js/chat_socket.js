@@ -585,7 +585,10 @@
             }
         } else if (payload.event === 'participant_added' || payload.event === 'participant_removed') {
             api(urls.roomDetail.replace('/0/', '/' + roomId + '/')).then(function (room) {
+                state.currentRoomDetail = room;
                 document.getElementById('chat-thread-name').textContent = room.display_name;
+                if (groupSettingsModal.classList.contains('open')) renderGroupMembers(room);
+                loadRoomList();
             });
         } else if (payload.event === 'group_updated') {
             state.currentRoomDetail = payload.room;
@@ -764,6 +767,55 @@
     const groupSettingsModal = document.getElementById('chat-group-settings-modal');
     let pendingAvatarFile = null;
 
+    function renderGroupMembers(room) {
+        const container = document.getElementById('chat-group-settings-members');
+        const countEl = document.getElementById('chat-group-settings-member-count');
+        const active = (room.participants || []).filter(function (p) { return !p.left_at; });
+        countEl.textContent = active.length;
+        container.innerHTML = active.map(function (p) {
+            const status = getUserStatus(p.user.id);
+            const canRemove = canManageGroup && p.user.id !== currentUserId;
+            return '<div class="chat-group-settings__member-row" data-user-id="' + p.user.id + '">' +
+                '<span class="chat-group-settings__member-dot chat-group-settings__member-dot--' + status + '"></span>' +
+                '<span class="chat-group-settings__member-name">' + escapeHtml(p.user.display_name) + (p.user.id === currentUserId ? ' (you)' : '') + '</span>' +
+                (p.role === 'admin' ? '<span class="chat-group-settings__member-role">Admin</span>' : '') +
+                (canRemove ? '<button type="button" class="chat-group-settings__member-remove" data-user-id="' + p.user.id + '">Remove</button>' : '') +
+                '</div>';
+        }).join('') || '<div class="chat-empty-note">No members.</div>';
+
+        const addRow = document.getElementById('chat-group-settings-add-row');
+        addRow.hidden = !canManageGroup;
+        if (canManageGroup) {
+            const activeIds = new Set(active.map(function (p) { return p.user.id; }));
+            loadChattableUsers().then(function (users) {
+                const select = document.getElementById('chat-group-settings-add-select');
+                const available = users.filter(function (u) { return !activeIds.has(u.id); });
+                select.innerHTML = '<option value="">Add a member…</option>' + available.map(function (u) {
+                    return '<option value="' + u.id + '">' + escapeHtml(u.display_name) + '</option>';
+                }).join('');
+            });
+        }
+    }
+
+    document.getElementById('chat-group-settings-members').addEventListener('click', function (event) {
+        const btn = event.target.closest('.chat-group-settings__member-remove');
+        if (!btn || !state.currentRoomId) return;
+        const userId = btn.dataset.userId;
+        if (!confirm('Remove this member from the group?')) return;
+        api((urls.roomRemoveParticipant || '').replace('/0/0/', '/' + state.currentRoomId + '/' + userId + '/'), { method: 'DELETE' })
+            .catch(function (err) { alert((err.data && err.data.detail) || 'Could not remove member.'); });
+    });
+
+    document.getElementById('chat-group-settings-add-btn').addEventListener('click', function () {
+        const select = document.getElementById('chat-group-settings-add-select');
+        const userId = select.value;
+        if (!userId || !state.currentRoomId) return;
+        api((urls.roomAddParticipant || '').replace('/0/', '/' + state.currentRoomId + '/'), {
+            method: 'POST',
+            body: { user_id: userId },
+        }).catch(function (err) { alert((err.data && err.data.detail) || 'Could not add member.'); });
+    });
+
     document.getElementById('chat-room-info-btn').addEventListener('click', function () {
         const room = state.currentRoomDetail;
         if (!room || room.room_type !== 'group') return;
@@ -778,6 +830,7 @@
         preview.style.backgroundImage = room.avatar_url ? 'url(' + room.avatar_url + ')' : '';
         preview.textContent = room.avatar_url ? '' : initials(room.name);
         document.getElementById('chat-group-settings-danger').hidden = !isSuperuser;
+        renderGroupMembers(room);
         groupSettingsModal.classList.add('open');
     });
 
