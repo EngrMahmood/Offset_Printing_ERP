@@ -22,6 +22,12 @@
     function unlock() {
         const ctx = getContext();
         if (ctx && ctx.state === 'suspended') ctx.resume().catch(function () { /* ignore */ });
+        // Piggyback the notification-permission prompt on this same real user
+        // gesture — browsers are stricter about honoring requestPermission()
+        // calls that aren't tied to one, same reasoning as the audio unlock.
+        if ('Notification' in window && Notification.permission === 'default') {
+            Notification.requestPermission().catch(function () { /* ignore */ });
+        }
     }
 
     // Incoming ring/buzz events arrive over the WebSocket with no user
@@ -126,6 +132,38 @@
         }
     }
 
+    // ---- Incoming-call OS notification --------------------------------------
+    // The ringtone alone is silent to a minimized/backgrounded browser window
+    // in practice — nobody's looking at the tab to hear it matter. A real
+    // Notification pops up outside the browser window entirely (taskbar,
+    // notification center, etc.), which is what actually gets noticed.
+
+    let activeCallNotification = null;
+    let callNotificationTimeoutId = null;
+
+    function showCallNotification(callerName) {
+        if (isMuted() || !('Notification' in window) || Notification.permission !== 'granted') return;
+        try {
+            closeCallNotification();
+            activeCallNotification = new Notification('Incoming call', {
+                body: (callerName || 'Someone') + ' is calling you',
+                tag: 'chat-incoming-call',
+            });
+            activeCallNotification.onclick = function () {
+                window.focus();
+                closeCallNotification();
+            };
+            // Matches MAX_RING_MS below — if nothing else closes it first
+            // (declined/hung up elsewhere), don't leave it lingering forever.
+            callNotificationTimeoutId = window.setTimeout(closeCallNotification, MAX_RING_MS);
+        } catch (e) { /* ignore */ }
+    }
+
+    function closeCallNotification() {
+        if (callNotificationTimeoutId) { window.clearTimeout(callNotificationTimeoutId); callNotificationTimeoutId = null; }
+        if (activeCallNotification) { activeCallNotification.close(); activeCallNotification = null; }
+    }
+
     document.addEventListener('click', unlock);
     document.addEventListener('keydown', unlock);
     document.addEventListener('pointerdown', unlock);
@@ -140,6 +178,8 @@
         playRingtone: playRingtone,
         stopRingtone: stopRingtone,
         playBuzz: playBuzz,
+        showCallNotification: showCallNotification,
+        closeCallNotification: closeCallNotification,
     };
 
     // ---- Mute toggle button (navbar) --------------------------------------

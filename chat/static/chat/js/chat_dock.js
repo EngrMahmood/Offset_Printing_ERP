@@ -386,9 +386,12 @@
                 if (dockWindows.has(payload.room_id)) closeDockWindow(payload.room_id);
                 refreshBadge();
             } else if (payload.event === 'incoming_call' && !isViewingRoomElsewhere(payload.room_id)) {
-                if (window.ChatSound) window.ChatSound.playRingtone();
+                if (window.ChatSound) {
+                    window.ChatSound.playRingtone();
+                    window.ChatSound.showCallNotification(payload.sender_name);
+                }
                 showToast('Incoming call', 'Call in ' + (payload.room_label || 'a chat'), chatUrl + '?room=' + payload.room_id, function () {
-                    if (window.ChatSound) window.ChatSound.stopRingtone();
+                    if (window.ChatSound) { window.ChatSound.stopRingtone(); window.ChatSound.closeCallNotification(); }
                 });
             } else if (payload.event === 'buzz' && !isViewingRoomElsewhere(payload.room_id)) {
                 // The room's own socket (if a dock window is already open) handles

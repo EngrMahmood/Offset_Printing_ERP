@@ -263,7 +263,9 @@
         if (!reactions || !reactions.length) return '<div class="chat-msg__reactions"></div>';
         return '<div class="chat-msg__reactions">' + reactions.map(function (r) {
             const mine = r.user_ids.indexOf(currentUserId) !== -1;
-            return '<button type="button" class="chat-msg__reaction-pill' + (mine ? ' is-mine' : '') + '" data-emoji="' + escapeHtml(r.emoji) + '">' +
+            const names = mentionDisplayNames(r.user_ids);
+            const who = names.length ? names.join(', ') : (r.user_ids.length + ' ' + (r.user_ids.length === 1 ? 'person' : 'people'));
+            return '<button type="button" class="chat-msg__reaction-pill' + (mine ? ' is-mine' : '') + '" data-emoji="' + escapeHtml(r.emoji) + '" title="' + escapeHtml(who) + '">' +
                 r.emoji + ' <span>' + r.user_ids.length + '</span></button>';
         }).join('') + '</div>';
     }

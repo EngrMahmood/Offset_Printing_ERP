@@ -115,7 +115,7 @@
             video.autoplay = true;
             video.playsInline = true;
             video.title = 'Double-click to enlarge';
-            if (isLocal) video.muted = true;
+            if (isLocal) { video.muted = true; video.classList.add('is-local'); }
             videosEl.appendChild(video);
         }
         video.srcObject = stream;
@@ -317,7 +317,7 @@
 
     async function acceptIncomingCall() {
         if (!call.isIncoming) return;
-        if (window.ChatSound) window.ChatSound.stopRingtone();
+        if (window.ChatSound) { window.ChatSound.stopRingtone(); window.ChatSound.closeCallNotification(); }
         showOverlay('Connecting…');
         acceptBtn.hidden = true;
         muteBtn.hidden = false;
@@ -336,7 +336,7 @@
     }
 
     function endCall(sendDecline) {
-        if (window.ChatSound) window.ChatSound.stopRingtone();
+        if (window.ChatSound) { window.ChatSound.stopRingtone(); window.ChatSound.closeCallNotification(); }
         if (call.socket) {
             send({ event: sendDecline ? 'call-decline' : 'hangup', call_id: call.callId });
             call.socket.close();
@@ -442,6 +442,9 @@
         showOverlay('Incoming ' + call.callType + ' call…');
         acceptBtn.hidden = false;
         declineLabel.textContent = 'Decline';
-        if (window.ChatSound) window.ChatSound.playRingtone();
+        if (window.ChatSound) {
+            window.ChatSound.playRingtone();
+            window.ChatSound.showCallNotification(payload.sender_name);
+        }
     };
 })();
