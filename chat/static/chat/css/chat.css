@@ -236,9 +236,11 @@
 }
 .chat-call-overlay[hidden] { display: none; }
 .chat-call-overlay__box { position: relative; background: #0f172a; color: #fff; border-radius: 14px; padding: 24px; width: 420px; max-width: 90vw; text-align: center; }
+.chat-call-overlay__box:has(.chat-call-overlay__videos video) { width: 760px; }
 .chat-call-overlay__title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
 .chat-call-overlay__videos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
-.chat-call-overlay__videos video { width: 100%; border-radius: 8px; background: #1e293b; }
+.chat-call-overlay__videos video { width: 100%; max-height: 60vh; object-fit: contain; border-radius: 8px; background: #1e293b; cursor: zoom-in; }
+.chat-call-overlay__videos video:fullscreen { object-fit: contain; max-height: 100vh; background: #000; cursor: default; }
 .chat-call-overlay__actions { display: flex; gap: 10px; justify-content: center; }
 #chat-call-screenshare-btn.is-active { background: #2563eb; color: #fff; }
 .chat-call-overlay__minimize-btn {

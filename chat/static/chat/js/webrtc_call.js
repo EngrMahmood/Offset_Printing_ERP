@@ -114,11 +114,25 @@
             video.id = 'chat-call-video-' + userId;
             video.autoplay = true;
             video.playsInline = true;
+            video.title = 'Double-click to enlarge';
             if (isLocal) video.muted = true;
             videosEl.appendChild(video);
         }
         video.srcObject = stream;
     }
+
+    // Double-click any video (own camera, remote camera, or a shared screen)
+    // to view it fullscreen — the small grid inside the call box otherwise
+    // has no way to actually see shared-screen detail properly.
+    videosEl.addEventListener('dblclick', function (event) {
+        const video = event.target.closest('video');
+        if (!video) return;
+        if (document.fullscreenElement) {
+            document.exitFullscreen();
+        } else if (video.requestFullscreen) {
+            video.requestFullscreen();
+        }
+    });
 
     function connectCallSocket(roomId) {
         const socket = new WebSocket(window.ChatApp.wsUrl('/ws/chat/call/' + roomId + '/'));
@@ -160,8 +174,21 @@
             err.code = 'insecure-context';
             throw err;
         }
-        const constraints = { audio: true, video: callType === 'video' };
-        call.localStream = await navigator.mediaDevices.getUserMedia(constraints);
+        if (callType === 'video') {
+            try {
+                call.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: true });
+            } catch (e) {
+                // No camera on this particular machine shouldn't kill the whole
+                // call — the other participant's camera still works fine and
+                // this side can still see them; fall back to audio-only rather
+                // than failing outright. A truly missing microphone (the only
+                // hard requirement) still throws normally below.
+                call.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+                alert('No camera found on this device — joining with audio only. The other participant\'s video will still work.');
+            }
+        } else {
+            call.localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+        }
         addVideoEl(currentUserId, call.localStream, true);
         return call.localStream;
     }
