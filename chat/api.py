@@ -44,27 +44,49 @@ def _mark_own_message_read(room, user, message_id):
 
 
 def _parse_and_set_mentions(room, message):
-    """Server-side @name parsing: match @token substrings in the message body
-    against the room's active participants (username or full name), and set
-    Message.mentions accordingly. Client re-highlights against the returned
-    mentions list rather than a naive regex, so an @word matching a
-    non-participant is never mistakenly highlighted."""
+    """Server-side @name parsing: for every '@' in the message body, check
+    whether a participant's username or full name (case-insensitively)
+    appears right after it, and set Message.mentions accordingly.
+
+    Matching against the actual candidate list — rather than a generic
+    '@(\\w[\\w .]{0,40})'-style regex — is required because full names can
+    contain spaces with no delimiter marking where the name ends and the
+    rest of the sentence begins (e.g. "@John Smith please check" vs.
+    "@Bob check this"); a regex permissive enough to capture multi-word
+    names ends up swallowing trailing words too, so it stops matching real
+    names at all. Longest-candidate-first plus a word-boundary check after
+    the match keeps "@Bob" from matching inside "@Bobby"."""
     import re
 
-    tokens = set(re.findall(r'@(\w[\w .]{0,40})', message.body))
-    if not tokens:
+    body = message.body or ''
+    at_positions = [m.start() for m in re.finditer('@', body)]
+    if not at_positions:
         message.mentions.clear()
         return []
 
     participants = room.participants.filter(left_at__isnull=True).select_related('user')
-    matched_ids = []
+    candidates = []
     for participant in participants:
         user = participant.user
-        candidates = {user.username.lower(), (user.get_full_name() or '').lower()}
-        for token in tokens:
-            if token.strip().lower() in candidates and token.strip():
-                matched_ids.append(user.id)
-                break
+        for name in {user.username, (user.get_full_name() or '').strip()}:
+            if name:
+                candidates.append((name.lower(), user.id))
+    candidates.sort(key=lambda c: -len(c[0]))
+
+    matched_ids = set()
+    for pos in at_positions:
+        remainder = body[pos + 1:].lower()
+        for name_lower, user_id in candidates:
+            if not remainder.startswith(name_lower):
+                continue
+            end = pos + 1 + len(name_lower)
+            next_char = body[end:end + 1]
+            if next_char.isalnum():
+                continue
+            matched_ids.add(user_id)
+            break
+
+    matched_ids = list(matched_ids)
     message.mentions.set(matched_ids)
     return matched_ids
 
@@ -576,15 +598,16 @@ class IceConfigView(APIView):
 
 
 class OnlineUsersView(APIView):
-    """Snapshot of currently-online user ids, for a client's initial state on
-    page load — presence deltas afterward arrive via PresenceConsumer's
-    presence_online/presence_offline WebSocket broadcasts."""
+    """Snapshot of every connected user's status ('online' or 'away'), for a
+    client's initial state on page load — presence deltas afterward arrive
+    via PresenceConsumer's presence_changed WebSocket broadcasts. Anyone
+    absent from the map is offline."""
 
     permission_classes = [IsAuthenticated, ChatAccessPermission]
 
     def get(self, request):
         from . import presence
-        return Response({'online_user_ids': presence.get_online_user_ids()})
+        return Response({'statuses': presence.get_statuses()})
 
 
 class ChattableUserListView(APIView):

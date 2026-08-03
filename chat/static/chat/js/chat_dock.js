@@ -363,8 +363,11 @@
         return window.ChatApp && window.ChatApp.currentRoomId === roomId;
     }
 
+    let presenceSocket = null;
+
     function connectPresence() {
         const socket = new WebSocket(wsUrl('/ws/chat/presence/'));
+        presenceSocket = socket;
         socket.onmessage = function (event) {
             const payload = JSON.parse(event.data);
             if (payload.event === 'new_message') {
@@ -402,6 +405,24 @@
             setTimeout(connectPresence, 4000);
         };
     }
+
+    // ---- Activity ping (drives online vs away; see chat_socket.js) ----------
+
+    let lastActivityPingAt = 0;
+    function pingActivity() {
+        const now = Date.now();
+        if (now - lastActivityPingAt < 15000) return;
+        lastActivityPingAt = now;
+        if (presenceSocket && presenceSocket.readyState === WebSocket.OPEN) {
+            presenceSocket.send(JSON.stringify({ event: 'activity' }));
+        }
+    }
+    ['mousemove', 'keydown', 'click', 'touchstart'].forEach(function (evt) {
+        document.addEventListener(evt, pingActivity, { passive: true });
+    });
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') pingActivity();
+    });
 
     // ---- Init -----------------------------------------------------------------
 

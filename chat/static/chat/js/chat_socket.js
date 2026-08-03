@@ -20,9 +20,13 @@
         presenceSocket: null,
         typingTimeout: null,
         oldestLoadedMessageId: null,
-        onlineUserIds: new Set(),
+        userStatuses: {}, // userId -> 'online' | 'away'; absent = offline
         currentRoomDetail: null,
     };
+
+    function getUserStatus(userId) {
+        return state.userStatuses[userId] || 'offline';
+    }
 
     function escapeHtml(value) {
         return String(value == null ? '' : value)
@@ -93,8 +97,8 @@
             const preview = room.last_message ? escapeHtml(room.last_message.body || '[Attachment]') : 'No messages yet';
             const badge = room.unread_count > 0
                 ? '<span class="chat-room-item__badge">' + (room.unread_count > 99 ? '99+' : room.unread_count) + '</span>' : '';
-            const isOnline = room.other_user_id && state.onlineUserIds.has(room.other_user_id);
-            const avatarClass = 'chat-room-item__avatar' + (isOnline ? ' is-online' : '');
+            const otherStatus = room.other_user_id ? getUserStatus(room.other_user_id) : 'offline';
+            const avatarClass = 'chat-room-item__avatar' + (otherStatus !== 'offline' ? ' is-' + otherStatus : '');
             return (
                 '<div class="chat-room-item' + active + '" data-room-id="' + room.id + '">' +
                 '<div class="' + avatarClass + '">' + escapeHtml(initials(room.display_name)) + '</div>' +
@@ -111,12 +115,16 @@
         const room = state.rooms.find(function (r) { return r.id === state.currentRoomId; });
         const label = document.getElementById('chat-thread-presence');
         if (!label) return;
-        if (room && room.other_user_id && state.onlineUserIds.has(room.other_user_id)) {
+        const status = room && room.other_user_id ? getUserStatus(room.other_user_id) : 'offline';
+        label.classList.remove('is-online', 'is-away');
+        if (status === 'online') {
             label.textContent = 'Online';
             label.classList.add('is-online');
+        } else if (status === 'away') {
+            label.textContent = 'Away';
+            label.classList.add('is-away');
         } else {
             label.textContent = '';
-            label.classList.remove('is-online');
         }
     }
 
@@ -827,13 +835,12 @@
                 loadRoomList();
             } else if (payload.event === 'incoming_call') {
                 window.ChatApp.onIncomingCall(payload);
-            } else if (payload.event === 'presence_online') {
-                state.onlineUserIds.add(payload.user_id);
-                renderRoomList();
-                updatePresenceLabel();
-                renderOnlineUsersPanel();
-            } else if (payload.event === 'presence_offline') {
-                state.onlineUserIds.delete(payload.user_id);
+            } else if (payload.event === 'presence_changed') {
+                if (payload.status === 'offline') {
+                    delete state.userStatuses[payload.user_id];
+                } else {
+                    state.userStatuses[payload.user_id] = payload.status;
+                }
                 renderRoomList();
                 updatePresenceLabel();
                 renderOnlineUsersPanel();
@@ -854,18 +861,43 @@
     function loadOnlineSnapshot() {
         if (!urls.presenceOnline) return;
         api(urls.presenceOnline).then(function (data) {
-            state.onlineUserIds = new Set(data.online_user_ids || []);
+            state.userStatuses = {};
+            const statuses = data.statuses || {};
+            Object.keys(statuses).forEach(function (uid) { state.userStatuses[uid] = statuses[uid]; });
             renderRoomList();
             updatePresenceLabel();
             renderOnlineUsersPanel();
         }).catch(function () { /* ignore */ });
     }
 
+    // ---- Activity ping (drives online vs away) ------------------------------
+    // A connection alone only proves "not offline" — real activity (mouse,
+    // keyboard, or the tab becoming visible again) is what promotes a user
+    // from away back to online. Throttled so it doesn't spam the socket.
+
+    let lastActivityPingAt = 0;
+    function pingActivity() {
+        const now = Date.now();
+        if (now - lastActivityPingAt < 15000) return;
+        lastActivityPingAt = now;
+        if (state.presenceSocket && state.presenceSocket.readyState === WebSocket.OPEN) {
+            state.presenceSocket.send(JSON.stringify({ event: 'activity' }));
+        }
+    }
+    ['mousemove', 'keydown', 'click', 'touchstart'].forEach(function (evt) {
+        document.addEventListener(evt, pingActivity, { passive: true });
+    });
+    document.addEventListener('visibilitychange', function () {
+        if (document.visibilityState === 'visible') pingActivity();
+    });
+
     // ---- Online users panel ------------------------------------------------
 
     const onlineToggleBtn = document.getElementById('chat-online-toggle-btn');
     const onlinePanel = document.getElementById('chat-online-panel');
     const onlinePanelItems = document.getElementById('chat-online-panel-items');
+    const STATUS_LABELS = { online: 'Online', away: 'Away', offline: 'Offline' };
+    const STATUS_ORDER = { online: 0, away: 1, offline: 2 };
 
     function renderOnlineUsersPanel() {
         if (!onlinePanelItems) return;
@@ -873,13 +905,19 @@
             onlinePanelItems.innerHTML = '<div class="chat-empty-note">Loading…</div>';
             return;
         }
-        const online = chattableUsers.filter(function (u) { return state.onlineUserIds.has(u.id); });
-        onlinePanelItems.innerHTML = online.length
-            ? online.map(function (u) {
+        const sorted = chattableUsers.slice().sort(function (a, b) {
+            return STATUS_ORDER[getUserStatus(a.id)] - STATUS_ORDER[getUserStatus(b.id)];
+        });
+        onlinePanelItems.innerHTML = sorted.length
+            ? sorted.map(function (u) {
+                const status = getUserStatus(u.id);
                 return '<button type="button" class="chat-online-panel__row" data-user-id="' + u.id + '">' +
-                    '<span class="chat-online-panel__dot"></span>' + escapeHtml(u.display_name) + '</button>';
+                    '<span class="chat-online-panel__dot chat-online-panel__dot--' + status + '"></span>' +
+                    '<span class="chat-online-panel__name">' + escapeHtml(u.display_name) + '</span>' +
+                    '<span class="chat-online-panel__status">' + STATUS_LABELS[status] + '</span>' +
+                    '</button>';
             }).join('')
-            : '<div class="chat-empty-note">No one else is online right now.</div>';
+            : '<div class="chat-empty-note">No other chat users found.</div>';
     }
 
     if (onlineToggleBtn && onlinePanel) {
@@ -989,7 +1027,8 @@
         scrollToBottom: scrollToBottom,
         loadRoomList: loadRoomList,
         onIncomingCall: function () { /* overridden by webrtc_call.js */ },
-        isUserOnline: function (userId) { return state.onlineUserIds.has(parseInt(userId, 10)); },
+        isUserOnline: function (userId) { return getUserStatus(parseInt(userId, 10)) !== 'offline'; },
+        getUserStatus: function (userId) { return getUserStatus(parseInt(userId, 10)); },
         getCurrentRoomDetail: function () { return state.currentRoomDetail; },
     };
 

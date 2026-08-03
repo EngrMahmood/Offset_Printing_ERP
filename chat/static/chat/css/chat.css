@@ -30,7 +30,12 @@
     font-size: 13px; color: #1e293b; cursor: pointer;
 }
 .chat-online-panel__row:hover { background: #f1f5f9; }
-.chat-online-panel__dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
+.chat-online-panel__dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.chat-online-panel__dot--online { background: #22c55e; }
+.chat-online-panel__dot--away { background: #f59e0b; }
+.chat-online-panel__dot--offline { background: #cbd5e1; }
+.chat-online-panel__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-online-panel__status { font-size: 11px; color: #94a3b8; flex-shrink: 0; }
 
 .chat-room-item {
     display: flex;
@@ -47,11 +52,14 @@
     background: #2563eb; color: #fff; display: flex; align-items: center; justify-content: center;
     font-weight: 700; font-size: 14px; flex-shrink: 0;
 }
-.chat-room-item__avatar.is-online::after {
+.chat-room-item__avatar.is-online::after,
+.chat-room-item__avatar.is-away::after {
     content: ''; position: absolute; bottom: -1px; right: -1px;
     width: 11px; height: 11px; border-radius: 50%;
-    background: #22c55e; border: 2px solid #f8fafc;
+    border: 2px solid #f8fafc;
 }
+.chat-room-item__avatar.is-online::after { background: #22c55e; }
+.chat-room-item__avatar.is-away::after { background: #f59e0b; }
 .chat-room-item__body { flex: 1; min-width: 0; }
 .chat-room-item__name { font-weight: 600; font-size: 13.5px; color: #1e293b; }
 .chat-room-item__preview { font-size: 12px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -76,6 +84,7 @@
 .chat-thread__title { font-weight: 700; color: #1e293b; display: flex; flex-direction: column; }
 .chat-thread__presence { font-size: 11px; font-weight: 400; color: #94a3b8; min-height: 14px; }
 .chat-thread__presence.is-online { color: #16a34a; }
+.chat-thread__presence.is-away { color: #d97706; }
 .chat-thread__typing { font-size: 11px; font-weight: 400; color: #16a34a; min-height: 14px; }
 .chat-thread__actions { display: flex; gap: 6px; }
 

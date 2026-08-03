@@ -1,3 +1,4 @@
+import asyncio
 import json
 
 from channels.db import database_sync_to_async
@@ -64,8 +65,13 @@ class ChatConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
 
 
 class PresenceConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
-    """One long-lived socket per session: online/offline presence,
-    cross-room unread-badge pushes, and incoming-call notifications."""
+    """One long-lived socket per session: online/away/offline presence,
+    cross-room unread-badge pushes, and incoming-call notifications.
+
+    Presence is heartbeat/TTL-based (see presence.py) rather than purely
+    edge-triggered, so an ungraceful disconnect (crashed tab, killed
+    process, a LAN PC losing power) self-heals within CONN_TTL seconds
+    instead of leaving the user stuck "online" forever."""
 
     async def connect(self):
         user = self.scope.get('user')
@@ -79,26 +85,53 @@ class PresenceConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_add(self.user_group, self.channel_name)
         await self.channel_layer.group_add('chat_presence', self.channel_name)
         await self.accept()
-        became_online = await database_sync_to_async(presence.mark_online)(user.id)
-        if became_online:
-            await self.channel_layer.group_send('chat_presence', {
-                'type': 'chat.event',
-                'payload': {'event': 'presence_online', 'user_id': user.id},
-            })
+
+        before = await database_sync_to_async(presence.get_status)(user.id)
+        await database_sync_to_async(presence.connect)(user.id)
+        await database_sync_to_async(presence.touch_activity)(user.id)
+        await self._broadcast_if_changed(user.id, before)
+
+        self._heartbeat_task = asyncio.ensure_future(self._heartbeat_loop(user.id))
+
+    async def _heartbeat_loop(self, user_id):
+        from . import presence
+        try:
+            while True:
+                await asyncio.sleep(presence.HEARTBEAT_INTERVAL)
+                await database_sync_to_async(presence.heartbeat)(user_id)
+        except asyncio.CancelledError:
+            pass
 
     async def disconnect(self, close_code):
         user = self.scope.get('user')
+        if hasattr(self, '_heartbeat_task'):
+            self._heartbeat_task.cancel()
         if hasattr(self, 'user_group'):
             await self.channel_layer.group_discard(self.user_group, self.channel_name)
             await self.channel_layer.group_discard('chat_presence', self.channel_name)
         if user and getattr(user, 'is_authenticated', False):
             from . import presence
-            became_offline = await database_sync_to_async(presence.mark_offline)(user.id)
-            if became_offline:
-                await self.channel_layer.group_send('chat_presence', {
-                    'type': 'chat.event',
-                    'payload': {'event': 'presence_offline', 'user_id': user.id},
-                })
+            before = await database_sync_to_async(presence.get_status)(user.id)
+            await database_sync_to_async(presence.disconnect)(user.id)
+            await self._broadcast_if_changed(user.id, before)
+
+    async def receive_json(self, content, **kwargs):
+        if content.get('event') == 'activity':
+            user = self.scope.get('user')
+            if user and getattr(user, 'is_authenticated', False):
+                from . import presence
+                before = await database_sync_to_async(presence.get_status)(user.id)
+                await database_sync_to_async(presence.touch_activity)(user.id)
+                await self._broadcast_if_changed(user.id, before)
+
+    async def _broadcast_if_changed(self, user_id, before_status):
+        from . import presence
+        after_status = await database_sync_to_async(presence.get_status)(user_id)
+        if after_status != before_status:
+            await self.channel_layer.group_send('chat_presence', {
+                'type': 'chat.event',
+                'payload': {'event': 'presence_changed', 'user_id': user_id, 'status': after_status},
+            })
 
     async def chat_event(self, event):
         await self.send_json(event['payload'])
@@ -145,6 +178,8 @@ class CallSignalingConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
         event = content.get('event')
         user = self.scope.get('user')
 
+        content.setdefault('from_user_id', user.id)
+
         if event == 'call-invite':
             call_id = await database_sync_to_async(self._create_call_session)(user, content.get('call_type', 'audio'))
             content['call_id'] = call_id
@@ -154,7 +189,6 @@ class CallSignalingConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
         elif event in {'call-decline', 'hangup'}:
             await database_sync_to_async(self._end_call_session)(content.get('call_id'), event)
 
-        content.setdefault('from_user_id', user.id)
         await self.channel_layer.group_send(self.group_name, {'type': 'chat.event', 'payload': content})
 
     async def _notify_other_participants(self, sender, event_type, data):
