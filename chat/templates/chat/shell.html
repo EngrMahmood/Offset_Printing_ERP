@@ -24,6 +24,12 @@
     <aside class="chat-room-list" id="chat-room-list">
         <div class="chat-room-list__header">
             <input type="search" id="chat-room-search" placeholder="Search chats..." class="erp-input">
+            <button type="button" id="chat-online-toggle-btn" class="erp-btn erp-btn-icon" title="Who's online"><i class="fas fa-circle-user"></i></button>
+            <button type="button" id="chat-sound-toggle-btn" class="erp-btn erp-btn-icon" title="Mute chat sounds"><i class="fas fa-volume-up"></i></button>
+        </div>
+        <div class="chat-online-panel" id="chat-online-panel" hidden>
+            <div class="chat-online-panel__header">Online now</div>
+            <div class="chat-online-panel__items" id="chat-online-panel-items"></div>
         </div>
         <div class="chat-room-list__items" id="chat-room-items">
             <div class="chat-empty-note">Loading conversations…</div>

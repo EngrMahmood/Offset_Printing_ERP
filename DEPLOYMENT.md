@@ -101,11 +101,12 @@ one logged in.
 
 ### 6. Enable HTTPS for calling (self-signed certificate)
 
-WebRTC's camera/microphone access (`getUserMedia`) only works in a browser
-"secure context" — `https:` or `localhost`/`127.0.0.1`. Since this server is
-reached over plain `http://192.168.88.30:8000` from other LAN PCs, calling
-silently fails everywhere except the server machine itself. Fix: serve a
-second Daphne listener over HTTPS with a self-signed certificate.
+WebRTC's camera/microphone access (`getUserMedia`/`getDisplayMedia`) only
+works in a browser "secure context" — `https:` or `localhost`/`127.0.0.1`.
+Since this server is reached over plain `http://` from other LAN PCs, calling
+and screen sharing silently fail everywhere except the server machine itself.
+Fix: serve the whole site over HTTPS with a self-signed certificate, on the
+**same port** the site already uses — not a second parallel port.
 
 Generate a cert (PowerShell, using OpenSSL if available, or the .NET
 `New-SelfSignedCertificate` cmdlet — either works; example with OpenSSL):
@@ -114,26 +115,28 @@ Generate a cert (PowerShell, using OpenSSL if available, or the .NET
 openssl req -x509 -newkey rsa:2048 -nodes -keyout chat_key.pem -out chat_cert.pem -days 3650 -subj "/CN=192.168.88.30" -addext "subjectAltName=IP:192.168.88.30"
 ```
 
-Store `chat_key.pem`/`chat_cert.pem` **outside the git repo** (e.g. next to
-`logs/` under `E:\Offset_Printing_ERP\certs\`) — never commit private keys.
+Store `chat_key.pem`/`chat_cert.pem` under `E:\Offset_Printing_ERP\certs\`
+(gitignored, see `.gitignore` — never commit private keys).
 
-Add a second Daphne bind alongside the existing plain-HTTP one in
-`start_server_task.bat` / `start server.bat`:
+The actual production launcher, `scripts\run_server.bat`, already does this:
+it binds Daphne **directly** to a single TLS listener on `:8000`
 
 ```bash
-daphne -b 0.0.0.0 -p 8443 -e ssl:8443:privateKey=E:\Offset_Printing_ERP\certs\chat_key.pem:certKey=E:\Offset_Printing_ERP\certs\chat_cert.pem Offset_ERP.asgi:application
+python -m daphne -e ssl:8000:privateKey=certs/chat_key.pem:certKey=certs/chat_cert.pem:interface=192.168.88.30 Offset_ERP.asgi:application
 ```
 
-(Keep the plain `:8000` listener running too, or run both from one process
-via Daphne's multi-endpoint `-e` flags — either is fine.) `Offset_ERP/settings.py`
-already trusts `https://192.168.88.30:8443` via `CSRF_TRUSTED_ORIGINS`
-(overridable with the `CSRF_TRUSTED_ORIGINS` env var if the port/IP differ).
+— there is no separate plain-HTTP `:8000` anymore. It also starts a small
+companion process, `scripts\http_redirect_server.py`, listening on port `:80`
+that 301-redirects any plain-HTTP request to the HTTPS site, so old bookmarks
+and anyone typing the bare IP still land somewhere useful instead of a
+connection error. `Offset_ERP/settings.py` already trusts
+`https://192.168.88.30:8000` via `CSRF_TRUSTED_ORIGINS` (overridable with the
+`CSRF_TRUSTED_ORIGINS` env var if the port/IP differ).
 
-On each LAN PC, the first visit to `https://192.168.88.30:8443` shows a
+On each LAN PC, the first visit to `https://192.168.88.30:8000` shows a
 "Your connection is not private" warning (expected for a self-signed cert on
 an internal LAN) — click **Advanced → Proceed**. This is a one-time step per
-browser per machine. Bookmark/share the `https://` link, not the old `http://`
-one, so calling works.
+browser per machine.
 
 ## If something breaks
 

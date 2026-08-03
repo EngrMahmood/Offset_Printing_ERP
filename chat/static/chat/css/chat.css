@@ -17,8 +17,20 @@
     background: #f8fafc;
 }
 
-.chat-room-list__header { padding: 12px; border-bottom: 1px solid #e2e8f0; }
+.chat-room-list__header { padding: 12px; border-bottom: 1px solid #e2e8f0; display: flex; align-items: center; gap: 8px; }
+.chat-room-list__header .erp-input { flex: 1; min-width: 0; }
 .chat-room-list__items { flex: 1; overflow-y: auto; }
+
+.chat-online-panel { border-bottom: 1px solid #e2e8f0; background: #fff; max-height: 220px; overflow-y: auto; }
+.chat-online-panel__header { padding: 8px 12px 4px; font-size: 11px; font-weight: 700; text-transform: uppercase; color: #94a3b8; letter-spacing: .04em; }
+.chat-online-panel__items { padding-bottom: 6px; }
+.chat-online-panel__row {
+    display: flex; align-items: center; gap: 8px; width: 100%;
+    padding: 6px 12px; border: none; background: none; text-align: left;
+    font-size: 13px; color: #1e293b; cursor: pointer;
+}
+.chat-online-panel__row:hover { background: #f1f5f9; }
+.chat-online-panel__dot { width: 8px; height: 8px; border-radius: 50%; background: #22c55e; flex-shrink: 0; }
 
 .chat-room-item {
     display: flex;

@@ -616,19 +616,7 @@
 
     // ---- Read receipts ---------------------------------------------------
 
-    function updateSeenIndicator(readerUserId, lastReadMessageId) {
-        if (readerUserId === currentUserId) return; // ignore our own mark-read
-        const container = document.getElementById('chat-thread-messages');
-        container.querySelectorAll('.chat-msg__seen').forEach(function (el) { el.remove(); });
-        if (!lastReadMessageId) return;
-
-        const ownMsgs = Array.from(container.querySelectorAll('.chat-msg.is-own'));
-        let target = null;
-        for (let i = ownMsgs.length - 1; i >= 0; i--) {
-            if (parseInt(ownMsgs[i].dataset.messageId, 10) <= lastReadMessageId) { target = ownMsgs[i]; break; }
-        }
-        if (!target) return;
-
+    function appendSeenLabel(target) {
         const meta = target.querySelector('.chat-msg__meta');
         const seen = document.createElement('span');
         seen.className = 'chat-msg__seen';
@@ -639,6 +627,20 @@
             showReadBy(target, target.dataset.messageId);
         });
         meta.appendChild(seen);
+    }
+
+    function updateSeenIndicator(readerUserId, lastReadMessageId) {
+        if (readerUserId === currentUserId) return; // ignore our own mark-read
+        const container = document.getElementById('chat-thread-messages');
+        container.querySelectorAll('.chat-msg__seen').forEach(function (el) { el.remove(); });
+        if (!lastReadMessageId) return;
+
+        const ownMsgs = Array.from(container.querySelectorAll('.chat-msg.is-own'));
+        for (let i = ownMsgs.length - 1; i >= 0; i--) {
+            if (parseInt(ownMsgs[i].dataset.messageId, 10) <= lastReadMessageId) {
+                appendSeenLabel(ownMsgs[i]);
+            }
+        }
     }
 
     function showReadBy(el, msgId) {
@@ -828,10 +830,12 @@
                 state.onlineUserIds.add(payload.user_id);
                 renderRoomList();
                 updatePresenceLabel();
+                renderOnlineUsersPanel();
             } else if (payload.event === 'presence_offline') {
                 state.onlineUserIds.delete(payload.user_id);
                 renderRoomList();
                 updatePresenceLabel();
+                renderOnlineUsersPanel();
             } else if (payload.event === 'group_deleted') {
                 if (payload.room_id === state.currentRoomId) {
                     handleRoomEvent(payload.room_id, payload);
@@ -852,7 +856,53 @@
             state.onlineUserIds = new Set(data.online_user_ids || []);
             renderRoomList();
             updatePresenceLabel();
+            renderOnlineUsersPanel();
         }).catch(function () { /* ignore */ });
+    }
+
+    // ---- Online users panel ------------------------------------------------
+
+    const onlineToggleBtn = document.getElementById('chat-online-toggle-btn');
+    const onlinePanel = document.getElementById('chat-online-panel');
+    const onlinePanelItems = document.getElementById('chat-online-panel-items');
+
+    function renderOnlineUsersPanel() {
+        if (!onlinePanelItems) return;
+        if (!chattableUsers) {
+            onlinePanelItems.innerHTML = '<div class="chat-empty-note">Loading…</div>';
+            return;
+        }
+        const online = chattableUsers.filter(function (u) { return state.onlineUserIds.has(u.id); });
+        onlinePanelItems.innerHTML = online.length
+            ? online.map(function (u) {
+                return '<button type="button" class="chat-online-panel__row" data-user-id="' + u.id + '">' +
+                    '<span class="chat-online-panel__dot"></span>' + escapeHtml(u.display_name) + '</button>';
+            }).join('')
+            : '<div class="chat-empty-note">No one else is online right now.</div>';
+    }
+
+    if (onlineToggleBtn && onlinePanel) {
+        onlineToggleBtn.addEventListener('click', function () {
+            const isHidden = onlinePanel.hidden;
+            onlinePanel.hidden = !isHidden;
+            if (isHidden) {
+                loadChattableUsers().then(renderOnlineUsersPanel);
+            }
+        });
+    }
+
+    if (onlinePanelItems) {
+        onlinePanelItems.addEventListener('click', function (event) {
+            const row = event.target.closest('.chat-online-panel__row');
+            if (!row) return;
+            const userId = row.dataset.userId;
+            api(urls.roomList, { method: 'POST', body: { room_type: 'dm', user_id: userId } })
+                .then(function (room) {
+                    onlinePanel.hidden = true;
+                    loadRoomList();
+                    openRoom(room.id);
+                }).catch(function (err) { alert((err.data && err.data.detail) || 'Could not start chat.'); });
+        });
     }
 
     // ---- New DM / group modals -------------------------------------------
@@ -942,6 +992,7 @@
 
     loadRoomList();
     loadOnlineSnapshot();
+    loadChattableUsers().then(renderOnlineUsersPanel);
     connectPresenceSocket();
 
     // Deep link from a toast notification, e.g. /chat/?room=12
