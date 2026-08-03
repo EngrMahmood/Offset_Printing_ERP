@@ -156,6 +156,8 @@
             // calls form a star of connections through the caller rather than a
             // full mesh between every pair — acceptable at the ~3-4 participant
             // scale expected on this LAN deployment.
+            if (window.ChatSound) window.ChatSound.stopRingtone();
+            showOverlay('Connecting…');
             offerTo(fromUserId);
         } else if (payload.event === 'hangup' || payload.event === 'call-decline') {
             endCall(false);
@@ -171,7 +173,17 @@
         call.roomId = roomId;
         call.callType = callType;
         call.isIncoming = false;
-        showOverlay('Calling…');
+
+        // For a DM, the other participant being online means they'll actually
+        // hear this ring live ("Ringing…"); offline just means the call
+        // request is queued for whenever they next open the app ("Calling…").
+        // Group calls have no single peer to check, so keep the generic label.
+        const roomDetail = window.ChatApp.getCurrentRoomDetail && window.ChatApp.getCurrentRoomDetail();
+        let statusLabel = 'Calling…';
+        if (roomDetail && roomDetail.room_type === 'dm' && roomDetail.other_user_id) {
+            statusLabel = window.ChatApp.isUserOnline(roomDetail.other_user_id) ? 'Ringing…' : 'Calling…';
+        }
+        showOverlay(statusLabel);
         declineLabel.textContent = 'Cancel';
         muteBtn.hidden = false;
         screenshareBtn.hidden = false;
@@ -186,6 +198,7 @@
 
         await connectCallSocket(roomId);
         send({ event: 'call-invite', call_type: callType });
+        if (window.ChatSound) window.ChatSound.playRingtone();
 
         // Offer to any participant who's already on the room's call socket
         // (best-effort mesh join; primary target is the direct-message peer).

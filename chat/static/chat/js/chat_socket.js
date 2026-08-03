@@ -988,6 +988,8 @@
         scrollToBottom: scrollToBottom,
         loadRoomList: loadRoomList,
         onIncomingCall: function () { /* overridden by webrtc_call.js */ },
+        isUserOnline: function (userId) { return state.onlineUserIds.has(parseInt(userId, 10)); },
+        getCurrentRoomDetail: function () { return state.currentRoomDetail; },
     };
 
     loadRoomList();
