@@ -745,6 +745,7 @@
             buzzBtn.disabled = true;
             setTimeout(function () { buzzBtn.disabled = false; }, 5000);
             triggerBuzzShake();
+            if (window.ChatSound) window.ChatSound.playBuzz(); // immediate feedback for the sender too
             api((urls.roomBuzz || '').replace('/0/', '/' + state.currentRoomId + '/'), { method: 'POST' })
                 .catch(function () { /* cooldown or transient failure — button re-enables on its own timer */ });
         });
