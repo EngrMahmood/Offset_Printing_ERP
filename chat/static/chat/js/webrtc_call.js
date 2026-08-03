@@ -15,6 +15,8 @@
     const screenshareBtn = document.getElementById('chat-call-screenshare-btn');
     const audioBtn = document.getElementById('chat-call-audio-btn');
     const videoBtn = document.getElementById('chat-call-video-btn');
+    const minimizeBtn = document.getElementById('chat-call-minimize-btn');
+    const overlayBox = document.querySelector('#chat-call-overlay .chat-call-overlay__box');
 
     let iceServers = [{ urls: ['stun:stun.l.google.com:19302'] }];
     fetch(root.dataset.iceConfigUrl, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
@@ -38,6 +40,7 @@
 
     function resetCallUI() {
         overlay.hidden = true;
+        overlay.classList.remove('is-minimized');
         videosEl.innerHTML = '';
         acceptBtn.hidden = true;
         muteBtn.hidden = true;
@@ -47,8 +50,30 @@
         stopCallTimer();
     }
 
+    function setMinimized(minimized) {
+        overlay.classList.toggle('is-minimized', minimized);
+        minimizeBtn.innerHTML = minimized
+            ? '<i class="fas fa-window-restore"></i>'
+            : '<i class="fas fa-window-minimize"></i>';
+    }
+
+    minimizeBtn.addEventListener('click', function (event) {
+        event.stopPropagation();
+        setMinimized(!overlay.classList.contains('is-minimized'));
+    });
+    // While minimized, the whole pill acts as a "restore" button — except its
+    // own action buttons (mute/decline/etc.), which should keep working
+    // without expanding the overlay first.
+    overlayBox.addEventListener('click', function (event) {
+        if (overlay.classList.contains('is-minimized') && !event.target.closest('button')) {
+            setMinimized(false);
+        }
+    });
+
     function showOverlay(title) {
         overlay.hidden = false;
+        overlay.classList.remove('is-minimized');
+        minimizeBtn.innerHTML = '<i class="fas fa-window-minimize"></i>';
         titleEl.textContent = title;
     }
 
@@ -338,6 +363,11 @@
         replaceOutgoingVideoTrack(screenTrack);
         addVideoEl(currentUserId, stream, true);
         screenshareBtn.classList.add('is-active');
+        // The whole point of sharing your screen is showing something else —
+        // a full-screen modal sitting on top of it defeats that. Shrink to a
+        // small corner pill automatically so the rest of the page (or
+        // whatever else is on screen) stays visible and usable.
+        setMinimized(true);
 
         screenTrack.addEventListener('ended', function () {
             stopScreenShare();

@@ -235,12 +235,39 @@
     display: flex; align-items: center; justify-content: center; z-index: 2000;
 }
 .chat-call-overlay[hidden] { display: none; }
-.chat-call-overlay__box { background: #0f172a; color: #fff; border-radius: 14px; padding: 24px; width: 420px; max-width: 90vw; text-align: center; }
+.chat-call-overlay__box { position: relative; background: #0f172a; color: #fff; border-radius: 14px; padding: 24px; width: 420px; max-width: 90vw; text-align: center; }
 .chat-call-overlay__title { font-size: 16px; font-weight: 600; margin-bottom: 16px; }
 .chat-call-overlay__videos { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 16px; }
 .chat-call-overlay__videos video { width: 100%; border-radius: 8px; background: #1e293b; }
 .chat-call-overlay__actions { display: flex; gap: 10px; justify-content: center; }
 #chat-call-screenshare-btn.is-active { background: #2563eb; color: #fff; }
+.chat-call-overlay__minimize-btn {
+    position: absolute; top: 10px; right: 12px; background: none; border: none;
+    color: rgba(255,255,255,0.6); cursor: pointer; font-size: 13px; padding: 4px;
+}
+.chat-call-overlay__minimize-btn:hover { color: #fff; }
+
+/* Minimized / picture-in-picture mode: shrinks to a small draggable-feeling
+   pill in the corner instead of a full-screen modal, so sharing your screen
+   or just staying on a call doesn't block the rest of the page — the whole
+   point of "work in the background" during a call. */
+.chat-call-overlay.is-minimized {
+    background: transparent; display: block;
+    inset: auto; right: 16px; bottom: 16px; top: auto; left: auto;
+    width: auto; height: auto; pointer-events: none;
+}
+.chat-call-overlay.is-minimized .chat-call-overlay__box {
+    pointer-events: auto; width: auto; padding: 10px 14px; border-radius: 999px;
+    display: flex; align-items: center; gap: 10px; box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    cursor: pointer;
+}
+.chat-call-overlay.is-minimized .chat-call-overlay__videos,
+.chat-call-overlay.is-minimized .chat-call-overlay__minimize-btn { display: none; }
+.chat-call-overlay.is-minimized .chat-call-overlay__title { margin-bottom: 0; font-size: 13px; white-space: nowrap; }
+.chat-call-overlay.is-minimized .chat-call-overlay__actions { gap: 6px; }
+.chat-call-overlay.is-minimized .chat-call-overlay__actions .erp-btn { padding: 6px 10px; }
+.chat-call-overlay.is-minimized #chat-call-accept-btn span,
+.chat-call-overlay.is-minimized #chat-call-decline-btn span { display: none; }
 
 .chat-emoji-picker {
     position: fixed; z-index: 2100; width: 280px; background: #fff;
