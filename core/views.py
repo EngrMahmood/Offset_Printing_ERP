@@ -1836,6 +1836,108 @@ def manage_user_roles(request):
 
 
 @login_required
+def user_create(request):
+    """Superuser-only account creation. No password is ever entered here —
+    the new user gets an emailed set-password link (same token flow as
+    self-service password reset)."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can create user accounts.')
+        return redirect('notification_settings_home')
+
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.encoding import force_bytes
+    from django.utils.http import urlsafe_base64_encode
+    from django.core.mail import send_mail
+    from django.template.loader import render_to_string
+    from core.models import Role, Department
+
+    User = get_user_model()
+    role_choices = list(Role.objects.order_by('display_name').values_list('slug', 'display_name'))
+    departments = Department.objects.all().order_by('name')
+
+    if request.method == 'POST':
+        username = (request.POST.get('username') or '').strip()
+        email = (request.POST.get('email') or '').strip()
+        first_name = (request.POST.get('first_name') or '').strip()
+        last_name = (request.POST.get('last_name') or '').strip()
+        role = (request.POST.get('role') or '').strip()
+        department_id = request.POST.get('department') or None
+
+        if not username or not email or not role:
+            messages.error(request, 'Username, email, and role are required.')
+        elif User.objects.filter(username__iexact=username).exists():
+            messages.error(request, f"A user named '{username}' already exists.")
+        else:
+            user = User.objects.create(
+                username=username, email=email,
+                first_name=first_name, last_name=last_name,
+                is_active=True,
+            )
+            user.set_unusable_password()
+            user.save()
+
+            profile = user.profile
+            profile.role = role
+            profile.department_id = department_id
+            profile.save()
+
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            reset_link = request.build_absolute_uri(
+                reverse('password_reset_confirm', kwargs={'uidb64': uid, 'token': token})
+            )
+            email_body = render_to_string('user_welcome_email.html', {
+                'user': user, 'reset_link': reset_link,
+            })
+            send_mail(
+                subject='Welcome to Offset ERP - Set Your Password',
+                message=email_body,
+                from_email=None,
+                recipient_list=[email],
+                fail_silently=True,
+            )
+
+            messages.success(request, f"User '{username}' created. A set-password link was emailed to {email}.")
+            return redirect('notification_settings_home')
+
+    context = {
+        'role_choices': role_choices,
+        'departments': departments,
+    }
+    return render(request, 'user_create.html', context)
+
+
+@login_required
+@require_POST
+def email_settings_edit(request):
+    """Superuser-only: store the Gmail sender used for password-reset and
+    new-user emails. Read at send-time by core.email_backend, so this takes
+    effect immediately with no server restart."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can edit email settings.')
+        return redirect('notification_settings_home')
+
+    from core.models import EmailSettings
+
+    gmail_address = (request.POST.get('gmail_address') or '').strip()
+    gmail_app_password = (request.POST.get('gmail_app_password') or '').strip().replace(' ', '')
+
+    settings_obj = EmailSettings.get_solo()
+    settings_obj.gmail_address = gmail_address
+    # Blank password field on submit means "keep the existing one" — the
+    # value is never echoed back into the form, so an empty submit isn't a
+    # deliberate clear.
+    if gmail_app_password:
+        settings_obj.gmail_app_password = gmail_app_password
+    settings_obj.updated_by = request.user
+    settings_obj.save()
+
+    messages.success(request, 'Email settings saved.')
+    return redirect(f"/settings/#access-control")
+
+
+@login_required
 def download_template(request):
     """Download template in CSV or Excel format"""
     file_format = request.GET.get('format', 'csv').lower()
@@ -2159,6 +2261,9 @@ def notification_settings_home(request):
 
     access_audits_raw = AccessControlAuditLog.objects.all().select_related('changed_by').order_by('-timestamp')[:50]
 
+    from core.models import EmailSettings
+    email_settings = EmailSettings.get_solo() if request.user.is_superuser else None
+
     context = {
         'events': events,
         'rules': rules,
@@ -2177,6 +2282,7 @@ def notification_settings_home(request):
         'override_categories': override_categories,
         'override_category_open': override_category_open,
         'access_audits': access_audits_raw,
+        'email_settings': email_settings,
     }
     return render(request, 'notification_settings.html', context)
 

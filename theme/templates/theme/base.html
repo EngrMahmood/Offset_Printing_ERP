@@ -7,6 +7,32 @@
     <title>{% block title %}Offset ERP{% endblock %}</title>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // "brand" color scale used throughout this app's Tailwind-authored pages
+        // (bg-brand-600, text-brand-600, ring-brand-500, etc.) — must be defined
+        // before any markup using those classes renders, or they resolve to
+        // nothing (invisible/transparent buttons).
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#eef4fb',
+                            100: '#d9e7f5',
+                            200: '#b3cfeb',
+                            300: '#8db7e1',
+                            400: '#5f97d1',
+                            500: '#3a7cc0',
+                            600: '#2f6ea7',
+                            700: '#255986',
+                            800: '#1d4568',
+                            900: '#15334c',
+                        },
+                    },
+                },
+            },
+        };
+    </script>
 
     <link rel="stylesheet" href="{% static 'theme/css/variables.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/base.css' %}">

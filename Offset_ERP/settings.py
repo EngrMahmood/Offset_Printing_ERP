@@ -18,6 +18,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')
 
+# Password reset / new-account emails go out over Gmail SMTP. Credentials can
+# be set from Settings -> Roles & Access Control (stored in the EmailSettings
+# DB row, no restart needed) or via GMAIL_ADDRESS/GMAIL_APP_PASSWORD env vars
+# as a fallback. See core/email_backend.py — it reads whichever is present at
+# send-time and prints to the console instead of sending when neither is set.
+EMAIL_BACKEND = 'core.email_backend.DynamicGmailEmailBackend'
+DEFAULT_FROM_EMAIL = os.environ.get('GMAIL_ADDRESS', 'no-reply@offsetprintingerp.local')
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/

@@ -73,7 +73,39 @@ urlpatterns = [
     path('settings/access-control/roles/<int:role_id>/delete/', views.access_role_delete, name='access_role_delete'),
     path('settings/access-control/roles/permissions/', views.access_role_permissions_edit, name='access_role_permissions_edit'),
     path('settings/access-control/user-overrides/', views.access_user_overrides_edit, name='access_user_overrides_edit'),
+    path('settings/users/create/', views.user_create, name='user_create'),
+    path('settings/email/', views.email_settings_edit, name='email_settings_edit'),
     path('forgot-password/', views.forgot_password, name='forgot_password'),
+
+    # Self-service password reset (Gmail SMTP — see settings.py)
+    path(
+        'password-reset/',
+        auth_views.PasswordResetView.as_view(
+            template_name='password_reset_form.html',
+            email_template_name='password_reset_email.html',
+            subject_template_name='password_reset_subject.txt',
+            success_url='/password-reset/done/',
+        ),
+        name='password_reset',
+    ),
+    path(
+        'password-reset/done/',
+        auth_views.PasswordResetDoneView.as_view(template_name='password_reset_done.html'),
+        name='password_reset_done',
+    ),
+    path(
+        'reset/<uidb64>/<token>/',
+        auth_views.PasswordResetConfirmView.as_view(
+            template_name='password_reset_confirm.html',
+            success_url='/reset/done/',
+        ),
+        name='password_reset_confirm',
+    ),
+    path(
+        'reset/done/',
+        auth_views.PasswordResetCompleteView.as_view(template_name='password_reset_complete.html'),
+        name='password_reset_complete',
+    ),
 ]
 
 if settings.DEBUG:

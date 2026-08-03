@@ -1992,3 +1992,26 @@ class PasswordResetRequest(models.Model):
 
     def __str__(self):
         return f"Reset request for {self.username_or_email} at {self.created_at}"
+
+
+class EmailSettings(models.Model):
+    """Singleton row holding the Gmail SMTP sender credentials, editable from
+    Settings so a superuser never has to touch server environment variables.
+    Read at send-time by core.email_backend.DynamicGmailEmailBackend."""
+
+    gmail_address = models.EmailField(blank=True)
+    gmail_app_password = models.CharField(max_length=32, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+
+    class Meta:
+        verbose_name = 'Email Settings'
+        verbose_name_plural = 'Email Settings'
+
+    def __str__(self):
+        return self.gmail_address or 'Email Settings (not configured)'
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
