@@ -1,0 +1,9 @@
+# Force LF for files that run on Linux (the cloud VM) or get parsed by tools
+# that choke on CRLF, regardless of core.autocrlf on the checking-out machine
+# — this bit us when remote_sync.sh got checked out with CRLF on a Windows
+# git config and then scp'd byte-for-byte to the Linux VM.
+*.sh text eol=lf
+Dockerfile text eol=lf
+docker-entrypoint.sh text eol=lf
+nginx.conf text eol=lf
+docker-compose.yml text eol=lf
