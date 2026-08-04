@@ -18,7 +18,14 @@ set "KEY_PATH=%USERPROFILE%\.ssh\offset-erp-oracle.key"
 set "VM_HOST=offseterp.duckdns.org"
 set "VM_USER=ubuntu"
 set "REPO_DIR=%~dp0.."
+
+REM Only the stdlib sqlite3 module is needed here (no third-party packages),
+REM so the project's venv is just one option, not a requirement — fall back
+REM to whatever "python" is on PATH if this machine (e.g. a remote server
+REM without a venv set up) doesn't have one.
 set "PYTHON=%REPO_DIR%\.venv\Scripts\python.exe"
+if not exist "%PYTHON%" set "PYTHON=python"
+
 set "TMP_DB=%TEMP%\offset_erp_sync_db.sqlite3"
 set "TMP_MEDIA=%TEMP%\offset_erp_sync_media.tar.gz"
 set "LOG_FILE=%REPO_DIR%\backups\sync_to_cloud.log"
