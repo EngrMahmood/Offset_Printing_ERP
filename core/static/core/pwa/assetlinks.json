@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "org.duckdns.offseterp.twa",
+    "sha256_cert_fingerprints": [
+      "8F:D7:6C:A9:3E:AD:63:90:56:28:4D:F9:65:9A:1F:93:FD:B2:F5:F8:18:D6:C2:D7:3B:24:66:9E:3B:1F:01:32"
+    ]
+  }
+}]

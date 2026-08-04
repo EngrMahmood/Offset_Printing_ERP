@@ -5,6 +5,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Offset ERP{% endblock %}</title>
+    <link rel="manifest" href="{% static 'manifest.json' %}">
+    <meta name="theme-color" content="#2f6ea7">
+    <link rel="apple-touch-icon" href="{% static 'core/pwa/icon-192.png' %}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
@@ -138,6 +141,31 @@
         .erp-sidebar { display: none !important; }
         .erp-main { flex: 1 !important; background: #f3f5f8 !important; }
         .erp-content { padding: 20px 24px !important; }
+
+        /* Mobile top nav — row1 held everything (brand + ~15-20 module links +
+           actions) in one fixed-height, no-wrap row with a hidden-scrollbar
+           overflow strip. On narrow screens this squeezed the visible slice
+           of nav items down to nearly nothing with no indication more items
+           existed off-screen. Fix: let row1 wrap, push actions to their own
+           full-width row below the modules, and add a fade at the scrollable
+           edge so it's visually obvious the module list scrolls. */
+        @media (max-width: 640px) {
+            .erp-topnav-row1 {
+                flex-wrap: wrap !important;
+                height: auto !important;
+                padding: 8px 12px !important;
+                row-gap: 8px !important;
+            }
+            .erp-topnav-brand { margin-right: 0 !important; }
+            .erp-topnav-modules {
+                flex: 1 1 100% !important;
+                order: 3 !important;
+                -webkit-mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
+                mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
+            }
+            .erp-topnav-actions { margin-left: auto !important; }
+            .erp-subnav { padding: 0 12px !important; }
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
@@ -189,5 +217,12 @@
     {% endif %}
     {% block extra_js %}{% endblock %}
     <script src="{% static 'production/js/production_entry.js' %}?v=12"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/service-worker.js').catch(() => {});
+            });
+        }
+    </script>
 </body>
 </html>

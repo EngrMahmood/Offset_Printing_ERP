@@ -1,0 +1,31 @@
+{
+  "name": "Offset Printing ERP",
+  "short_name": "Offset ERP",
+  "description": "Offset Printing ERP — planning, production, QC, dispatch and chat.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0f1c2e",
+  "theme_color": "#2f6ea7",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/static/core/pwa/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/core/pwa/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/static/core/pwa/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

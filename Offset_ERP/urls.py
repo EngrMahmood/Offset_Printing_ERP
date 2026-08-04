@@ -18,6 +18,15 @@ urlpatterns = [
         {'document_root': settings.BASE_DIR / 'core/static/core/pwa', 'path': 'service-worker.js'},
         name='service_worker',
     ),
+    # Digital Asset Links — proves this domain and the Play Store TWA app
+    # (org.duckdns.offseterp.twa) are controlled by the same party, required
+    # for the TWA to open without a browser address bar.
+    path(
+        '.well-known/assetlinks.json',
+        static_serve,
+        {'document_root': settings.BASE_DIR / 'core/static/core/pwa', 'path': 'assetlinks.json'},
+        name='asset_links',
+    ),
     path('login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     path('', home, name='home'),

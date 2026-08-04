@@ -31,12 +31,19 @@ DEFAULT_FROM_EMAIL = os.environ.get('GMAIL_ADDRESS', 'no-reply@offsetprintingerp
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-^*pvqm&za4c4%6$bnc+0i22xcl)r6oy(p(ar#vxsm80^cc-6_@'
+# Windows LAN server sets no SECRET_KEY env var, so it keeps this exact value.
+# Cloud deployments must set a real SECRET_KEY env var.
+SECRET_KEY = os.environ.get(
+    'SECRET_KEY',
+    'django-insecure-^*pvqm&za4c4%6$bnc+0i22xcl)r6oy(p(ar#vxsm80^cc-6_@',
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# Defaults to True (existing LAN-server behavior); cloud deployments set
+# DJANGO_DEBUG=False.
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True') == 'True'
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
 
 # Self-signed HTTPS is served directly by Daphne on 8000 (see DEPLOYMENT.md) so
 # that WebRTC's getUserMedia works from LAN clients other than the server box
@@ -168,22 +175,35 @@ REST_FRAMEWORK = {
 
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
+#
+# The Windows LAN server sets neither DATABASE_URL nor SQLITE_PATH, so it
+# keeps using the exact SQLite config below (db.sqlite3 in the repo root),
+# unchanged. Cloud deployments can either:
+#   - set DATABASE_URL=postgres://... to use Postgres, or
+#   - set SQLITE_PATH to relocate the SQLite file onto a mounted volume
+#     (e.g. Docker) while keeping the same WAL-tuned SQLite engine.
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / "db.sqlite3",
-        'OPTIONS': {
-            'init_command': (
-                'PRAGMA journal_mode=WAL; '
-                'PRAGMA busy_timeout=5000; '
-                'PRAGMA synchronous=NORMAL; '
-                'PRAGMA temp_store=MEMORY; '
-                'PRAGMA cache_size=-2000;'
-            ),
+if os.environ.get('DATABASE_URL'):
+    import dj_database_url
+    DATABASES = {
+        'default': dj_database_url.parse(os.environ['DATABASE_URL'], conn_max_age=600)
+    }
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': os.environ.get('SQLITE_PATH', BASE_DIR / "db.sqlite3"),
+            'OPTIONS': {
+                'init_command': (
+                    'PRAGMA journal_mode=WAL; '
+                    'PRAGMA busy_timeout=5000; '
+                    'PRAGMA synchronous=NORMAL; '
+                    'PRAGMA temp_store=MEMORY; '
+                    'PRAGMA cache_size=-2000;'
+                ),
+            }
         }
     }
-}
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators
@@ -224,6 +244,10 @@ LOGOUT_REDIRECT_URL = '/login/'
 # https://docs.djangoproject.com/en/6.0/howto/static-files/
 
 STATIC_URL = '/static/'
+# Only used by `collectstatic` for cloud deployments (Nginx serves from here);
+# `runserver`/Daphne on the Windows LAN server serve static files directly
+# from each app's static/ dir regardless of this setting, so it's a no-op there.
+STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # ERP software version information
 ERP_SOFTWARE_VERSION = '2026.07.03.1'

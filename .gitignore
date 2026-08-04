@@ -19,6 +19,7 @@ diagnostics/
 .vscode/
 *.pdf
 *.png
+!core/static/core/pwa/*.png
 *.jpg
 *.jpeg
 *.xls*
@@ -49,6 +50,19 @@ backups/
 # Local-only deployment scripts containing secrets (never commit)
 *.local.bat
 scripts/setup_server_task.local.bat
+
+# Android TWA build output + signing keystore (never commit — losing the
+# keystore permanently breaks the ability to publish app updates)
+android-twa/*.keystore
+android-twa/keystore_password.txt
+android-twa/build/
+android-twa/app/build/
+android-twa/.gradle/
+# Build outputs — regeneratable via `bubblewrap build` (needs the keystore,
+# kept out of git above); not source, don't bloat the repo with binaries.
+android-twa/*.apk
+android-twa/*.apk.idsig
+android-twa/*.aab
 
 # Local editor / tooling artifacts (not for git)
 .claude/
