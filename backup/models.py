@@ -17,14 +17,15 @@ class BackupSetting(models.Model):
     frequency = models.CharField(max_length=10, choices=FREQUENCY_CHOICES, default='DAILY', help_text="How often backups should run.")
     local_backup_folder = models.CharField(max_length=255, default='backups', help_text="Local directory where backups will be stored.")
     
-    cloud_onedrive_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Path to OneDrive sync folder (e.g. C:\\Users\\Name\\OneDrive\\ERP_Backups)")
-    cloud_gdrive_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Path to Google Drive sync folder (e.g. G:\\My Drive\\ERP_Backups)")
+    cloud_onedrive_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Windows: path to OneDrive sync folder (e.g. C:\\Users\\Name\\OneDrive\\ERP_Backups). Linux/cloud servers with no desktop client: an rclone remote instead, e.g. onedrive:ERP_Backups/CloudVM")
+    cloud_gdrive_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Windows: path to Google Drive sync folder (e.g. G:\\My Drive\\ERP_Backups). Linux/cloud servers with no desktop client: an rclone remote instead, e.g. gdrive:ERP_Backups/CloudVM")
     
     keep_daily = models.IntegerField(default=30, help_text="Number of daily backups to retain.")
     keep_weekly = models.IntegerField(default=12, help_text="Number of weekly backups to retain.")
     keep_monthly = models.IntegerField(default=12, help_text="Number of monthly backups to retain.")
     
-    include_media = models.BooleanField(default=False, help_text="Include the media folder inside the backup archive.")
+    include_media = models.BooleanField(default=False, help_text="Include the media folder in the backup.")
+    media_cloud_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Optional: send media to a DIFFERENT destination than the database backup (local path or rclone remote, e.g. gdrive:ERP_Backups/CloudVM). Only used when 'Include media' is on. Leave blank to bundle media into the same zip as the database, sent to both OneDrive/Google Drive folders above as usual.")
     include_logs = models.BooleanField(default=False, help_text="Include system logs inside the backup archive.")
     enable_notifications = models.BooleanField(default=True, help_text="Enable notifications on backup success/failure.")
     enable_encryption = models.BooleanField(default=False, help_text="Enable ZIP password encryption.")

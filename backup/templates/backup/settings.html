@@ -61,15 +61,21 @@
             </div>
 
             <div>
-                <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">OneDrive Sync Folder (Windows Path)</label>
+                <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">OneDrive Sync Folder</label>
                 {{ form.cloud_onedrive_folder }}
-                <span style="font-size: 11px; color: var(--erp-text-muted);">Example: <code>C:\Users\Username\OneDrive\ERP_Backups\</code> (System will copy ZIP directly).</span>
+                <span style="font-size: 11px; color: var(--erp-text-muted);">Windows: <code>C:\Users\Username\OneDrive\ERP_Backups\</code> (copied directly). Linux/cloud server with no desktop client: an rclone remote instead, e.g. <code>onedrive:ERP_Backups/CloudVM</code>.</span>
             </div>
 
             <div>
-                <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">Google Drive Sync Folder (Windows Path)</label>
+                <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">Google Drive Sync Folder</label>
                 {{ form.cloud_gdrive_folder }}
-                <span style="font-size: 11px; color: var(--erp-text-muted);">Example: <code>G:\My Drive\ERP_Backups\</code> (System will copy ZIP directly).</span>
+                <span style="font-size: 11px; color: var(--erp-text-muted);">Windows: <code>G:\My Drive\ERP_Backups\</code> (copied directly). Linux/cloud server with no desktop client: an rclone remote instead, e.g. <code>gdrive:ERP_Backups/CloudVM</code>.</span>
+            </div>
+
+            <div>
+                <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">Media Backup Destination (optional)</label>
+                {{ form.media_cloud_folder }}
+                <span style="font-size: 11px; color: var(--erp-text-muted);">Only used when "Include uploaded media files" is checked below. If set, media is zipped separately and sent ONLY here instead of both folders above — e.g. to keep media off a nearly-full OneDrive while it still goes to Google Drive. Leave blank to bundle media into the same zip as the database as before.</span>
             </div>
         </div>
 
