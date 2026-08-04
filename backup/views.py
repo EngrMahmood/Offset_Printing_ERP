@@ -131,8 +131,24 @@ def update_settings(request):
             return redirect('backup:dashboard')
     else:
         form = BackupSettingForm(instance=setting)
-        
-    return render(request, 'backup/settings.html', {'form': form, 'setting': setting})
+
+    # Env overrides (see backup/services.py's _setting()) always win over
+    # these DB fields -- surface which ones are active so editing a field
+    # that won't actually take effect doesn't look like it silently failed.
+    override_env_vars = [
+        ('local_backup_folder', 'BACKUP_LOCAL_FOLDER_OVERRIDE'),
+        ('cloud_onedrive_folder', 'BACKUP_ONEDRIVE_FOLDER_OVERRIDE'),
+        ('cloud_gdrive_folder', 'BACKUP_GDRIVE_FOLDER_OVERRIDE'),
+        ('include_media', 'BACKUP_INCLUDE_MEDIA_OVERRIDE'),
+        ('media_cloud_folder', 'BACKUP_MEDIA_FOLDER_OVERRIDE'),
+    ]
+    active_overrides = [
+        field for field, env_var in override_env_vars if os.environ.get(env_var)
+    ]
+
+    return render(request, 'backup/settings.html', {
+        'form': form, 'setting': setting, 'active_overrides': active_overrides,
+    })
 
 @login_required
 @user_passes_test(is_admin_user)

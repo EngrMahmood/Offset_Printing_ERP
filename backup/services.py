@@ -103,13 +103,24 @@ def run_postgresql_backup(dest_db_path):
     if result.returncode != 0:
         raise Exception(f"pg_dump failed: {result.stderr}")
 
+def _setting(env_name, db_value):
+    """DB-stored backup settings live in db.sqlite3, which gets wholesale
+    overwritten every time a production->cloud data sync runs (see
+    scripts/cloud/sync_db_to_cloud.bat) -- silently reverting a cloud
+    deployment's backup routing back to whatever the syncing machine had
+    configured (e.g. Windows paths that don't exist on Linux). An env var
+    set in this deployment's own .env, which a data sync can't touch,
+    always wins over the DB value when present.
+    """
+    return os.environ.get(env_name) or db_value
+
 def create_backup(backup_type='AUTO', user=None):
     """
     Creates a database backup, archives it, syncs to cloud folders, and enforces retention.
     Returns the created BackupHistory instance.
     """
     settings_obj = BackupSetting.get_settings()
-    
+
     # Create a new history entry
     history = BackupHistory.objects.create(
         backup_type=backup_type,
@@ -117,14 +128,14 @@ def create_backup(backup_type='AUTO', user=None):
         status='PENDING',
         created_by=user
     )
-    
+
     temp_files = []
 
     try:
         # Create local backup folder if it doesn't exist. Kept inside the try so a
         # bad/missing backup path records a FAILED history instead of orphaning the
         # record as PENDING.
-        local_dir = settings_obj.local_backup_folder
+        local_dir = _setting('BACKUP_LOCAL_FOLDER_OVERRIDE', settings_obj.local_backup_folder)
         if not os.path.isabs(local_dir):
             local_dir = os.path.join(settings.BASE_DIR, local_dir)
         os.makedirs(local_dir, exist_ok=True)
@@ -155,10 +166,21 @@ def create_backup(backup_type='AUTO', user=None):
         zip_filename = f"ERP_Backup_{engine}_v{erp_version}{label_part}_{timestamp}.zip"
         zip_filepath = os.path.join(local_dir, zip_filename)
         
+        # Effective values: env override (immune to db-sync overwrites) wins
+        # over the DB-stored setting when present.
+        effective_onedrive = _setting('BACKUP_ONEDRIVE_FOLDER_OVERRIDE', settings_obj.cloud_onedrive_folder)
+        effective_gdrive = _setting('BACKUP_GDRIVE_FOLDER_OVERRIDE', settings_obj.cloud_gdrive_folder)
+        effective_media_folder = _setting('BACKUP_MEDIA_FOLDER_OVERRIDE', settings_obj.media_cloud_folder)
+        effective_include_media = os.environ.get('BACKUP_INCLUDE_MEDIA_OVERRIDE')
+        effective_include_media = (
+            effective_include_media == 'True' if effective_include_media is not None
+            else settings_obj.include_media
+        )
+
         # If a separate media destination is configured, media goes into its own
         # archive routed only there, instead of being bundled into the db zip
         # that's sent to both OneDrive/Google Drive folders below.
-        separate_media = bool(settings_obj.include_media and settings_obj.media_cloud_folder)
+        separate_media = bool(effective_include_media and effective_media_folder)
 
         # Compress database and optional files
         logger.info("Compressing backup files into ZIP archive")
@@ -169,7 +191,7 @@ def create_backup(backup_type='AUTO', user=None):
 
             # Optionally include media (bundled in the same zip, unless routed
             # separately via media_cloud_folder above)
-            if settings_obj.include_media and not separate_media and hasattr(settings, 'MEDIA_ROOT') and settings.MEDIA_ROOT:
+            if effective_include_media and not separate_media and hasattr(settings, 'MEDIA_ROOT') and settings.MEDIA_ROOT:
                 media_root = settings.MEDIA_ROOT
                 if os.path.exists(media_root):
                     for root, dirs, files in os.walk(media_root):
@@ -204,17 +226,17 @@ def create_backup(backup_type='AUTO', user=None):
         # Copy to cloud synchronization folders if defined
         locations = [zip_filepath]
         
-        if settings_obj.cloud_onedrive_folder:
+        if effective_onedrive:
             try:
-                od_path = copy_to_cloud_folder(zip_filepath, settings_obj.cloud_onedrive_folder)
+                od_path = copy_to_cloud_folder(zip_filepath, effective_onedrive)
                 locations.append(od_path)
                 logger.info(f"Successfully copied backup to OneDrive: {od_path}")
             except Exception as e:
                 logger.error(f"Failed to copy to OneDrive folder: {str(e)}")
 
-        if settings_obj.cloud_gdrive_folder:
+        if effective_gdrive:
             try:
-                gd_path = copy_to_cloud_folder(zip_filepath, settings_obj.cloud_gdrive_folder)
+                gd_path = copy_to_cloud_folder(zip_filepath, effective_gdrive)
                 locations.append(gd_path)
                 logger.info(f"Successfully copied backup to Google Drive: {gd_path}")
             except Exception as e:
@@ -233,7 +255,7 @@ def create_backup(backup_type='AUTO', user=None):
                             file_path = os.path.join(root, file)
                             arcname = os.path.relpath(file_path, os.path.dirname(media_root))
                             media_zip.write(file_path, arcname=arcname)
-                media_location = copy_to_cloud_folder(media_zip_path, settings_obj.media_cloud_folder)
+                media_location = copy_to_cloud_folder(media_zip_path, effective_media_folder)
                 logger.info(f"Successfully copied media backup to: {media_location}")
             except Exception as e:
                 logger.error(f"Failed to create/copy separate media backup: {str(e)}")
