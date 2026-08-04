@@ -157,8 +157,21 @@
     }
 
     function send(payload) {
-        if (call.socket && call.socket.readyState === WebSocket.OPEN) {
+        if (!call.socket) return;
+        if (call.socket.readyState === WebSocket.OPEN) {
             call.socket.send(JSON.stringify(payload));
+        } else if (call.socket.readyState === WebSocket.CONNECTING) {
+            // The socket for an incoming call is opened as soon as the ring
+            // UI shows (see onIncomingCall), but a user can hit Decline
+            // within the same instant, before the connection finishes
+            // opening. Queue the send for onopen instead of silently
+            // dropping it — otherwise the caller's side never learns the
+            // call was declined and is stuck showing "Calling…" forever.
+            const socket = call.socket;
+            socket.addEventListener('open', function onOpen() {
+                socket.removeEventListener('open', onOpen);
+                if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify(payload));
+            });
         }
     }
 
@@ -357,7 +370,10 @@
         }
 
         call.readyForOffers = true;
-        await connectCallSocket(call.roomId);
+        // onIncomingCall already opens the call socket the moment the ring
+        // UI appears (so Decline can signal the caller without waiting for
+        // Accept) — reuse it instead of opening a second, orphaned one.
+        if (!call.socket) await connectCallSocket(call.roomId);
         send({ event: 'call-ready', call_id: call.callId, to_user_id: call.fromUserId });
     }
 
@@ -476,5 +492,30 @@
             window.ChatSound.playRingtone();
             window.ChatSound.showCallNotification(payload.sender_name);
         }
+
+        // Open the signaling socket the instant the ring UI appears, not
+        // only once Accept is pressed. Previously Decline before Accept had
+        // no open socket to send 'call-decline' over, so the message was
+        // silently dropped and the caller's side stayed stuck on
+        // "Calling…"/"Ringing…" forever even though this side had declined.
+        connectCallSocket(payload.room_id);
     };
+
+    // The live 'incoming_call' WebSocket event only fires once, at the
+    // moment the caller invites — a client that opens /chat/ afterwards
+    // (e.g. clicking "Open" on a toast/notification seen on another page,
+    // which is a full page navigation) never receives it and the call
+    // silently vanishes. Resolve any still-ringing call for this user once
+    // on load so that path resumes the ring UI instead.
+    if (window.ChatApp.urls && window.ChatApp.urls.callsIncoming) {
+        fetch(window.ChatApp.urls.callsIncoming, { headers: { 'X-Requested-With': 'XMLHttpRequest' } })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+                if (!data.call || call.active) return;
+                window.ChatApp.onIncomingCall(data.call);
+                const params = new URLSearchParams(window.location.search);
+                if (params.get('autoaccept') === '1') acceptIncomingCall();
+            })
+            .catch(function () { /* no pending call, or offline — ignore */ });
+    }
 })();

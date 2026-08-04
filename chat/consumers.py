@@ -188,6 +188,8 @@ class CallSignalingConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
             await self._notify_other_participants(user, 'incoming_call', content)
         elif event in {'call-decline', 'hangup'}:
             await database_sync_to_async(self._end_call_session)(content.get('call_id'), event)
+        elif event == 'call-ready':
+            await database_sync_to_async(self._mark_call_active)(content.get('call_id'))
 
         await self.channel_layer.group_send(self.group_name, {'type': 'chat.event', 'payload': content})
 
@@ -222,6 +224,15 @@ class CallSignalingConsumer(ChatAccessMixin, AsyncJsonWebsocketConsumer):
         call = CallSession.objects.create(room_id=self.room_id, initiated_by=user, call_type=call_type, status='ringing')
         CallParticipant.objects.create(call=call, user=user)
         return call.id
+
+    def _mark_call_active(self, call_id):
+        from .models import CallSession
+        if not call_id:
+            return
+        from django.utils import timezone
+        CallSession.objects.filter(pk=call_id, status='ringing').update(
+            status='active', answered_at=timezone.now(),
+        )
 
     def _end_call_session(self, call_id, event):
         from django.utils import timezone

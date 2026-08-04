@@ -19,6 +19,7 @@ urlpatterns = [
     path('rooms/<int:room_id>/messages/<int:message_id>/reactions/', api.MessageReactionView.as_view(), name='message-reactions'),
     path('rooms/<int:room_id>/attachments/', api.AttachmentUploadView.as_view(), name='attachment-upload'),
     path('rooms/<int:room_id>/calls/', api.CallSessionListView.as_view(), name='call-list'),
+    path('calls/incoming/', api.IncomingCallsView.as_view(), name='calls-incoming'),
 
     path('ice-config/', api.IceConfigView.as_view(), name='ice-config'),
     path('users/', api.ChattableUserListView.as_view(), name='chattable-users'),

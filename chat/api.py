@@ -603,6 +603,47 @@ class IceConfigView(APIView):
         return Response({'ice_servers': getattr(settings, 'CHAT_ICE_SERVERS', [])})
 
 
+class IncomingCallsView(APIView):
+    """A currently-ringing call the requesting user was invited to (but
+    hasn't answered/declined yet), if any. The live 'incoming_call' event
+    is a one-shot WebSocket broadcast at invite time — a client that wasn't
+    on the /chat/ page yet (or navigates there after seeing a toast/
+    notification elsewhere) would otherwise never learn the call still
+    exists. Polled once on page load so that path resumes the ring UI
+    instead of the call silently vanishing."""
+
+    permission_classes = [IsAuthenticated, ChatAccessPermission]
+
+    def get(self, request):
+        cutoff = timezone.now() - timezone.timedelta(seconds=45)
+        room_ids = ChatParticipant.objects.filter(
+            user=request.user, left_at__isnull=True,
+        ).values_list('room_id', flat=True)
+        call = (
+            CallSession.objects
+            .filter(room_id__in=room_ids, status='ringing', started_at__gte=cutoff)
+            .exclude(initiated_by=request.user)
+            .select_related('initiated_by', 'room')
+            .order_by('-started_at')
+            .first()
+        )
+        if call is None:
+            return Response({'call': None})
+
+        sender = call.initiated_by
+        sender_name = (sender.get_full_name() or sender.username) if sender else 'Unknown'
+        room_label = call.room.name or sender_name if call.room.room_type == 'group' else sender_name
+
+        return Response({'call': {
+            'call_id': call.id,
+            'room_id': call.room_id,
+            'room_label': room_label,
+            'call_type': call.call_type,
+            'from_user_id': call.initiated_by_id,
+            'sender_name': sender_name,
+        }})
+
+
 class OnlineUsersView(APIView):
     """Snapshot of every connected user's status ('online' or 'away'), for a
     client's initial state on page load — presence deltas afterward arrive

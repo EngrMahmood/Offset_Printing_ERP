@@ -354,6 +354,66 @@
         win.socket = socket;
     }
 
+    // ---- Incoming call — centered modal with direct Accept/Decline -----------
+    // The old behavior was a small corner toast with only an "Open" link,
+    // which dumped the user onto the full /chat/ page just to find the
+    // accept button — and by the time they navigated there, the call's
+    // one-shot invite broadcast was long gone (see webrtc_call.js's
+    // callsIncoming resume-on-load fix), making the call appear to vanish.
+    // This shows a real, centered call banner from any page and lets the
+    // user answer or decline right from it.
+
+    const MAX_RING_MS = 30000;
+    let incomingCallModalEl = null;
+    let incomingCallTimeoutId = null;
+
+    function closeIncomingCallModal() {
+        if (incomingCallTimeoutId) { clearTimeout(incomingCallTimeoutId); incomingCallTimeoutId = null; }
+        if (incomingCallModalEl) { incomingCallModalEl.remove(); incomingCallModalEl = null; }
+    }
+
+    function sendCallDecline(roomId, callId) {
+        try {
+            const socket = new WebSocket(wsUrl('/ws/chat/call/' + roomId + '/'));
+            socket.addEventListener('open', function () {
+                socket.send(JSON.stringify({ event: 'call-decline', call_id: callId }));
+                socket.close();
+            });
+        } catch (e) { /* best-effort — worst case the caller's ring just times out */ }
+    }
+
+    function showIncomingCallModal(payload) {
+        closeIncomingCallModal();
+        const backdrop = document.createElement('div');
+        backdrop.className = 'chat-incoming-call-backdrop';
+        backdrop.innerHTML =
+            '<div class="chat-incoming-call-modal">' +
+            '<div class="chat-incoming-call-modal__label">Incoming ' + escapeHtml(payload.call_type || 'audio') + ' call</div>' +
+            '<div class="chat-incoming-call-modal__caller">' + escapeHtml(payload.sender_name || payload.room_label || 'Someone') + '</div>' +
+            '<div class="chat-incoming-call-modal__room">' + escapeHtml(payload.room_label || '') + '</div>' +
+            '<div class="chat-incoming-call-modal__actions">' +
+            '<button type="button" class="chat-incoming-call-modal__decline"><i class="fas fa-phone-slash"></i> Decline</button>' +
+            '<a class="chat-incoming-call-modal__accept" href="' + escapeHtml(chatUrl) + '?room=' + payload.room_id + '&autoaccept=1"><i class="fas fa-phone"></i> Answer</a>' +
+            '</div></div>';
+
+        backdrop.querySelector('.chat-incoming-call-modal__decline').addEventListener('click', function () {
+            sendCallDecline(payload.room_id, payload.call_id);
+            if (window.ChatSound) { window.ChatSound.stopRingtone(); window.ChatSound.closeCallNotification(); }
+            closeIncomingCallModal();
+        });
+        backdrop.querySelector('.chat-incoming-call-modal__accept').addEventListener('click', function () {
+            if (window.ChatSound) { window.ChatSound.stopRingtone(); window.ChatSound.closeCallNotification(); }
+            closeIncomingCallModal();
+        });
+
+        document.body.appendChild(backdrop);
+        incomingCallModalEl = backdrop;
+        // Same safety cap as the ringtone/notification (chat_sound.js's
+        // MAX_RING_MS) so a call the caller gave up on doesn't leave a
+        // dead "Answer" button sitting on screen indefinitely.
+        incomingCallTimeoutId = setTimeout(closeIncomingCallModal, MAX_RING_MS);
+    }
+
     // ---- Presence socket (badge + toast + auto-popup trigger) ----------------
 
     function isViewingRoomElsewhere(roomId) {
@@ -390,9 +450,7 @@
                     window.ChatSound.playRingtone();
                     window.ChatSound.showCallNotification(payload.sender_name);
                 }
-                showToast('Incoming call', 'Call in ' + (payload.room_label || 'a chat'), chatUrl + '?room=' + payload.room_id, function () {
-                    if (window.ChatSound) { window.ChatSound.stopRingtone(); window.ChatSound.closeCallNotification(); }
-                });
+                showIncomingCallModal(payload);
             } else if (payload.event === 'buzz' && !isViewingRoomElsewhere(payload.room_id)) {
                 // The room's own socket (if a dock window is already open) handles
                 // the shake itself — this branch only covers the "not open yet"
