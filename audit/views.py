@@ -1,6 +1,6 @@
 from django.shortcuts import render
 from django.contrib.auth.decorators import login_required
-from django.db.models import Sum, Q
+from django.db.models import Prefetch, Q
 from django.http import HttpResponse
 from django.utils import timezone
 from core.models import JobCard, Production, Dispatch, JobCardWipStatus
@@ -28,11 +28,32 @@ def get_audit_data():
     """
     # 1. Pre-Press Gaps (missing plate set number or AWC number on approved/released print JobCards)
     pre_press_gaps = []
-    pre_press_qs = JobCard.objects.filter(
+    pre_press_qs = list(JobCard.objects.filter(
         is_active=True,
         is_print_job=True,
         status__in=['production_approved', 'released', 'in_production']
-    ).select_related('planning_job', 'machine_name')
+    ).select_related('planning_job', 'machine_name'))
+
+    # PlanningJob.sku_recipe (used by awc_no_display below) queries SkuRecipe fresh
+    # per instance with no cross-instance cache, so touching it per job card here
+    # was the dominant query cost on this page (one SkuRecipe query per job card,
+    # ~600+ queries measured). Pre-populate the same `_cached_sku_recipe` instance
+    # attribute the property already checks — same batching approach already used
+    # in reports/services.py's build_machine_planning_context. sku_recipe's own
+    # lookup is case-insensitive (`sku__iexact`), so this loads every recipe rather
+    # than filtering by a lowercased `__in` set, which would miss recipes stored
+    # in a different case than the job's SKU.
+    from planning.models import SkuRecipe
+    if pre_press_qs:
+        recipe_dict = {}
+        for r in SkuRecipe.objects.order_by('-updated_at'):
+            s_val = (r.sku or '').lower().strip()
+            if s_val and s_val not in recipe_dict:
+                recipe_dict[s_val] = r
+        for jc in pre_press_qs:
+            if jc.planning_job:
+                jc.planning_job._cached_sku_recipe = recipe_dict.get((jc.planning_job.sku or '').lower().strip())
+
     for jc in pre_press_qs:
         gaps = []
         if not jc.plate_set_no:
@@ -58,11 +79,15 @@ def get_audit_data():
         is_active=True,
         is_print_job=True,
         status__in=['released', 'in_production']
-    ).select_related('planning_job', 'machine_name')
+    ).select_related('planning_job', 'machine_name').prefetch_related(
+        Prefetch('productions', queryset=Production.objects.filter(is_active=True)),
+    )
     for jc in press_qs:
-        printing_exists = jc.productions.filter(is_active=True, entry_type='printing').exists()
-        packing_exists = jc.productions.filter(is_active=True, entry_type='packing').exists()
-        
+        # Reuses the prefetch above instead of two fresh .exists() queries per job card.
+        jc_productions = list(jc.productions.all())
+        printing_exists = any(p.entry_type == 'printing' for p in jc_productions)
+        packing_exists = any(p.entry_type == 'packing' for p in jc_productions)
+
         if not printing_exists:
             if packing_exists:
                 # CRITICAL: Packing entries logged but Printing entries are missing!
@@ -115,9 +140,11 @@ def get_audit_data():
         is_active=True,
         is_print_job=True,
         status__in=['in_production', 'completed']
-    ).select_related('planning_job', 'machine_name')
+    ).select_related('planning_job', 'machine_name').prefetch_related(
+        Prefetch('productions', queryset=Production.objects.filter(is_active=True, entry_type='packing')),
+    )
     for jc in post_press_qs:
-        packing_exists = jc.productions.filter(is_active=True, entry_type='packing').exists()
+        packing_exists = bool(jc.productions.all())
         if not packing_exists:
             post_press_gaps.append({
                 'job_card_id': jc.id,
@@ -166,9 +193,11 @@ def get_audit_data():
     completed_jcs = JobCard.objects.filter(
         is_active=True,
         status='completed'
-    ).select_related('planning_job', 'machine_name')
+    ).select_related('planning_job', 'machine_name').prefetch_related(
+        Prefetch('dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
+    )
     for jc in completed_jcs:
-        total_dispatched = jc.dispatch_set.filter(is_active=True).aggregate(total=Sum('dispatch_qty'))['total'] or 0
+        total_dispatched = sum(d.dispatch_qty or 0 for d in jc.dispatch_set.all())
         if total_dispatched == 0:
             dispatch_gaps.append({
                 'job_card_id': jc.id,
@@ -204,6 +233,9 @@ def get_pending_work_data(query_q=''):
     # Base JobCard Query
     job_cards = JobCard.objects.filter(is_active=True).select_related(
         'planning_job', 'machine_name', 'production_wip_status__status'
+    ).prefetch_related(
+        Prefetch('productions', queryset=Production.objects.filter(is_active=True)),
+        Prefetch('plate_requests', queryset=PlateRequest.objects.all()),
     )
     if query_q:
         job_cards = job_cards.filter(
@@ -220,17 +252,17 @@ def get_pending_work_data(query_q=''):
         status__in=['planning_approved', 'production_approved', 'released']
     )
     for jc in pre_press_candidates:
-        # Check if plate request is available/ready for production
-        plate_requests = jc.plate_requests.all()
+        # Reuses the prefetch on job_cards above instead of 2-3 fresh queries per job card.
+        plate_requests = list(jc.plate_requests.all())
         is_ready = any(pr.status == 'available_for_production' for pr in plate_requests)
-        
+
         if not is_ready:
             # Determine plate status label
             status_text = "No Request"
-            if plate_requests.exists():
-                latest_pr = plate_requests.order_by('-updated_at').first()
+            if plate_requests:
+                latest_pr = max(plate_requests, key=lambda pr: pr.updated_at)
                 status_text = latest_pr.get_status_display()
-                
+
             wip_status = jc.production_wip_status.status.name if hasattr(jc, 'production_wip_status') else 'No Status'
             pre_press_pending.append({
                 'job_card': jc,
@@ -249,7 +281,7 @@ def get_pending_work_data(query_q=''):
         if sheets_required == 0:
             continue
             
-        printed_sheets = jc.productions.filter(is_active=True, entry_type='printing').aggregate(total=Sum('output_sheets'))['total'] or 0
+        printed_sheets = sum(p.output_sheets or 0 for p in jc.productions.all() if p.entry_type == 'printing')
         if printed_sheets < sheets_required:
             balance = sheets_required - printed_sheets
             progress = round((printed_sheets / sheets_required) * 100, 1) if sheets_required > 0 else 0
@@ -274,7 +306,7 @@ def get_pending_work_data(query_q=''):
         if order_qty == 0:
             continue
             
-        packed_qty = jc.productions.filter(is_active=True, entry_type='packing').aggregate(total=Sum('packing_qty'))['total'] or 0
+        packed_qty = sum(p.packing_qty or 0 for p in jc.productions.all() if p.entry_type == 'packing')
         if packed_qty < order_qty:
             balance = order_qty - packed_qty
             progress = round((packed_qty / order_qty) * 100, 1) if order_qty > 0 else 0
