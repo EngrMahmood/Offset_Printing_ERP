@@ -94,31 +94,57 @@ def _active_job_on_other_po(sku, exclude_po=None) -> bool:
     return qs.exists()
 
 
-def _earlier_po_has_sku(sku, po_number, po_doc_created_at=None, po_doc_id=None) -> bool:
-    """Another PO (uploaded earlier) already contains this SKU."""
+def build_sku_doc_index():
+    """Precompute {sku_key: [(created_at, doc_id, po_number_norm), ...]} across every
+    PO/WO document, sorted earliest-first, for _earlier_po_has_sku() to consult.
+
+    Classifying a page of PO lines (po_inbox, po_review, po_new_skus, approval_queue)
+    previously called _earlier_po_has_sku() once per line item, and each call re-scanned
+    and re-parsed *every* PoDocument from scratch — an O(items x documents) full-table
+    scan that dominated page load time as PO volume grew. Building this index once per
+    request (and threading it through classify_po_line/annotate_items_repeat_new) turns
+    each item's check into an O(entries for that one SKU) in-memory lookup instead.
+    """
+    index = {}
+    docs = PoDocument.objects.exclude(extracted_payload__isnull=True).only(
+        'id', 'created_at', 'extracted_payload'
+    ).order_by('created_at', 'id')
+    for doc in docs.iterator(chunk_size=200):
+        payload = doc.extracted_payload or {}
+        other_po = _normalize_po_number(payload.get('po_number') or '')
+        ignored = {_sku_key(s) for s in (payload.get('new_skus_ignored') or []) if s}
+        for item in _po_payload_items(payload):
+            item_key = _sku_key(item.get('sku'))
+            if not item_key or item_key in ignored:
+                continue
+            index.setdefault(item_key, []).append((doc.created_at, doc.id, other_po))
+    return index
+
+
+def _earlier_po_has_sku(sku, po_number, po_doc_created_at=None, po_doc_id=None, sku_doc_index=None) -> bool:
+    """Another PO (uploaded earlier) already contains this SKU.
+
+    Pass a precomputed `sku_doc_index` (see build_sku_doc_index()) when classifying
+    many lines in one request to avoid re-scanning the PoDocument table per line; falls
+    back to building it fresh (same cost as before) for one-off/single-item callers.
+    """
     key = _sku_key(sku)
     po_norm = _normalize_po_number(po_number)
     if not key:
         return False
 
-    docs = PoDocument.objects.exclude(extracted_payload__isnull=True).order_by('created_at', 'id')
-    for doc in docs:
-        if po_doc_id and doc.id == po_doc_id:
+    index = sku_doc_index if sku_doc_index is not None else build_sku_doc_index()
+    for created_at, doc_id, other_po in index.get(key, ()):
+        if po_doc_id and doc_id == po_doc_id:
             break
-        payload = doc.extracted_payload or {}
-        other_po = _normalize_po_number(payload.get('po_number') or '')
         if other_po == po_norm:
             continue
-        ignored = {_sku_key(s) for s in (payload.get('new_skus_ignored') or []) if s}
-        for item in _po_payload_items(payload):
-            item_key = _sku_key(item.get('sku'))
-            if item_key == key and item_key not in ignored:
-                if po_doc_created_at is None:
-                    return True
-                if doc.created_at < po_doc_created_at:
-                    return True
-                if doc.created_at == po_doc_created_at and po_doc_id and doc.id < po_doc_id:
-                    return True
+        if po_doc_created_at is None:
+            return True
+        if created_at < po_doc_created_at:
+            return True
+        if created_at == po_doc_created_at and po_doc_id and doc_id < po_doc_id:
+            return True
     return False
 
 
@@ -130,6 +156,7 @@ def classify_po_line(
     po_doc_id=None,
     recipe=None,
     explicit_repeat_flag=None,
+    sku_doc_index=None,
 ):
     """Return ('Repeat'|'New', reason_code) for one PO line.
 
@@ -139,6 +166,9 @@ def classify_po_line(
       3. Prior production on another PO
       4. Concurrent PO (earlier PO has same SKU)
       5. Active planning job on another PO (same SKU entered twice)
+
+    Pass `sku_doc_index` (see build_sku_doc_index()) when classifying many lines in
+    one request — avoids re-scanning the PoDocument table per line.
     """
     explicit = (explicit_repeat_flag or '').strip().lower()
     if explicit in {'new', 'repeat'}:
@@ -153,7 +183,7 @@ def classify_po_line(
     if _prior_production_on_other_po(sku, exclude_po=po_number):
         return ('Repeat', 'prior_production')
 
-    if _earlier_po_has_sku(sku, po_number, po_doc_created_at, po_doc_id):
+    if _earlier_po_has_sku(sku, po_number, po_doc_created_at, po_doc_id, sku_doc_index=sku_doc_index):
         return ('Repeat', 'concurrent_po')
 
     if _active_job_on_other_po(sku, exclude_po=po_number):
@@ -170,6 +200,7 @@ def forward_as_new_for_po_line(
     po_doc_id=None,
     recipe=None,
     existing_job=None,
+    sku_doc_index=None,
 ):
     """Whether this PO line should carry repeat_flag='New' when creating/updating a job."""
     if existing_job and is_job_repeat_classification_locked(existing_job):
@@ -187,6 +218,7 @@ def forward_as_new_for_po_line(
         po_doc_id=po_doc_id,
         recipe=recipe,
         explicit_repeat_flag=explicit,
+        sku_doc_index=sku_doc_index,
     )
     return label == 'New'
 
@@ -199,6 +231,7 @@ def repeat_flag_value_for_po_line(
     po_doc_id=None,
     recipe=None,
     existing_job=None,
+    sku_doc_index=None,
 ):
     """Resolve repeat_flag string for job defaults; respects locked / stored flags."""
     if existing_job and is_job_repeat_classification_locked(existing_job):
@@ -216,6 +249,7 @@ def repeat_flag_value_for_po_line(
         po_doc_id=po_doc_id,
         recipe=recipe,
         existing_job=existing_job,
+        sku_doc_index=sku_doc_index,
     ) else 'Repeat'
 
 
@@ -253,8 +287,13 @@ def repair_inconsistent_plate_making_stages(queryset=None):
     return fixed
 
 
-def annotate_items_repeat_new(items, recipe_map, *, po_number=None, po_doc_created_at=None, po_doc_id=None):
-    """Annotate PO items with is_repeat / recipe_status and return counts + missing master SKUs."""
+def annotate_items_repeat_new(items, recipe_map, *, po_number=None, po_doc_created_at=None, po_doc_id=None, sku_doc_index=None):
+    """Annotate PO items with is_repeat / recipe_status and return counts + missing master SKUs.
+
+    Pass `sku_doc_index` (see build_sku_doc_index()) when annotating items across many
+    PO/WO documents in one request (e.g. po_inbox) to avoid re-scanning the PoDocument
+    table once per item.
+    """
     annotated = []
     repeat_count = 0
     new_count = 0
@@ -272,6 +311,7 @@ def annotate_items_repeat_new(items, recipe_map, *, po_number=None, po_doc_creat
             po_doc_id=po_doc_id,
             recipe=recipe,
             explicit_repeat_flag=(item.get('repeat_flag') or item.get('repeat')),
+            sku_doc_index=sku_doc_index,
         )
         is_repeat = label == 'Repeat'
 

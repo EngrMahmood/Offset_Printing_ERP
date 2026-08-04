@@ -1,4 +1,5 @@
 {% load static %}
+{% load theme_tags %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -86,7 +87,7 @@
         <section class="section-grid">
             <div class="section-block">
                 <div class="section-title">Order Information</div>
-                <div class="field-row"><span class="field-label">PO Number</span><span>{{ job.po_number|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">{{ job.po_number|doc_type_label }} Number</span><span>{{ job.po_number|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">PR Reference</span><span>{{ job.pr_reference|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">Order Qty</span><span>{{ job.order_qty|default:'-' }}</span></div>
                 <div class="field-row"><span class="field-label">PO Approval Date</span><span>{{ po_approval_date|date:'d M Y'|default:'-' }}</span></div>

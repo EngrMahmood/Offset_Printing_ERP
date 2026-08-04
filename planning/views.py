@@ -71,7 +71,7 @@ from .services import (
     _sync_new_jobs_for_approved_sku, _merge_po_items_for_existing_po,
     get_po_approval_date_for_job,
     _collect_pending_sku_rows, _normalize_po_number,
-    trigger_plate_request_for_planning_job,
+    trigger_plate_request_for_planning_job, document_type_label,
     get_plate_request_block_for_master_entry,
     ensure_draft_planning_job_for_po_sku,
     apply_master_data_sync,
@@ -1207,14 +1207,6 @@ def planning_home(request):
         page_number = request.GET.get('page')
         jobs = paginator.get_page(page_number)
 
-        for job in jobs:
-            job.po_approval_date_display = _get_po_approval_date_for_job(job)
-            po_uploaded_date = _get_po_upload_date_for_job(job)
-            if po_uploaded_date:
-                job.plan_date_display = po_uploaded_date
-            else:
-                job.plan_date_display = job.plan_date or (job.created_at.date() if job.created_at else None)
-
     job_skus = {
         _sku_key(job.sku)
         for job in jobs
@@ -1271,6 +1263,10 @@ def planning_home(request):
             return full_name
         return (user.username or '').strip()
 
+    from printing_plates.services import get_open_planning_plate_requests_blocking_release_bulk
+
+    release_blocking_map = get_open_planning_plate_requests_blocking_release_bulk(list(jobs))
+
     for job in jobs:
         job_card = getattr(job, 'job_card', None)
         job.job_card_display_machine_name = job.machine_name or (job_card.machine_name_display if job_card else None)
@@ -1278,9 +1274,7 @@ def planning_home(request):
         job.has_job_card = bool(job_card)
         job.planning_stage_changed_by_display = _display_user_identity(getattr(job, 'planning_stage_changed_by', None))
         job.latest_cancelled_plate = job.latest_cancelled_plate_request
-        from printing_plates.services import get_open_planning_plate_request_blocking_release
-
-        job.release_blocked_open_plate = get_open_planning_plate_request_blocking_release(job)
+        job.release_blocked_open_plate = release_blocking_map.get(job.id)
         if job_card:
             job.job_card_status_label = job_card.workflow_status_label
             log = status_logs.get(job_card.id)
@@ -2621,23 +2615,35 @@ def approval_queue(request):
     _attach_status_audit(pm_jobs)
     _attach_status_audit(release_jobs)
 
-    from printing_plates.services import get_open_planning_plate_request_blocking_release
+    from printing_plates.services import get_open_planning_plate_requests_blocking_release_bulk
 
+    release_blocking_map = get_open_planning_plate_requests_blocking_release_bulk(
+        [getattr(jc, 'planning_job', None) for jc in release_jobs]
+    )
     for job_card in release_jobs:
         planning_job = getattr(job_card, 'planning_job', None)
-        job_card.release_blocked_open_plate = get_open_planning_plate_request_blocking_release(planning_job)
+        job_card.release_blocked_open_plate = release_blocking_map.get(planning_job.id) if planning_job else None
 
     pending_qc_jobs_count = qc_jobs.count()
     approved_qc_jobs_count = JobCard.objects.filter(is_active=True, status='qc_approved').count()
     pending_pm_jobs_count = pm_jobs.count()
     released_jobs_count = JobCard.objects.filter(is_active=True, status='released').count()
 
+    # Collecting the set of SKU keys with any PO/WO activity doesn't need the full
+    # OCR-near-duplicate fuzzy merge that _po_payload_items() does (SequenceMatcher
+    # over every item pair, per document) — that pass exists to avoid double-counting
+    # near-identical extracted rows on review screens, not to determine "does this SKU
+    # exist anywhere". Exact-key dedup + ignored-SKU filtering is enough here and avoids
+    # an O(n^2) fuzzy-match scan across every PO document on every approval queue load.
     active_sku_keys = set()
     for payload in PoDocument.objects.exclude(extracted_payload__isnull=True).values_list('extracted_payload', flat=True):
-        for item in _po_payload_items(payload or {}):
-            sku = (item.get('sku') or '').strip()
-            if sku:
-                active_sku_keys.add(_sku_key(sku))
+        payload = payload or {}
+        ignored = {_sku_key(s) for s in (payload.get('new_skus_ignored') or []) if s}
+        deduped_items, _ = _deduplicate_po_items_by_sku(payload.get('items') or [])
+        for item in deduped_items:
+            key = _sku_key(item.get('sku'))
+            if key and key not in ignored:
+                active_sku_keys.add(key)
     active_sku_keys.update(
         _sku_key(sku)
         for sku in PlanningJob.objects.filter(is_active=True).values_list('sku', flat=True)
@@ -4224,8 +4230,9 @@ def pending_sku_master_entry(request):
                     if not job:
                         messages.error(
                             request,
-                            f'Could not create a draft planning job for SKU {sku} on PO {po_number}. '
-                            f'Check that this SKU exists on the PO document.',
+                            f'Could not create a draft planning job for SKU {sku} on '
+                            f'{document_type_label(po_number)} {po_number}. '
+                            f'Check that this SKU exists on the {document_type_label(po_number)} document.',
                         )
                         return redirect(
                             f"{reverse('planning:pending_sku_master_entry')}?po_doc_id={po_doc_id}&sku={sku}"
@@ -4468,7 +4475,7 @@ def po_inbox(request):
 
                 messages.success(
                     request,
-                    f'Deleted PO {po_number_key} from ERP: {deleted_docs} intake document(s), {jobs_deleted} planning job(s), {job_cards_deleted} job card(s), {plate_requests_deleted} plate request(s).',
+                    f'Deleted {document_type_label(po_number_key)} {po_number_key} from ERP: {deleted_docs} intake document(s), {jobs_deleted} planning job(s), {job_cards_deleted} job card(s), {plate_requests_deleted} plate request(s).',
                 )
                 return redirect('planning:po_inbox')
 
@@ -4490,6 +4497,22 @@ def po_inbox(request):
     page_number = request.GET.get('page') or 1
 
     docs_qs = PoDocument.objects.exclude(extracted_payload__isnull=True).values('id', 'created_at', 'extracted_payload').order_by('-created_at')
+
+    # A search hits the whole table via the DB (cheap — no Python payload parsing
+    # happens until after this filter), not just the "recent" cache below, so an
+    # older PO/WO that has scrolled past the default browse window is still found.
+    # Only the browse-without-search case (the common "what just came in" view) caps
+    # at the 200 most recent distinct documents for load-time; search results are
+    # capped much higher (500) purely as a safety net against overly broad terms.
+    if search_query:
+        docs_qs = docs_qs.filter(
+            Q(extracted_payload__po_number__icontains=search_query)
+            | Q(extracted_payload__supplier_name__icontains=search_query)
+        )
+        dedupe_cap = 500
+    else:
+        dedupe_cap = 200
+
     deduped_docs = []
     seen_po_numbers = set()
     for doc in docs_qs.iterator(chunk_size=100):
@@ -4501,7 +4524,7 @@ def po_inbox(request):
             seen_po_numbers.add(po_number)
 
         deduped_docs.append(doc)
-        if len(deduped_docs) >= 200:
+        if len(deduped_docs) >= dedupe_cap:
             break
 
     page_number_int = _to_optional_positive_int(page_number) or 1
@@ -4526,6 +4549,13 @@ def po_inbox(request):
             for sku in all_sku_keys
         ])
 
+    # Built once per request and reused for every row below — classifying each
+    # line item against a per-item full PoDocument table scan (the old behavior)
+    # made this page scale as O(items x total PO documents); this index turns
+    # each item's check into an O(1)-ish in-memory lookup instead.
+    from planning.sku_classification import build_sku_doc_index
+    sku_doc_index = build_sku_doc_index() if doc_items else {}
+
     rows = []
     for doc, payload, items in doc_items:
         item_sku_keys = {
@@ -4545,6 +4575,7 @@ def po_inbox(request):
             current_po_number=po_number_val,
             po_doc_created_at=doc['created_at'],
             po_doc_id=doc['id'],
+            sku_doc_index=sku_doc_index,
         )
 
         uploaded_at = doc['created_at']
@@ -4556,6 +4587,7 @@ def po_inbox(request):
                 'po_doc_id': doc['id'],
                 'uploaded': uploaded_at,
                 'po_number': payload.get('po_number') or '-',
+                'document_type': payload.get('document_type') or 'PO',
                 'supplier': payload.get('supplier_name') or '-',
                 'item_count': len(items),
                 'repeat_count': repeat_count,
@@ -4573,14 +4605,8 @@ def po_inbox(request):
             }
         )
 
-    if search_query:
-        lower_search = search_query.lower()
-        rows = [
-            row for row in rows
-            if lower_search in row['po_number'].lower()
-            or lower_search in row['supplier'].lower()
-        ]
-
+    # Rows are already DB-filtered by search_query above (see docs_qs.filter(...)),
+    # so no further Python-side filtering is needed here.
     paginator = Paginator(rows, per_page)
     page_obj = paginator.get_page(page_number)
 
@@ -4593,6 +4619,13 @@ def po_inbox(request):
             'search_query': search_query,
             'per_page': per_page,
             'can_admin_actions': _user_is_admin(request.user),
+            # True all-time count (distinct PO/WO numbers), independent of the
+            # 200-doc browse cap above — page_obj.paginator.count only reflects
+            # the capped/filtered window and understates the real total when
+            # there's no search query.
+            'total_document_count': PoDocument.objects.exclude(extracted_payload__isnull=True)
+                .values('extracted_payload__po_number').distinct().count(),
+            'is_capped_view': not search_query and len(deduped_docs) >= dedupe_cap,
         }
     )
 
@@ -4602,7 +4635,16 @@ def po_inbox(request):
 @login_required
 @permission_required('can_edit_jobcard')
 def upload_po(request):
-    """Upload a PO PDF, extract its content, store it, and redirect to review."""
+    """Upload a PO or Work Order PDF, extract its content, store it, and redirect to review.
+
+    Both document types share the same layout from the Utopia ERP system (see
+    planning/po_extractor.py), which auto-detects PURCHASE ORDER vs WORK ORDER
+    from the PDF itself and tags the payload's `document_type` accordingly —
+    no separate upload flow is needed per type. The document number (PO- or
+    WO-prefixed) is stored in the same `po_number` payload field either way,
+    so all downstream keying (dedupe, PO Intake grouping, PlanningJob.po_number,
+    _sync_repeat_jobs_from_po) works unchanged regardless of which was uploaded.
+    """
     if request.method == 'POST':
         pdf_file = request.FILES.get('po_pdf')
         if not pdf_file:
@@ -4640,6 +4682,7 @@ def upload_po(request):
         if po_number in ('-', '—', 'N/A', 'NA'):
             po_number = ''
             extracted['po_number'] = ''
+        doc_label = document_type_label(po_number)
         existing_doc = None
         if po_number:
             existing_doc = PoDocument.objects.filter(extracted_payload__po_number=po_number).order_by('-id').first()
@@ -4689,7 +4732,7 @@ def upload_po(request):
                 preview += f" +{remainder} more"
             messages.warning(
                 request,
-                f"Ignored duplicate line(s) for same PO (same SKU and Qty): {preview}.",
+                f"Ignored duplicate line(s) for same {doc_label} (same SKU and Qty): {preview}.",
             )
 
         if extraction_warning:
@@ -4701,23 +4744,23 @@ def upload_po(request):
             if existing_doc:
                 final_item_count = len((existing_doc.extracted_payload or {}).get('items', []))
                 msg = (
-                    f"PO {extracted.get('po_number', '?')} updated. "
+                    f"{doc_label} {extracted.get('po_number', '?')} updated. "
                     f"Unique added SKU(s): {len(added_skus)}; corrected SKU(s): {len(updated_skus)}; "
-                    f"current PO line count: {final_item_count}."
+                    f"current {doc_label} line count: {final_item_count}."
                 )
                 if duplicate_skus:
                     msg += f" Duplicate SKU lines merged in upload: {', '.join(sorted(set(duplicate_skus)))}."
-                msg += " Same PO + same SKU + same Qty lines are ignored."
+                msg += f" Same {doc_label} + same SKU + same Qty lines are ignored."
             else:
                 msg = (
-                    f"PO {extracted.get('po_number', '?')} extracted with "
+                    f"{doc_label} {extracted.get('po_number', '?')} extracted with "
                     f"{item_count} of {expected_count or item_count} line items. Sent to PO Intake queue."
                 )
                 if duplicate_skus:
                     msg += f" Duplicate SKU lines merged: {', '.join(sorted(set(duplicate_skus)))}."
             if sync_result['created'] or sync_result['updated']:
                 msg += (
-                    f" Draft planning jobs synced from PO lines: created {sync_result['created']}, "
+                    f" Draft planning jobs synced from {doc_label} lines: created {sync_result['created']}, "
                     f"updated {sync_result['updated']}."
                 )
             if sync_result['missing_recipe']:
@@ -4726,7 +4769,7 @@ def upload_po(request):
         for jc_number, matched_pr, matched_po in sync_result.get('pr_matched', []):
             messages.info(
                 request,
-                f'JC {jc_number} was opened under PR {matched_pr} — linked to PO {matched_po} now; '
+                f'JC {jc_number} was opened under PR {matched_pr} — linked to {document_type_label(matched_po)} {matched_po} now; '
                 f'no duplicate job card was created.',
             )
         return redirect('qc:po_review', doc_id=po_doc.id)
@@ -4737,15 +4780,26 @@ def upload_po(request):
 @login_required
 @permission_required('can_edit_jobcard')
 def manual_po_entry(request):
-    """Create a PO intake record manually without uploading a PDF."""
+    """Create a PO or Work Order intake record manually without uploading a PDF.
+
+    Business logic is identical for both — only the number's prefix and the
+    labels shown to the user differ. The selected `document_type` just tags
+    the payload for display (see document_type_label()); nothing downstream
+    branches on it.
+    """
     if request.method == 'POST':
+        document_type = (request.POST.get('document_type') or 'PO').strip().upper()
+        if document_type not in ('PO', 'WO'):
+            document_type = 'PO'
+        doc_label = 'Work Order' if document_type == 'WO' else 'PO'
+
         po_number = (request.POST.get('po_number') or '').strip()
         if po_number in ('-', '—', 'N/A', 'NA'):
             po_number = ''
         pr_number = (request.POST.get('pr_number') or '').strip()
 
         if not po_number and not pr_number:
-            messages.error(request, 'Either a PO Number or a PR Number is required.')
+            messages.error(request, f'Either a {doc_label} Number or a PR Number is required.')
             return redirect('planning:manual_po_entry')
 
         items = []
@@ -4786,7 +4840,7 @@ def manual_po_entry(request):
         sku_keys = [_sku_key(item['sku']) for item in items if item.get('sku')]
         duplicate_sku_keys = [sku for sku in sku_keys if sku_keys.count(sku) > 1]
         if duplicate_sku_keys:
-            messages.error(request, 'Duplicate SKUs are not allowed within the same PO. Please remove duplicate lines before saving.')
+            messages.error(request, f'Duplicate SKUs are not allowed within the same {doc_label}. Please remove duplicate lines before saving.')
             return redirect('planning:manual_po_entry')
 
         supplier_name = (request.POST.get('supplier_name') or '').strip() or 'UTOPIA PRINTING & PACKAGING'
@@ -4795,6 +4849,7 @@ def manual_po_entry(request):
 
         payload = {
             'po_number': po_number,
+            'document_type': document_type,
             'pr_number': pr_number,
             'po_date': (request.POST.get('po_date') or '').strip(),
             'approval_date': (request.POST.get('approval_date') or '').strip(),
@@ -4816,19 +4871,19 @@ def manual_po_entry(request):
         )
 
         sync_result = _sync_repeat_jobs_from_po(po_doc, actor=request.user)
-        ref_label = f'PO {po_number}' if po_number else f'PR {pr_number}'
+        ref_label = f'{doc_label} {po_number}' if po_number else f'PR {pr_number}'
         messages.success(request, f'Manual {ref_label} created with {len(items)} line(s).')
         if sync_result['created'] or sync_result['updated']:
             messages.success(
                 request,
-                f'Draft planning jobs synced from PO lines: created {sync_result["created"]}, updated {sync_result["updated"]}.',
+                f'Draft planning jobs synced from {doc_label} lines: created {sync_result["created"]}, updated {sync_result["updated"]}.',
             )
         if sync_result['missing_recipe']:
             messages.warning(request, f'SKU(s) pending approved master data: {sync_result["missing_recipe"]}.')
         for jc_number, matched_pr, matched_po in sync_result.get('pr_matched', []):
             messages.info(
                 request,
-                f'JC {jc_number} was opened under PR {matched_pr} — linked to PO {matched_po} now; '
+                f'JC {jc_number} was opened under PR {matched_pr} — linked to {document_type_label(matched_po)} {matched_po} now; '
                 f'no duplicate job card was created.',
             )
 
@@ -4856,15 +4911,18 @@ def po_review(request, doc_id):
             f'Duplicate SKUs are not allowed in the same PO. Please remove duplicate lines for: {", ".join(sorted(duplicate_skus))}.',
         )
     ignored_skus = sorted({s for s in (payload.get('new_skus_ignored') or []) if s})
-    po_number = payload.get('po_number', '')
+    po_number = payload.get('po_number') or ''
     configured_new_skus = {_sku_key(sku) for sku in (payload.get('new_skus_configured') or []) if sku}
     recipe_map = _build_recipe_map(items)
+    from planning.sku_classification import build_sku_doc_index
+    sku_doc_index = build_sku_doc_index()
     annotated_items, repeat_count, new_count, missing_skus = _annotate_items_with_recipe(
         items,
         recipe_map,
         current_po_number=po_number,
         po_doc_created_at=po_doc.created_at,
         po_doc_id=po_doc.id,
+        sku_doc_index=sku_doc_index,
     )
 
     item_sku_keys = {_sku_key(item.get('sku')) for item in annotated_items if item.get('sku')}
@@ -5024,8 +5082,8 @@ def po_review(request, doc_id):
                 po_date = _parse_iso_date(po_date_raw)
                 approval_date_raw = payload.get('approval_date')
                 approval_date = _parse_iso_date(approval_date_raw)
-                delivery_location = payload.get('delivery_location', '')
-                department = payload.get('department', '')
+                delivery_location = payload.get('delivery_location') or ''
+                department = payload.get('department') or ''
 
                 for item in annotated_items:
                     sku = (item.get('sku') or '').strip()
@@ -5071,6 +5129,7 @@ def po_review(request, doc_id):
                         po_doc_id=po_doc.id,
                         recipe=recipe,
                         existing_job=existing_job,
+                        sku_doc_index=sku_doc_index,
                     )
                     forward_as_new = repeat_flag_value == 'New'
 
@@ -5168,7 +5227,8 @@ def po_new_skus(request, doc_id):
     items = _po_payload_items(payload)
 
     recipe_map = _build_recipe_map(items)
-    _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map)
+    from planning.sku_classification import build_sku_doc_index
+    _, _, _, missing_skus = _annotate_items_with_recipe(items, recipe_map, sku_doc_index=build_sku_doc_index())
     missing_recipe_defaults = {}
     if missing_skus:
         recipe_query = Q()

@@ -2,9 +2,9 @@
 
 {% load theme_tags %}
 
-{% block title %}Manual PO Entry{% endblock %}
-{% block header_title %}Manual PO Entry{% endblock %}
-{% block header_subtitle %}Create PO intake rows manually when orders arrive without a PDF source file.{% endblock %}
+{% block title %}Manual PO / WO Entry{% endblock %}
+{% block header_title %}Manual PO / WO Entry{% endblock %}
+{% block header_subtitle %}Create PO or Work Order intake rows manually when orders arrive without a PDF source file.{% endblock %}
 {% block header_actions %}
     <a href="{% url 'planning:po_inbox' %}" class="erp-btn erp-btn-secondary">PO Intake Queue</a>
 {% endblock %}
@@ -12,7 +12,7 @@
 <div class="erp-page-stack">
     <section class="erp-section-shell">
         <div class="erp-alert erp-alert-info">
-            <strong>PO / PR Intake:</strong> Enter a PO Number, a PR Number, or both. PR-only jobs can be created for urgent work; a PO must be linked before dispatch.
+            <strong>PO / WO / PR Intake:</strong> Pick the document type below, then enter its Number, a PR Number, or both. PR-only jobs can be created for urgent work; a PO/WO must be linked before dispatch.
         </div>
     </section>
 
@@ -26,8 +26,8 @@
         <div class="erp-card-header">
             <div class="erp-card-title-stack">
                 <div class="erp-eyebrow">Manual Intake</div>
-                <h3 class="erp-section-title">Manual PO Entry Form</h3>
-                <p class="erp-section-desc">Create a PO intake record manually using the same structure as extracted PDF data.</p>
+                <h3 class="erp-section-title">Manual PO / WO Entry Form</h3>
+                <p class="erp-section-desc">Create a PO or Work Order intake record manually using the same structure as extracted PDF data.</p>
             </div>
         </div>
 
@@ -35,7 +35,18 @@
             {% csrf_token %}
             <div class="erp-form-grid" style="margin-bottom: 14px;">
                 <div>
-                    <label for="po_number">PO Number <span class="erp-note">(optional if PR provided)</span></label>
+                    <label>Document Type</label>
+                    <div style="display:flex; gap:16px; align-items:center; height:38px;">
+                        <label style="font-weight:normal; display:flex; align-items:center; gap:6px;">
+                            <input type="radio" name="document_type" value="PO" checked onchange="updateDocTypeLabels()"> PO
+                        </label>
+                        <label style="font-weight:normal; display:flex; align-items:center; gap:6px;">
+                            <input type="radio" name="document_type" value="WO" onchange="updateDocTypeLabels()"> Work Order (WO)
+                        </label>
+                    </div>
+                </div>
+                <div>
+                    <label for="po_number" id="po_number_label">PO Number <span class="erp-note">(optional if PR provided)</span></label>
                     <input id="po_number" name="po_number" type="text">
                 </div>
                 <div>
@@ -106,7 +117,7 @@
 
             <div class="erp-form-actions">
                 <button type="button" class="erp-btn erp-btn-secondary" onclick="addLine()">Add Another Line</button>
-                <button type="submit" class="erp-btn erp-btn-primary">Save Manual PO</button>
+                <button type="submit" class="erp-btn erp-btn-primary" id="manual_po_submit">Save Manual PO</button>
             </div>
         </form>
     </section>
@@ -115,6 +126,16 @@
 {% block extra_js %}
 <script>
 let nextLineIndex = 2;
+
+function updateDocTypeLabels() {
+    const selected = document.querySelector('input[name="document_type"]:checked');
+    const isWo = selected && selected.value === 'WO';
+    const label = isWo ? 'Work Order' : 'PO';
+    document.getElementById('po_number_label').innerHTML =
+        label + ' Number <span class="erp-note">(optional if PR provided)</span>';
+    document.getElementById('manual_po_submit').textContent = 'Save Manual ' + label;
+}
+document.addEventListener('DOMContentLoaded', updateDocTypeLabels);
 
 function addLine() {
     const tbody = document.getElementById('manual_po_items_body');

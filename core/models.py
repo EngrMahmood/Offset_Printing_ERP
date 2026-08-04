@@ -285,9 +285,9 @@ class JobCard(models.Model):
 
     month = models.CharField(max_length=20, null=True, blank=True)
     po_date = models.DateField(null=True, blank=True)
-    PO_No = models.CharField(max_length=50, null=True, blank=True)
+    PO_No = models.CharField(max_length=50, null=True, blank=True, db_index=True)
 
-    SKU = models.CharField(max_length=100)
+    SKU = models.CharField(max_length=100, db_index=True)
 
     material = models.ForeignKey(Material, on_delete=models.SET_NULL, null=True, blank=True)
 
@@ -652,16 +652,32 @@ class JobCard(models.Model):
         consumed = (total_consumed['total_output'] or 0) + (total_consumed['total_waste'] or 0)
         return max(consumed - self.total_sheets_planned, 0)
     
+    def _is_prefetched(self, related_name):
+        """True when `related_name` was loaded via prefetch_related(), so `.all()`
+        on it is free — used to avoid a fresh `.filter()`/`.aggregate()` query in
+        the properties below when the caller already prefetched the data (e.g.
+        list/queue views looping over many job cards)."""
+        return (
+            hasattr(self, '_prefetched_objects_cache')
+            and related_name in self._prefetched_objects_cache
+        )
+
     @property
     def total_production(self):
+        if self._is_prefetched('productions'):
+            return sum((p.output_sheets or 0) for p in self.printing_productions)
         return self.printing_productions.aggregate(total=Sum('output_sheets'))['total'] or 0
 
     @property
     def printing_productions(self):
+        if self._is_prefetched('productions'):
+            return [p for p in self.productions.all() if p.is_active and p.entry_type == 'printing']
         return self.productions.filter(is_active=True, entry_type='printing')
 
     @property
     def packing_productions(self):
+        if self._is_prefetched('productions'):
+            return [p for p in self.productions.all() if p.is_active and p.entry_type == 'packing']
         return self.productions.filter(is_active=True, entry_type='packing')
 
     @property
@@ -674,10 +690,14 @@ class JobCard(models.Model):
 
     @property
     def total_packed_pcs(self):
+        if self._is_prefetched('productions'):
+            return sum((p.packing_qty or 0) for p in self.packing_productions)
         return self.packing_productions.aggregate(total=Sum('packing_qty'))['total'] or 0
 
     @property
     def total_sorting_waste_pcs(self):
+        if self._is_prefetched('productions'):
+            return sum((p.sorting_waste_qty or 0) for p in self.packing_productions)
         return self.packing_productions.aggregate(total=Sum('sorting_waste_qty'))['total'] or 0
 
     @property
@@ -700,10 +720,14 @@ class JobCard(models.Model):
 
     @property
     def total_dispatch(self):
+        if self._is_prefetched('dispatch_set'):
+            return sum((d.dispatch_qty or 0) for d in self.dispatch_set.all() if d.is_active)
         return self.dispatch_set.filter(is_active=True).aggregate(total=Sum('dispatch_qty'))['total'] or 0
 
     @property
     def total_waste(self):
+        if self._is_prefetched('productions'):
+            return sum((p.waste_sheets or 0) for p in self.productions.all() if p.is_active)
         return self.productions.filter(is_active=True).aggregate(total=Sum('waste_sheets'))['total'] or 0
 
     @property
@@ -1317,6 +1341,7 @@ class Dispatch(models.Model):
 
     dc_no = models.CharField(
         max_length=50,
+        db_index=True,
         help_text="Dispatch Challan / DR number (required; can be shared across multiple Job Cards and SKUs)",
     )
 

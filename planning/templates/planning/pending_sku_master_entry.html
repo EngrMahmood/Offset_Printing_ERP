@@ -69,7 +69,7 @@
 
         <div class="erp-info-grid" style="grid-template-columns:repeat(auto-fill, minmax(160px, 1fr)); margin-bottom:12px;">
             <div class="erp-info-item">
-                <div class="erp-info-item__label">PO Number</div>
+                <div class="erp-info-item__label">{{ po_number|doc_type_label }} Number</div>
                 <div class="erp-info-item__value">{{ po_number }}</div>
             </div>
             {% if jc_number %}

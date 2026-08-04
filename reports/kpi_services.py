@@ -194,7 +194,7 @@ DRILLDOWN_FUNCS = {
 
 DRILLDOWN_HEADERS = ['kpi', 'row_type', 'job_card_no', 'po_number', 'reference', 'date', 'qty_pcs', 'machine']
 DRILLDOWN_HEADER_LABELS = {
-    'kpi': 'KPI', 'row_type': 'Row Type', 'job_card_no': 'Job Card', 'po_number': 'PO',
+    'kpi': 'KPI', 'row_type': 'Row Type', 'job_card_no': 'Job Card', 'po_number': 'PO/WO',
     'reference': 'Reference (DC/JC)', 'date': 'Date', 'qty_pcs': 'Qty (Pcs)', 'machine': 'Machine',
 }
 
@@ -212,7 +212,7 @@ QUARTERLY_DETAIL_HEADERS = [
     'quarter', 'process', 'month', 'date', 'po_number', 'job_card_no', 'sku', 'qty_pcs', 'machine',
 ]
 QUARTERLY_DETAIL_HEADER_LABELS = {
-    'quarter': 'Quarter', 'process': 'Process', 'month': 'Month', 'date': 'Date', 'po_number': 'PO',
+    'quarter': 'Quarter', 'process': 'Process', 'month': 'Month', 'date': 'Date', 'po_number': 'PO/WO',
     'job_card_no': 'JC', 'sku': 'SKU', 'qty_pcs': 'Order Qty (Pcs)', 'machine': 'Machine',
 }
 

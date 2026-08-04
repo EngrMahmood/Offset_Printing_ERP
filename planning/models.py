@@ -73,8 +73,8 @@ class PlanningJob(models.Model):
     po_approval_date = models.DateField(null=True, blank=True)
     delivery_date = models.DateField(null=True, blank=True)
 
-    po_number = models.CharField(max_length=120, blank=True)
-    sku = models.CharField(max_length=255, blank=True)
+    po_number = models.CharField(max_length=120, blank=True, db_index=True)
+    sku = models.CharField(max_length=255, blank=True, db_index=True)
     job_name = models.CharField(max_length=255, blank=True)
     repeat_flag = models.CharField(max_length=50, blank=True)
 
@@ -132,7 +132,7 @@ class PlanningJob(models.Model):
     mi_balance = models.PositiveIntegerField(null=True, blank=True)
 
     remaining_sheet = models.PositiveIntegerField(null=True, blank=True)
-    status = models.CharField(max_length=40, choices=PLANNING_STATUS_CHOICES, default='draft', blank=True)
+    status = models.CharField(max_length=40, choices=PLANNING_STATUS_CHOICES, default='draft', blank=True, db_index=True)
     planning_stage = models.CharField(max_length=40, choices=PLANNING_STAGE_CHOICES, default='', blank=True)
     planning_stage_changed_at = models.DateTimeField(null=True, blank=True)
     planning_stage_changed_by = models.ForeignKey(
@@ -198,7 +198,7 @@ class PlanningJob(models.Model):
         (4, 'Urgent'),
     ]
     priority = models.IntegerField(choices=PRIORITY_CHOICES, default=1, db_index=True)
-    is_active = models.BooleanField(default=True)
+    is_active = models.BooleanField(default=True, db_index=True)
     is_on_hold = models.BooleanField(default=False)
     hold_reason = models.TextField(blank=True)
     hold_by = models.ForeignKey(
@@ -704,10 +704,18 @@ class PlanningJob(models.Model):
     @property
     def latest_cancelled_plate_request(self):
         """Most recent plate request cancelled by graphics (plates not required)."""
+        is_prefetched = (
+            hasattr(self, '_prefetched_objects_cache')
+            and 'plate_requests' in self._prefetched_objects_cache
+        )
         for req in self.plate_requests.all():
             if getattr(req, 'is_cancelled', False):
                 return req
-        # Fallback if not prefetched / ordering differs
+        if is_prefetched:
+            # plate_requests was prefetched with no filter, so .all() above already
+            # checked every request for this job — no need to hit the DB again.
+            return None
+        # Fallback when not prefetched (single-job lookups elsewhere).
         return (
             self.plate_requests.filter(progress__istartswith='Cancelled')
             .order_by('-requested_at', '-created_at', '-id')

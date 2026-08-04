@@ -1,5 +1,5 @@
 {% extends 'theme/base.html' %}
-{% load static humanize %}
+{% load static humanize theme_tags %}
 
 {% block title %}Job {{ job.jc_number }} - Offset Printing ERP{% endblock %}
 {% block header_title %}Job Detail - {{ job.jc_number }}{% endblock %}
@@ -13,7 +13,7 @@
 {% elif job.planning_stage == 'planning_done' %}<span class="erp-badge erp-badge-success">Planning Done</span>
 {% else %}<span class="erp-badge">{{ job.get_planning_stage_display }}</span>{% endif %}
 {% endif %}
-| PO: {{ job.po_number|default:'-' }} | SKU: {{ job.sku|default:'-' }}
+| {{ job.po_number|doc_type_label }}: {{ job.po_number|default:'-' }} | SKU: {{ job.sku|default:'-' }}
 {% endblock %}
 
 {% block header_actions %}
@@ -31,7 +31,7 @@
 <div class="erp-page-stack">
     {% if job.pr_reference and job.po_number %}
     <div class="erp-alert erp-alert-info">
-        This job started under PR <strong>{{ job.pr_reference }}</strong> and was later linked to PO
+        This job started under PR <strong>{{ job.pr_reference }}</strong> and was later linked to {{ job.po_number|doc_type_label }}
         <strong>{{ job.po_number }}</strong>.
     </div>
     {% endif %}
@@ -127,7 +127,7 @@
         </div>
         <div class="erp-info-grid">
             <div class="erp-info-item"><div class="erp-info-item__label">JC No</div><div class="erp-info-item__value"><strong>{{ job.jc_number|default:'-' }}</strong></div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">{{ job.po_number|doc_type_label }} Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">SKU</div><div class="erp-info-item__value">{{ job.sku|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Job Name</div><div class="erp-info-item__value">{{ job.job_name|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>

@@ -197,6 +197,28 @@ def get_open_planning_plate_request_blocking_release(planning_job):
     return _open_planning_plate_requests_for_release_guard(planning_job).first()
 
 
+def get_open_planning_plate_requests_blocking_release_bulk(planning_jobs):
+    """Same rule as get_open_planning_plate_request_blocking_release(), for many jobs
+    in one query instead of one query per job. Returns {planning_job_id: PlateRequest}.
+
+    Use this in list/queue views that loop over many jobs (e.g. approval_queue,
+    planning_home) instead of calling the single-job version per row.
+    """
+    job_ids = [pj.id for pj in planning_jobs if pj]
+    if not job_ids:
+        return {}
+    candidates = PlateRequest.objects.filter(
+        planning_job_id__in=job_ids,
+        status__in=PLATE_REQUEST_OPEN_STATUSES,
+    ).exclude(
+        Q(source__in=REPLACEMENT_SOURCES) | ~Q(replacement_reason='')
+    ).order_by('planning_job_id', '-requested_at', '-created_at')
+    result = {}
+    for plate_request in candidates:
+        result.setdefault(plate_request.planning_job_id, plate_request)
+    return result
+
+
 def validate_job_card_release_allowed(job_card):
     """Block release while an open planning plate request is still in progress."""
     planning_job = getattr(job_card, 'planning_job', None)

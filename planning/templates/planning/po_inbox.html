@@ -6,8 +6,8 @@
 {% block header_subtitle %}Unified PO Intake — repeat jobs route to Planning, new SKUs route to Master Data first.{% endblock %}
 
 {% block header_actions %}
-    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Upload PO PDF</a>
-    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO Entry</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:upload_po' %}">Upload PO / WO PDF</a>
+    <a class="erp-btn erp-btn-secondary" href="{% url 'planning:manual_po_entry' %}">Manual PO / WO Entry</a>
 {% endblock %}
 
 {% block content %}
@@ -48,7 +48,7 @@
         <div class="erp-info-grid mb-4">
             <div class="erp-info-item">
                 <div class="erp-info-item__label">Total PO Documents</div>
-                <div class="erp-info-item__value">{{ page_obj.paginator.count }}</div>
+                <div class="erp-info-item__value">{{ total_document_count }}</div>
             </div>
             <div class="erp-info-item">
                 <div class="erp-info-item__label">Page</div>
@@ -56,10 +56,15 @@
             </div>
         </div>
 
+        {% if is_capped_view %}
+            <div class="erp-note mb-4">Showing the 200 most recently uploaded documents (of {{ total_document_count }} total). Use Search to find older PO/WO numbers.</div>
+        {% endif %}
+
         <div class="erp-table-wrap">
             <table class="erp-table erp-table-dense">
                 <thead>
                     <tr>
+                        <th>Type</th>
                         <th>PO</th>
                         <th>Supplier</th>
                         <th>Items</th>
@@ -72,6 +77,13 @@
                 <tbody>
                 {% for row in rows %}
                     <tr>
+                        <td>
+                            {% if row.document_type == 'WO' %}
+                                <span class="erp-badge is-released">WO</span>
+                            {% else %}
+                                <span class="erp-badge is-count">PO</span>
+                            {% endif %}
+                        </td>
                         <td>{{ row.po_number }}</td>
                         <td>{{ row.supplier }}</td>
                         <td>{{ row.item_count }}</td>
@@ -105,7 +117,7 @@
                         </td>
                     </tr>
                 {% empty %}
-                    <tr><td colspan="7" class="erp-empty">No uploaded PO documents yet.</td></tr>
+                    <tr><td colspan="8" class="erp-empty">No uploaded PO documents yet.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

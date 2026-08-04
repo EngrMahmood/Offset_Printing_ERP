@@ -1,8 +1,8 @@
 {% extends 'theme/base.html' %}
 {% load theme_tags %}
 
-{% block title %}Review PO {{ payload.po_number }}{% endblock %}
-{% block header_title %}Review PO {{ payload.po_number }}{% endblock %}
+{% block title %}Review {% if payload.document_type == 'WO' %}Work Order{% else %}PO{% endif %} {{ payload.po_number }}{% endblock %}
+{% block header_title %}Review {% if payload.document_type == 'WO' %}Work Order{% else %}PO{% endif %} {{ payload.po_number }}{% endblock %}
 {% block header_subtitle %}Verify extracted data and routing: Repeat can update Planning, New must go through Pending SKU approval.{% endblock %}
 {% block header_actions %}
     <a href="{% url 'planning:po_inbox' %}" class="erp-btn erp-btn-secondary">Back to PO Intake Queue</a>
@@ -52,12 +52,12 @@
         <div class="erp-card-header">
             <div class="erp-card-title-stack">
                 <div class="erp-eyebrow">Details</div>
-                <h3 class="erp-section-title">PO Header</h3>
+                <h3 class="erp-section-title">{% if payload.document_type == 'WO' %}Work Order Header{% else %}PO Header{% endif %}</h3>
             </div>
         </div>
         <div class="erp-info-grid">
-            <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ payload.po_number|default:"-" }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">PO Date</div><div class="erp-info-item__value">{{ payload.po_date|default:"-" }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">{% if payload.document_type == 'WO' %}Work Order Number{% else %}PO Number{% endif %}</div><div class="erp-info-item__value">{{ payload.po_number|default:"-" }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">{% if payload.document_type == 'WO' %}WO Date{% else %}PO Date{% endif %}</div><div class="erp-info-item__value">{{ payload.po_date|default:"-" }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Approval Date</div><div class="erp-info-item__value">{{ payload.approval_date|default:"-" }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Department</div><div class="erp-info-item__value">{{ payload.department|default:"-" }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Delivery Location</div><div class="erp-info-item__value">{{ payload.delivery_location|default:"-" }}</div></div>

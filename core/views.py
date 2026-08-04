@@ -406,7 +406,11 @@ def _dispatchable_job_cards_queryset(edit_record=None):
         Prefetch(
             'dispatch_set',
             queryset=Dispatch.objects.filter(is_active=True).select_related('created_by').order_by('-dispatch_date', '-id'),
-        )
+        ),
+        Prefetch(
+            'productions',
+            queryset=Production.objects.filter(is_active=True),
+        ),
     )
 
 
@@ -780,15 +784,30 @@ def dispatch_records(request):
         total_dispatch = dispatch_totals.get(row.job_card_id, 0)
         row.remaining_badge = _dispatch_remaining_badge(row.job_card.order_qty, total_dispatch)
 
+    # Batched into one query instead of 2 queries per distinct DC number on the
+    # page (previously up to ~200 queries for a 100-row page). Still preserves
+    # the original per-value case-insensitive (iexact) grouping semantics.
     dc_values = list({row.dc_no for row in records if row.dc_no})
     dc_bundle_map = {}
-    for dc_value in dc_values:
-        dc_qs = Dispatch.objects.filter(is_active=True, dc_no__iexact=dc_value)
-        dc_bundle_map[dc_value.strip().lower()] = {
-            'line_count': dc_qs.count(),
-            'sku_count': dc_qs.values('job_card__SKU').distinct().count(),
-            'dc_no': dc_value,
-        }
+    if dc_values:
+        dc_match_filter = Q()
+        for dc_value in dc_values:
+            dc_match_filter |= Q(dc_no__iexact=dc_value)
+        grouped = {}
+        for dc_row in Dispatch.objects.filter(is_active=True).filter(dc_match_filter).values('dc_no', 'job_card__SKU'):
+            key = (dc_row['dc_no'] or '').strip().lower()
+            bucket = grouped.setdefault(key, {'line_count': 0, 'skus': set()})
+            bucket['line_count'] += 1
+            if dc_row['job_card__SKU']:
+                bucket['skus'].add(dc_row['job_card__SKU'])
+        for dc_value in dc_values:
+            key = dc_value.strip().lower()
+            bucket = grouped.get(key, {'line_count': 0, 'skus': set()})
+            dc_bundle_map[key] = {
+                'line_count': bucket['line_count'],
+                'sku_count': len(bucket['skus']),
+                'dc_no': dc_value,
+            }
 
     for row in records:
         row.dc_bundle = dc_bundle_map.get(

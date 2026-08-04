@@ -17,7 +17,7 @@
         <div class="erp-card-header">
         <div>
                 <h1 class="erp-section-title">New SKU Recipe Setup</h1>
-                <p class="erp-section-desc">PO {{ payload.po_number|default:'-' }} | Configure missing SKUs to move them into planning flow.</p>
+                <p class="erp-section-desc">{{ payload.po_number|doc_type_label }} {{ payload.po_number|default:'-' }} | Configure missing SKUs to move them into planning flow.</p>
         </div>
             <div class="erp-actions">
                 <a href="{% url 'qc:po_review' po_doc.id %}" class="erp-btn erp-btn-secondary">Back To PO Review</a>

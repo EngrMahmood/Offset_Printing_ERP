@@ -2,8 +2,8 @@
 
 {% load theme_tags %}
 
-{% block title %}Upload PO PDF{% endblock %}
-{% block header_title %}Upload PO PDF{% endblock %}
+{% block title %}Upload PO / Work Order PDF{% endblock %}
+{% block header_title %}Upload PO / Work Order PDF{% endblock %}
 {% block header_subtitle %}After upload, route Repeat vs New in PO Intake. New SKUs must pass Master approval before Planning sync.{% endblock %}
 {% block header_actions %}
     <a class="erp-btn erp-btn-secondary" href="{% url 'planning:home' %}">Back to Planning</a>
@@ -21,17 +21,17 @@
         <div class="erp-card-header">
             <div class="erp-card-title-stack">
                 <div class="erp-eyebrow">PO Intake</div>
-                <h3 class="erp-section-title">Upload Purchase Order PDF</h3>
-                <p class="erp-section-desc">Upload PO PDF to auto-extract line items into the intake queue.</p>
+                <h3 class="erp-section-title">Upload Purchase Order / Work Order PDF</h3>
+                <p class="erp-section-desc">Upload a PO or Work Order PDF — the document type is detected automatically and line items are extracted into the intake queue.</p>
             </div>
         </div>
         <form method="post" enctype="multipart/form-data">
             {% csrf_token %}
             <div class="erp-form-grid">
                 <div class="erp-form-field erp-form-grid__full">
-                    <label>Select PO PDF</label>
+                    <label>Select PO or Work Order PDF</label>
                     <input type="file" name="po_pdf" accept=".pdf" required>
-                    <div class="erp-form-help">Only system-generated PDF from Utopia ERP system is supported.</div>
+                    <div class="erp-form-help">Only system-generated PDF from Utopia ERP system is supported — both Purchase Order and Work Order documents work here.</div>
                 </div>
             </div>
             <div class="erp-form-actions">
@@ -49,15 +49,12 @@
             </div>
         </div>
         <ul>
-            <li>PO Number, PO Date, Approval Date</li>
+            <li>Document Number (PO or WO), Document Date, Approval Date</li>
             <li>Department, Delivery Location</li>
             <li>All line items: SKU, Delivery Date, Quantity, Unit Cost, Net Total</li>
-            <li>Variable number of SKUs (1 to 20+) — all detected automatically</li>
+            <li>Variable number of SKUs (1 to 30+) — all detected automatically</li>
         </ul>
-        <p class="erp-muted">After extraction, use PO Intake Queue to route repeat/new lines. Job Card numbers are auto-assigned.</p>
         <p class="erp-note">After extraction, use PO Intake Queue to route repeat/new lines. Job Card numbers are auto-assigned.</p>
     </section>
 </div>
 {% endblock %}
-
-

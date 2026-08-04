@@ -1077,7 +1077,7 @@ def build_machine_planning_context(request):
     ]
     header_labels = {
         'sequence': 'S#',
-        'po_numbers': 'PO Numbers',
+        'po_numbers': 'PO/WO Numbers',
         'job_card_numbers': 'Job Card Numbers',
         'sku': 'SKU',
         'po_count': 'PO#',
@@ -1708,7 +1708,7 @@ def build_daily_production_context(request):
         ]),
         'released': (released_rows, [
             ('date_label', 'Date'), ('released_time', 'Time'), ('job_card_no', 'JC No'),
-            ('po_number', 'PO No'), ('sku', 'SKU'), ('machine', 'Machine'),
+            ('po_number', 'PO/WO No'), ('sku', 'SKU'), ('machine', 'Machine'),
             ('order_qty', 'Order Qty'), ('released_by', 'Released By'),
         ]),
         'printing': (printing_rows, [
@@ -2400,7 +2400,7 @@ def build_pending_work_context(request):
         headers = ['stage', 'job_card_no', 'po_number', 'sku', 'machine', 'status',
                    'order_qty_pcs', 'printed_pcs', 'packed_pcs', 'dispatched_pcs', 'pending_qty', 'days_pending']
     header_labels = {
-        'stage': 'Stage', 'job_card_no': 'Job Card', 'po_number': 'PO', 'sku': 'SKU', 'machine': 'Machine',
+        'stage': 'Stage', 'job_card_no': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'machine': 'Machine',
         'status': 'Status', 'order_qty_pcs': 'Order Qty (Pcs)', 'printed_pcs': 'Printed (Pcs)',
         'packed_pcs': 'Packed (Pcs)', 'dispatched_pcs': 'Dispatched (Pcs)', 'pending_qty': 'Pending (Pcs)',
         'days_pending': 'Days Stuck',

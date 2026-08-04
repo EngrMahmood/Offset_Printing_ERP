@@ -5,10 +5,10 @@ from __future__ import annotations
 import math
 import re
 
-from django.db.models import Q, Sum
+from django.db.models import Prefetch, Q, Sum
 
 from core.machine_routing import color_class
-from core.models import JOB_CARD_PRODUCTION_START_STATUSES, JobCard, Machine
+from core.models import JOB_CARD_PRODUCTION_START_STATUSES, JobCard, Machine, Production
 from core.services import compute_planned_minutes
 from production.printing_pass_helpers import (
     MAX_PRINT_PASSES,
@@ -102,31 +102,63 @@ def get_remaining_planned_for_job_card(job_card, planned_total, exclude_producti
     return max(planned_total - allocated, 0)
 
 
+def _printing_job_cards_related():
+    """select_related/prefetch_related shared by both queryset branches below —
+    eliminates the per-job-card FK queries (planning_job/material/machine_name)
+    and lets JobCard.total_printed_pcs/total_production reuse a prefetched
+    `productions` instead of hitting the DB again in build_printing_job_card_maps."""
+    return dict(
+        select_related=('planning_job', 'material', 'machine_name'),
+        prefetch_related=(
+            Prefetch('productions', queryset=Production.objects.filter(is_active=True)),
+        ),
+    )
+
+
 def printing_job_cards_queryset(edit_record=None):
+    related = _printing_job_cards_related()
     if edit_record:
-        return JobCard.objects.filter(is_active=True, is_print_job=True).filter(
+        qs = JobCard.objects.filter(is_active=True, is_print_job=True).filter(
             Q(status__in=JOB_CARD_PRODUCTION_START_STATUSES) | Q(pk=edit_record.job_card_id)
         ).distinct().order_by('-created_at')
-    return JobCard.objects.filter(
-        is_active=True,
-        is_print_job=True,
-        status__in=JOB_CARD_PRODUCTION_START_STATUSES,
-    ).order_by('-created_at')
+    else:
+        qs = JobCard.objects.filter(
+            is_active=True,
+            is_print_job=True,
+            status__in=JOB_CARD_PRODUCTION_START_STATUSES,
+        ).order_by('-created_at')
+    return qs.select_related(*related['select_related']).prefetch_related(*related['prefetch_related'])
 
 
 def build_printing_job_card_maps(job_cards, edit_record=None):
     exclude_id = edit_record.pk if edit_record else None
+    job_cards = list(job_cards)
     plan_map = {}
     machine_map = {}
     info_map = {}
 
+    # Batched once for the whole page instead of one query per job card — see
+    # get_remaining_planned_for_job_card(), whose exact "planned_total <= 0 -> 0,
+    # else max(planned_total - allocated, 0)" logic is replicated below.
+    allocated_qs = Production.objects.filter(
+        job_card_id__in=[jc.id for jc in job_cards],
+        is_active=True,
+        entry_type='printing',
+    )
+    if exclude_id:
+        allocated_qs = allocated_qs.exclude(pk=exclude_id)
+    allocated_map = {
+        row['job_card_id']: float(row['total'] or 0)
+        for row in allocated_qs.values('job_card_id').annotate(total=Sum('planned_time'))
+    }
+
     for job_card in job_cards:
         plan = get_effective_job_card_plan(job_card)
-        remaining_planned = get_remaining_planned_for_job_card(
-            job_card,
-            plan['planned_total'],
-            exclude_production_id=exclude_id,
-        )
+        planned_total = plan['planned_total']
+        if planned_total <= 0:
+            remaining_planned = 0
+        else:
+            remaining_planned = max(planned_total - allocated_map.get(job_card.id, 0), 0)
         job_id = str(job_card.id)
         plan_map[job_id] = {
             'planned_total': plan['planned_total'],

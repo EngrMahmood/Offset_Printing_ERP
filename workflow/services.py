@@ -389,7 +389,7 @@ def _po_payload_items(payload, exclude_ignored=True):
     ]
 
 
-def _annotate_items_with_recipe(items, recipe_map, current_po_number=None, po_doc_created_at=None, po_doc_id=None):
+def _annotate_items_with_recipe(items, recipe_map, current_po_number=None, po_doc_created_at=None, po_doc_id=None, sku_doc_index=None):
     from planning.sku_classification import annotate_items_repeat_new
 
     return annotate_items_repeat_new(
@@ -398,6 +398,7 @@ def _annotate_items_with_recipe(items, recipe_map, current_po_number=None, po_do
         po_number=current_po_number,
         po_doc_created_at=po_doc_created_at,
         po_doc_id=po_doc_id,
+        sku_doc_index=sku_doc_index,
     )
 
 

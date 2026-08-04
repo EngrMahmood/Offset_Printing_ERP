@@ -427,7 +427,7 @@
 
                             <div class="erp-info-item"><div class="erp-info-item__label">Customer</div><div class="erp-info-item__value" id="ji_customer">-</div></div>
 
-                            <div class="erp-info-item"><div class="erp-info-item__label">PO No</div><div class="erp-info-item__value" id="ji_po_no">-</div></div>
+                            <div class="erp-info-item"><div class="erp-info-item__label" id="ji_po_no_label">PO No</div><div class="erp-info-item__value" id="ji_po_no">-</div></div>
 
                             <div class="erp-info-item"><div class="erp-info-item__label">Order Qty</div><div class="erp-info-item__value" id="ji_order_qty">-</div></div>
 
@@ -1131,6 +1131,9 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('ji_customer').textContent = info.customer;
 
         document.getElementById('ji_po_no').textContent = info.po_no;
+
+        document.getElementById('ji_po_no_label').textContent =
+            (info.po_no || '').toUpperCase().startsWith('WO-') ? 'WO No' : 'PO No';
 
         document.getElementById('ji_order_qty').textContent = info.order_qty_display;
 

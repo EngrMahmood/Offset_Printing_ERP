@@ -1,3 +1,4 @@
+{% load theme_tags %}
 {% if sku_duplicate_alert %}
 <section class="erp-alert {% if sku_duplicate_alert.combine_possible %}erp-alert-warning{% elif sku_duplicate_alert.show_priority_hint %}erp-alert-info{% else %}erp-alert-info{% endif %}" style="margin-bottom:14px;" id="sku-duplicate-alert">
     <div style="font-weight:700; margin-bottom:8px;">
@@ -18,7 +19,7 @@
             {% for member in sku_duplicate_alert.members %}
             <li>
                 <a href="{% url member.detail_url_name member.job_id %}"><strong>{{ member.jc_number }}</strong></a>
-                PO {{ member.po_number }} · {{ member.status_label }} · {{ member.stage_label }}
+                {{ member.po_number|doc_type_label }} {{ member.po_number }} · {{ member.status_label }} · {{ member.stage_label }}
                 · Print: {{ member.printing_label }}
                 {% if member.is_current %}<strong>← you</strong>{% endif %}
                 {% if member.is_primary %}<span class="erp-badge erp-badge-dark" style="margin-left:4px;">First PO</span>{% endif %}
@@ -33,7 +34,7 @@
     <div style="margin-bottom:8px;">
         <strong>Combine run possible</strong> — {{ sku_duplicate_alert.combine_eligible_jcs|join:', ' }}
         have not started printing yet.
-        Primary reference: <strong>{{ sku_duplicate_alert.primary_jc_number }}</strong> (PO {{ sku_duplicate_alert.primary_po_number }}).
+        Primary reference: <strong>{{ sku_duplicate_alert.primary_jc_number }}</strong> ({{ sku_duplicate_alert.primary_po_number|doc_type_label }} {{ sku_duplicate_alert.primary_po_number }}).
         Expedite planning, release job cards, and ask production to run together.
         Documentation stays <strong>separate per PO</strong>; reuse plates from the first PO where artwork is unchanged.
     </div>
@@ -49,7 +50,7 @@
     <div>
         <strong>Scheduling priority</strong> — this SKU was dispatched within the last {{ sku_duplicate_alert.recent_dispatch_days }} days:
         {% for dispatch in sku_duplicate_alert.recent_dispatches %}
-        {{ dispatch.jc_number }} (PO {{ dispatch.po_number }}, {{ dispatch.dispatch_date|date:'d-M-Y' }}, {{ dispatch.days_ago }} day{{ dispatch.days_ago|pluralize }} ago){% if not forloop.last %}; {% endif %}
+        {{ dispatch.jc_number }} ({{ dispatch.po_number|doc_type_label }} {{ dispatch.po_number }}, {{ dispatch.dispatch_date|date:'d-M-Y' }}, {{ dispatch.days_ago }} day{{ dispatch.days_ago|pluralize }} ago){% if not forloop.last %}; {% endif %}
         {% endfor %}.
         Treat new PO lines as <strong>lower urgency</strong> unless customer expedite applies.
     </div>

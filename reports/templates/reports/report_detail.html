@@ -52,7 +52,7 @@
                 <input type="text" name="status" placeholder="Status" value="{{ request.GET.status }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
                 {% endif %}
                 {% if 'po' in report.filters %}
-                <input type="text" name="po" placeholder="PO Number" value="{{ request.GET.po }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
+                <input type="text" name="po" placeholder="PO/WO Number" value="{{ request.GET.po }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
                 {% endif %}
                 {% if 'job_card' in report.filters %}
                 <input type="text" name="job_card" placeholder="Job Card" value="{{ request.GET.job_card }}" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">

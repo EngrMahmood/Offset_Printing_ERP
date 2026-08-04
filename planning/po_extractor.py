@@ -1,8 +1,9 @@
 """
-PO PDF extractor for Utopia Industries system-generated purchase orders.
+PO/WO PDF extractor for Utopia Industries system-generated purchase orders
+and work orders (both share the same document layout).
 
 Extracts:
-  - PO header (PO number, dates, department, delivery location, supplier/buyer)
+  - Header (PO/WO number, document type, dates, department, delivery location, supplier/buyer)
   - Line items (variable 1-N SKUs with delivery date, qty, unit cost, totals)
 
 Uses pdfplumber for text extraction from computer-generated PDFs.
@@ -14,7 +15,7 @@ from datetime import datetime
 MONTH_REGEX = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
 LINE_DATE_REGEX = r'(?:' + MONTH_REGEX + r'\s+\d{1,2},\s+\d{4}|\d{4}-\d{2}-\d{2})'
 # Unit pattern — extend here to support new units across all parsers
-UNIT_PATTERN = r'(?:PIECE|PCS|UNIT|SET|BOX|ROLL|PACK|KG|METER|YARD|NOS|EA|EACH|RL|MTR)\.?'
+UNIT_PATTERN = r'(?:PIECE|PCS|UNIT|SET|BOX|ROLL|PACK|KG|METER|YARD|NOS|EA|EACH|RL|MTR|HOURS|HRS|HR)\.?'
 _SKU_TOKEN_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]{2,}$')
 _SKU_BLOCK_WORDS = {
     'DATED',
@@ -104,6 +105,10 @@ def _clean_location(text):
     cleaned = str(text).strip().strip(':').strip()
     # Remove accidental trailing labels captured from dense PDF text blocks.
     cleaned = re.split(r'\s+(?:Buyer\s+Details|SUPPLIER\s+DETAILS|BUYER\s+DETAILS)\b', cleaned, maxsplit=1)[0].strip()
+    # Blank "Delivery Location" fields fall straight through into the next
+    # section header (e.g. "SUPPLIER DETAILS BUYER DETAILS") — treat that as empty.
+    if re.match(r'^(?:SUPPLIER|BUYER)\s+DETAILS\b', cleaned, flags=re.IGNORECASE):
+        return None
     return cleaned or None
 
 
@@ -311,9 +316,10 @@ def _build_sku_jobname_map(text, table_blobs=None):
 
 def extract_po_from_pdf(file_obj):
     """
-    Extract PO data from a file-like object (Django uploaded file).
-    Returns dict with keys: po_number, po_date, approval_date, department,
-    delivery_location, supplier_name, buyer_name, grand_total, items[].
+    Extract PO or WO data from a file-like object (Django uploaded file).
+    Returns dict with keys: po_number, document_type ('PO' or 'WO'), po_date,
+    approval_date, department, delivery_location, supplier_name, buyer_name,
+    grand_total, items[].
     Raises ValueError with a message if extraction fails.
     """
     try:
@@ -348,17 +354,35 @@ def extract_po_from_pdf(file_obj):
 def _parse_po_text(text, table_blobs=None, table_rows=None):
     """Parse raw extracted text into structured PO dict."""
 
-    # ── PO Number ──────────────────────────────────────────────────────────────
+    # ── Document Type / Number ────────────────────────────────────────────────
+    # Supports both system-generated Purchase Orders (PO-...) and Work Orders
+    # (WO-...). WO number format varies across departments (e.g. WO-02-2026-06257
+    # vs WO-2026-07-05681), so unlike the PO fallback below, no fixed digit
+    # grouping is assumed for WO numbers.
+    document_type = 'PO'
     po_number = None
     m = re.search(r'PURCHASE ORDER\s+(PO-[\w-]+)', text)
     if m:
         po_number = m.group(1).strip()
 
     if not po_number:
+        m = re.search(r'WORK ORDER\s+(WO-[\w-]+)', text)
+        if m:
+            po_number = m.group(1).strip()
+            document_type = 'WO'
+
+    if not po_number:
         # Fallback: look for standalone PO-XX-XXXX-XXXXXX pattern
         m = re.search(r'\b(PO-\d{2}-\d{4}-\d+)\b', text)
         if m:
             po_number = m.group(1)
+
+    if not po_number:
+        # Fallback: standalone WO-... pattern (format varies by department)
+        m = re.search(r'\b(WO-[\w-]+)\b', text)
+        if m:
+            po_number = m.group(1)
+            document_type = 'WO'
 
     # ── Dates ──────────────────────────────────────────────────────────────────
     po_date = None
@@ -446,7 +470,7 @@ def _parse_po_text(text, table_blobs=None, table_rows=None):
 
     # ── Grand Total ────────────────────────────────────────────────────────────
     grand_total = None
-    m = re.search(r'GRAND TOTAL\s+Rs\s+([\d,]+\.?\d*)', text)
+    m = re.search(r'GRAND TOTAL\s+Rs\s*([\d,]+\.?\d*)', text)
     if m:
         grand_total = _clean_amount(m.group(1))
 
@@ -527,6 +551,7 @@ def _parse_po_text(text, table_blobs=None, table_rows=None):
 
     return {
         'po_number': po_number,
+        'document_type': document_type,
         'po_date': po_date,
         'approval_date': approval_date,
         'department': department,
@@ -886,14 +911,14 @@ def _extract_items_from_text_windows(text, sku_jobname_map=None, sku_remarks_map
         return []
 
     date_re = re.compile(r'(' + LINE_DATE_REGEX + r')', re.IGNORECASE)
-    unit_re = re.compile(r'\b(PIECE\.?|PCS\.?|UNIT\.?|SET\.?|BOX\.?|ROLL\.?|PACK\.?|KG\.?|METER\.?|YARD\.?)\b', re.IGNORECASE)
+    unit_re = re.compile(r'\b' + UNIT_PATTERN + r'\b', re.IGNORECASE)
     amount_re = re.compile(r'(?:Rs\s*)?([\d,]+\.?\d*)', re.IGNORECASE)
     qty_unit_re = re.compile(
         r'([\d,.]+)\s*(' + UNIT_PATTERN + r')',
         re.IGNORECASE,
     )
 
-    blocked_headers = re.compile(r'\b(PURCHASE ORDER|Dated|Quotation Date|Approval Date|Department|Delivery Location|SUPPLIER DETAILS|BUYER DETAILS|GRAND TOTAL|SUBTOTAL|GST)\b', re.IGNORECASE)
+    blocked_headers = re.compile(r'\b(PURCHASE ORDER|WORK ORDER|Dated|Quotation Date|Approval Date|Department|Delivery Location|SUPPLIER DETAILS|BUYER DETAILS|GRAND TOTAL|SUBTOTAL|GST)\b', re.IGNORECASE)
 
     items = []
     seen = set()

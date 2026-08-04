@@ -27,7 +27,7 @@
         </div>
         <div class="erp-info-grid">
             <div class="erp-info-item"><div class="erp-info-item__label">JC No</div><div class="erp-info-item__value"><strong>{{ job.jc_number|default:'-' }}</strong></div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">PO Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
+            <div class="erp-info-item"><div class="erp-info-item__label">{{ job.po_number|doc_type_label }} Number</div><div class="erp-info-item__value">{{ job.po_number|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PR Reference</div><div class="erp-info-item__value">{{ job.pr_reference|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Order Quantity</div><div class="erp-info-item__value">{{ job.order_qty|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PO Approval Date</div><div class="erp-info-item__value">{{ po_approval_date_display|date:'d-m-Y'|default:'-' }}</div></div>

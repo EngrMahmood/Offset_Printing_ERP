@@ -1082,8 +1082,8 @@ def ensure_draft_planning_job_for_po_sku(po_doc, sku, *, actor=None, recipe=None
         'sku': sku_value,
         'job_name': job_name_value,
         'order_qty': order_qty,
-        'department': payload.get('department', ''),
-        'destination': payload.get('delivery_location', ''),
+        'department': payload.get('department') or '',
+        'destination': payload.get('delivery_location') or '',
         'delivery_date': delivery_date,
         'unit_cost': unit_cost_dec if unit_cost_dec is not None else (recipe.default_unit_cost if recipe else None),
         'status': 'draft',
@@ -1756,6 +1756,11 @@ def _sku_key(sku):
     return (sku or '').strip().upper()
 
 
+def document_type_label(po_number):
+    """Return 'WO' or 'PO' based on the document number's prefix, for display/messages."""
+    return 'WO' if (po_number or '').strip().upper().startswith('WO-') else 'PO'
+
+
 
 def _missing_required_master_fields(recipe, fallback_job_name='', *, allow_missing_plate_set_no=False):
     missing = []
@@ -2019,7 +2024,7 @@ def _po_payload_items(payload, exclude_ignored=True):
 
 
 
-def _annotate_items_with_recipe(items, recipe_map, current_po_number=None, po_doc_created_at=None, po_doc_id=None):
+def _annotate_items_with_recipe(items, recipe_map, current_po_number=None, po_doc_created_at=None, po_doc_id=None, sku_doc_index=None):
     from .sku_classification import annotate_items_repeat_new
 
     return annotate_items_repeat_new(
@@ -2028,6 +2033,7 @@ def _annotate_items_with_recipe(items, recipe_map, current_po_number=None, po_do
         po_number=current_po_number,
         po_doc_created_at=po_doc_created_at,
         po_doc_id=po_doc_id,
+        sku_doc_index=sku_doc_index,
     )
 
 
@@ -2212,8 +2218,8 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
     po_date = _parse_iso_date(payload.get('po_date'))
     approval_date = _parse_iso_date(payload.get('approval_date'))
     po_approval_date = approval_date or po_date
-    delivery_location = payload.get('delivery_location', '')
-    department = payload.get('department', '')
+    delivery_location = payload.get('delivery_location') or ''
+    department = payload.get('department') or ''
 
     if not items:
         return {'created': 0, 'updated': 0, 'locked': 0, 'missing_recipe': 0, 'pr_matched': []}

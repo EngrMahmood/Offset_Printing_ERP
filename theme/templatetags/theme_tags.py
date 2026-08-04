@@ -46,6 +46,18 @@ _URL_LABELS = {
 
 
 @register.filter
+def doc_type_label(po_number):
+    """Return 'Work Order' or 'PO' based on the number's prefix (WO- vs PO-)."""
+    return 'Work Order' if str(po_number or '').strip().upper().startswith('WO-') else 'PO'
+
+
+@register.filter
+def doc_type_short(po_number):
+    """Return 'WO' or 'PO' based on the number's prefix (WO- vs PO-)."""
+    return 'WO' if str(po_number or '').strip().upper().startswith('WO-') else 'PO'
+
+
+@register.filter
 def pretty_app_name(value):
     """Convert app name like 'qc' to human label 'QC'."""
     return _APP_LABELS.get(value or '', (value or '').title())
