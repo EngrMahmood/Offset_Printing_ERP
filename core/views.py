@@ -2223,6 +2223,7 @@ def notification_settings_home(request):
     departments = Department.objects.all().order_by('name')
     users = User.objects.filter(is_active=True).order_by('username')
     roles = UserProfile.ROLE_CHOICES
+    all_users = User.objects.select_related('profile', 'profile__department').order_by('-is_active', 'username') if request.user.is_superuser else User.objects.none()
 
     # --- Access control tab data ---
     access_roles = Role.objects.all().prefetch_related('permissions').order_by('display_name')
@@ -2290,6 +2291,7 @@ def notification_settings_home(request):
         'audits': audits,
         'departments': departments,
         'users': users,
+        'all_users': all_users,
         'roles': roles,
         'access_roles': access_roles,
         'permission_categories': permission_categories,
@@ -2427,6 +2429,118 @@ def access_user_overrides_edit(request):
         )
     messages.success(request, f"Access overrides updated for {target_user.username}.")
     return redirect(f"/settings/?user_id={target_user.id}#access-control")
+
+
+@login_required
+@require_POST
+def access_user_role_update(request):
+    """Superuser-only: change an existing user's role from the Roles &
+    Access Control user list (separate from manage_user_roles, which is the
+    older admin-role-gated screen)."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can change user roles.')
+        return redirect('notification_settings_home')
+
+    from django.contrib.auth import get_user_model
+    from core.models import AccessControlAuditLog
+
+    User = get_user_model()
+    target_user = get_object_or_404(User, id=request.POST.get('user_id'))
+    new_role = (request.POST.get('role') or '').strip()
+    if not new_role:
+        messages.error(request, 'A role is required.')
+        return redirect('/settings/#access-control')
+
+    profile = target_user.profile
+    old_role = profile.role
+    if old_role != new_role:
+        profile.role = new_role
+        profile.save()
+        AccessControlAuditLog.objects.create(
+            changed_by=request.user, action='update', target_type='user_role',
+            target_label=target_user.username,
+            old_values={'role': old_role},
+            new_values={'role': new_role},
+        )
+        messages.success(request, f"{target_user.username}'s role updated to {profile.get_role_display()}.")
+    return redirect('/settings/#access-control')
+
+
+@login_required
+@require_POST
+def access_user_password_reset(request):
+    """Superuser-only: send a password-reset link to an existing user's
+    email, reusing the same self-service reset flow/templates."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can trigger password resets.')
+        return redirect('notification_settings_home')
+
+    from django.contrib.auth import get_user_model
+    from django.contrib.auth.tokens import default_token_generator
+    from django.utils.encoding import force_bytes
+    from django.utils.http import urlsafe_base64_encode
+    from django.core.mail import send_mail
+    from django.template.loader import render_to_string
+    from django.urls import reverse
+
+    User = get_user_model()
+    target_user = get_object_or_404(User, id=request.POST.get('user_id'))
+
+    if not target_user.email:
+        messages.error(request, f"{target_user.username} has no email on file — add one before sending a reset link.")
+        return redirect('/settings/#access-control')
+
+    # Build the link manually (rather than PasswordResetForm) because that
+    # form silently skips accounts with an unusable password — exactly the
+    # state a brand-new user is in before they've ever set one.
+    uid = urlsafe_base64_encode(force_bytes(target_user.pk))
+    token = default_token_generator.make_token(target_user)
+    reset_link = request.build_absolute_uri(
+        reverse('password_reset_confirm', kwargs={'uidb64': uid, 'token': token})
+    )
+    email_body = render_to_string('user_welcome_email.html', {
+        'user': target_user, 'reset_link': reset_link,
+    })
+    send_mail(
+        subject='Offset ERP - Set/Reset Your Password',
+        message=email_body,
+        from_email=None,
+        recipient_list=[target_user.email],
+        fail_silently=True,
+    )
+    messages.success(request, f"Password reset link sent to {target_user.email}.")
+    return redirect('/settings/#access-control')
+
+
+@login_required
+@require_POST
+def access_user_toggle_active(request):
+    """Superuser-only: activate/deactivate a login. Deactivated users can't
+    log in but their records/history are kept intact."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can activate/deactivate accounts.')
+        return redirect('notification_settings_home')
+
+    from django.contrib.auth import get_user_model
+    from core.models import AccessControlAuditLog
+
+    User = get_user_model()
+    target_user = get_object_or_404(User, id=request.POST.get('user_id'))
+
+    if target_user.id == request.user.id:
+        messages.error(request, "You can't deactivate your own account.")
+        return redirect('/settings/#access-control')
+
+    target_user.is_active = not target_user.is_active
+    target_user.save(update_fields=['is_active'])
+    AccessControlAuditLog.objects.create(
+        changed_by=request.user, action='update', target_type='user_status',
+        target_label=target_user.username,
+        old_values={'is_active': not target_user.is_active},
+        new_values={'is_active': target_user.is_active},
+    )
+    messages.success(request, f"{target_user.username} is now {'active' if target_user.is_active else 'deactivated'}.")
+    return redirect('/settings/#access-control')
 
 
 @login_required

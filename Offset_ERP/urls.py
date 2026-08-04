@@ -3,12 +3,21 @@ from django.conf.urls.static import static
 from django.contrib import admin
 from django.urls import path, include
 from django.contrib.auth import views as auth_views
+from django.views.static import serve as static_serve
 from core.views import home
 from core import views
 from core import notification_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    # Served at the root (not under /static/) so its default scope covers the
+    # whole app — required for "Add to Home Screen" / Play Store TWA install.
+    path(
+        'service-worker.js',
+        static_serve,
+        {'document_root': settings.BASE_DIR / 'core/static/core/pwa', 'path': 'service-worker.js'},
+        name='service_worker',
+    ),
     path('login/', auth_views.LoginView.as_view(template_name='login.html'), name='login'),
     path('logout/', auth_views.LogoutView.as_view(next_page='login'), name='logout'),
     path('', home, name='home'),
@@ -73,6 +82,9 @@ urlpatterns = [
     path('settings/access-control/roles/<int:role_id>/delete/', views.access_role_delete, name='access_role_delete'),
     path('settings/access-control/roles/permissions/', views.access_role_permissions_edit, name='access_role_permissions_edit'),
     path('settings/access-control/user-overrides/', views.access_user_overrides_edit, name='access_user_overrides_edit'),
+    path('settings/access-control/users/role/', views.access_user_role_update, name='access_user_role_update'),
+    path('settings/access-control/users/password-reset/', views.access_user_password_reset, name='access_user_password_reset'),
+    path('settings/access-control/users/toggle-active/', views.access_user_toggle_active, name='access_user_toggle_active'),
     path('settings/users/create/', views.user_create, name='user_create'),
     path('settings/email/', views.email_settings_edit, name='email_settings_edit'),
     path('forgot-password/', views.forgot_password, name='forgot_password'),
