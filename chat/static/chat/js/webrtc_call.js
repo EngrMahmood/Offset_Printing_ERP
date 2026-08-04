@@ -42,6 +42,13 @@
         readyForOffers: false,
     };
 
+    // Screen capture (getDisplayMedia) isn't implemented in Chrome for
+    // Android or Android WebView/TWA shells at all — it's not an HTTPS
+    // issue, the API simply doesn't exist there. Check once so the button
+    // can stay hidden on those platforms instead of failing with a
+    // confusing "must be HTTPS" alert when the site is already HTTPS.
+    const screenShareSupported = !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+
     function resetCallUI() {
         overlay.hidden = true;
         overlay.classList.remove('is-minimized');
@@ -317,7 +324,7 @@
         showOverlay(statusLabel);
         declineLabel.textContent = 'Cancel';
         muteBtn.hidden = false;
-        screenshareBtn.hidden = false;
+        screenshareBtn.hidden = !screenShareSupported;
 
         try {
             await getLocalStream(callType);
@@ -339,7 +346,7 @@
         showOverlay('Connecting…');
         acceptBtn.hidden = true;
         muteBtn.hidden = false;
-        screenshareBtn.hidden = false;
+        screenshareBtn.hidden = !screenShareSupported;
 
         try {
             await getLocalStream(call.callType);
@@ -392,8 +399,12 @@
     }
 
     async function startScreenShare() {
-        if (!window.isSecureContext || !navigator.mediaDevices || !navigator.mediaDevices.getDisplayMedia) {
+        if (!window.isSecureContext) {
             alert('This page must be loaded over HTTPS to share your screen.');
+            return;
+        }
+        if (!screenShareSupported) {
+            alert('Screen sharing is not supported on this device/browser (Android does not support screen capture in Chrome or in-app browsers). Try from a desktop browser instead.');
             return;
         }
         let stream;
