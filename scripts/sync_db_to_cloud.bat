@@ -20,11 +20,23 @@ set "VM_USER=ubuntu"
 set "REPO_DIR=%~dp0.."
 
 REM Only the stdlib sqlite3 module is needed here (no third-party packages),
-REM so the project's venv is just one option, not a requirement — fall back
-REM to whatever "python" is on PATH if this machine (e.g. a remote server
-REM without a venv set up) doesn't have one.
-set "PYTHON=%REPO_DIR%\.venv\Scripts\python.exe"
-if not exist "%PYTHON%" set "PYTHON=python"
+REM so the project's venv is just one option, not a requirement. Try a few
+REM candidates and use whichever actually runs -- "python" on PATH can be a
+REM broken/relocated venv shim on some machines (fails with a pyvenv.cfg
+REM error), so existence alone isn't enough; the "py" launcher is more
+REM reliable where available.
+set "PYTHON="
+for %%P in ("%REPO_DIR%\.venv\Scripts\python.exe" "py" "python") do (
+    if not defined PYTHON (
+        %%P -c "import sqlite3" >nul 2>&1
+        if not errorlevel 1 set "PYTHON=%%~P"
+    )
+)
+if not defined PYTHON (
+    echo No working Python interpreter found ^(tried the project venv, "py", and "python"^).
+    echo Install Python from https://python.org and ensure it's on PATH, then try again.
+    goto :end
+)
 
 set "TMP_DB=%TEMP%\offset_erp_sync_db.sqlite3"
 set "TMP_MEDIA=%TEMP%\offset_erp_sync_media.tar.gz"
