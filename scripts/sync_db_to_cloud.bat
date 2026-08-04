@@ -75,7 +75,11 @@ if errorlevel 1 goto :upload_failed
 echo [4/5] Loading data into the running deployment...
 scp -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new "%~dp0remote_sync.sh" %VM_USER%@%VM_HOST%:~/remote_sync.sh
 if errorlevel 1 goto :upload_failed
-ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "bash ~/remote_sync.sh"
+REM Strip any CR bytes on the Linux side before running it -- Windows git
+REM configs (core.autocrlf) can silently give this file CRLF line endings
+REM on this machine, which breaks bash parsing on the VM. Sanitizing here
+REM means it works no matter what this machine's local file looks like.
+ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "sed -i 's/\r$//' ~/remote_sync.sh && bash ~/remote_sync.sh"
 if errorlevel 1 (
     echo Remote load step failed - check the output above.
     echo [%date% %time%] Sync FAILED - remote load step >> "%LOG_FILE%"
