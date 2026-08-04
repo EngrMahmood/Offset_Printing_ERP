@@ -163,6 +163,27 @@ bubblewrap build
 This produces a signed `.aab` to upload to Play Console. It's a thin wrapper
 around the same live site — no separate app logic to maintain.
 
+## 5a. Deploying code updates from GitHub to the VM
+
+The VM's `~/offset-erp` is a real git clone of
+https://github.com/EngrMahmood/Offset_Printing_ERP (`main` branch) — `.env`
+and `certs/` are gitignored so they're untouched by any of this. To push a
+code change (not data — see §6 for that) from GitHub to the live server:
+
+```bash
+ssh -i ~/.ssh/offset-erp-oracle.key ubuntu@offseterp.duckdns.org
+bash ~/offset-erp/scripts/deploy_update.sh
+```
+
+That script (`git pull origin main` + `docker compose up -d --build web`) is
+also on the VM already. It's safe to re-run — `docker-entrypoint.sh` runs
+`migrate`/seed commands idempotently on every container start. Expect a
+~30-40s window of `502`s from Nginx while the new container finishes
+migrating (same startup-race note as §3) if there were pending migrations.
+
+If you don't have the SSH key or terminal access handy, ask me to run it —
+same one-liner either way.
+
 ## 6. Keeping the cloud copy in sync with production
 
 The cloud deployment is a **separate copy** of the data — nothing syncs
