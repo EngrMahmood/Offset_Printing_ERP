@@ -45,6 +45,11 @@ cd Offset_Printing_ERP
 python -m venv .venv
 .venv\Scripts\pip install -r requirements.txt
 ```
+Two things `requirements.txt` can't cover, since they're not Python packages:
+- **Python 3.12** — install this version before creating the venv.
+- **Redis** (v5+) — install and run it as a Windows service; required for
+  chat/notifications/caching. `channels`/`cache` in `settings.py` are
+  already set to talk RESP2 for compatibility with older Redis 5.x.
 
 ### 2. Get the production database back
 The cloud VM has the most recent *synced* copy (as of the last nightly

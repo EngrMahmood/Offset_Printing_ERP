@@ -11,7 +11,6 @@ sqlparse==0.5.5
 tzdata==2026.1
 pdfplumber
 requests
-requests
 django-environ
 google-auth
 google-auth-oauthlib
