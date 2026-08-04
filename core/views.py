@@ -595,7 +595,7 @@ def dispatch_job_card_search(request):
         Q(SKU__icontains=query) |
         Q(PO_No__icontains=query) |
         Q(destination__icontains=query)
-    ).order_by('-created_at')[:30]
+    ).order_by('-created_at')[:60]
 
     edit_record_id = edit_record.id if edit_record else None
     results = []

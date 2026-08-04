@@ -128,7 +128,7 @@ def packing_job_card_search(request):
         | Q(PO_No__icontains=query)
         | Q(destination__icontains=query)
         | Q(planning_job__job_name__icontains=query)
-    ).order_by('-created_at')[:30]
+    ).order_by('-created_at')[:60]
 
     results = []
     for job_card in qs:

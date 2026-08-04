@@ -561,7 +561,7 @@ def printing_job_card_search(request):
         | Q(PO_No__icontains=query)
         | Q(destination__icontains=query)
         | Q(planning_job__job_name__icontains=query)
-    ).select_related('planning_job', 'material', 'machine_name')[:30]
+    ).select_related('planning_job', 'material', 'machine_name')[:60]
 
     plan_map, machine_map, info_map = build_printing_job_card_maps(list(qs), edit_record=edit_record)
     results = []

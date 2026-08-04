@@ -159,13 +159,15 @@ def approval_history(request):
         job_cards = job_cards.filter(status=status_filter)
 
     if q:
-        q_upper = q.upper()
-        job_cards = [
-            row for row in job_cards[:400]
-            if q_upper in (row.job_card_no or '').upper()
-            or q_upper in (row.PO_No or '').upper()
-            or q_upper in (row.SKU or '').upper()
-        ]
+        # Filter at the DB level across the whole table, then cap — previously this
+        # sliced to the 400 most-recently-updated job cards *before* filtering, so a
+        # real match outside that window was unreachable no matter how specific the
+        # search was, not just truncated.
+        job_cards = list(
+            job_cards.filter(
+                Q(job_card_no__icontains=q) | Q(PO_No__icontains=q) | Q(SKU__icontains=q)
+            )[:400]
+        )
     else:
         job_cards = list(job_cards[:200])
 

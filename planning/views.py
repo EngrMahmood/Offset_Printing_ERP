@@ -4499,19 +4499,19 @@ def po_inbox(request):
     docs_qs = PoDocument.objects.exclude(extracted_payload__isnull=True).values('id', 'created_at', 'extracted_payload').order_by('-created_at')
 
     # A search hits the whole table via the DB (cheap — no Python payload parsing
-    # happens until after this filter), not just the "recent" cache below, so an
-    # older PO/WO that has scrolled past the default browse window is still found.
-    # Only the browse-without-search case (the common "what just came in" view) caps
-    # at the 200 most recent distinct documents for load-time; search results are
-    # capped much higher (500) purely as a safety net against overly broad terms.
+    # happens until after this filter), so an older PO/WO is still found regardless
+    # of the cap below. The per-document classification cost that used to make a
+    # large cap here expensive was O(items x total_documents) (see
+    # sku_classification.build_sku_doc_index); now that it's a single batched
+    # index build per request, processing every document is cheap enough that the
+    # cap only exists as a safety net against pathological growth, not to bound
+    # normal browsing — so "Total PO Documents" and the paginated list agree.
     if search_query:
         docs_qs = docs_qs.filter(
             Q(extracted_payload__po_number__icontains=search_query)
             | Q(extracted_payload__supplier_name__icontains=search_query)
         )
-        dedupe_cap = 500
-    else:
-        dedupe_cap = 200
+    dedupe_cap = 5000
 
     deduped_docs = []
     seen_po_numbers = set()
@@ -4619,13 +4619,12 @@ def po_inbox(request):
             'search_query': search_query,
             'per_page': per_page,
             'can_admin_actions': _user_is_admin(request.user),
-            # True all-time count (distinct PO/WO numbers), independent of the
-            # 200-doc browse cap above — page_obj.paginator.count only reflects
-            # the capped/filtered window and understates the real total when
-            # there's no search query.
+            # True all-time count (distinct PO/WO numbers). Normally equals
+            # page_obj.paginator.count too — they only diverge if the dedupe_cap
+            # safety net above was actually hit (see is_capped_view).
             'total_document_count': PoDocument.objects.exclude(extracted_payload__isnull=True)
                 .values('extracted_payload__po_number').distinct().count(),
-            'is_capped_view': not search_query and len(deduped_docs) >= dedupe_cap,
+            'is_capped_view': len(deduped_docs) >= dedupe_cap,
         }
     )
 
