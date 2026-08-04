@@ -14,6 +14,11 @@ same VM/cert-issuing process either way, see §1a below for either option.)
 Nothing here changes how the Windows server runs. Do this in parallel, verify
 it, and only decide about cutover once it's proven stable.
 
+**If this PC (the one managing the cloud deployment) is ever lost/crashes**,
+see `DISASTER_RECOVERY.md` — the live site keeps running regardless, but the
+SSH key and Android signing keystore should be backed up *before* that
+happens since they can't be recovered otherwise.
+
 Database: this stack uses **SQLite** (same engine/tuning as the Windows
 server), not Postgres — a good fit for a closed system with ~15-20 users, and
 lighter on RAM on a small free-tier VM. Postgres is still available any time
@@ -170,6 +175,10 @@ https://github.com/EngrMahmood/Offset_Printing_ERP (`main` branch) — `.env`
 and `certs/` are gitignored so they're untouched by any of this. To push a
 code change (not data — see §6 for that) from GitHub to the live server:
 
+**One-click (from the Windows PC)**: double-click
+`scripts\deploy_from_github.bat`. It SSHes in and runs the deploy remotely.
+
+**Manual**:
 ```bash
 ssh -i ~/.ssh/offset-erp-oracle.key ubuntu@offseterp.duckdns.org
 bash ~/offset-erp/scripts/deploy_update.sh
