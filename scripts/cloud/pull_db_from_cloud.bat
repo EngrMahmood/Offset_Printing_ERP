@@ -32,21 +32,39 @@ if not exist "%KEY_PATH%" (
 
 if not exist "%OUT_DIR%" mkdir "%OUT_DIR%"
 
+REM Piping "ssh ... cat file" straight to a local redirect shows no progress
+REM meter (the shell just sits there for the whole transfer). Instead, copy
+REM the file onto the VM's own filesystem first, then scp it down -- scp
+REM prints a live percent/speed/ETA bar, same as the upload side.
 echo [1/2] Downloading database from %VM_HOST%...
-ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "docker compose -f ~/offset-erp/docker-compose.yml exec -T web cat /data/db.sqlite3" > "%OUT_DIR%\db_from_cloud_%STAMP%.sqlite3"
+ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "docker compose -f ~/offset-erp/docker-compose.yml cp web:/data/db.sqlite3 ~/pull_db.sqlite3"
 if errorlevel 1 (
-    echo Failed to download database. Check your internet connection and
-    echo that %VM_HOST% is reachable, then try again.
+    echo Failed to stage the database on the VM. Check your internet connection
+    echo and that %VM_HOST% is reachable, then try again.
     goto :end
 )
+scp -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST%:~/pull_db.sqlite3 "%OUT_DIR%\db_from_cloud_%STAMP%.sqlite3"
+if errorlevel 1 (
+    echo Failed to download the staged database file. Check your internet
+    echo connection and that %VM_HOST% is reachable, then try again.
+    goto :end
+)
+ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "rm -f ~/pull_db.sqlite3"
 
 echo [2/2] Downloading media folder from %VM_HOST%...
-ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "docker compose -f ~/offset-erp/docker-compose.yml exec -T web tar -czf - -C /app media" > "%OUT_DIR%\media_from_cloud_%STAMP%.tar.gz"
+ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "docker compose -f ~/offset-erp/docker-compose.yml exec -T web tar -czf /app/pull_media.tar.gz -C /app media && docker compose -f ~/offset-erp/docker-compose.yml cp web:/app/pull_media.tar.gz ~/pull_media.tar.gz && docker compose -f ~/offset-erp/docker-compose.yml exec -T web rm -f /app/pull_media.tar.gz"
 if errorlevel 1 (
-    echo Failed to download media folder. Database download above may have
-    echo still succeeded - check %OUT_DIR%.
+    echo Failed to stage the media folder on the VM. Database download above
+    echo may have still succeeded - check %OUT_DIR%.
     goto :end
 )
+scp -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST%:~/pull_media.tar.gz "%OUT_DIR%\media_from_cloud_%STAMP%.tar.gz"
+if errorlevel 1 (
+    echo Failed to download the staged media file. Database download above
+    echo may have still succeeded - check %OUT_DIR%.
+    goto :end
+)
+ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "rm -f ~/pull_media.tar.gz"
 
 echo.
 echo Done. Saved to:
