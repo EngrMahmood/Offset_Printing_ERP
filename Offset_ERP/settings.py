@@ -253,6 +253,12 @@ STATIC_ROOT = BASE_DIR / 'staticfiles'
 ERP_SOFTWARE_VERSION = '2026.07.03.1'
 ERP_SOFTWARE_RELEASE_DATE = '2026-07-03'
 
+# Optional label identifying which server instance created a backup (e.g.
+# "CloudVM", "Production"). Blank on the Windows LAN server by default so its
+# filenames are unchanged; set via env on the cloud deployment to distinguish
+# backups when multiple instances sync to the same Drive/OneDrive account.
+BACKUP_INSTANCE_LABEL = os.environ.get('BACKUP_INSTANCE_LABEL', '')
+
 # Lock older operational records from edit for non-managerial roles.
 ERP_RECORD_EDIT_LOCK_DAYS = 2
 

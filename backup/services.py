@@ -115,8 +115,12 @@ def create_backup(backup_type='AUTO', user=None):
         else:
             raise Exception(f"Unsupported database engine for automatic backups: {engine}")
             
-        # Target ZIP name
-        zip_filename = f"ERP_Backup_{engine}_v{erp_version}_{timestamp}.zip"
+        # Target ZIP name. Includes an instance label (e.g. "CloudVM") when set,
+        # so backups from multiple servers syncing to the same Drive/OneDrive
+        # account don't look identical.
+        instance_label = getattr(settings, 'BACKUP_INSTANCE_LABEL', '')
+        label_part = f"_{instance_label}" if instance_label else ""
+        zip_filename = f"ERP_Backup_{engine}_v{erp_version}{label_part}_{timestamp}.zip"
         zip_filepath = os.path.join(local_dir, zip_filename)
         
         # Compress database and optional files
