@@ -121,6 +121,26 @@
 .chat-thread__pinned-text { flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .chat-thread__pinned-unpin { background: none; border: none; color: #92400e; cursor: pointer; font-size: 16px; line-height: 1; }
 
+.chat-reply-banner {
+    display: flex; align-items: center; gap: 8px; padding: 6px 12px;
+    background: #f1f5f9; border-top: 1px solid #e2e8f0; border-left: 3px solid #2563eb;
+}
+.chat-reply-banner[hidden] { display: none; }
+.chat-reply-banner__text { flex: 1; min-width: 0; }
+.chat-reply-banner__sender { font-size: 12px; font-weight: 700; color: #2563eb; }
+.chat-reply-banner__body { font-size: 12.5px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#chat-reply-cancel-btn { background: none; border: none; color: #94a3b8; font-size: 18px; line-height: 1; cursor: pointer; padding: 2px 6px; }
+#chat-reply-cancel-btn:hover { color: #475569; }
+
+.chat-msg__reply-preview {
+    display: block; padding: 4px 8px; margin-bottom: 4px; border-radius: 6px;
+    background: rgba(15,23,42,0.06); border-left: 3px solid #2563eb; cursor: pointer;
+    font-size: 12px; max-width: 100%;
+}
+.chat-msg.is-own .chat-msg__reply-preview { background: rgba(255,255,255,0.18); border-left-color: rgba(255,255,255,0.7); }
+.chat-msg__reply-preview-sender { font-weight: 700; }
+.chat-msg__reply-preview-body { opacity: 0.85; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 260px; }
+
 .chat-group-settings__avatar-row { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
 .chat-group-settings__avatar {
     width: 56px; height: 56px; border-radius: 50%; background: #2563eb center/cover no-repeat;
@@ -150,6 +170,12 @@
 }
 .chat-msg:hover .chat-msg__menu-btn, .chat-msg:hover .chat-msg__react-btn { opacity: 1; }
 .chat-msg__menu-btn:hover, .chat-msg__react-btn:hover { background: #e2e8f0; color: #334155; }
+
+/* Touch devices (iOS/Android) have no persistent :hover, so the buttons
+   above would otherwise stay opacity:0 and be untappable. */
+@media (hover: none) {
+    .chat-msg__menu-btn, .chat-msg__react-btn { opacity: 1; }
+}
 
 .chat-msg__reactions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 3px; }
 .chat-msg__reaction-pill {

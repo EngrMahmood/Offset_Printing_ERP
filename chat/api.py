@@ -362,7 +362,7 @@ class MessageListCreateView(APIView):
         if room is None:
             return Response({'detail': 'Not a member of this room.'}, status=status.HTTP_403_FORBIDDEN)
 
-        queryset = room.messages.select_related('sender').prefetch_related('attachments').order_by('-id')
+        queryset = room.messages.select_related('sender', 'reply_to', 'reply_to__sender').prefetch_related('attachments').order_by('-id')
         paginator = self.pagination_class()
         page = paginator.paginate_queryset(queryset, request, view=self)
         serializer = MessageSerializer(page, many=True, context={'request': request})
@@ -383,9 +383,15 @@ class MessageListCreateView(APIView):
                 return Response({'detail': 'That message is not available to forward.'}, status=status.HTTP_403_FORBIDDEN)
 
         body = (request.data.get('body') or (source_message.body if source_message else '')).strip()
-        reply_to_id = request.data.get('reply_to')
         if not body and not (source_message and source_message.attachments.exists()):
             return Response({'detail': 'Message body cannot be empty.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        reply_to_id = request.data.get('reply_to')
+        if reply_to_id and not Message.objects.filter(pk=reply_to_id, room=room).exists():
+            # Reject silently-wrong replies rather than letting a client point
+            # reply_to at a message id from a room the user has no access to
+            # (which would leak that message's preview text via this room).
+            return Response({'detail': 'That message is not in this room.'}, status=status.HTTP_400_BAD_REQUEST)
 
         message = Message.objects.create(
             room=room, sender=request.user, body=body,

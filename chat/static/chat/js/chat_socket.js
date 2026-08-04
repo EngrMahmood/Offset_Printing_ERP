@@ -22,6 +22,7 @@
         oldestLoadedMessageId: null,
         userStatuses: {}, // userId -> 'online' | 'away'; absent = offline
         currentRoomDetail: null,
+        replyToMessageId: null,
     };
 
     function getUserStatus(userId) {
@@ -149,6 +150,7 @@
         state.currentRoomId = roomId;
         state.oldestLoadedMessageId = null;
         renderRoomList();
+        cancelReply();
 
         document.getElementById('chat-thread-empty').hidden = true;
         document.getElementById('chat-thread-active').hidden = false;
@@ -293,10 +295,16 @@
         const reactBtn = !msg.is_deleted
             ? '<button type="button" class="chat-msg__react-btn" title="React"><i class="far fa-smile"></i></button>' : '';
         const forwardedTag = msg.forwarded_from ? '<div class="chat-msg__forwarded"><i class="fas fa-share"></i> Forwarded</div>' : '';
+        const replyPreview = msg.reply_to_preview
+            ? '<div class="chat-msg__reply-preview" data-reply-id="' + msg.reply_to_preview.id + '">' +
+                '<span class="chat-msg__reply-preview-sender">' + escapeHtml(msg.reply_to_preview.sender_name) + '</span>' +
+                '<span class="chat-msg__reply-preview-body">' + escapeHtml(msg.reply_to_preview.body) + '</span>' +
+                '</div>'
+            : '';
 
         wrap.innerHTML = senderLine + forwardedTag +
             '<div class="chat-msg__bubble-row">' +
-            '<div class="chat-msg__bubble">' + bodyText + attachments + '</div>' + reactBtn + menuBtn +
+            '<div class="chat-msg__bubble">' + replyPreview + bodyText + attachments + '</div>' + reactBtn + menuBtn +
             '</div>' +
             renderReactionPills(msg.reactions) +
             '<div class="chat-msg__meta"><span class="chat-msg__meta-text">' + time + editedTag + '</span></div>';
@@ -428,6 +436,7 @@
             const menu = document.createElement('div');
             menu.className = 'chat-msg__menu open';
             menu.innerHTML =
+                '<button type="button" class="chat-msg__menu-item" data-action="reply">Reply</button>' +
                 (isOwnMsg ? '<button type="button" class="chat-msg__menu-item" data-action="edit">Edit</button>' : '') +
                 (isOwnMsg ? '<button type="button" class="chat-msg__menu-item chat-msg__menu-item--danger" data-action="delete">Delete</button>' : '') +
                 '<button type="button" class="chat-msg__menu-item" data-action="forward">Forward</button>' +
@@ -445,11 +454,53 @@
             else if (action === 'pin') pinMessage(msgId);
             else if (action === 'unpin') unpinMessage();
             else if (action === 'forward') openForwardModal(msgId);
+            else if (action === 'reply') startReply(el, msgId);
             closeOpenMenu();
+            return;
+        }
+        const replyPreview = event.target.closest('.chat-msg__reply-preview');
+        if (replyPreview) {
+            const targetId = replyPreview.dataset.replyId;
+            const targetEl = document.querySelector('.chat-msg[data-message-id="' + targetId + '"]');
+            if (targetEl) {
+                targetEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                targetEl.classList.add('is-highlighted');
+                setTimeout(function () { targetEl.classList.remove('is-highlighted'); }, 1500);
+            }
             return;
         }
         closeOpenMenu();
     });
+
+    // ---- Reply --------------------------------------------------------------
+
+    function startReply(el, msgId) {
+        const senderName = el.classList.contains('is-own')
+            ? 'You'
+            : (el.querySelector('.chat-msg__sender') ? el.querySelector('.chat-msg__sender').textContent : 'Unknown');
+        const bubble = el.querySelector('.chat-msg__bubble');
+        let bodyPreview = 'Message deleted';
+        if (!el.classList.contains('is-deleted') && bubble) {
+            // Exclude a nested reply-preview block (replying to a message
+            // that was itself a reply) so it doesn't leak into this preview.
+            const clone = bubble.cloneNode(true);
+            const nested = clone.querySelector('.chat-msg__reply-preview');
+            if (nested) nested.remove();
+            bodyPreview = clone.textContent.trim() || '[Attachment]';
+        }
+        state.replyToMessageId = msgId;
+        document.getElementById('chat-reply-banner-sender').textContent = senderName;
+        document.getElementById('chat-reply-banner-body').textContent = bodyPreview.slice(0, 120);
+        document.getElementById('chat-reply-banner').hidden = false;
+        document.getElementById('chat-message-input').focus();
+    }
+
+    function cancelReply() {
+        state.replyToMessageId = null;
+        document.getElementById('chat-reply-banner').hidden = true;
+    }
+
+    document.getElementById('chat-reply-cancel-btn').addEventListener('click', cancelReply);
 
     function markRead(roomId) {
         api((urls.roomRead || '').replace('/0/', '/' + roomId + '/'), { method: 'POST' }).then(function () {
@@ -467,12 +518,16 @@
         const body = input.value.trim();
         if (!body) return;
 
+        const postBody = { body: body };
+        if (state.replyToMessageId) postBody.reply_to = state.replyToMessageId;
+
         api((urls.messages || '').replace('/0/', '/' + state.currentRoomId + '/'), {
             method: 'POST',
-            body: { body: body },
+            body: postBody,
         }).then(function (msg) {
             input.value = '';
             document.getElementById('chat-mention-suggestions').hidden = true;
+            cancelReply();
             appendMessage(msg, false);
             scrollToBottom();
             loadRoomList();

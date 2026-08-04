@@ -36,6 +36,10 @@
         isMuted: false,
         connectedAt: null,
         timerInterval: null,
+        // True once this side has its own local media and can start
+        // connecting to other participants — used for the full-mesh join
+        // below, not just "am I the person who placed the original call."
+        readyForOffers: false,
     };
 
     function resetCallUI() {
@@ -261,17 +265,33 @@
             if (pc && payload.candidate) {
                 try { await pc.addIceCandidate(new RTCIceCandidate(payload.candidate)); } catch (e) { /* ignore */ }
             }
-        } else if (payload.event === 'call-ready' && !call.isIncoming && payload.to_user_id === currentUserId) {
-            // A callee has joined the call socket and is ready to receive our offer.
-            // v1 limitation: only the original caller initiates offers, so group
-            // calls form a star of connections through the caller rather than a
-            // full mesh between every pair — acceptable at the ~3-4 participant
-            // scale expected on this LAN deployment.
+        } else if (payload.event === 'call-ready' && fromUserId !== currentUserId && call.readyForOffers && !call.peers[fromUserId]) {
+            // Full mesh: whoever is already active in the call (the original
+            // caller AND every earlier acceptor, not just the caller) offers a
+            // connection to each newly-ready participant. Previously only the
+            // original caller ever reacted here, which formed a star through
+            // the caller instead of a mesh — fine for 2 people, but in a 3+
+            // person call the other participants could each talk to the
+            // caller yet never to each other.
             if (window.ChatSound) window.ChatSound.stopRingtone();
-            showOverlay('Connecting…');
+            // Only reset to "Connecting…" for the first connection — a later
+            // participant joining a call already in progress shouldn't reset
+            // the running timer or un-minimize an already-minimized overlay.
+            if (!call.connectedAt) showOverlay('Connecting…');
             offerTo(fromUserId);
         } else if (payload.event === 'hangup' || payload.event === 'call-decline') {
-            endCall(false);
+            // Only drop that one participant's connection — a group call must
+            // not end for everyone just because one person left. Previously
+            // this unconditionally called endCall(), so any single hangup in
+            // a 3+ person call killed it for the whole group.
+            const pc = call.peers[fromUserId];
+            if (pc) {
+                pc.close();
+                delete call.peers[fromUserId];
+            }
+            const video = document.getElementById('chat-call-video-' + fromUserId);
+            if (video) video.remove();
+            if (Object.keys(call.peers).length === 0) endCall(false);
         }
     }
 
@@ -307,12 +327,10 @@
             return;
         }
 
+        call.readyForOffers = true;
         await connectCallSocket(roomId);
         send({ event: 'call-invite', call_type: callType });
         if (window.ChatSound) window.ChatSound.playRingtone();
-
-        // Offer to any participant who's already on the room's call socket
-        // (best-effort mesh join; primary target is the direct-message peer).
     }
 
     async function acceptIncomingCall() {
@@ -331,6 +349,7 @@
             return;
         }
 
+        call.readyForOffers = true;
         await connectCallSocket(call.roomId);
         send({ event: 'call-ready', call_id: call.callId, to_user_id: call.fromUserId });
     }

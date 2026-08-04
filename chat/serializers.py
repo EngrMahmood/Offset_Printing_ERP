@@ -51,11 +51,12 @@ class MessageSerializer(serializers.ModelSerializer):
     reactions = serializers.SerializerMethodField()
     mentions = serializers.SerializerMethodField()
     forwarded_from = serializers.SerializerMethodField()
+    reply_to_preview = serializers.SerializerMethodField()
 
     class Meta:
         model = Message
         fields = (
-            'id', 'room', 'sender', 'body', 'message_type', 'reply_to',
+            'id', 'room', 'sender', 'body', 'message_type', 'reply_to', 'reply_to_preview',
             'created_at', 'edited_at', 'is_deleted', 'attachments',
             'reactions', 'mentions', 'forwarded_from',
         )
@@ -72,6 +73,19 @@ class MessageSerializer(serializers.ModelSerializer):
 
     def get_forwarded_from(self, obj):
         return bool(obj.forwarded_from_id)
+
+    def get_reply_to_preview(self, obj):
+        # A nested snippet (not just the raw id already in `reply_to`) so the
+        # client can render "replying to: ..." without needing the original
+        # message to already be loaded in the current view.
+        original = obj.reply_to
+        if original is None:
+            return None
+        return {
+            'id': original.id,
+            'sender_name': (original.sender.get_full_name() or original.sender.username) if original.sender else 'Unknown',
+            'body': 'Message deleted' if original.is_deleted else ((original.body or '[Attachment]')[:120]),
+        }
 
     def validate_body(self, value):
         if not value.strip() and not self.initial_data.get('_has_attachment'):
