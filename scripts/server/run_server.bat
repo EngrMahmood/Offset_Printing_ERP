@@ -43,7 +43,7 @@ REM     (old bookmarks, or someone typing the bare IP) and 301s them to the
 REM     HTTPS site above, since a TLS-only socket can't itself explain
 REM     anything to a plain-HTTP client. Needs admin rights to bind :80,
 REM     which this task already runs with (RunLevel HighestAvailable).
-start "" /min "%PYTHON%" scripts\http_redirect_server.py >> "%PROJECT_DIR%\backups\http_redirect.log" 2>&1
+start "" /min "%PYTHON%" scripts\server\http_redirect_server.py >> "%PROJECT_DIR%\backups\http_redirect.log" 2>&1
 
 echo [%date% %time%] Starting ERP server (HTTPS) on %BIND% ... >> "%PROJECT_DIR%\backups\server.log"
 "%PYTHON%" -m daphne -e ssl:8000:privateKey=certs/chat_key.pem:certKey=certs/chat_cert.pem:interface=192.168.88.30 Offset_ERP.asgi:application >> "%PROJECT_DIR%\backups\server.log" 2>&1

@@ -118,7 +118,7 @@ openssl req -x509 -newkey rsa:2048 -nodes -keyout chat_key.pem -out chat_cert.pe
 Store `chat_key.pem`/`chat_cert.pem` under `E:\Offset_Printing_ERP\certs\`
 (gitignored, see `.gitignore` — never commit private keys).
 
-The actual production launcher, `scripts\run_server.bat`, already does this:
+The actual production launcher, `scripts\server\run_server.bat`, already does this:
 it binds Daphne **directly** to a single TLS listener on `:8000`
 
 ```bash
@@ -126,7 +126,7 @@ python -m daphne -e ssl:8000:privateKey=certs/chat_key.pem:certKey=certs/chat_ce
 ```
 
 — there is no separate plain-HTTP `:8000` anymore. It also starts a small
-companion process, `scripts\http_redirect_server.py`, listening on port `:80`
+companion process, `scripts\server\http_redirect_server.py`, listening on port `:80`
 that 301-redirects any plain-HTTP request to the HTTPS site, so old bookmarks
 and anyone typing the bare IP still land somewhere useful instead of a
 connection error. `Offset_ERP/settings.py` already trusts

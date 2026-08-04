@@ -12,7 +12,7 @@ django.setup()
 from core.models import ProductType
 import importlib.util
 
-spec = importlib.util.spec_from_file_location('rev', ROOT / 'scripts' / 'review_master_data_update.py')
+spec = importlib.util.spec_from_file_location('rev', ROOT / 'scripts' / 'data_migration_archive' / 'review_master_data_update.py')
 rev = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(rev)
 

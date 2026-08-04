@@ -176,12 +176,12 @@ and `certs/` are gitignored so they're untouched by any of this. To push a
 code change (not data — see §6 for that) from GitHub to the live server:
 
 **One-click (from the Windows PC)**: double-click
-`scripts\deploy_from_github.bat`. It SSHes in and runs the deploy remotely.
+`scripts\cloud\deploy_from_github.bat`. It SSHes in and runs the deploy remotely.
 
 **Manual**:
 ```bash
 ssh -i ~/.ssh/offset-erp-oracle.key ubuntu@offseterp.duckdns.org
-bash ~/offset-erp/scripts/deploy_update.sh
+bash ~/offset-erp/scripts/cloud/deploy_update.sh
 ```
 
 That script (`git pull origin main` + `docker compose up -d --build web`) is
@@ -198,21 +198,30 @@ same one-liner either way.
 The cloud deployment is a **separate copy** of the data — nothing syncs
 automatically between it and the Windows LAN server unless you push it.
 
-**Automatic (recommended)**: `scripts\ERP_CloudSync_Task.xml` is registered
-as a Windows Scheduled Task ("Offset ERP Cloud Sync") on the production PC,
-running `scripts\sync_db_to_cloud.bat silent` daily at 20:20 (15 min after
-the existing local auto-backup task). Check `backups\sync_to_cloud.log` for
-a history of runs/results. Re-register with:
-```
-schtasks /Create /F /TN "Offset ERP Cloud Sync" /XML "scripts\ERP_CloudSync_Task.xml"
-```
+> **Once the cloud VM becomes the primary server, stop using this
+> direction entirely.** `sync_db_to_cloud.bat` pushes local → cloud and
+> *overwrites* whatever's on the VM — fine while the Windows PC is the
+> source of truth, actively destructive once real users are writing data
+> directly on the VM. Any scheduled task running it should be disabled
+> before cutover (`schtasks /Change /TN "Offset ERP Cloud Sync" /DISABLE`
+> on whichever PC has it registered). Use `pull_db_from_cloud.bat`
+> (cloud → local, read-only) instead if you still want a local copy.
 
-**Manual, one click**: double-click `scripts\sync_db_to_cloud.bat` anytime.
-It takes a live, non-disruptive snapshot of `db.sqlite3` (SQLite's online
-backup API — safe even with the production server actively in use), packs
-`media/`, uploads both to the VM, and loads them into the running
+**Manual, one click**: double-click `scripts\cloud\sync_db_to_cloud.bat`
+anytime. It takes a live, non-disruptive snapshot of `db.sqlite3` (SQLite's
+online backup API — safe even with the production server actively in use),
+packs `media/`, uploads both to the VM, and loads them into the running
 deployment. Needs `%USERPROFILE%\.ssh\offset-erp-oracle.key` present (the
-VM's SSH private key) and `.venv` set up.
+VM's SSH private key). Falls back to whatever Python is on PATH if no
+project venv is set up on that machine.
+
+**Automatic (only while the Windows PC is still primary)**:
+`scripts\cloud\ERP_CloudSync_Task.xml` can be registered as a Windows
+Scheduled Task ("Offset ERP Cloud Sync") wrapping the script above. Check
+`backups\sync_to_cloud.log` for a history of runs/results. Register with:
+```
+schtasks /Create /F /TN "Offset ERP Cloud Sync" /XML "scripts\cloud\ERP_CloudSync_Task.xml"
+```
 
 **Manual fallback, no script/SSH command-line needed (WinSCP)**: if the
 `.bat` script or SSH access is ever unavailable, you can push a database
@@ -224,7 +233,7 @@ file by hand:
    `.ppk` with WinSCP's bundled PuTTYgen if it won't accept the OpenSSH
    format directly — it'll prompt you to do this automatically) → Login.
 3. Get a database file to upload — either a fresh snapshot (see the Python
-   one-liner in `scripts\sync_db_to_cloud.bat` step [1/5]) or a ZIP
+   one-liner in `scripts\cloud\sync_db_to_cloud.bat` step [1/5]) or a ZIP
    downloaded from the cloud site's own `/backup/` dashboard (extract
    `db.sqlite3` from it first).
 4. Drag that file onto the VM's home directory (`/home/ubuntu/`) in WinSCP's

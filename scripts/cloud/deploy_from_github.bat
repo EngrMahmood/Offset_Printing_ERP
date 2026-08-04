@@ -23,7 +23,7 @@ if not exist "%KEY_PATH%" (
     goto :end
 )
 
-ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "bash ~/offset-erp/scripts/deploy_update.sh"
+ssh -i "%KEY_PATH%" -o StrictHostKeyChecking=accept-new %VM_USER%@%VM_HOST% "bash ~/offset-erp/scripts/cloud/deploy_update.sh"
 if errorlevel 1 (
     echo.
     echo Deploy failed - check the output above.

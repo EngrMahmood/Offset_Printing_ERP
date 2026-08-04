@@ -1,13 +1,17 @@
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Opens a minimized window tailing the Offset ERP server log on login, purely for visual confirmation the server is running. Does not start or manage the server itself — that's the separate "Offset ERP Server" boot task, which stays headless so it can run before any login.</Description>
-    <URI>\Offset ERP Server Log Viewer</URI>
+    <Description>Offset ERP daily cloud sync. Pushes a live snapshot of the production database and media to the cloud deployment (offseterp.duckdns.org) at 20:20 every day, 15 minutes after the local auto-backup task.</Description>
+    <URI>\Offset ERP Cloud Sync</URI>
   </RegistrationInfo>
   <Triggers>
-    <LogonTrigger>
+    <CalendarTrigger>
+      <StartBoundary>2026-08-04T20:20:00</StartBoundary>
       <Enabled>true</Enabled>
-    </LogonTrigger>
+      <ScheduleByDay>
+        <DaysInterval>1</DaysInterval>
+      </ScheduleByDay>
+    </CalendarTrigger>
   </Triggers>
   <Principals>
     <Principal id="Author">
@@ -20,19 +24,20 @@
     <DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries>
     <StopIfGoingOnBatteries>false</StopIfGoingOnBatteries>
     <AllowHardTerminate>true</AllowHardTerminate>
-    <StartWhenAvailable>false</StartWhenAvailable>
-    <RunOnlyIfNetworkAvailable>false</RunOnlyIfNetworkAvailable>
+    <StartWhenAvailable>true</StartWhenAvailable>
+    <RunOnlyIfNetworkAvailable>true</RunOnlyIfNetworkAvailable>
     <AllowStartOnDemand>true</AllowStartOnDemand>
     <Enabled>true</Enabled>
     <Hidden>false</Hidden>
     <RunOnlyIfIdle>false</RunOnlyIfIdle>
     <WakeToRun>false</WakeToRun>
-    <ExecutionTimeLimit>PT0S</ExecutionTimeLimit>
+    <ExecutionTimeLimit>PT15M</ExecutionTimeLimit>
     <Priority>7</Priority>
   </Settings>
   <Actions Context="Author">
     <Exec>
-      <Command>E:\Offset_Printing_ERP\scripts\view_server_log.bat</Command>
+      <Command>D:\Development\Offset_Printing_ERP\scripts\cloud\sync_db_to_cloud.bat</Command>
+      <Arguments>silent</Arguments>
     </Exec>
   </Actions>
 </Task>

@@ -148,9 +148,9 @@ def maybe_run_tests(python_exe: str, *, dry_run: bool) -> None:
 def repair_migrations(python_exe: str, *, dry_run: bool) -> None:
     _print_header('Migration repair')
     if dry_run:
-        run_command([python_exe, 'scripts/repair_migrations.py'], dry_run=True, check=False)
+        run_command([python_exe, 'scripts/data_migration_archive/repair_migrations.py'], dry_run=True, check=False)
         return
-    run_command([python_exe, 'scripts/repair_migrations.py', '--apply'], dry_run=False, check=False)
+    run_command([python_exe, 'scripts/data_migration_archive/repair_migrations.py', '--apply'], dry_run=False, check=False)
 
 
 def deploy(args: argparse.Namespace) -> None:

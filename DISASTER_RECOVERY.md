@@ -82,12 +82,17 @@ app — the original Play Store listing becomes permanently un-updatable.
 
 ### 5. Re-register the Windows Scheduled Tasks
 These don't survive a PC replacement — recreate them from the XML files
-already in `scripts/`:
+already in `scripts/` (organized into `cloud/`, `backup/`, `server/`
+subfolders — see each folder for what belongs there):
 ```bash
-schtasks /Create /F /TN "Offset ERP Cloud Sync" /XML "scripts\ERP_CloudSync_Task.xml"
-schtasks /Create /F /TN "Offset ERP Auto Backup" /XML "scripts\ERP_AutoBackup_Task.xml"
-schtasks /Create /F /TN "Offset ERP Server" /XML "scripts\ERP_Server_Startup_Task.xml"
+schtasks /Create /F /TN "Offset ERP Cloud Sync" /XML "scripts\cloud\ERP_CloudSync_Task.xml"
+schtasks /Create /F /TN "Offset ERP Auto Backup" /XML "scripts\backup\ERP_AutoBackup_Task.xml"
+schtasks /Create /F /TN "Offset ERP Server" /XML "scripts\server\ERP_Server_Startup_Task.xml"
 ```
+Only register "Offset ERP Cloud Sync" if the Windows PC is still the
+primary data source — once the cloud VM is primary, that task should stay
+disabled (see `DEPLOY_CLOUD.md` §6); use `scripts\cloud\pull_db_from_cloud.bat`
+instead if you want a local copy.
 (Check each XML's `<Command>` path matches where you cloned the repo on the
 new PC — they may reference the old PC's drive letter/path.)
 
@@ -98,8 +103,9 @@ changed — same as before any of the cloud work).
 ### 7. Verify
 - Log in locally, confirm the restored data looks right (spot-check a few
   recent job cards against what you remember).
-- Run `scripts\sync_db_to_cloud.bat` once to push the recovered data back
-  up to the cloud copy, so both sides match again.
+- Run `scripts\cloud\sync_db_to_cloud.bat` once to push the recovered data back
+  up to the cloud copy, so both sides match again (only if the Windows PC
+  is still primary — see the note in step 5 above).
 - Confirm `https://offseterp.duckdns.org` is still reachable (it should be
   — the cloud VM never went down, it's independent of this PC).
 

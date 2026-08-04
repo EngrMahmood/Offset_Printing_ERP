@@ -24,14 +24,14 @@ as a background service or a startup task. Pick one:
 
 **Option A — Task Scheduler at boot (ready-made, recommended):**
 Two files are provided:
-- `scripts/run_server.bat` — launches the server in-process (no pop-up windows,
+- `scripts/server/run_server.bat` — launches the server in-process (no pop-up windows,
   works with no user logged in), logging to `backups/server.log`.
-- `scripts/ERP_Server_Startup_Task.xml` — a boot-time task set to "run whether
+- `scripts/server/ERP_Server_Startup_Task.xml` — a boot-time task set to "run whether
   logged on or not", highest privileges, auto-restart on failure.
 
 Import it (Admin Command Prompt; substitute your Windows account + password):
 ```
-schtasks /Create /TN "Offset ERP Server" /XML "E:\Offset_Printing_ERP\scripts\ERP_Server_Startup_Task.xml" /RU "%COMPUTERNAME%\YourUser" /RP "YourPassword"
+schtasks /Create /TN "Offset ERP Server" /XML "E:\Offset_Printing_ERP\scripts\server\ERP_Server_Startup_Task.xml" /RU "%COMPUTERNAME%\YourUser" /RP "YourPassword"
 ```
 Then start it now without rebooting, and confirm it's running:
 ```
@@ -39,11 +39,11 @@ schtasks /Run /TN "Offset ERP Server"
 schtasks /Query /TN "Offset ERP Server"
 ```
 Check `backups\server.log` and open the ERP in a browser to confirm. First edit
-`scripts\run_server.bat` if your venv path or bind address differs.
+`scripts\server\run_server.bat` if your venv path or bind address differs.
 
 Or do it in the GUI: Task Scheduler > Create Task > General: "Run whether user is
 logged on or not" + "Run with highest privileges"; Triggers: "At startup";
-Actions: Start a program > `E:\Offset_Printing_ERP\scripts\run_server.bat`.
+Actions: Start a program > `E:\Offset_Printing_ERP\scripts\server\run_server.bat`.
 
 **Option B — Windows Service via NSSM (most robust):**
 ```
@@ -77,5 +77,5 @@ A service runs regardless of login and restarts automatically.
 If you would rather NOT depend on the server being up, you can disable the in-process
 scheduler and drive backups from Windows Task Scheduler instead:
 - In `settings.py`: `BACKUP_INPROCESS_SCHEDULER = False`
-- Import `scripts/ERP_AutoBackup_Task.xml` (runs `scripts/run_backup.bat`, i.e.
+- Import `scripts/backup/ERP_AutoBackup_Task.xml` (runs `scripts/backup/run_backup.bat`, i.e.
   `manage.py run_backup`, daily). Do not use both at once.
