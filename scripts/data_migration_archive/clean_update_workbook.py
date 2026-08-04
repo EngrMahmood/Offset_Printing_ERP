@@ -7,7 +7,7 @@ from pathlib import Path
 
 import openpyxl
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 PATH = ROOT / 'all_phases_missing_master_data_update.xlsx'
 SHEET_TO_REMOVE = 'Phase 1 (2)'
 

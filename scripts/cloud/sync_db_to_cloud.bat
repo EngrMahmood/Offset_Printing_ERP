@@ -17,7 +17,7 @@ REM ---- Configuration ----
 set "KEY_PATH=%USERPROFILE%\.ssh\offset-erp-oracle.key"
 set "VM_HOST=offseterp.duckdns.org"
 set "VM_USER=ubuntu"
-set "REPO_DIR=%~dp0.."
+set "REPO_DIR=%~dp0..\.."
 
 REM Only the stdlib sqlite3 module is needed here (no third-party packages),
 REM so the project's venv is just one option, not a requirement. Try a few

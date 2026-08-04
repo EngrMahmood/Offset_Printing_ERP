@@ -14,7 +14,7 @@ REM ---- Configuration ----
 set "KEY_PATH=%USERPROFILE%\.ssh\offset-erp-oracle.key"
 set "VM_HOST=offseterp.duckdns.org"
 set "VM_USER=ubuntu"
-set "REPO_DIR=%~dp0.."
+set "REPO_DIR=%~dp0..\.."
 set "OUT_DIR=%REPO_DIR%\backups\from_cloud"
 
 for /f "delims=" %%s in ('powershell -NoProfile -Command "Get-Date -Format yyyy-MM-dd_HHmmss"') do set "STAMP=%%s"
