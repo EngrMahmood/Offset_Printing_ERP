@@ -33,6 +33,12 @@ services:
       - media:/app/media
       - staticfiles:/app/staticfiles
       - backups:/app/backups
+      # Read-only: lets the backup app's `rclone copy` calls (see
+      # backup/services.py) authenticate to Drive/OneDrive using the same
+      # remotes configured on the host with `rclone config authorize`.
+      # Override RCLONE_CONFIG_HOST_PATH in .env if the deploying user
+      # isn't "ubuntu" or the config lives elsewhere on the host.
+      - ${RCLONE_CONFIG_HOST_PATH:-/home/ubuntu/.config/rclone/rclone.conf}:/root/.config/rclone/rclone.conf:ro
     expose:
       - "8000"
 

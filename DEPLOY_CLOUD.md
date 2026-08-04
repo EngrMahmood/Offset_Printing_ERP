@@ -240,28 +240,46 @@ file by hand:
    rm ~/sync_db.sqlite3
    ```
 
-## 7. Cloud backups → Google Drive (`offseterp@gmail.com`)
+## 7. Cloud backups → Google Drive / OneDrive
 
-The `/backup/` dashboard's `cloud_gdrive_folder` setting expects a local
-filesystem path already synced by a Google Drive desktop client — that
-doesn't exist on a headless Ubuntu VM, so the cloud equivalent is **rclone**:
+There's no Google Drive or OneDrive desktop client for headless Ubuntu, so
+the `/backup/` dashboard's OneDrive/Google Drive folder fields support two
+kinds of value now:
 
-1. rclone is installed on the VM (`rclone --version` to confirm).
-2. The Google OAuth consent has to happen in a real browser as
-   `offseterp@gmail.com` — this is a step only you can do, not something
-   that can be automated on your behalf. Easiest path:
-   - Install rclone locally (Windows): `winget install --id Rclone.Rclone -e`
-   - Run `rclone authorize "drive"` in a terminal — it opens your browser to
-     Google's consent screen. Sign in as `offseterp@gmail.com`, approve.
-   - rclone prints a JSON token blob to the terminal — copy it.
-3. Hand that token blob over (paste it) so the VM's `rclone config` can be
-   created non-interactively with it — no Google password ever passes
-   through the VM or through me.
-4. Once the `gdrive` remote exists, a small cron job on the VM copies
-   `/app/backups` there after each backup run, e.g.:
-   ```bash
-   0 21 * * * docker run --rm -v offset-erp_backups:/backups rclone/rclone \
-     --config /home/ubuntu/.config/rclone/rclone.conf copy /backups gdrive:ERP_Backups
-   ```
-   (exact command depends on whether rclone runs on the host or in a
-   container — finalize once the remote is configured).
+- **A local synced folder path** (Windows only) — copied directly, unchanged
+  from before.
+- **An rclone remote** (Linux/cloud servers) — e.g. `gdrive:ERP_Backups/CloudVM`
+  or `onedrive:ERP_Backups/CloudVM`. Auto-detected (anything matching
+  `word:` where the word is 2+ letters, so a Windows drive letter like `C:`
+  never matches this) and pushed via `rclone copy`.
+
+**One-time setup per Drive/OneDrive account** — the OAuth consent has to
+happen in a real browser as the account owner; this is a step only you can
+do, not something that can be automated on your behalf:
+1. Install rclone locally (Windows): `winget install --id Rclone.Rclone -e`
+2. Run `rclone authorize "drive"` (Google Drive) or `rclone authorize "onedrive"`
+   — opens your browser to the provider's consent screen. Sign in, approve.
+3. It prints a JSON token blob — hand that over so the VM's `~/.config/rclone/rclone.conf`
+   can get a `[gdrive]`/`[onedrive]` remote section built from it (OneDrive
+   also needs `drive_id`/`drive_type`, fetched via one Graph API call using
+   the same token — no password ever passes through the VM or through me).
+4. In `/backup/` → Backup Settings, set the OneDrive/Google Drive fields to
+   the rclone remote spec (e.g. `gdrive:ERP_Backups/CloudVM`). The backup
+   app calls `rclone copy` automatically on every backup run — no cron job
+   needed.
+
+**Container access to rclone**: the `web` container needs `rclone` installed
+(done in the `Dockerfile`) and the host's rclone config bind-mounted in
+(`docker-compose.yml`, `RCLONE_CONFIG_HOST_PATH`, defaults to
+`/home/ubuntu/.config/rclone/rclone.conf`). On a **fresh VM**, make sure that
+file exists (even empty) *before* the first `docker compose up`, so Docker
+mounts a file, not an auto-created directory:
+```bash
+mkdir -p ~/.config/rclone && touch ~/.config/rclone/rclone.conf
+```
+
+**Media routed separately**: `/backup/` → Backup Settings also has a "Media
+Backup Destination" field — set it (e.g. to a Google Drive remote) to send
+media to just that one destination instead of bundling it into the database
+zip that goes to both OneDrive and Google Drive. Useful when one of the two
+accounts is low on space.
