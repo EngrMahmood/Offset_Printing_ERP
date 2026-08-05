@@ -1863,6 +1863,7 @@ def manage_user_roles(request):
             profile = user.profile
             profile.role = new_role
             profile.save()
+            sync_viewer_django_group(user, new_role)
             messages.success(request, f'✅ {user.username} role updated to {profile.get_role_display()}')
         except (User.DoesNotExist, UserProfile.DoesNotExist) as e:
             messages.error(request, f'❌ Error updating role: {str(e)}')
@@ -1924,6 +1925,7 @@ def user_create(request):
             profile.role = role
             profile.department_id = department_id
             profile.save()
+            sync_viewer_django_group(user, role)
 
             uid = urlsafe_base64_encode(force_bytes(user.pk))
             token = default_token_generator.make_token(user)
@@ -2455,6 +2457,22 @@ def access_user_overrides_edit(request):
     return redirect(f"/settings/?user_id={target_user.id}#access-control")
 
 
+def sync_viewer_django_group(user, role):
+    """The Migration module is gated by Django's built-in auth permissions
+    (not this app's Role/Permission model — see migration/models.py), so the
+    'viewer' role's read-only migration access is granted through a Django
+    Group instead. Keep that group membership in sync with the soft role
+    whenever it changes, so admins only ever manage access from one place."""
+    from django.contrib.auth.models import Group
+    group = Group.objects.filter(name='Viewer').first()
+    if group is None:
+        return
+    if role == 'viewer':
+        user.groups.add(group)
+    else:
+        user.groups.remove(group)
+
+
 @login_required
 @require_POST
 def access_user_role_update(request):
@@ -2480,6 +2498,7 @@ def access_user_role_update(request):
     if old_role != new_role:
         profile.role = new_role
         profile.save()
+        sync_viewer_django_group(target_user, new_role)
         AccessControlAuditLog.objects.create(
             changed_by=request.user, action='update', target_type='user_role',
             target_label=target_user.username,

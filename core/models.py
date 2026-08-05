@@ -1525,6 +1525,7 @@ class UserProfile(models.Model):
         ('finance', 'Finance Viewer — Read-only analytics & reports'),
         ('supply_chain', 'Supply Chain — Manage supply chain dashboard & stock'),
         ('maintenance_engineer', 'Maintenance Engineer — Log faults, raise spares/service demand, track downtime'),
+        ('viewer', 'Viewer — Read-only access to every page, full chat access'),
     ]
     
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')

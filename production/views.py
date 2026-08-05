@@ -953,7 +953,7 @@ def production_data_anomalies(request):
 @login_required
 def production_wip(request):
     profile = getattr(request.user, 'profile', None)
-    if not profile or profile.normalized_role not in ('admin', 'manager', 'planner', 'production_manager', 'production', 'operator'):
+    if not profile or profile.normalized_role not in ('admin', 'manager', 'planner', 'production_manager', 'production', 'operator', 'viewer'):
         messages.error(request, '❌ You do not have permission to access this feature.')
         return redirect('planning:home')
 
