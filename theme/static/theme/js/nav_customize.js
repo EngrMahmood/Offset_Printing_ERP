@@ -173,6 +173,11 @@
         currentLayout.overflow.forEach(function (key) {
             list.appendChild(buildListRow(key));
         });
+        var countEl = document.getElementById('erp-nav-customize-count');
+        if (countEl) {
+            var total = currentLayout.pinned.length + currentLayout.overflow.length;
+            countEl.textContent = total + ' modules total — scroll within the list to see them all.';
+        }
         modal.classList.add('open');
     }
 

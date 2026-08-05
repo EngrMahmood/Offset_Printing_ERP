@@ -30,10 +30,15 @@
     list-style: none;
     margin: 0;
     padding: 0;
-    max-height: 60vh;
+    max-height: 65vh;
     overflow-y: auto;
     border: 1px solid var(--erp-border);
     border-radius: 8px;
+    /* A plain scrollbar wasn't an obvious enough cue that the list (up to
+       ~21 modules) continues below the fold — fade the bottom edge like the
+       nav bar itself does, so it's visually clear there's more to scroll to. */
+    -webkit-mask-image: linear-gradient(to bottom, #000 92%, transparent 100%);
+    mask-image: linear-gradient(to bottom, #000 92%, transparent 100%);
 }
 .erp-nav-customize-item {
     display: flex;
