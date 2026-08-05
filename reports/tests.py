@@ -1643,6 +1643,155 @@ class KPIDrilldownExportTests(TestCase):
         )
 
 
+class KPIFocusExportTests(TestCase):
+    """The 'Improvement focus' export ranks exactly which jobs are dragging a
+    KPI down for the period, unlike the raw drill-down/quarterly-detail rows."""
+
+    def setUp(self):
+        import datetime
+        from core.models import JobCard, Machine, Production, Dispatch, Sorter
+        from planning.models import PlanningJob
+
+        User = get_user_model()
+        self.user = User.objects.create_user(username='kpi_focus_user', password='pass12345')
+        profile = UserProfile.objects.get(user=self.user)
+        profile.role = 'manager'
+        profile.save(update_fields=['role'])
+        from django.contrib.auth.models import Permission
+        from django.contrib.contenttypes.models import ContentType
+        content_type = ContentType.objects.get_for_model(UserProfile)
+        permission, _ = Permission.objects.get_or_create(
+            codename='view_reports', name='Can view reports', content_type=content_type,
+        )
+        self.user.user_permissions.add(permission)
+        self.client.login(username='kpi_focus_user', password='pass12345')
+
+        july = datetime.date(2026, 7, 10)
+        june = datetime.date(2026, 6, 10)
+        machine = Machine.objects.create(name='Focus Test Machine', is_active=True)
+        sorter = Sorter.objects.create(name='Focus Test Sorter', is_active=True)
+
+        # Stuck at packing: printed in full, never packed or dispatched, PO
+        # approved this period -> Order Fulfillment focus only.
+        pj_stuck = PlanningJob.objects.create(
+            jc_number='JC-FOCUS-STUCK', order_qty=300, status='in_production',
+            plan_date=july, plan_month='July 2026', po_approval_date=july,
+        )
+        jc_stuck = JobCard.objects.create(
+            job_card_no='JC-FOCUS-STUCK', planning_job=pj_stuck, order_qty=300, ups=1,
+            total_sheet_quantity=300, status='in_production', is_active=True,
+            SKU='SKU-FOCUS-STUCK', po_date=july, total_colors=4, total_impressions_required=300,
+            machine_name=machine,
+        )
+        Production.objects.create(
+            job_card=jc_stuck, entry_type='printing', date=july, shift='A', output_sheets=300,
+            waste_sheets=0, is_active=True,
+        )
+
+        # Packed but undispatched, PO approved the month before -> Dispatch
+        # Alignment focus only (out of Order Fulfillment's July window).
+        pj_gap = PlanningJob.objects.create(
+            jc_number='JC-FOCUS-GAP', order_qty=250, status='in_production',
+            plan_date=june, plan_month='June 2026', po_approval_date=june,
+        )
+        jc_gap = JobCard.objects.create(
+            job_card_no='JC-FOCUS-GAP', planning_job=pj_gap, order_qty=250, ups=1,
+            total_sheet_quantity=250, status='in_production', is_active=True,
+            SKU='SKU-FOCUS-GAP', po_date=june, total_colors=4, total_impressions_required=250,
+            machine_name=machine, is_print_job=False,
+        )
+        Production.objects.create(
+            job_card=jc_gap, entry_type='packing', date=july, shift='A', packing_qty=250,
+            sorting_waste_qty=0, is_active=True, sorter=sorter,
+        )
+        Dispatch.objects.create(
+            job_card=jc_gap, dc_no='DC-FOCUS-GAP', dispatch_date=july, dispatch_qty=100, is_active=True,
+        )
+
+        # Fully dispatched this period -> must not appear in either focus list.
+        pj_done = PlanningJob.objects.create(
+            jc_number='JC-FOCUS-DONE', order_qty=200, status='in_production',
+            plan_date=july, plan_month='July 2026', po_approval_date=july,
+        )
+        jc_done = JobCard.objects.create(
+            job_card_no='JC-FOCUS-DONE', planning_job=pj_done, order_qty=200, ups=1,
+            total_sheet_quantity=200, status='in_production', is_active=True,
+            SKU='SKU-FOCUS-DONE', po_date=july, total_colors=4, total_impressions_required=200,
+            machine_name=machine, is_print_job=False,
+        )
+        Production.objects.create(
+            job_card=jc_done, entry_type='packing', date=july, shift='A', packing_qty=200,
+            sorting_waste_qty=0, is_active=True, sorter=sorter,
+        )
+        Dispatch.objects.create(
+            job_card=jc_done, dc_no='DC-FOCUS-DONE', dispatch_date=july, dispatch_qty=200, is_active=True,
+        )
+
+        # Waste: two printing entries this period, high one must rank first.
+        pj_waste = PlanningJob.objects.create(
+            jc_number='JC-FOCUS-WASTE', order_qty=100, status='in_production',
+            plan_date=july, plan_month='July 2026', po_approval_date=july,
+        )
+        jc_waste = JobCard.objects.create(
+            job_card_no='JC-FOCUS-WASTE', planning_job=pj_waste, order_qty=100, ups=2,
+            total_sheet_quantity=100, status='in_production', is_active=True,
+            SKU='SKU-FOCUS-WASTE', po_date=july, total_colors=4, total_impressions_required=100,
+            machine_name=machine,
+        )
+        Production.objects.create(
+            job_card=jc_waste, entry_type='printing', date=july, shift='A', output_sheets=50,
+            waste_sheets=50, is_active=True,
+        )
+        pj_waste_low = PlanningJob.objects.create(
+            jc_number='JC-FOCUS-WASTE-LOW', order_qty=100, status='in_production',
+            plan_date=july, plan_month='July 2026', po_approval_date=july,
+        )
+        jc_waste_low = JobCard.objects.create(
+            job_card_no='JC-FOCUS-WASTE-LOW', planning_job=pj_waste_low, order_qty=100, ups=2,
+            total_sheet_quantity=100, status='in_production', is_active=True,
+            SKU='SKU-FOCUS-WASTE-LOW', po_date=july, total_colors=4, total_impressions_required=100,
+            machine_name=machine,
+        )
+        Production.objects.create(
+            job_card=jc_waste_low, entry_type='printing', date=july, shift='A', output_sheets=95,
+            waste_sheets=5, is_active=True,
+        )
+
+    def _focus(self, kpi_slug):
+        response = self.client.get(
+            reverse('reports:reports_api:run_report', args=['kpi-scorecard']),
+            {'period_type': 'month', 'year': 2026, 'month': 7, 'kpi': kpi_slug, 'detail': 'focus'},
+        )
+        data = response.json()['payload']['data']
+        self.assertEqual(data['headers'][:2], ['job_card_no', 'po_number'])
+        return data['export_rows']
+
+    def test_order_fulfillment_focus_flags_stuck_at_packing_and_excludes_completed(self):
+        rows = self._focus('order_fulfillment')
+        by_jc = {r['job_card_no']: r for r in rows}
+        self.assertIn('JC-FOCUS-STUCK', by_jc)
+        self.assertEqual(by_jc['JC-FOCUS-STUCK']['issue'], 'Stuck at Packing')
+        self.assertEqual(by_jc['JC-FOCUS-STUCK']['qty_pcs'], 300)
+        self.assertNotIn('JC-FOCUS-DONE', by_jc)
+
+    def test_dispatch_alignment_focus_shows_gap_and_excludes_completed_and_stuck(self):
+        rows = self._focus('dispatch_alignment')
+        by_jc = {r['job_card_no']: r for r in rows}
+        self.assertIn('JC-FOCUS-GAP', by_jc)
+        self.assertEqual(by_jc['JC-FOCUS-GAP']['issue'], 'Awaiting Dispatch')
+        self.assertEqual(by_jc['JC-FOCUS-GAP']['qty_pcs'], 150)
+        self.assertNotIn('JC-FOCUS-DONE', by_jc)
+        self.assertNotIn('JC-FOCUS-STUCK', by_jc)
+
+    def test_wastage_focus_ranks_worst_waste_first(self):
+        rows = self._focus('wastage_reduction')
+        self.assertTrue(rows)
+        self.assertEqual(rows[0]['job_card_no'], 'JC-FOCUS-WASTE')
+        self.assertEqual(rows[0]['qty_pcs'], 100)
+        qtys = [r['qty_pcs'] for r in rows]
+        self.assertEqual(qtys, sorted(qtys, reverse=True))
+
+
 class DailyProductionReleasedToProductionTests(TestCase):
     """Daily Production's "Released to Production" stream is sourced from the
     ChangeLog audit trail written when a job is released, not a raw status

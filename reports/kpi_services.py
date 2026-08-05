@@ -3,11 +3,11 @@ from __future__ import annotations
 import calendar
 from datetime import date
 
-from django.db.models import ExpressionWrapper, F, FloatField, Sum, Value
+from django.db.models import ExpressionWrapper, F, FloatField, Prefetch, Sum, Value
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
-from core.models import Dispatch, Production
+from core.models import Dispatch, JobCard, Production
 from planning.models import PlanningJob
 
 from .models import KPIActionNote, KPITarget
@@ -153,8 +153,10 @@ def _drilldown_order_fulfillment(start, end):
     return _order_rows(start, end) + _dispatch_rows(start, end)
 
 
-def _drilldown_wastage_reduction(start, end):
-    rows = _order_rows(start, end)
+def _waste_rows(start, end):
+    """Every printing/sorting waste entry in the period, as drill-down rows.
+    Shared by the full wastage drill-down (below) and the focus/gap export."""
+    rows = []
     for p in Production.objects.filter(
         is_active=True, entry_type='printing', date__range=(start, end),
     ).values(
@@ -180,6 +182,10 @@ def _drilldown_wastage_reduction(start, end):
             'machine': _machine_for(p['job_card__machine_name__name'], p['job_card__planning_job__machine_name']),
         })
     return rows
+
+
+def _drilldown_wastage_reduction(start, end):
+    return _order_rows(start, end) + _waste_rows(start, end)
 
 
 def _drilldown_dispatch_alignment(start, end):
@@ -253,6 +259,154 @@ def build_kpi_quarterly_detail_rows(kpi_slug, year, quarter):
         'po_number': '', 'job_card_no': '', 'sku': '', 'qty_pcs': f'{value}%', 'machine': '',
     })
     return rows
+
+
+# --- Improvement Focus export -------------------------------------------------
+# Not a raw ledger like the drill-downs above: a ranked, job-level "what to fix"
+# list for the team, showing exactly which jobs are causing a KPI's shortfall
+# and where each one is stuck.
+
+def _focus_order_fulfillment(start, end):
+    rows = []
+    today = timezone.localdate()
+    jobs = PlanningJob.objects.filter(
+        is_active=True, po_approval_date__range=(start, end),
+    ).select_related('job_card', 'job_card__machine_name').prefetch_related(
+        Prefetch('job_card__productions', queryset=Production.objects.filter(is_active=True)),
+        Prefetch('job_card__dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
+    )
+    for job in jobs:
+        order_qty = job.order_qty or 0
+        job_card = getattr(job, 'job_card', None)
+
+        if job_card is None:
+            gap = order_qty
+            if gap <= 0:
+                continue
+            rows.append({
+                'job_card_no': job.jc_number, 'po_number': job.po_number or '', 'sku': job.sku,
+                'issue': 'Not Released', 'machine': (job.machine_name or '').strip(), 'qty_pcs': gap,
+                'date': '', 'days_pending': (today - job.created_at.date()).days if job.created_at else '',
+            })
+            continue
+
+        ups = job_card.ups or 1
+        printed_pcs = 0
+        packed_pcs = 0
+        last_activity_date = None
+        for p in job_card.productions.all():
+            if p.entry_type == 'printing':
+                printed_pcs += p.output_sheets * (p.merge_allocated_ups or ups)
+            elif p.entry_type == 'packing':
+                packed_pcs += p.packing_qty
+            if last_activity_date is None or p.date > last_activity_date:
+                last_activity_date = p.date
+
+        dispatched_pcs = 0
+        for d in job_card.dispatch_set.all():
+            dispatched_pcs += d.dispatch_qty
+            if last_activity_date is None or d.dispatch_date > last_activity_date:
+                last_activity_date = d.dispatch_date
+
+        gap = order_qty - dispatched_pcs
+        if gap <= 0:
+            continue
+
+        packing_limit_pcs = printed_pcs if job_card.is_print_job else order_qty
+        pending_printing = max(order_qty - printed_pcs, 0) if job_card.is_print_job else 0
+        pending_packing = max(packing_limit_pcs - packed_pcs, 0)
+        pending_dispatch = max(packed_pcs - dispatched_pcs, 0)
+        if pending_printing:
+            issue = 'Stuck at Printing'
+        elif pending_packing:
+            issue = 'Stuck at Packing'
+        elif pending_dispatch:
+            issue = 'Awaiting Dispatch'
+        else:
+            issue = 'Pending Completion'
+
+        if last_activity_date is None and job_card.created_at:
+            last_activity_date = job_card.created_at.date()
+        days_pending = (today - last_activity_date).days if last_activity_date else ''
+
+        rows.append({
+            'job_card_no': job_card.job_card_no, 'po_number': job_card.PO_No or '', 'sku': job_card.SKU,
+            'issue': issue, 'machine': job_card.machine_name_display, 'qty_pcs': gap,
+            'date': '', 'days_pending': days_pending,
+        })
+    return rows
+
+
+def _focus_dispatch_alignment(start, end):
+    rows = []
+    today = timezone.localdate()
+    job_cards = JobCard.objects.filter(
+        is_active=True, productions__entry_type='packing', productions__date__range=(start, end),
+    ).distinct().select_related('machine_name', 'planning_job').prefetch_related(
+        Prefetch('productions', queryset=Production.objects.filter(is_active=True)),
+        Prefetch('dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
+    )
+    for job_card in job_cards:
+        packed_pcs = 0
+        last_packing_date = None
+        for p in job_card.productions.all():
+            if p.entry_type != 'packing':
+                continue
+            packed_pcs += p.packing_qty
+            if last_packing_date is None or p.date > last_packing_date:
+                last_packing_date = p.date
+
+        dispatched_pcs = sum(d.dispatch_qty for d in job_card.dispatch_set.all())
+        gap = packed_pcs - dispatched_pcs
+        if gap <= 0:
+            continue
+
+        days_pending = (today - last_packing_date).days if last_packing_date else ''
+        rows.append({
+            'job_card_no': job_card.job_card_no, 'po_number': job_card.PO_No or '', 'sku': job_card.SKU,
+            'issue': 'Awaiting Dispatch', 'machine': job_card.machine_name_display, 'qty_pcs': gap,
+            'date': '', 'days_pending': days_pending,
+        })
+    return rows
+
+
+def _focus_wastage_reduction(start, end):
+    rows = []
+    for drow in _waste_rows(start, end):
+        if not drow['qty_pcs']:
+            continue
+        rows.append({
+            'job_card_no': drow['job_card_no'], 'po_number': drow['po_number'], 'sku': '',
+            'issue': drow['row_type'], 'machine': drow['machine'], 'qty_pcs': drow['qty_pcs'],
+            'date': drow['date'], 'days_pending': '',
+        })
+    return rows
+
+
+_FOCUS_FUNCS = {
+    KPITarget.KPI_ORDER_FULFILLMENT: _focus_order_fulfillment,
+    KPITarget.KPI_WASTAGE_REDUCTION: _focus_wastage_reduction,
+    KPITarget.KPI_DISPATCH_ALIGNMENT: _focus_dispatch_alignment,
+}
+
+
+def build_kpi_focus_rows(kpi_slug, start, end):
+    """Ranked, job-level list of exactly what's dragging a KPI down for the
+    period — worst gap/waste first — meant to be handed to the team as an
+    actionable to-do list, as opposed to the raw row dumps above."""
+    focus_func = _FOCUS_FUNCS.get(kpi_slug)
+    if focus_func is None:
+        return []
+    rows = focus_func(start, end)
+    rows.sort(key=lambda r: r['qty_pcs'], reverse=True)
+    return rows
+
+
+KPI_FOCUS_HEADERS = ['job_card_no', 'po_number', 'sku', 'issue', 'machine', 'qty_pcs', 'date', 'days_pending']
+KPI_FOCUS_HEADER_LABELS = {
+    'job_card_no': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'issue': 'Issue / Stuck At',
+    'machine': 'Machine', 'qty_pcs': 'Qty (Pcs)', 'date': 'Date', 'days_pending': 'Days Pending',
+}
 
 
 def _status_for(target, value):
@@ -437,6 +591,9 @@ def build_kpi_scorecard_context(request):
     if detail_param == 'quarterly' and kpi_param in DRILLDOWN_FUNCS:
         export_rows = build_kpi_quarterly_detail_rows(kpi_param, year, quarter_for_detail)
         export_headers, export_header_labels = QUARTERLY_DETAIL_HEADERS, QUARTERLY_DETAIL_HEADER_LABELS
+    elif detail_param == 'focus' and kpi_param in DRILLDOWN_FUNCS:
+        export_rows = build_kpi_focus_rows(kpi_param, start, end)
+        export_headers, export_header_labels = KPI_FOCUS_HEADERS, KPI_FOCUS_HEADER_LABELS
     elif kpi_param == 'all':
         drilldown_rows = []
         for slug, drilldown_func in DRILLDOWN_FUNCS.items():

@@ -11,7 +11,7 @@ from reports.report_registry import builtin_reports  # noqa: F401
 from reports.report_engine import run_report
 from reports.report_engine.engine import bump_cache_version
 from reports.report_registry import registry
-from reports.export.services import export_as_csv, export_as_pdf, export_as_xlsx
+from reports.export.services import build_export_filename, export_as_csv, export_as_pdf, export_as_xlsx
 from reports.models import MachinePlanningJcSelection, ScheduledReport
 from reports.scheduler.services import calculate_next_run
 from reports.services import _can_edit_jc_selection
@@ -66,7 +66,7 @@ def export_report_api(request, slug):
     except PermissionDenied as exc:
         return JsonResponse({'ok': False, 'error': str(exc)}, status=403)
 
-    filename_base = slug.replace('_', '-').strip() or 'report'
+    filename_base = build_export_filename(payload, slug)
     if export_type == 'xlsx':
         try:
             content = export_as_xlsx(payload)

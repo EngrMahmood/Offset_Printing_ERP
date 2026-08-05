@@ -59,8 +59,30 @@
         border-radius: 6px;
     }
     .dp-num { text-align: right; font-variant-numeric: tabular-nums; }
-    .kpi-drilldown-links { margin-top: 6px; }
-    .kpi-drilldown-links a { font-size: 11px; margin-right: 10px; }
+    .kpi-drilldown-links { margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }
+    .kpi-export-group { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+    .kpi-export-label {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #64748b;
+        min-width: 96px;
+    }
+    .kpi-export-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        font-size: 11px;
+        font-weight: 700;
+        padding: 3px 10px;
+        border-radius: 999px;
+        text-decoration: none;
+        border: 1px solid transparent;
+    }
+    .kpi-export-chip:hover { text-decoration: none; filter: brightness(0.95); }
+    .kpi-export-chip.is-xlsx { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+    .kpi-export-chip.is-pdf { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
     .trend-period-link { text-decoration: none; }
     .trend-period-link .trend-dl { font-size: 10px; color: #64748b; margin-left: 6px; }
 </style>
@@ -129,12 +151,21 @@
                 <div class="kpi-range">Min {{ kpi.min_value }}% &middot; Target {{ kpi.target_value }}% &middot; Max {{ kpi.max_value }}% &middot; Weightage {{ kpi.weightage_pct }}%</div>
                 {% if kpi.description %}<div class="kpi-desc">{{ kpi.description }}</div>{% endif %}
                 <div class="kpi-drilldown-links">
-                    Supporting data:
-                    <a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=xlsx&kpi={{ kpi.slug }}&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">Excel</a>
-                    <a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=pdf&kpi={{ kpi.slug }}&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">PDF</a>
-                    &middot; Quarterly detail:
-                    <a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=xlsx&kpi={{ kpi.slug }}&detail=quarterly&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">Excel</a>
-                    <a href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=pdf&kpi={{ kpi.slug }}&detail=quarterly&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">PDF</a>
+                    <div class="kpi-export-group">
+                        <span class="kpi-export-label">Supporting data</span>
+                        <a class="kpi-export-chip is-xlsx" href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=xlsx&kpi={{ kpi.slug }}&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">&#8681; Excel</a>
+                        <a class="kpi-export-chip is-pdf" href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=pdf&kpi={{ kpi.slug }}&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">&#8681; PDF</a>
+                    </div>
+                    <div class="kpi-export-group">
+                        <span class="kpi-export-label">Quarterly detail</span>
+                        <a class="kpi-export-chip is-xlsx" href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=xlsx&kpi={{ kpi.slug }}&detail=quarterly&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">&#8681; Excel</a>
+                        <a class="kpi-export-chip is-pdf" href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=pdf&kpi={{ kpi.slug }}&detail=quarterly&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">&#8681; PDF</a>
+                    </div>
+                    <div class="kpi-export-group">
+                        <span class="kpi-export-label">Improvement focus</span>
+                        <a class="kpi-export-chip is-xlsx" href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=xlsx&kpi={{ kpi.slug }}&detail=focus&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">&#8681; Excel</a>
+                        <a class="kpi-export-chip is-pdf" href="{% url 'reports:reports_api:export_report' 'kpi-scorecard' %}?type=pdf&kpi={{ kpi.slug }}&detail=focus&period_type={{ data.period_type }}&year={{ data.year }}&month={{ data.month }}&quarter={{ data.quarter }}">&#8681; PDF</a>
+                    </div>
                 </div>
                 <form method="post" action="{% url 'reports:kpi_save_note' %}" class="kpi-note">
                     {% csrf_token %}
