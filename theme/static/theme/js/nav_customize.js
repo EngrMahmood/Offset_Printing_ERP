@@ -57,23 +57,34 @@
         return null;
     }
 
+    // Guarantees every catalog key appears exactly once across pinned+overflow
+    // — regardless of what a saved layout actually contains. Called on every
+    // load, every modal open, and every save, so a layout that somehow lost
+    // (or duplicated) an entry heals itself the next time it passes through
+    // here instead of that module silently staying unreachable/duplicated.
+    function reconcile(rawPinned, rawOverflow) {
+        var seen = {};
+        var pinned = [];
+        var overflow = [];
+        (rawPinned || []).forEach(function (k) {
+            if (nodesByKey[k] && !seen[k]) { seen[k] = true; pinned.push(k); }
+        });
+        (rawOverflow || []).forEach(function (k) {
+            if (nodesByKey[k] && !seen[k]) { seen[k] = true; overflow.push(k); }
+        });
+        // New modules (permission granted since last save, first ever load,
+        // or recovering from a layout that had dropped one) default to
+        // pinned so they're never silently unreachable.
+        defaultOrder.forEach(function (k) {
+            if (!seen[k]) { seen[k] = true; pinned.push(k); }
+        });
+        return { pinned: pinned, overflow: overflow };
+    }
+
     function loadLayout() {
         var raw = readServerLayout() || readLocalFallback();
-        var pinned = raw ? raw.pinned.filter(function (k) { return nodesByKey[k]; }) : [];
-        var overflow = raw ? raw.overflow.filter(function (k) { return nodesByKey[k]; }) : [];
-
-        // New modules (permission granted since last save, or first ever
-        // load) default to pinned so they're never silently unreachable.
-        var known = {};
-        pinned.concat(overflow).forEach(function (k) { known[k] = true; });
-        defaultOrder.forEach(function (k) {
-            if (!known[k]) pinned.push(k);
-        });
-
-        if (pinned.length === 0 && overflow.length === 0) {
-            pinned = defaultOrder.slice();
-        }
-        return { pinned: pinned, overflow: overflow };
+        if (!raw) return { pinned: defaultOrder.slice(), overflow: [] };
+        return reconcile(raw.pinned, raw.overflow);
     }
 
     function saveLayout(layout) {
@@ -149,6 +160,11 @@
 
     function openCustomizeModal() {
         if (!modal || !list) return;
+        // Reconcile before rendering: if currentLayout ever lost an entry
+        // (e.g. a layout saved before this safety net existed), this is
+        // where it gets a chance to come back instead of just never
+        // appearing in the list a user is trying to fix things from.
+        currentLayout = reconcile(currentLayout.pinned, currentLayout.overflow);
         list.innerHTML = '';
         currentLayout.pinned.forEach(function (key) {
             list.appendChild(buildListRow(key));
@@ -207,7 +223,7 @@
                 var key = child.getAttribute('data-key');
                 (seenDivider ? overflow : pinned).push(key);
             });
-            currentLayout = { pinned: pinned, overflow: overflow };
+            currentLayout = reconcile(pinned, overflow);
             saveLayout(currentLayout);
             applyLayout(currentLayout);
             modal.classList.remove('open');
