@@ -225,6 +225,21 @@ def _extract_best_sku_token(raw_value):
     if ' ' in text and not _looks_like_contact_line(text):
         if best.isalpha() and len(best) <= 5:
             return text
+        # If the best token doesn't consume the whole cell text, and what's left
+        # over looks like a plain continuation word (e.g. "...-Bleach Card", where
+        # "Card" is a separate space-delimited token dropped by the tokenizer
+        # above), keep the full text so the SKU name isn't silently truncated.
+        idx = text.find(best)
+        if idx != -1:
+            remainder = text[idx + len(best):].strip()
+            if (
+                remainder
+                and re.match(r'^[A-Za-z0-9 ]{1,40}$', remainder)
+                and remainder.upper() not in _SKU_BLOCK_WORDS
+                and remainder.upper() not in {'PIECE', 'PCS', 'UNIT', 'SET', 'BOX', 'ROLL', 'PACK', 'KG', 'METER', 'YARD'}
+                and not _looks_like_date_token(remainder)
+            ):
+                return text
     return best
 
 
