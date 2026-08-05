@@ -1,5 +1,6 @@
 {% extends 'theme/base.html' %}
 {% load static %}
+{% load core_extras %}
 
 {% block title %}Dashboard — Offset Printing ERP{% endblock %}
 {% block header_title %}Dashboard{% endblock %}
@@ -36,7 +37,7 @@
         {% endif %}
         {% if kpis.unread_notifications %}
         <a href="{% url 'notification_list' %}" class="erp-attention-pill erp-attention-pill--danger">
-            <span class="erp-attention-pill__count">{{ kpis.unread_notifications }}</span> unread alert{{ kpis.unread_notifications|pluralize }}
+            <span class="erp-attention-pill__count">{{ kpis.unread_notifications|cap99 }}</span> unread alert{{ kpis.unread_notifications|pluralize }}
         </a>
         {% endif %}
     </div>
@@ -78,7 +79,7 @@
     <div class="erp-kpi-card flex items-center justify-between gap-2">
         <div class="min-w-0">
             <div class="erp-kpi-label">My Unread Alerts</div>
-            <div class="erp-kpi-value">{{ kpis.unread_notifications }}</div>
+            <div class="erp-kpi-value">{{ kpis.unread_notifications|cap99 }}</div>
         </div>
         <div class="erp-kpi-icon shrink-0" style="background:var(--erp-danger-soft);color:#8f2f3a;">
             <i class="fas fa-bell"></i>

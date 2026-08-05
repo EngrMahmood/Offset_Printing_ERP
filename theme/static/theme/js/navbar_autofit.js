@@ -38,20 +38,35 @@
         document.fonts.ready.then(scheduleFit);
     }
 
-    // The container's own width depends on the viewport and its sibling
-    // elements (brand, actions), not on its own font-size — overflow-x:auto
-    // makes its flex min-width 0, so this can't feedback-loop off our own
-    // shrinking. ResizeObserver catches layout changes that don't dispatch a
-    // window 'resize' event (sidebar toggles, zoom, browser chrome changes).
+    // Watch .erp-topnav-row1 (the whole bar), never .erp-topnav-modules
+    // itself. Row1's width is driven purely by the viewport — brand/actions
+    // are flex-shrink:0 and modules is flex:1, so nothing inside modules
+    // (including the font-size/padding fit() just changed) can change row1's
+    // own width. Watching the element fit() mutates was a real bug: any
+    // sub-pixel width perturbation from its own font-size change (real
+    // WebView rendering, unlike the non-compositing sandbox this was first
+    // tested in) re-triggered the observer, which reset to full size before
+    // shrinking again — a visible, unending pulse ("nav items jittering").
+    var lastRowWidth = null;
+    function checkRowWidth() {
+        var row = document.querySelector('.erp-topnav-row1');
+        if (!row) return;
+        var w = row.clientWidth;
+        if (w !== lastRowWidth) {
+            lastRowWidth = w;
+            fit();
+        }
+    }
+
     if (window.ResizeObserver) {
         var observed = null;
-        var observer = new ResizeObserver(scheduleFit);
+        var observer = new ResizeObserver(checkRowWidth);
         var watch = function () {
-            var container = document.querySelector('.erp-topnav-modules');
-            if (container && container !== observed) {
+            var row = document.querySelector('.erp-topnav-row1');
+            if (row && row !== observed) {
                 if (observed) observer.unobserve(observed);
-                observer.observe(container);
-                observed = container;
+                observer.observe(row);
+                observed = row;
             }
         };
         watch();
@@ -60,14 +75,6 @@
 
     // Fallback poll: some automation/embedding contexts suppress resize and
     // ResizeObserver notifications (they're gated behind frame compositing).
-    // Cheap width check, only re-fits when the available width actually moved.
-    var lastWidth = null;
-    setInterval(function () {
-        var container = document.querySelector('.erp-topnav-modules');
-        if (!container) return;
-        if (container.clientWidth !== lastWidth) {
-            lastWidth = container.clientWidth;
-            fit();
-        }
-    }, 500);
+    // Same row1-only width check, so it can't self-trigger either.
+    setInterval(checkRowWidth, 500);
 })();

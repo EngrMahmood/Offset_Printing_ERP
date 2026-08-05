@@ -169,14 +169,24 @@
                 mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
             }
             .erp-topnav-actions { margin-left: auto !important; }
-            .erp-subnav { padding: 0 12px !important; }
+            /* Sub-nav (row 2): same overflow problem as row1 had — a fixed
+               36px-tall strip with overflow-x:auto silently truncated most
+               modules' sub-links on narrow screens with no visible cue more
+               existed. Let it wrap into as many rows as needed instead, so
+               everything is visible without scrolling. */
+            .erp-subnav {
+                flex-wrap: wrap !important;
+                height: auto !important;
+                overflow-x: visible !important;
+                padding: 6px 12px !important;
+                row-gap: 4px !important;
+            }
         }
 
         /* Touch: bump tap targets on the chrome that's exempt from the
            erp-btn touch rule (buttons.css) toward the ~40-44px minimum. */
         @media (max-width: 640px), (pointer: coarse) {
             .erp-topnav-logout { min-height: 40px; padding: 8px 12px !important; }
-            .erp-subnav { height: 40px !important; }
             .erp-subnav-link { min-height: 40px !important; height: 40px !important; line-height: 40px !important; }
         }
     </style>
