@@ -181,7 +181,7 @@
 {% endblock %}
 
 {% block extra_js %}
-<link rel="stylesheet" href="{% static 'chat/css/chat.css' %}?v=13">
+<link rel="stylesheet" href="{% static 'chat/css/chat.css' %}?v=14">
 <script>
     window.CHAT_URLS = {
         roomList: "{% url 'room-list' %}",
@@ -205,8 +205,8 @@
     };
 </script>
 <script src="{% static 'chat/js/emoji_picker.js' %}?v=1"></script>
-<script src="{% static 'chat/js/chat_socket.js' %}?v=15"></script>
+<script src="{% static 'chat/js/chat_socket.js' %}?v=16"></script>
 <script src="{% static 'chat/js/chat_upload.js' %}?v=4"></script>
 <script src="{% static 'chat/js/voice_message.js' %}?v=1"></script>
-<script src="{% static 'chat/js/webrtc_call.js' %}?v=10"></script>
+<script src="{% static 'chat/js/webrtc_call.js' %}?v=11"></script>
 {% endblock %}
