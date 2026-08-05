@@ -17,18 +17,28 @@
 
     if (!modulesEl) return;
 
-    // Catalog: every nav link that existed in the DOM on page load, keyed by
-    // its stable data-nav-key, in the server-rendered (permission-filtered,
-    // default) order. This is the single source of truth for "what exists
-    // right now" — customization only ever reorders/relocates these nodes,
-    // never invents or drops one.
+    // Catalog: every nav link that exists right now, keyed by its stable
+    // data-nav-key. Read from BOTH .erp-topnav-modules and the "More" menu —
+    // not just the former. navbar_autofit.js's own auto-overflow pass is
+    // scheduled via setTimeout(fn, 0), which on a slow-enough network (this
+    // script's own <script src> fetch taking a few ms longer than usual) can
+    // fire and complete BEFORE this script even runs, having already moved
+    // several modules into the "More" menu. Reading only .erp-topnav-modules
+    // made those permanently invisible to this catalog — and since a Save
+    // only ever persists what the catalog captured, that loss compounded on
+    // every subsequent save (reported: 21 -> 16 -> 8 modules over repeated
+    // saves). Reading both containers makes the catalog complete regardless
+    // of which one auto-overflow had already sorted each item into.
     var catalog = Array.prototype.slice.call(
         modulesEl.querySelectorAll('a.erp-topnav-module[data-nav-key]')
-    );
+    ).concat(Array.prototype.slice.call(
+        moreMenu ? moreMenu.querySelectorAll('a.erp-topnav-module[data-nav-key]') : []
+    ));
     var nodesByKey = {};
     var defaultOrder = [];
     catalog.forEach(function (node) {
         var key = node.getAttribute('data-nav-key');
+        if (nodesByKey[key]) return; // shouldn't happen, but never double-count
         nodesByKey[key] = node;
         defaultOrder.push(key);
     });
