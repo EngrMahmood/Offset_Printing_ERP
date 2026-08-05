@@ -216,6 +216,9 @@
     {% endif %}
 
     <script src="{% static 'theme/js/navbar_autofit.js' %}"></script>
+    {% if request.user.is_authenticated %}
+    <script src="{% static 'theme/js/nav_customize.js' %}"></script>
+    {% endif %}
     <script src="{% static 'theme/js/modal.js' %}"></script>
     <script src="{% static 'theme/js/filters.js' %}"></script>
     <script src="{% static 'theme/js/multiselect_filter.js' %}"></script>
