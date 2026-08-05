@@ -277,6 +277,13 @@ def _split_job_name_and_remarks(raw_name):
         # If this part is a copy/version of the job name, skip it
         if part_norm == job_norm:
             continue
+        # Some rows repeat the job name as a prefix before the actual spec text,
+        # e.g. "SKU / SKU Material : Tafetta ...". Strip that duplicated prefix
+        # so only the real spec text ends up in remarks.
+        if job_name and part_clean.upper().startswith(job_name.upper()):
+            part_clean = part_clean[len(job_name):].strip()
+            if not part_clean:
+                continue
         filtered_remarks_parts.append(part_clean)
         
     remarks = ' / '.join(filtered_remarks_parts) if filtered_remarks_parts else ''
