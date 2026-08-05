@@ -177,10 +177,26 @@
             }).catch(function () { /* ignore */ });
     }
 
+    function positionPanel() {
+        // Panel is position:fixed; anchor it under the bell button but clamp
+        // so it can never run off either edge of the viewport, regardless of
+        // where the button sits in the header (it's rarely at the true
+        // right edge — username/logout sit past it on narrow screens).
+        const rect = btn.getBoundingClientRect();
+        const width = Math.min(360, window.innerWidth * 0.92);
+        let right = window.innerWidth - rect.right;
+        const left = window.innerWidth - right - width;
+        if (left < 8) right = window.innerWidth - width - 8;
+        if (right < 8) right = 8;
+        panel.style.right = right + 'px';
+        panel.style.top = (rect.bottom + 8) + 'px';
+    }
+
     if (btn && panel) {
         btn.addEventListener('click', function (event) {
             event.stopPropagation();
             open = !open;
+            if (open) positionPanel();
             panel.classList.toggle('is-open', open);
             if (open) refreshList();
         });
@@ -189,6 +205,9 @@
                 open = false;
                 panel.classList.remove('is-open');
             }
+        });
+        window.addEventListener('resize', function () {
+            if (open) positionPanel();
         });
     }
 

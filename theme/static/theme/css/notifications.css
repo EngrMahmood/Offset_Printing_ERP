@@ -42,9 +42,15 @@
 
 .erp-notify-panel {
     display: none;
-    position: absolute;
-    right: 0;
-    top: calc(100% + 8px);
+    /* position:fixed with left/right set by JS on open (see notifications.js)
+       — the panel is anchored to the bell button's screen position, which on
+       narrow screens is nowhere near the viewport's right edge (username +
+       logout sit to its right), so a CSS-only `right:0` (relative to the
+       button) pushed the panel off the left edge of the screen. Fixed
+       positioning + JS-computed offsets keep it fully on-screen at any width. */
+    position: fixed;
+    right: 12px;
+    top: 56px;
     width: min(360px, 92vw);
     max-height: 420px;
     overflow: hidden;
