@@ -1,9 +1,9 @@
 // Lets each user choose which top-nav modules stay inline vs. get tucked
 // into a "More" dropdown, and reorder both — no code change needed. Layout
-// is stored per-browser in localStorage (not synced across devices/browsers
-// yet, but nothing here would block adding server-side sync later).
+// is saved server-side (UserProfile.nav_layout) so it's the same on every
+// device/browser the user logs into, not just the one it was set on.
 (function () {
-    var STORAGE_KEY = 'erp_nav_layout_v1';
+    var LOCAL_FALLBACK_KEY = 'erp_nav_layout_v1'; // used only if the save request fails
 
     var modulesEl = document.getElementById('erp-topnav-modules');
     var moreWrap = document.getElementById('erp-topnav-more');
@@ -33,16 +33,34 @@
         defaultOrder.push(key);
     });
 
-    function loadLayout() {
-        var pinned = [];
-        var overflow = [];
+    function getCookie(name) {
+        var match = document.cookie.match(new RegExp('(^| )' + name + '=([^;]+)'));
+        return match ? match[2] : '';
+    }
+    var csrfToken = (document.querySelector('[name=csrfmiddlewaretoken]') || {}).value || getCookie('csrftoken');
+
+    function readServerLayout() {
+        var el = document.getElementById('erp-nav-layout-data');
+        if (!el) return null;
         try {
-            var raw = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null');
-            if (raw && Array.isArray(raw.pinned) && Array.isArray(raw.overflow)) {
-                pinned = raw.pinned.filter(function (k) { return nodesByKey[k]; });
-                overflow = raw.overflow.filter(function (k) { return nodesByKey[k]; });
-            }
-        } catch (e) { /* fall through to default */ }
+            var raw = JSON.parse(el.textContent || 'null');
+            if (raw && Array.isArray(raw.pinned) && Array.isArray(raw.overflow)) return raw;
+        } catch (e) { /* fall through */ }
+        return null;
+    }
+
+    function readLocalFallback() {
+        try {
+            var raw = JSON.parse(localStorage.getItem(LOCAL_FALLBACK_KEY) || 'null');
+            if (raw && Array.isArray(raw.pinned) && Array.isArray(raw.overflow)) return raw;
+        } catch (e) { /* ignore */ }
+        return null;
+    }
+
+    function loadLayout() {
+        var raw = readServerLayout() || readLocalFallback();
+        var pinned = raw ? raw.pinned.filter(function (k) { return nodesByKey[k]; }) : [];
+        var overflow = raw ? raw.overflow.filter(function (k) { return nodesByKey[k]; }) : [];
 
         // New modules (permission granted since last save, or first ever
         // load) default to pinned so they're never silently unreachable.
@@ -59,9 +77,18 @@
     }
 
     function saveLayout(layout) {
-        try {
-            localStorage.setItem(STORAGE_KEY, JSON.stringify(layout));
-        } catch (e) { /* ignore (private browsing / quota) */ }
+        var saveUrl = customizeBtn && customizeBtn.getAttribute('data-save-url');
+        if (!saveUrl) return;
+        fetch(saveUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': csrfToken },
+            body: JSON.stringify(layout),
+            credentials: 'same-origin',
+        }).catch(function () {
+            // Offline/network failure: keep the change working locally on this
+            // device at least, even though it won't have synced to the account.
+            try { localStorage.setItem(LOCAL_FALLBACK_KEY, JSON.stringify(layout)); } catch (e) { /* ignore */ }
+        });
     }
 
     function applyLayout(layout) {

@@ -77,6 +77,7 @@ urlpatterns = [
     path('erp-readme/', views.erp_readme, name='erp_readme'),
     path('erp-readme/download/', views.download_erp_readme, name='download_erp_readme'),
     path('version/', views.erp_version, name='erp_version'),
+    path('nav-layout/', views.save_nav_layout, name='save_nav_layout'),
     path('notifications/', notification_views.notification_list, name='notification_list'),
     path('notifications/mark-all-read/', notification_views.notification_mark_all_read, name='notification_mark_all_read'),
     path('notifications/<int:pk>/read/', notification_views.notification_mark_read, name='notification_mark_read'),

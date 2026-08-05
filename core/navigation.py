@@ -56,6 +56,14 @@ def _role_from_request(request: Any) -> str:
     return (getattr(profile, 'role', '') or '').strip().lower()
 
 
+def _nav_layout_from_request(request: Any) -> dict:
+    profile = getattr(getattr(request, 'user', None), 'profile', None)
+    layout = getattr(profile, 'nav_layout', None) or {}
+    if not isinstance(layout, dict) or not isinstance(layout.get('pinned'), list) or not isinstance(layout.get('overflow'), list):
+        return {}
+    return layout
+
+
 def get_nav_permissions(request: Any) -> dict[str, bool | str]:
     role = _role_from_request(request)
     is_authenticated = bool(getattr(getattr(request, 'user', None), 'is_authenticated', False))
@@ -118,6 +126,7 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
 
     return {
         'role': role,
+        'nav_layout': _nav_layout_from_request(request),
         'item_request_pending_count': _pending_item_reviews(),
         'can_access_dashboard': is_authenticated,
         'can_access_planning': _allow('planning'),

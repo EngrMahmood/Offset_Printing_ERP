@@ -1545,6 +1545,11 @@ class UserProfile(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
+    # {"pinned": [nav-key,...], "overflow": [nav-key,...]} — which top-nav
+    # modules this user keeps inline vs. tucked into "More", and in what
+    # order. Empty dict means "never customized, use server default order".
+    nav_layout = models.JSONField(default=dict, blank=True)
+
     def _has_permission(self, code):
         from core.permissions import user_has_permission
         return user_has_permission(self.user, code)

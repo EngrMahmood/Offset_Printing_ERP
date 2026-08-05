@@ -43,13 +43,13 @@
 
     <link rel="stylesheet" href="{% static 'theme/css/variables.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/base.css' %}?v=2">
-    <link rel="stylesheet" href="{% static 'theme/css/layout.css' %}?v=2">
+    <link rel="stylesheet" href="{% static 'theme/css/layout.css' %}?v=3">
     <link rel="stylesheet" href="{% static 'theme/css/forms.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'theme/css/tables.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/cards.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/buttons.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'theme/css/badges.css' %}">
-    <link rel="stylesheet" href="{% static 'theme/css/modals.css' %}?v=2">
+    <link rel="stylesheet" href="{% static 'theme/css/modals.css' %}?v=3">
     <link rel="stylesheet" href="{% static 'theme/css/dashboard.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/responsive.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'theme/css/erp_components.css' %}?v=2">
@@ -225,9 +225,9 @@
     <div id="chat-dock-container"></div>
     {% endif %}
 
-    <script src="{% static 'theme/js/navbar_autofit.js' %}"></script>
+    <script src="{% static 'theme/js/navbar_autofit.js' %}?v=2"></script>
     {% if request.user.is_authenticated %}
-    <script src="{% static 'theme/js/nav_customize.js' %}"></script>
+    <script src="{% static 'theme/js/nav_customize.js' %}?v=2"></script>
     {% endif %}
     <script src="{% static 'theme/js/modal.js' %}"></script>
     <script src="{% static 'theme/js/filters.js' %}"></script>

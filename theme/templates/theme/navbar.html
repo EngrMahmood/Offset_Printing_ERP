@@ -142,6 +142,7 @@
             {% endif %}
         </div>
 
+        {{ nav.nav_layout|json_script:"erp-nav-layout-data" }}
         <div class="erp-topnav-more" id="erp-topnav-more">
             <button type="button" class="erp-topnav-module erp-topnav-more-btn" id="erp-topnav-more-btn" style="display:none;">
                 More <i class="fas fa-caret-down"></i>
@@ -151,7 +152,9 @@
 
         <div class="erp-topnav-actions">
             {% if request.user.is_authenticated %}
-            <button type="button" class="erp-notify-btn" id="erp-nav-customize-btn" title="Customize navigation" aria-label="Customize navigation">
+            <button type="button" class="erp-notify-btn" id="erp-nav-customize-btn"
+                    data-save-url="{% url 'save_nav_layout' %}"
+                    title="Customize navigation" aria-label="Customize navigation">
                 <i class="fas fa-sliders-h"></i>
             </button>
             {% endif %}

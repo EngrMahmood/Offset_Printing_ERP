@@ -184,6 +184,30 @@ def home(request):
     return render(request, 'home.html', context)
 
 
+@login_required
+@require_POST
+def save_nav_layout(request):
+    """Persist this user's top-nav pin/overflow customization server-side so
+    it's the same on every device/browser, not just the one it was set on."""
+    try:
+        data = json.loads(request.body or '{}')
+    except (ValueError, TypeError):
+        return JsonResponse({'error': 'Invalid JSON'}, status=400)
+
+    pinned = data.get('pinned')
+    overflow = data.get('overflow')
+    if not isinstance(pinned, list) or not isinstance(overflow, list):
+        return JsonResponse({'error': '"pinned" and "overflow" must be lists'}, status=400)
+    if len(pinned) > 50 or len(overflow) > 50:
+        return JsonResponse({'error': 'Too many items'}, status=400)
+    if not all(isinstance(k, str) for k in pinned + overflow):
+        return JsonResponse({'error': 'Items must be strings'}, status=400)
+
+    request.user.profile.nav_layout = {'pinned': pinned, 'overflow': overflow}
+    request.user.profile.save(update_fields=['nav_layout'])
+    return JsonResponse({'ok': True})
+
+
 def erp_version(request):
     return JsonResponse({
         'erp_software_version': getattr(settings, 'ERP_SOFTWARE_VERSION', '0.0.0'),
