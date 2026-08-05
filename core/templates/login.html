@@ -1,4 +1,5 @@
 {% extends 'theme/base.html' %}
+{% load static %}
 
 {% block title %}Login - Offset Printing ERP{% endblock %}
 
@@ -6,82 +7,232 @@
 {% block topbar %}{% endblock %}
 {% block breadcrumbs %}{% endblock %}
 
+{% block extra_head %}
+<style>
+    /* Full-bleed two-panel login screen — overrides the shared .erp-content
+       max-width/padding used by every other (in-app) page, since this is a
+       standalone entry screen, not part of the app shell. */
+    .erp-content:has(.erp-login-screen) { max-width: none !important; padding: 0 !important; }
+
+    .erp-login-screen {
+        min-height: 100vh;
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+    @media (min-width: 900px) {
+        .erp-login-screen { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+    }
+
+    /* ── Left: brand panel (hidden on narrow screens) ─────────────────── */
+    .erp-login-brand {
+        display: none;
+        position: relative;
+        background: linear-gradient(160deg, #1a2332 0%, #234163 55%, #2f6ea7 100%);
+        color: #fff;
+        padding: 56px 48px;
+        flex-direction: column;
+        justify-content: space-between;
+    }
+    .erp-login-brand__top { display: flex; align-items: center; gap: 12px; }
+    .erp-login-brand__top i { font-size: 22px; color: #93c5fd; }
+    .erp-login-brand__top span { font-size: 19px; font-weight: 700; letter-spacing: 0.02em; }
+
+    .erp-login-brand__mid { max-width: 420px; }
+    .erp-login-brand__mid h2 { font-size: 30px; font-weight: 800; line-height: 1.25; margin: 0 0 14px; }
+    .erp-login-brand__mid p { font-size: 14px; color: rgba(255,255,255,0.72); line-height: 1.6; margin: 0 0 28px; }
+
+    .erp-login-feature-list { display: grid; gap: 14px; margin: 0; padding: 0; list-style: none; }
+    .erp-login-feature-list li {
+        display: flex; align-items: center; gap: 12px;
+        font-size: 13px; font-weight: 600; color: rgba(255,255,255,0.9);
+    }
+    .erp-login-feature-list i {
+        width: 30px; height: 30px; flex-shrink: 0;
+        display: inline-flex; align-items: center; justify-content: center;
+        background: rgba(255,255,255,0.1); border-radius: 8px; color: #93c5fd; font-size: 13px;
+    }
+
+    .erp-login-brand__footer {
+        display: flex; align-items: center; gap: 12px;
+        padding-top: 20px; border-top: 1px solid rgba(255,255,255,0.14);
+    }
+    .erp-login-brand__footer span { font-size: 11px; color: rgba(255,255,255,0.55); }
+    .erp-login-brand__footer img { height: 26px; width: auto; background: #fff; border-radius: 4px; padding: 3px 6px; }
+
+    @media (min-width: 900px) {
+        .erp-login-brand { display: flex; }
+    }
+
+    /* ── Right: form panel ─────────────────────────────────────────────── */
+    .erp-login-formside {
+        display: flex; align-items: center; justify-content: center;
+        padding: 32px 20px;
+        background: var(--erp-bg, #f3f5f8);
+    }
+    .erp-login-form-wrap { width: 100%; max-width: 380px; }
+
+    .erp-login-mobile-header { text-align: center; margin-bottom: 28px; }
+    .erp-login-mobile-header .erp-login-icon {
+        width: 56px; height: 56px; border-radius: 14px;
+        background: var(--erp-primary, #2f6ea7);
+        display: inline-flex; align-items: center; justify-content: center;
+        margin-bottom: 12px; box-shadow: 0 8px 20px rgba(47,110,167,0.28);
+    }
+    .erp-login-mobile-header .erp-login-icon i { color: #fff; font-size: 24px; }
+    .erp-login-mobile-header h1 { font-size: 21px; font-weight: 800; color: #172d46; margin: 0; }
+    .erp-login-mobile-header p { font-size: 13px; color: #64748b; margin: 4px 0 0; }
+    @media (min-width: 900px) { .erp-login-mobile-header { display: none; } }
+
+    .erp-login-card {
+        background: #fff; border: 1px solid var(--erp-border, #d7e0ea);
+        border-radius: 16px; box-shadow: 0 14px 40px rgba(15,23,42,0.10);
+        padding: 32px;
+    }
+    .erp-login-card h2 { font-size: 17px; font-weight: 700; color: #172d46; margin: 0 0 22px; }
+
+    .erp-login-alert {
+        display: flex; align-items: flex-start; gap: 10px;
+        padding: 11px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 20px;
+    }
+    .erp-login-alert--danger { background: #fbecef; border: 1px solid #edbec6; color: #8f2f3a; }
+    .erp-login-alert--info { background: #fff6e8; border: 1px solid #eccb92; color: #8a5a15; }
+
+    .erp-login-field { margin-bottom: 18px; }
+    .erp-login-field label {
+        display: block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+        text-transform: uppercase; color: #6b7f95; margin-bottom: 7px;
+    }
+    .erp-login-input-group { position: relative; }
+    .erp-login-input-group i {
+        position: absolute; left: 13px; top: 50%; transform: translateY(-50%);
+        color: #94a3b8; font-size: 14px; pointer-events: none;
+    }
+    /* Explicit selector (class + attribute) so this reliably beats the
+       generic input[type='text']/input[type='password'] rules in
+       forms.css — those aren't scoped to icon-prefixed inputs and were
+       collapsing this padding, causing the icon to overlap the typed text. */
+    input.erp-login-input[type='text'],
+    input.erp-login-input[type='password'] {
+        width: 100% !important;
+        padding: 11px 14px 11px 40px !important;
+        font-size: 15px !important;
+        border: 1px solid #c9d6e4 !important;
+        border-radius: 10px !important;
+        background: #f8fafc !important;
+        color: #172d46;
+        transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+    }
+    input.erp-login-input[type='text']:focus,
+    input.erp-login-input[type='password']:focus {
+        outline: none !important;
+        background: #fff !important;
+        border-color: var(--erp-primary, #2f6ea7) !important;
+        box-shadow: 0 0 0 3px rgba(47,110,167,0.15) !important;
+    }
+
+    .erp-login-forgot { display: flex; justify-content: flex-end; margin-top: 8px; }
+    .erp-login-forgot a { font-size: 12px; font-weight: 600; color: var(--erp-primary, #2f6ea7); text-decoration: none; }
+    .erp-login-forgot a:hover { text-decoration: underline; }
+
+    .erp-login-submit {
+        width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px;
+        background: var(--erp-primary, #2f6ea7); color: #fff; border: none;
+        font-size: 14px; font-weight: 700; padding: 12px; border-radius: 10px;
+        cursor: pointer; margin-top: 6px; transition: background 0.15s;
+    }
+    .erp-login-submit:hover { background: var(--erp-primary-strong, #255986); }
+
+    .erp-login-footnote { text-align: center; font-size: 11px; color: #94a3b8; margin-top: 24px; }
+</style>
+{% endblock %}
+
 {% block content %}
-<div class="min-h-[80vh] flex items-center justify-center">
-    <div class="w-full max-w-md">
-        
-        <!-- Brand / Header -->
-        <div class="text-center mb-8 fade-in">
-            <div class="w-16 h-16 bg-brand-600 rounded-2xl inline-flex items-center justify-center mb-4 shadow-soft">
-                <i class="fas fa-print text-white text-3xl"></i>
-            </div>
-            <h1 class="text-2xl font-bold text-slate-800 tracking-tight">Offset ERP</h1>
-            <p class="text-sm text-slate-500 mt-1">Sign in to your workspace</p>
+<div class="erp-login-screen">
+
+    <!-- Left: brand panel (desktop only) -->
+    <div class="erp-login-brand">
+        <div class="erp-login-brand__top">
+            <i class="fas fa-print"></i>
+            <span>Offset ERP</span>
         </div>
-
-        <!-- Login Card -->
-        <div class="bg-white rounded-2xl shadow-glass border border-slate-200 p-8 fade-in" style="animation-delay: 0.1s;">
-            <h2 class="text-lg font-semibold text-slate-700 mb-6">Welcome Back</h2>
-
-            {% if form.errors %}
-            <div class="bg-red-50 border border-red-200 text-red-600 px-4 py-3 rounded-lg text-sm mb-6 flex items-start gap-3">
-                <i class="fas fa-exclamation-circle mt-0.5"></i>
-                <span>Invalid username or password. Please try again.</span>
-            </div>
-            {% endif %}
-
-            {% if next %}
-            <div class="bg-amber-50 border border-amber-200 text-amber-700 px-4 py-3 rounded-lg text-sm mb-6 flex items-start gap-3">
-                <i class="fas fa-info-circle mt-0.5"></i>
-                <span>Please log in to access that page.</span>
-            </div>
-            {% endif %}
-
-            <form method="post" action="{% url 'login' %}" class="space-y-5">
-                {% csrf_token %}
-                <input type="hidden" name="next" value="{{ next }}">
-
-                <div>
-                    <label for="id_username" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Username</label>
-                    <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <i class="fas fa-user text-slate-400"></i>
-                        </div>
-                        <input type="text" id="id_username" name="username"
-                               value="{{ form.username.value|default:'' }}"
-                               class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
-                               placeholder="Enter your username" autofocus>
-                    </div>
-                </div>
-
-                <div>
-                    <label for="id_password" class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Password</label>
-                    <div class="relative">
-                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                            <i class="fas fa-lock text-slate-400"></i>
-                        </div>
-                        <input type="password" id="id_password" name="password"
-                               class="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:ring-2 focus:ring-brand-500/20 focus:border-brand-500 transition-all"
-                               placeholder="********">
-                    </div>
-                    <div class="flex justify-end mt-2 text-xs">
-                        <a href="{% url 'password_reset' %}" class="text-brand-600 hover:text-brand-700 font-medium transition-all">Forgot Password?</a>
-                    </div>
-                </div>
-
-                <div class="pt-2">
-                    <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-medium py-2.5 rounded-lg shadow-sm hover-lift flex items-center justify-center gap-2">
-                        <span>Sign In</span>
-                        <i class="fas fa-arrow-right text-sm"></i>
-                    </button>
-                </div>
-            </form>
+        <div class="erp-login-brand__mid">
+            <h2>Run the whole print floor from one workspace.</h2>
+            <p>Job cards, planning, production tracking, QC, dispatch, and inventory — all in one place, built for offset printing operations.</p>
+            <ul class="erp-login-feature-list">
+                <li><i class="fas fa-calendar-check"></i> Planning &amp; job card workflow</li>
+                <li><i class="fas fa-industry"></i> Live production &amp; OEE tracking</li>
+                <li><i class="fas fa-truck"></i> Dispatch, QC &amp; inventory control</li>
+            </ul>
         </div>
-
-        <p class="text-center text-slate-400 text-xs mt-8">
-            &copy; {% now "Y" %} Offset Printing ERP. All rights reserved.
-        </p>
-
+        <div class="erp-login-brand__footer">
+            <img src="{% static 'core/image/logo.jpg' %}" alt="Utopia Industries (Private) Ltd." onerror="this.style.display='none'">
+            <span>Powered by Utopia Industries (Private) Ltd.</span>
+        </div>
     </div>
+
+    <!-- Right: form panel -->
+    <div class="erp-login-formside">
+        <div class="erp-login-form-wrap">
+
+            <div class="erp-login-mobile-header">
+                <div class="erp-login-icon"><i class="fas fa-print"></i></div>
+                <h1>Offset ERP</h1>
+                <p>Sign in to your workspace</p>
+            </div>
+
+            <div class="erp-login-card">
+                <h2>Welcome back</h2>
+
+                {% if form.errors %}
+                <div class="erp-login-alert erp-login-alert--danger">
+                    <i class="fas fa-exclamation-circle" style="margin-top:2px;"></i>
+                    <span>Invalid username or password. Please try again.</span>
+                </div>
+                {% endif %}
+
+                {% if next %}
+                <div class="erp-login-alert erp-login-alert--info">
+                    <i class="fas fa-info-circle" style="margin-top:2px;"></i>
+                    <span>Please log in to access that page.</span>
+                </div>
+                {% endif %}
+
+                <form method="post" action="{% url 'login' %}">
+                    {% csrf_token %}
+                    <input type="hidden" name="next" value="{{ next }}">
+
+                    <div class="erp-login-field">
+                        <label for="id_username">Username</label>
+                        <div class="erp-login-input-group">
+                            <i class="fas fa-user"></i>
+                            <input type="text" id="id_username" name="username" class="erp-login-input"
+                                   value="{{ form.username.value|default:'' }}"
+                                   placeholder="Enter your username" autofocus>
+                        </div>
+                    </div>
+
+                    <div class="erp-login-field" style="margin-bottom:0;">
+                        <label for="id_password">Password</label>
+                        <div class="erp-login-input-group">
+                            <i class="fas fa-lock"></i>
+                            <input type="password" id="id_password" name="password" class="erp-login-input"
+                                   placeholder="********">
+                        </div>
+                        <div class="erp-login-forgot">
+                            <a href="{% url 'password_reset' %}">Forgot Password?</a>
+                        </div>
+                    </div>
+
+                    <button type="submit" class="erp-login-submit">
+                        <span>Sign In</span>
+                        <i class="fas fa-arrow-right"></i>
+                    </button>
+                </form>
+            </div>
+
+            <p class="erp-login-footnote">&copy; {% now "Y" %} Offset Printing ERP. All rights reserved.</p>
+        </div>
+    </div>
+
 </div>
 {% endblock %}
