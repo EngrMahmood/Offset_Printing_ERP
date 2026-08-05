@@ -169,17 +169,13 @@
                 mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
             }
             .erp-topnav-actions { margin-left: auto !important; }
-            /* Sub-nav (row 2): same overflow problem as row1 had — a fixed
-               36px-tall strip with overflow-x:auto silently truncated most
-               modules' sub-links on narrow screens with no visible cue more
-               existed. Let it wrap into as many rows as needed instead, so
-               everything is visible without scrolling. */
+            /* Sub-nav (row 2): give it the same scroll + fade-edge treatment
+               as row1's module list, instead of wrapping into extra rows —
+               keeps the header height predictable and matches row1's pattern. */
             .erp-subnav {
-                flex-wrap: wrap !important;
-                height: auto !important;
-                overflow-x: visible !important;
-                padding: 6px 12px !important;
-                row-gap: 4px !important;
+                padding: 0 12px !important;
+                -webkit-mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
+                mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
             }
         }
 
@@ -225,9 +221,9 @@
     <div id="chat-dock-container"></div>
     {% endif %}
 
-    <script src="{% static 'theme/js/navbar_autofit.js' %}?v=2"></script>
+    <script src="{% static 'theme/js/navbar_autofit.js' %}?v=3"></script>
     {% if request.user.is_authenticated %}
-    <script src="{% static 'theme/js/nav_customize.js' %}?v=2"></script>
+    <script src="{% static 'theme/js/nav_customize.js' %}?v=3"></script>
     {% endif %}
     <script src="{% static 'theme/js/modal.js' %}"></script>
     <script src="{% static 'theme/js/filters.js' %}"></script>

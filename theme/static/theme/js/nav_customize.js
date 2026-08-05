@@ -92,10 +92,18 @@
     }
 
     function applyLayout(layout) {
+        // navbar_autofit.js (loaded first) may have already auto-overflowed
+        // some of these same node references if they didn't fit at the
+        // current width — always clear that tag here so the manual layout
+        // just applied is authoritative; the next fit() pass recomputes
+        // auto-overflow fresh against it rather than trusting a stale tag
+        // from before this layout existed.
         layout.pinned.forEach(function (key) {
+            nodesByKey[key].removeAttribute('data-auto-overflow');
             modulesEl.appendChild(nodesByKey[key]);
         });
         layout.overflow.forEach(function (key) {
+            nodesByKey[key].removeAttribute('data-auto-overflow');
             moreMenu.appendChild(nodesByKey[key]);
         });
         moreBtn.style.display = layout.overflow.length ? '' : 'none';

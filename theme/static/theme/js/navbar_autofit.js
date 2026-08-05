@@ -4,18 +4,57 @@
     var STEPS = [13, 12.5, 12, 11.5, 11, 10.5, 10, 9.5, 9];
     var PAD_STEPS = [13, 12, 11, 10, 9, 8, 7, 6, 6];
 
+    // If even the smallest font still doesn't fit (accounts with ~20 modules
+    // don't fit at any readable size, even at a 1920px-wide window — measured
+    // during testing), the excess has to go somewhere reachable. Auto-move
+    // trailing modules into the "More" menu until it fits, and restore them
+    // first thing on every fit() pass so growing the window (or removing a
+    // manual customization) brings them back instead of leaving them stuck
+    // in "More" forever. Tagged data-auto-overflow so this never touches
+    // items the user deliberately put in "More" via the customize modal —
+    // those stay put regardless of available width.
+    function restoreAutoOverflow(container, moreMenu) {
+        if (!moreMenu) return;
+        var auto = moreMenu.querySelectorAll('[data-auto-overflow]');
+        for (var i = 0; i < auto.length; i++) {
+            auto[i].removeAttribute('data-auto-overflow');
+            container.appendChild(auto[i]);
+        }
+    }
+
+    function autoOverflow(container, moreMenu, moreBtn) {
+        if (!moreMenu || !moreBtn) return;
+        var items = container.querySelectorAll('a.erp-topnav-module[data-nav-key]');
+        // Always leave at least one module visible even if it still doesn't
+        // fit — an empty bar would be worse than a slightly-too-wide one.
+        while (items.length > 1 && container.scrollWidth > container.clientWidth + 1) {
+            var last = items[items.length - 1];
+            last.setAttribute('data-auto-overflow', '1');
+            moreMenu.insertBefore(last, moreMenu.firstChild);
+            items = container.querySelectorAll('a.erp-topnav-module[data-nav-key]');
+        }
+        if (moreMenu.children.length) moreBtn.style.display = '';
+    }
+
     function fit() {
         var container = document.querySelector('.erp-topnav-modules');
         if (!container) return;
+        var moreMenu = document.getElementById('erp-topnav-more-menu');
+        var moreBtn = document.getElementById('erp-topnav-more-btn');
+
+        restoreAutoOverflow(container, moreMenu);
+        if (moreBtn && moreMenu && !moreMenu.children.length) moreBtn.style.display = 'none';
 
         container.style.setProperty('--nav-font-size', STEPS[0] + 'px');
         container.style.setProperty('--nav-pad-x', PAD_STEPS[0] + 'px');
 
         for (var i = 0; i < STEPS.length; i++) {
-            if (container.scrollWidth <= container.clientWidth + 1) return;
+            if (container.scrollWidth <= container.clientWidth + 1) break;
             container.style.setProperty('--nav-font-size', STEPS[i] + 'px');
             container.style.setProperty('--nav-pad-x', PAD_STEPS[i] + 'px');
         }
+
+        autoOverflow(container, moreMenu, moreBtn);
     }
 
     var scheduled = false;
