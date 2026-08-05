@@ -4,6 +4,7 @@ set -e
 python manage.py migrate --noinput
 python manage.py seed_access_control || true
 python manage.py seed_chat_permissions || true
+python manage.py seed_viewer_role || true
 
 # staticfiles is a named Docker volume mounted over /app/staticfiles, so the
 # image's build-time `collectstatic` output never reaches it after the first
