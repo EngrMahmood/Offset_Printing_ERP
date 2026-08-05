@@ -1034,7 +1034,7 @@ def build_machine_planning_context(request):
         avg_score = round(sum(r['ai_score'] for r in m_rows) / max(total_planned_jobs, 1), 1)
 
         # Completion Time calculation
-        completion_time = datetime.now() + timedelta(hours=total_load_hours)
+        completion_time = timezone.localtime(timezone.now()) + timedelta(hours=total_load_hours)
 
         machine_reports[m_name] = {
             'rows': m_rows,
@@ -1848,7 +1848,7 @@ def build_raw_material_cutting_context(request):
     for idx, job in enumerate(jobs, 1):
         row = {
             'sno': idx,
-            'date': job.created_at.strftime('%d/%m/%Y') if job.created_at else '',
+            'date': timezone.localtime(job.created_at).strftime('%d/%m/%Y') if job.created_at else '',
             'po': job.po_number or '-',
             'jc': job.jc_number or '-',
             'sku': job.sku or '-',

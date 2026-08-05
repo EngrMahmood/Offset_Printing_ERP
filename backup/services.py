@@ -141,7 +141,7 @@ def create_backup(backup_type='AUTO', user=None):
         os.makedirs(local_dir, exist_ok=True)
 
         engine = get_database_engine()
-        timestamp = datetime.datetime.now().strftime("%Y-%m-%d_%H%M%S")
+        timestamp = timezone.localtime(timezone.now()).strftime("%Y-%m-%d_%H%M%S")
         erp_version = getattr(settings, 'ERP_SOFTWARE_VERSION', '1.0')
         
         # Temp database copy file

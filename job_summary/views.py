@@ -138,7 +138,7 @@ def _job_value(job, column):
             return planning_job.get_planning_stage_display() if hasattr(planning_job, 'get_planning_stage_display') else (planning_job.planning_stage or '')
         return ''
     if column == 'created_at':
-        return job.created_at.strftime('%Y-%m-%d %H:%M') if job.created_at else ''
+        return timezone.localtime(job.created_at).strftime('%Y-%m-%d %H:%M') if job.created_at else ''
     return getattr(job, column, '') or ''
 
 

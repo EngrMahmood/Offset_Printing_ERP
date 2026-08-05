@@ -6,6 +6,7 @@ import logging
 from django.contrib.auth import get_user_model
 from django.urls import NoReverseMatch, reverse
 from django.template import Template, Context
+from django.utils import timezone
 
 from core.models import Notification
 
@@ -364,7 +365,7 @@ def serialize_notification(item):
         'link': item.link,
         'is_read': item.is_read,
         'created_at': item.created_at.isoformat() if item.created_at else '',
-        'created_at_display': item.created_at.strftime('%Y-%m-%d %H:%M') if item.created_at else '',
+        'created_at_display': timezone.localtime(item.created_at).strftime('%Y-%m-%d %H:%M') if item.created_at else '',
     }
 
 
