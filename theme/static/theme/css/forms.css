@@ -46,3 +46,25 @@ input:focus, select:focus, textarea:focus {
     gap: var(--erp-space-2);
     align-items: end;
 }
+
+/* Touch inputs: iOS Safari and Android Chrome zoom the page in on focus of
+   any input/select/textarea whose computed font-size is under 16px. The
+   compact 12px (--erp-font-sm) used above triggers this on every form. */
+@media (max-width: 640px), (pointer: coarse) {
+    .erp-form-field input,
+    .erp-form-field select,
+    .erp-form-field textarea,
+    .field input,
+    .field select,
+    .field textarea,
+    .filters input,
+    .filters select,
+    input[type='text'],
+    input[type='date'],
+    input[type='number'],
+    select,
+    textarea {
+        font-size: 16px;
+        padding: 10px 12px;
+    }
+}

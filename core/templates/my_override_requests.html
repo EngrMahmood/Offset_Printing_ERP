@@ -12,12 +12,6 @@
         th, td { padding: 9px 10px; border-bottom: 1px solid #e7ebef; text-align: left; font-size: 0.88rem; }
         th { background: #f7f9fb; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.04em; color: #697586; }
         .muted { color: #697586; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; font-weight: 600; }
-        .badge-pending { background: #fef3c7; color: #92400e; }
-        .badge-approved { background: #dcfce7; color: #166534; }
-        .badge-rejected { background: #fee2e2; color: #7f1d1d; }
-        .badge-expired { background: #e5e7eb; color: #374151; }
-        .badge-done { background: #e0e7ff; color: #3730a3; }
         .edit-btn { display: inline-block; padding: 5px 14px; border-radius: 6px; background: #16a34a; color: #fff; text-decoration: none; font-weight: 600; font-size: 0.82rem; }
         .edit-btn:hover { background: #15803d; }
         .empty { padding: 12px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; color: #166534; font-size: 0.86rem; }
@@ -31,7 +25,7 @@
 
     <div class="card">
         <h2>Ready to edit
-            {% if actionable %}<span class="badge badge-approved">{{ actionable|length }}</span>{% endif %}
+            {% if actionable %}<span class="erp-badge erp-badge-approved">{{ actionable|length }}</span>{% endif %}
         </h2>
         <p class="sub">Approved by a manager — open the record, make your correction, and save. It leaves this list once done or after the {{ override_hours }}-hour window ends.</p>
         {% if actionable %}
@@ -62,7 +56,7 @@
 
     <div class="card">
         <h2>Waiting for approval
-            {% if pending %}<span class="badge badge-pending">{{ pending|length }}</span>{% endif %}
+            {% if pending %}<span class="erp-badge erp-badge-pending">{{ pending|length }}</span>{% endif %}
         </h2>
         <p class="sub">Submitted and awaiting a manager's review.</p>
         {% if pending %}
@@ -76,7 +70,7 @@
                     <td>{{ ov.get_entity_type_display }}</td>
                     <td>{{ ov.reason|truncatechars:60 }}</td>
                     <td>{{ ov.created_at|date:"d M Y H:i" }}</td>
-                    <td><span class="badge badge-pending">Pending</span></td>
+                    <td><span class="erp-badge erp-badge-pending">Pending</span></td>
                 </tr>
                 {% endfor %}
             </tbody>
@@ -102,10 +96,10 @@
                     <td>{{ ov.created_at|date:"d M Y H:i" }}</td>
                     <td>{{ ov.reviewed_by.get_full_name|default:ov.reviewed_by.username|default:'-' }}</td>
                     <td>
-                        {% if ov.status == 'rejected' %}<span class="badge badge-rejected">Rejected</span>
-                        {% elif ov.consumed_at %}<span class="badge badge-done">Edited</span>
-                        {% elif ov.is_expired %}<span class="badge badge-expired">Expired</span>
-                        {% else %}<span class="badge">{{ ov.get_status_display }}</span>{% endif %}
+                        {% if ov.status == 'rejected' %}<span class="erp-badge erp-badge-rejected">Rejected</span>
+                        {% elif ov.consumed_at %}<span class="erp-badge erp-badge-completed">Edited</span>
+                        {% elif ov.is_expired %}<span class="erp-badge erp-badge-archived">Expired</span>
+                        {% else %}<span class="erp-badge">{{ ov.get_status_display }}</span>{% endif %}
                     </td>
                     <td class="muted">{{ ov.review_note|default:'—' }}</td>
                 </tr>

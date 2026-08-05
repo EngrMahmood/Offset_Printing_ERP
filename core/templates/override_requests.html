@@ -16,10 +16,6 @@
         th, td { padding: 9px 10px; border-bottom: 1px solid #e7ebef; text-align: left; font-size: 0.88rem; }
         th { background: #f7f9fb; font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.04em; color: #697586; }
         .muted { color: #697586; }
-        .badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 0.78rem; font-weight: 600; }
-        .badge-pending { background: #fef3c7; color: #92400e; }
-        .badge-approved { background: #dcfce7; color: #166534; }
-        .badge-rejected { background: #fee2e2; color: #7f1d1d; }
         .filter-tabs { display: flex; gap: 8px; margin-bottom: 14px; }
     </style>
 {% endblock %}
@@ -41,7 +37,7 @@
             <h1>
                 Edit Override Requests
                 {% if pending_count > 0 %}
-                <span class="badge badge-pending">{{ pending_count }} Pending</span>
+                <span class="erp-badge erp-badge-pending">{{ pending_count }} Pending</span>
                 {% endif %}
             </h1>
 
@@ -75,7 +71,7 @@
                         <td>{{ ov.requested_by.get_full_name|default:ov.requested_by.username }}</td>
                         <td>{{ ov.reason|truncatechars:80 }}</td>
                         <td>
-                            <span class="badge badge-{{ ov.status }}">{{ ov.get_status_display }}</span>
+                            <span class="erp-badge erp-badge-{{ ov.status }}">{{ ov.get_status_display }}</span>
                         </td>
                         <td>
                             {% if ov.reviewed_by %}

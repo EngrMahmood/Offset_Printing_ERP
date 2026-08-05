@@ -58,6 +58,9 @@ android-twa/keystore_password.txt
 android-twa/build/
 android-twa/app/build/
 android-twa/.gradle/
+android-twa/app/.gradle/
+android-twa/app/.idea/
+android-twa/app/local.properties
 # Build outputs — regeneratable via `bubblewrap build` (needs the keystore,
 # kept out of git above); not source, don't bloat the repo with binaries.
 android-twa/*.apk

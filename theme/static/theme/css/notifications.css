@@ -19,6 +19,9 @@
     background: rgba(96,165,250,0.22);
     color: #93c5fd;
 }
+@media (max-width: 640px), (pointer: coarse) {
+    .erp-notify-btn { width: 40px; height: 40px; }
+}
 .erp-notify-badge {
     position: absolute;
     top: -4px;
@@ -112,8 +115,8 @@
 /* Side toasts */
 .erp-toast-stack {
     position: fixed;
-    top: 72px;
-    right: 16px;
+    top: calc(72px + env(safe-area-inset-top, 0px));
+    right: calc(16px + env(safe-area-inset-right, 0px));
     z-index: 400;
     display: flex;
     flex-direction: column;
@@ -158,6 +161,9 @@
     text-decoration: none;
 }
 .erp-toast__close { color: #94a3b8; margin-left: auto; }
+@media (max-width: 640px), (pointer: coarse) {
+    .erp-toast__link, .erp-toast__close { padding: 6px 2px; }
+}
 @keyframes erp-toast-in {
     from { opacity: 0; transform: translateX(12px); }
     to { opacity: 1; transform: translateX(0); }

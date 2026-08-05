@@ -21,3 +21,10 @@
 .erp-btn:hover, .btn:hover { filter: brightness(0.95); text-decoration: none; }
 .erp-btn.sm, .btn.sm { padding: 3px 6px; font-size: var(--erp-font-xs); }
 .erp-btn-block { width: 100%; }
+
+/* Touch: bump tap targets toward the ~44px minimum without bloating the
+   compact desktop/mouse layout. */
+@media (max-width: 640px), (pointer: coarse) {
+    .erp-btn, .btn { min-height: 40px; padding: 9px 14px; }
+    .erp-btn.sm, .btn.sm { min-height: 34px; padding: 7px 12px; }
+}

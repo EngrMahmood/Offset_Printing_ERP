@@ -13,3 +13,13 @@
 .erp-modal-header, .erp-modal-body, .erp-modal-footer { padding: var(--erp-space-4); }
 .erp-modal-header { border-bottom: 1px solid var(--erp-border); }
 .erp-modal-footer { border-top: 1px solid var(--erp-border); display: flex; justify-content: flex-end; gap: var(--erp-space-2); }
+
+@media (max-width: 640px) {
+    .erp-modal-dialog {
+        max-width: calc(100vw - 24px);
+        width: calc(100vw - 24px);
+        margin: 5vh auto;
+        max-height: 90vh;
+        overflow-y: auto;
+    }
+}

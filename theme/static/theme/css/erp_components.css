@@ -183,6 +183,60 @@
     margin-bottom: 12px;
     box-shadow: none;
 }
+
+.erp-dashboard-hero {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 14px;
+}
+.erp-dashboard-hero__attention {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    min-width: 240px;
+}
+.erp-dashboard-hero__attention-title {
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #7a8ba0;
+    margin-bottom: 2px;
+}
+.erp-attention-pill {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    text-decoration: none;
+    border: 1px solid transparent;
+    transition: filter 0.12s;
+}
+.erp-attention-pill:hover { filter: brightness(0.96); text-decoration: none; }
+.erp-attention-pill__count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 5px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    background: rgba(255,255,255,0.6);
+}
+.erp-attention-pill--warning { background: #fff6e8; color: #8a5a15; border-color: #eccb92; }
+.erp-attention-pill--info { background: #e8f1fb; color: #255986; border-color: #bdd6ee; }
+.erp-attention-pill--danger { background: #fbecef; color: #8f2f3a; border-color: #edbec6; }
+@media (max-width: 640px) {
+    .erp-dashboard-hero { grid-template-columns: 1fr; }
+    .erp-dashboard-hero__attention { min-width: 0; }
+}
 .erp-panel__header {
     display: flex;
     justify-content: space-between;

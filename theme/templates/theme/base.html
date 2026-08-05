@@ -7,6 +7,10 @@
     <title>{% block title %}Offset ERP{% endblock %}</title>
     <link rel="manifest" href="{% static 'manifest.json' %}">
     <meta name="theme-color" content="#2f6ea7">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="Offset ERP">
     <link rel="apple-touch-icon" href="{% static 'core/pwa/icon-192.png' %}">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     <script src="https://cdn.tailwindcss.com"></script>
@@ -38,20 +42,20 @@
     </script>
 
     <link rel="stylesheet" href="{% static 'theme/css/variables.css' %}">
-    <link rel="stylesheet" href="{% static 'theme/css/base.css' %}">
-    <link rel="stylesheet" href="{% static 'theme/css/layout.css' %}">
-    <link rel="stylesheet" href="{% static 'theme/css/forms.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/base.css' %}?v=2">
+    <link rel="stylesheet" href="{% static 'theme/css/layout.css' %}?v=2">
+    <link rel="stylesheet" href="{% static 'theme/css/forms.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'theme/css/tables.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/cards.css' %}">
-    <link rel="stylesheet" href="{% static 'theme/css/buttons.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/buttons.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'theme/css/badges.css' %}">
-    <link rel="stylesheet" href="{% static 'theme/css/modals.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/modals.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'theme/css/dashboard.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/responsive.css' %}">
-    <link rel="stylesheet" href="{% static 'theme/css/erp_components.css' %}">
+    <link rel="stylesheet" href="{% static 'theme/css/erp_components.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'theme/css/planning_phase2.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/production.css' %}?v=3">
-    <link rel="stylesheet" href="{% static 'theme/css/notifications.css' %}?v=1">
+    <link rel="stylesheet" href="{% static 'theme/css/notifications.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'chat/css/chat_dock.css' %}?v=6">
     {% include 'includes/ui/theme_colors.html' %}
     <style>
@@ -76,10 +80,11 @@
         .erp-topnav-modules {
             display: flex !important; align-items: center !important;
             gap: 2px !important; flex: 1 !important; overflow-x: auto !important;
+            --nav-font-size: 13px; --nav-pad-x: 13px;
         }
         .erp-topnav-module {
-            color: rgba(255,255,255,0.72) !important; font-size: 13px !important;
-            font-weight: 500 !important; padding: 5px 13px !important;
+            color: rgba(255,255,255,0.72) !important; font-size: var(--nav-font-size, 13px) !important;
+            font-weight: 500 !important; padding: 5px var(--nav-pad-x, 13px) !important;
             border-radius: 5px !important; white-space: nowrap !important;
             text-decoration: none !important;
         }
@@ -166,6 +171,14 @@
             .erp-topnav-actions { margin-left: auto !important; }
             .erp-subnav { padding: 0 12px !important; }
         }
+
+        /* Touch: bump tap targets on the chrome that's exempt from the
+           erp-btn touch rule (buttons.css) toward the ~40-44px minimum. */
+        @media (max-width: 640px), (pointer: coarse) {
+            .erp-topnav-logout { min-height: 40px; padding: 8px 12px !important; }
+            .erp-subnav { height: 40px !important; }
+            .erp-subnav-link { min-height: 40px !important; height: 40px !important; line-height: 40px !important; }
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
@@ -202,7 +215,7 @@
     <div id="chat-dock-container"></div>
     {% endif %}
 
-    <script src="{% static 'theme/js/sidebar.js' %}"></script>
+    <script src="{% static 'theme/js/navbar_autofit.js' %}"></script>
     <script src="{% static 'theme/js/modal.js' %}"></script>
     <script src="{% static 'theme/js/filters.js' %}"></script>
     <script src="{% static 'theme/js/multiselect_filter.js' %}"></script>
