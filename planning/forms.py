@@ -380,14 +380,27 @@ class SkuRecipeForm(forms.ModelForm):
         raise forms.ValidationError('Select a print color from the master list (admin can add new values).')
 
     def clean_application(self):
-        value = _normalize_application_value(self.cleaned_data.get('application'))
-        if not value:
+        from core.models import ApplicationType
+
+        raw_value = str(self.cleaned_data.get('application') or '').strip()
+        if not raw_value:
             return ''
 
+        # Master list is authoritative: an exact match there (e.g. "MATT
+        # VARNISH") must win as-is, not get collapsed into a legacy bucket.
+        master_match = ApplicationType.objects.filter(name__iexact=raw_value).first()
+        if master_match:
+            return master_match.name
+
+        # Not in the master list (legacy free-text import, etc.) -- fall
+        # back to canonical bucket matching instead of hard failing.
+        value = _normalize_application_value(raw_value)
         allowed = {'UV', 'Lamination Gloss', 'Lamination Matt', 'NO'}
         if value in allowed:
             return value
-        raise forms.ValidationError('Select Application as UV, Lamination Gloss, Lamination Matt, or NO.')
+        raise forms.ValidationError(
+            'Select an Application from the master list (admin can add new values under Application Types).'
+        )
 
     def clean_awc_no(self):
         from planning.services import get_awc_conflict_message, normalize_awc_no
