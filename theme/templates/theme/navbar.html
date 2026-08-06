@@ -130,7 +130,8 @@
                 <i class="fas fa-tv"></i> Floor TV
             </a>
             {% endif %}
-            {% if request.user.is_authenticated and request.user.profile.role == 'admin' or request.user.profile.role == 'manager' %}
+            {% if request.user.is_authenticated %}
+            {% if request.user.is_superuser or request.user.profile.role == 'admin' %}
             <a href="{% url 'backup:dashboard' %}" data-nav-key="backup" data-nav-label="Backup"
                class="erp-topnav-module {% if app == 'backup' %}is-active{% endif %}">
                 Backup
@@ -139,6 +140,7 @@
                class="erp-topnav-module {% if url == 'notification_settings_home' %}is-active{% endif %}">
                 Settings
             </a>
+            {% endif %}
             {% endif %}
         </div>
 

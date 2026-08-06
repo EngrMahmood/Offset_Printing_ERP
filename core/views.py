@@ -2217,7 +2217,7 @@ def notification_settings_home(request):
     """
     Main workspace settings dashboard for rules, events, transitions, and audits.
     """
-    if request.user.profile.role not in ('admin', 'manager'):
+    if not (request.user.is_superuser or request.user.profile.role == 'admin'):
         messages.error(request, "You are not authorized to view settings.")
         return redirect('home')
 
@@ -2592,7 +2592,7 @@ def notification_rule_add(request):
     """
     Add a new rule dynamically from the settings page.
     """
-    if request.user.profile.role not in ('admin', 'manager'):
+    if not (request.user.is_superuser or request.user.profile.role == 'admin'):
         messages.error(request, "Not authorized.")
         return redirect('home')
 
@@ -2661,7 +2661,7 @@ def notification_rule_delete(request, rule_id):
     """
     Remove a notification rule and log the change.
     """
-    if request.user.profile.role not in ('admin', 'manager'):
+    if not (request.user.is_superuser or request.user.profile.role == 'admin'):
         messages.error(request, "Not authorized.")
         return redirect('home')
 
@@ -2681,7 +2681,7 @@ def workflow_transition_add(request):
     """
     Add a workflow transition rule from settings.
     """
-    if request.user.profile.role not in ('admin', 'manager'):
+    if not (request.user.is_superuser or request.user.profile.role == 'admin'):
         messages.error(request, "Not authorized.")
         return redirect('home')
 
@@ -2718,7 +2718,7 @@ def workflow_transition_delete(request, transition_id):
     """
     Delete a workflow transition rule.
     """
-    if request.user.profile.role not in ('admin', 'manager'):
+    if not (request.user.is_superuser or request.user.profile.role == 'admin'):
         messages.error(request, "Not authorized.")
         return redirect('home')
 
