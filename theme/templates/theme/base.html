@@ -43,7 +43,7 @@
 
     <link rel="stylesheet" href="{% static 'theme/css/variables.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/base.css' %}?v=2">
-    <link rel="stylesheet" href="{% static 'theme/css/layout.css' %}?v=3">
+    <link rel="stylesheet" href="{% static 'theme/css/layout.css' %}?v=4">
     <link rel="stylesheet" href="{% static 'theme/css/forms.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'theme/css/tables.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/cards.css' %}">
@@ -52,7 +52,7 @@
     <link rel="stylesheet" href="{% static 'theme/css/modals.css' %}?v=5">
     <link rel="stylesheet" href="{% static 'theme/css/dashboard.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/responsive.css' %}?v=2">
-    <link rel="stylesheet" href="{% static 'theme/css/erp_components.css' %}?v=2">
+    <link rel="stylesheet" href="{% static 'theme/css/erp_components.css' %}?v=3">
     <link rel="stylesheet" href="{% static 'theme/css/planning_phase2.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/production.css' %}?v=3">
     <link rel="stylesheet" href="{% static 'theme/css/notifications.css' %}?v=3">
@@ -79,8 +79,22 @@
         .erp-topnav-brand i { color: #60a5fa !important; }
         .erp-topnav-modules {
             display: flex !important; align-items: center !important;
-            gap: 2px !important; flex: 1 !important; overflow-x: auto !important;
+            gap: 2px !important; flex: 1 !important; min-width: 0 !important; overflow-x: auto !important;
             --nav-font-size: 13px; --nav-pad-x: 13px;
+        }
+        /* Row 2 of pinned modules (manual "two-row" nav customization) — a
+           second full-width strip below row1, same dark bar treatment. */
+        .erp-topnav-row2 {
+            display: flex !important; align-items: center !important;
+            background: #202b3d !important; border-top: 1px solid rgba(255,255,255,0.06) !important;
+            padding: 0 20px !important; height: 0 !important; overflow: hidden !important;
+        }
+        .erp-topnav-row2.has-items {
+            height: 40px !important; padding: 0 20px !important;
+        }
+        .erp-topnav-modules-row2 {
+            display: flex !important; align-items: center !important;
+            gap: 2px !important; flex: 1 !important; min-width: 0 !important; overflow-x: auto !important;
         }
         .erp-topnav-module {
             color: rgba(255,255,255,0.72) !important; font-size: var(--nav-font-size, 13px) !important;
@@ -169,9 +183,13 @@
                 mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
             }
             .erp-topnav-actions { margin-left: auto !important; }
-            /* Sub-nav (row 2): give it the same scroll + fade-edge treatment
-               as row1's module list, instead of wrapping into extra rows —
-               keeps the header height predictable and matches row1's pattern. */
+            .erp-topnav-modules-row2 {
+                -webkit-mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
+                mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
+            }
+            /* Sub-nav (row 2 of the workflow sub-nav): give it the same scroll +
+               fade-edge treatment as the module lists, instead of wrapping into
+               extra rows — keeps the header height predictable and consistent. */
             .erp-subnav {
                 padding: 0 12px !important;
                 -webkit-mask-image: linear-gradient(to right, #000 92%, transparent 100%) !important;
@@ -221,9 +239,9 @@
     <div id="chat-dock-container"></div>
     {% endif %}
 
-    <script src="{% static 'theme/js/navbar_autofit.js' %}?v=3"></script>
+    <script src="{% static 'theme/js/navbar_autofit.js' %}?v=4"></script>
     {% if request.user.is_authenticated %}
-    <script src="{% static 'theme/js/nav_customize.js' %}?v=6"></script>
+    <script src="{% static 'theme/js/nav_customize.js' %}?v=7"></script>
     {% endif %}
     <script src="{% static 'theme/js/modal.js' %}"></script>
     <script src="{% static 'theme/js/filters.js' %}"></script>

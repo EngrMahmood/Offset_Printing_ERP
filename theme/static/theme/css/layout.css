@@ -43,12 +43,30 @@
     align-items: center;
     gap: 2px;
     flex: 1;
+    min-width: 0;
     overflow-x: auto;
     scrollbar-width: none;
     --nav-font-size: 13px;
     --nav-pad-x: 13px;
 }
 .erp-topnav-modules::-webkit-scrollbar { display: none; }
+
+/* Row 2 of pinned modules (manual "two-row" nav customization) */
+.erp-topnav-row2 {
+    display: flex;
+    align-items: center;
+    background: #202b3d;
+    border-top: 1px solid rgba(255, 255, 255, 0.06);
+    padding: 0 20px;
+    height: 0;
+    overflow: hidden;
+}
+.erp-topnav-row2.has-items {
+    height: 40px;
+}
+.erp-topnav-modules-row2 {
+    flex: 1;
+}
 
 .erp-topnav-module {
     color: rgba(255, 255, 255, 0.72);

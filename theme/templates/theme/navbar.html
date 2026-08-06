@@ -194,6 +194,11 @@
         </div>
     </div>
 
+    {# ── Row 1b: second pinned module row (manual nav customization) ── #}
+    <div class="erp-topnav-row2" id="erp-topnav-row2">
+        <div class="erp-topnav-modules erp-topnav-modules-row2" id="erp-topnav-modules-row2"></div>
+    </div>
+
     {# ── Row 2: Sub-navigation for active module ──────────────────── #}
     {% if app == 'planning' and nav.can_access_planning %}
     <div class="erp-subnav">
@@ -543,7 +548,7 @@
     <div class="erp-modal-dialog erp-nav-customize-dialog" role="dialog" aria-modal="true" aria-labelledby="erp-nav-customize-title">
         <div class="erp-modal-header">
             <h3 id="erp-nav-customize-title" style="margin:0;">Customize navigation</h3>
-            <p class="erp-card-subtitle" style="margin:6px 0 0;">Drag modules above the line to keep them in the bar, below it to tuck them into "More". Drag within a section to reorder.</p>
+            <p class="erp-card-subtitle" style="margin:6px 0 0;">Drag modules between sections to place them in Row 1, Row 2, or "More". Drag within a section to reorder.</p>
             <p class="erp-card-subtitle" id="erp-nav-customize-count" style="margin:4px 0 0; font-weight:600;"></p>
         </div>
         <div class="erp-modal-body">

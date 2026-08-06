@@ -59,9 +59,17 @@ def _role_from_request(request: Any) -> str:
 def _nav_layout_from_request(request: Any) -> dict:
     profile = getattr(getattr(request, 'user', None), 'profile', None)
     layout = getattr(profile, 'nav_layout', None) or {}
-    if not isinstance(layout, dict) or not isinstance(layout.get('pinned'), list) or not isinstance(layout.get('overflow'), list):
+    if not isinstance(layout, dict):
         return {}
-    return layout
+    # "row1" replaced the old single-row "pinned" key when the two-row nav
+    # customization was added; accept either shape so accounts that saved a
+    # layout before this change don't lose it.
+    row1 = layout.get('row1', layout.get('pinned'))
+    row2 = layout.get('row2', [])
+    overflow = layout.get('overflow')
+    if not isinstance(row1, list) or not isinstance(row2, list) or not isinstance(overflow, list):
+        return {}
+    return {'row1': row1, 'row2': row2, 'overflow': overflow}
 
 
 def get_nav_permissions(request: Any) -> dict[str, bool | str]:

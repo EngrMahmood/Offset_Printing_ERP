@@ -1546,9 +1546,12 @@ class UserProfile(models.Model):
 
     created_at = models.DateTimeField(auto_now_add=True)
 
-    # {"pinned": [nav-key,...], "overflow": [nav-key,...]} — which top-nav
-    # modules this user keeps inline vs. tucked into "More", and in what
-    # order. Empty dict means "never customized, use server default order".
+    # {"row1": [nav-key,...], "row2": [nav-key,...], "overflow": [nav-key,...]}
+    # — which top-nav modules this user keeps in each pinned row vs. tucked
+    # into "More", and in what order. Empty dict means "never customized, use
+    # server default order". Legacy layouts saved before the two-row nav used
+    # "pinned" instead of "row1" — read paths alias it (see
+    # core.navigation._nav_layout_from_request).
     nav_layout = models.JSONField(default=dict, blank=True)
 
     def _has_permission(self, code):

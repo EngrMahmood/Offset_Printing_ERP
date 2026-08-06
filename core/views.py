@@ -187,23 +187,26 @@ def home(request):
 @login_required
 @require_POST
 def save_nav_layout(request):
-    """Persist this user's top-nav pin/overflow customization server-side so
-    it's the same on every device/browser, not just the one it was set on."""
+    """Persist this user's top-nav row1/row2/overflow customization server-side
+    so it's the same on every device/browser, not just the one it was set on.
+    Accepts legacy "pinned" as an alias for "row1" so old client code (or a
+    stale cached JS bundle) can't wipe a user's layout with a 400."""
     try:
         data = json.loads(request.body or '{}')
     except (ValueError, TypeError):
         return JsonResponse({'error': 'Invalid JSON'}, status=400)
 
-    pinned = data.get('pinned')
+    row1 = data.get('row1', data.get('pinned'))
+    row2 = data.get('row2', [])
     overflow = data.get('overflow')
-    if not isinstance(pinned, list) or not isinstance(overflow, list):
-        return JsonResponse({'error': '"pinned" and "overflow" must be lists'}, status=400)
-    if len(pinned) > 50 or len(overflow) > 50:
+    if not isinstance(row1, list) or not isinstance(row2, list) or not isinstance(overflow, list):
+        return JsonResponse({'error': '"row1", "row2" and "overflow" must be lists'}, status=400)
+    if len(row1) > 50 or len(row2) > 50 or len(overflow) > 50:
         return JsonResponse({'error': 'Too many items'}, status=400)
-    if not all(isinstance(k, str) for k in pinned + overflow):
+    if not all(isinstance(k, str) for k in row1 + row2 + overflow):
         return JsonResponse({'error': 'Items must be strings'}, status=400)
 
-    request.user.profile.nav_layout = {'pinned': pinned, 'overflow': overflow}
+    request.user.profile.nav_layout = {'row1': row1, 'row2': row2, 'overflow': overflow}
     request.user.profile.save(update_fields=['nav_layout'])
     return JsonResponse({'ok': True})
 

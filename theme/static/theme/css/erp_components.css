@@ -1054,42 +1054,6 @@
     padding: 12px 14px;
 }
 
-/* ─── Sub-navigation (second-level workflow nav) ───────────────
-   Use inside planning pages for step-level navigation.
-   ----------------------------------------------------------- */
-.erp-subnav {
-    display: flex;
-    align-items: center;
-    gap: 2px;
-    flex-wrap: wrap;
-    border-bottom: 2px solid #e4ecf4;
-    margin-bottom: 14px;
-}
-.erp-subnav__item {
-    display: inline-flex;
-    align-items: center;
-    padding: 7px 14px;
-    font-size: 12px;
-    font-weight: 600;
-    color: #55708a;
-    text-decoration: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -2px;
-    transition: color 0.12s, border-color 0.12s;
-    cursor: pointer;
-    background: transparent;
-    border-top: none;
-    border-left: none;
-    border-right: none;
-    font-family: inherit;
-}
-.erp-subnav__item:hover { color: #1f4f8a; text-decoration: none; }
-.erp-subnav__item--active,
-.erp-subnav__item.is-active {
-    color: #1f4f8a;
-    border-bottom-color: #1f4f8a;
-}
-
 /* ─── Responsive: split layout collapses on narrow viewports ───
    ----------------------------------------------------------- */
 @media (max-width: 900px) {
