@@ -28,6 +28,7 @@ from .models import (
     DeliveryLocation,
     Department,
     Dispatch,
+    DispatchChangeRequest,
     EditOverrideRequest,
     JOB_CARD_DISPATCHABLE_STATUSES,
     JOB_CARD_PRODUCTION_START_STATUSES,
@@ -697,6 +698,147 @@ def dispatch_dc_duplicate_check(request):
 
 
 @login_required
+@permission_required('can_approve_dispatch')
+@require_POST
+def request_dispatch_change(request, dispatch_id):
+    """Dispatch officer submits a correction/void request for PM approval."""
+    dispatch = get_active_record_or_404(Dispatch, dispatch_id)
+
+    if DispatchChangeRequest.objects.filter(dispatch=dispatch, status='pending').exists():
+        messages.error(request, 'A change request for this dispatch entry is already pending PM approval.')
+        return redirect('dispatch_records')
+
+    request_type = (request.POST.get('request_type') or 'correction').strip()
+    reason = (request.POST.get('reason') or '').strip()
+    if not reason:
+        messages.error(request, 'A reason is required to submit a change request.')
+        return redirect('dispatch_records')
+
+    if request_type not in ('correction', 'void'):
+        messages.error(request, 'Invalid request type.')
+        return redirect('dispatch_records')
+
+    change_request = DispatchChangeRequest(
+        dispatch=dispatch,
+        request_type=request_type,
+        reason=reason,
+        requested_by=request.user,
+        current_job_card=dispatch.job_card,
+        current_dc_no=dispatch.dc_no,
+        current_dispatch_date=dispatch.dispatch_date,
+        current_dispatch_qty=dispatch.dispatch_qty,
+    )
+
+    if request_type == 'correction':
+        proposed_job_card_no = (request.POST.get('proposed_job_card_no') or '').strip()
+        proposed_dc_no = (request.POST.get('proposed_dc_no') or '').strip()
+        proposed_dispatch_date_raw = (request.POST.get('proposed_dispatch_date') or '').strip()
+        proposed_dispatch_qty_raw = (request.POST.get('proposed_dispatch_qty') or '').strip()
+
+        if proposed_job_card_no and proposed_job_card_no.lower() != (dispatch.job_card.job_card_no or '').lower():
+            proposed_job_card = JobCard.objects.filter(job_card_no__iexact=proposed_job_card_no, is_active=True).first()
+            if not proposed_job_card:
+                messages.error(request, f'Job card "{proposed_job_card_no}" not found.')
+                return redirect('dispatch_records')
+            change_request.proposed_job_card = proposed_job_card
+        if proposed_dc_no and proposed_dc_no != dispatch.dc_no:
+            change_request.proposed_dc_no = proposed_dc_no
+        if proposed_dispatch_date_raw:
+            proposed_date = datetime.strptime(proposed_dispatch_date_raw, '%Y-%m-%d').date()
+            if proposed_date != dispatch.dispatch_date:
+                change_request.proposed_dispatch_date = proposed_date
+        if proposed_dispatch_qty_raw:
+            proposed_qty = int(proposed_dispatch_qty_raw)
+            if proposed_qty != dispatch.dispatch_qty:
+                change_request.proposed_dispatch_qty = proposed_qty
+
+        if not any([
+            change_request.proposed_job_card_id,
+            change_request.proposed_dc_no,
+            change_request.proposed_dispatch_date,
+            change_request.proposed_dispatch_qty is not None,
+        ]):
+            messages.error(request, 'No changes were proposed — nothing to submit.')
+            return redirect('dispatch_records')
+
+    change_request.save()
+    messages.success(request, 'Change request submitted for PM approval.')
+    return redirect('dispatch_records')
+
+
+@login_required
+@permission_required('can_approve_pm')
+def dispatch_change_queue(request):
+    """PM queue for reviewing pending Dispatch correction/void requests."""
+    pending_requests = DispatchChangeRequest.objects.filter(status='pending').select_related(
+        'dispatch', 'dispatch__job_card', 'current_job_card', 'proposed_job_card', 'requested_by',
+    )
+    recent_requests = DispatchChangeRequest.objects.exclude(status='pending').select_related(
+        'dispatch', 'dispatch__job_card', 'current_job_card', 'proposed_job_card', 'requested_by', 'approved_by',
+    )[:50]
+
+    context = {
+        'pending_requests': pending_requests,
+        'recent_requests': recent_requests,
+    }
+    return render(request, 'dispatch_change_queue.html', context)
+
+
+@login_required
+@permission_required('can_approve_pm')
+@require_POST
+def approve_dispatch_change_request(request, request_id):
+    change_request = get_object_or_404(DispatchChangeRequest, pk=request_id, status='pending')
+    dispatch = change_request.dispatch
+
+    try:
+        with transaction.atomic():
+            if change_request.is_void:
+                archive_record('dispatch', dispatch, request.user, f'Void approved: {change_request.reason}')
+            else:
+                before_snapshot = build_audit_snapshot('dispatch', dispatch)
+                if change_request.proposed_job_card_id:
+                    dispatch.job_card = change_request.proposed_job_card
+                if change_request.proposed_dc_no:
+                    dispatch.dc_no = change_request.proposed_dc_no
+                if change_request.proposed_dispatch_date:
+                    dispatch.dispatch_date = change_request.proposed_dispatch_date
+                if change_request.proposed_dispatch_qty is not None:
+                    dispatch.dispatch_qty = change_request.proposed_dispatch_qty
+                dispatch.save()
+                log_change('dispatch', dispatch, before_snapshot, request.user, 'update', f'Correction approved: {change_request.reason}')
+
+            change_request.status = 'approved'
+            change_request.approved_by = request.user
+            change_request.approved_at = timezone.now()
+            change_request.save(update_fields=['status', 'approved_by', 'approved_at'])
+        messages.success(request, 'Change request approved and applied.')
+    except Exception as exc:
+        messages.error(request, f'Could not approve change request: {exc}')
+
+    return redirect('dispatch_change_queue')
+
+
+@login_required
+@permission_required('can_approve_pm')
+@require_POST
+def reject_dispatch_change_request(request, request_id):
+    change_request = get_object_or_404(DispatchChangeRequest, pk=request_id, status='pending')
+    rejection_reason = (request.POST.get('rejection_reason') or '').strip()
+    if not rejection_reason:
+        messages.error(request, 'A rejection reason is required.')
+        return redirect('dispatch_change_queue')
+
+    change_request.status = 'rejected'
+    change_request.rejection_reason = rejection_reason
+    change_request.approved_by = request.user
+    change_request.approved_at = timezone.now()
+    change_request.save(update_fields=['status', 'rejection_reason', 'approved_by', 'approved_at'])
+    messages.success(request, 'Change request rejected.')
+    return redirect('dispatch_change_queue')
+
+
+@login_required
 @permission_required('can_view_dispatch_records')
 def dispatch_records(request):
     """Dispatch records list page"""
@@ -859,6 +1001,12 @@ def dispatch_records(request):
             elif ov['status'] == 'approved' and ov['expires_at'] and ov['expires_at'] > timezone.now():
                 approved_ids.add(ov['record_id'])
 
+    pending_change_request_ids = set(
+        DispatchChangeRequest.objects.filter(status='pending', dispatch_id__in=[row.id for row in records]).values_list('dispatch_id', flat=True)
+    )
+    can_review_dispatch_changes = bool(getattr(request.user, 'profile', None) and request.user.profile.can_approve_pm())
+    dispatch_change_queue_count = DispatchChangeRequest.objects.filter(status='pending').count() if can_review_dispatch_changes else 0
+
     context = {
         'records': records,
         'page_obj': page_obj,
@@ -884,6 +1032,9 @@ def dispatch_records(request):
         'can_bypass_edit_lock': user_can_bypass_edit_lock(request.user),
         'pending_override_ids': pending_ids,
         'approved_override_ids': approved_ids,
+        'pending_change_request_ids': pending_change_request_ids,
+        'can_review_dispatch_changes': can_review_dispatch_changes,
+        'dispatch_change_queue_count': dispatch_change_queue_count,
     }
     return render(request, 'dispatch_records.html', context)
 

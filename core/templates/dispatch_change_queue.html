@@ -1,0 +1,153 @@
+{% extends 'theme/base.html' %}
+
+{% load humanize %}
+
+{% block title %}Dispatch Change Requests - Offset ERP{% endblock %}
+
+{% block header_title %}Dispatch Change Requests{% endblock %}
+
+{% block header_subtitle %}PM approval queue for dispatch corrections and voids submitted by dispatch officers.{% endblock %}
+
+{% block header_actions %}
+    <a href="{% url 'dispatch_records' %}" class="erp-btn erp-btn-secondary">Back to Dispatch Records</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+
+    <section class="erp-section-shell">
+        <div class="erp-panel">
+            <div class="erp-panel__header">
+                <h3 class="erp-panel__title">Pending Requests</h3>
+                <p class="erp-section-desc">Nothing changes on the dispatch record until you approve the request.</p>
+            </div>
+            <div class="erp-table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>DC No.</th>
+                            <th>Job Card</th>
+                            <th>SKU</th>
+                            <th>Type</th>
+                            <th>Current → Proposed</th>
+                            <th>Requester</th>
+                            <th>Reason</th>
+                            <th class="erp-col-actions">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for change in pending_requests %}
+                        <tr>
+                            <td><strong>{{ change.dispatch.dc_no }}</strong></td>
+                            <td><a href="{% url 'dispatch_entry' %}?view={{ change.dispatch_id }}">{{ change.dispatch.job_card.job_card_no }}</a></td>
+                            <td>{{ change.dispatch.job_card.SKU|default:'-' }}</td>
+                            <td>
+                                {% if change.is_void %}
+                                <span class="erp-badge is-danger">Void</span>
+                                {% else %}
+                                <span class="erp-badge is-warning">Correction</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if change.is_void %}
+                                <span class="erp-muted">Entry will be archived</span>
+                                {% else %}
+                                {% if change.proposed_job_card %}<div>Job Card: {{ change.current_job_card.job_card_no }} → <strong>{{ change.proposed_job_card.job_card_no }}</strong></div>{% endif %}
+                                {% if change.proposed_dc_no %}<div>DC No.: {{ change.current_dc_no }} → <strong>{{ change.proposed_dc_no }}</strong></div>{% endif %}
+                                {% if change.proposed_dispatch_date %}<div>Date: {{ change.current_dispatch_date|date:'d M Y' }} → <strong>{{ change.proposed_dispatch_date|date:'d M Y' }}</strong></div>{% endif %}
+                                {% if change.proposed_dispatch_qty is not None %}<div>Qty: {{ change.current_dispatch_qty|intcomma }} → <strong>{{ change.proposed_dispatch_qty|intcomma }}</strong></div>{% endif %}
+                                {% endif %}
+                            </td>
+                            <td class="erp-muted">
+                                {{ change.requested_by.username|default:'—' }}
+                                <br><small>{{ change.requested_at|date:'d M Y H:i' }}</small>
+                            </td>
+                            <td title="{{ change.reason }}">{{ change.reason|truncatechars:100 }}</td>
+                            <td class="erp-col-actions aq-action-cell">
+                                <form method="post" action="{% url 'approve_dispatch_change_request' change.id %}" class="m-0" style="display:inline-flex;">
+                                    {% csrf_token %}
+                                    {% if change.is_void %}
+                                    <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Approve VOID of DC {{ change.dispatch.dc_no|escapejs }}? The entry will be archived.');">Approve Void</button>
+                                    {% else %}
+                                    <button type="submit" class="erp-btn erp-btn-success" onclick="return confirm('Approve this correction for DC {{ change.dispatch.dc_no|escapejs }}?');">Approve</button>
+                                    {% endif %}
+                                </form>
+                                <form method="post" action="{% url 'reject_dispatch_change_request' change.id %}" class="m-0" style="display:inline-flex;">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="rejection_reason" value="">
+                                    <button type="submit" class="erp-btn erp-btn-danger" onclick="return promptDispatchChangeRejectionReason(this.form, '{{ change.dispatch.dc_no|escapejs }}')">Reject</button>
+                                </form>
+                            </td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="8" style="padding:24px;text-align:center;color:#7a8fa6;">No pending dispatch change requests.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-panel">
+            <div class="erp-panel__header">
+                <h3 class="erp-panel__title">Recent Decisions</h3>
+            </div>
+            <div class="erp-table-wrap">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>DC No.</th>
+                            <th>Job Card</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                            <th>Requester</th>
+                            <th>Reviewed By</th>
+                            <th>Rejection Reason</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                    {% for change in recent_requests %}
+                        <tr>
+                            <td><strong>{{ change.dispatch.dc_no|default:'-' }}</strong></td>
+                            <td>{{ change.dispatch.job_card.job_card_no|default:'-' }}</td>
+                            <td>{% if change.is_void %}Void{% else %}Correction{% endif %}</td>
+                            <td>
+                                {% if change.status == 'approved' %}
+                                <span class="erp-badge is-success">Approved</span>
+                                {% else %}
+                                <span class="erp-badge is-danger">Rejected</span>
+                                {% endif %}
+                            </td>
+                            <td class="erp-muted">{{ change.requested_by.username|default:'—' }}</td>
+                            <td class="erp-muted">
+                                {{ change.approved_by.username|default:'—' }}
+                                {% if change.approved_at %}<br><small>{{ change.approved_at|date:'d M Y H:i' }}</small>{% endif %}
+                            </td>
+                            <td>{{ change.rejection_reason|default:'—' }}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="7" style="padding:24px;text-align:center;color:#7a8fa6;">No decisions yet.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </section>
+
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+    function promptDispatchChangeRejectionReason(form, dcNo) {
+        var reason = prompt('Enter rejection reason for DC ' + dcNo + ':');
+        if (!reason || !reason.trim()) {
+            alert('Rejection reason is required to reject a change request.');
+            return false;
+        }
+        form.rejection_reason.value = reason.trim();
+        return true;
+    }
+</script>
+{% endblock %}

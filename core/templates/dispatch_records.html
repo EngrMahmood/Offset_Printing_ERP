@@ -204,6 +204,12 @@
 
     {% endif %}
 
+    {% if can_review_dispatch_changes %}
+
+    <a href="{% url 'dispatch_change_queue' %}" class="erp-btn erp-btn-secondary">Change Requests{% if dispatch_change_queue_count %} <span class="erp-badge erp-badge-pending">{{ dispatch_change_queue_count }}</span>{% endif %}</a>
+
+    {% endif %}
+
     {% if user.profile.can_archive_records %}
 
     <a href="{% url 'archived_records' %}?entity=dispatch" class="erp-btn erp-btn-secondary">Archived</a>
@@ -567,6 +573,29 @@
 
                                             <a href="{% url 'change_history' 'dispatch' row.id %}" class="erp-btn erp-btn-success">Log</a>
 
+                                            {% if user.profile.can_approve_dispatch %}
+
+                                                {% if row.id in pending_change_request_ids %}
+
+                                                <span class="erp-table-meta-text">Correction Pending</span>
+
+                                                {% else %}
+
+                                                <button type="button" class="erp-btn erp-btn-warning dispatch-request-change-btn"
+                                                    data-dispatch-id="{{ row.id }}"
+                                                    data-job-card="{{ row.job_card_id }}"
+                                                    data-job-card-no="{{ row.job_card.job_card_no }}"
+                                                    data-dc-no="{{ row.dc_no }}"
+                                                    data-dispatch-date="{{ row.dispatch_date|date:'Y-m-d' }}"
+                                                    data-dispatch-qty="{{ row.dispatch_qty }}">Request Correction</button>
+
+                                                <button type="button" class="erp-btn erp-btn-secondary dispatch-request-void-btn"
+                                                    data-dispatch-id="{{ row.id }}">Void</button>
+
+                                                {% endif %}
+
+                                            {% endif %}
+
                                             {% if user.profile.can_approve_dispatch and row.dc_no %}
 
                                             <a href="{% url 'dispatch_entry' %}?dc_no={{ row.dc_no|urlencode }}&job_card={{ row.job_card_id }}" class="erp-btn erp-btn-primary" title="Add another SKU on DC {{ row.dc_no }}">Add SKU</a>
@@ -649,6 +678,66 @@
 
     </div>
 
+    {% if user.profile.can_approve_dispatch %}
+
+    <div class="erp-modal" id="dispatch-change-modal" aria-hidden="true">
+
+        <div class="erp-modal-backdrop" data-modal-close></div>
+
+        <div class="erp-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="dispatch-change-modal-title">
+
+            <form id="dispatch-change-form" method="post" action="">
+
+                {% csrf_token %}
+
+                <input type="hidden" name="request_type" id="dispatch-change-request-type" value="correction">
+
+                <div class="erp-modal-header"><h3 id="dispatch-change-modal-title">Request Correction</h3></div>
+
+                <div class="erp-modal-body">
+
+                    <div id="dispatch-correction-fields" class="erp-form-grid">
+
+                        <label>Job Card No.
+                            <input type="text" name="proposed_job_card_no" id="dispatch-change-job-card-no" class="erp-input">
+                        </label>
+
+                        <label>DC / DR No.
+                            <input type="text" name="proposed_dc_no" id="dispatch-change-dc-no" class="erp-input">
+                        </label>
+
+                        <label>Dispatch Date
+                            <input type="date" name="proposed_dispatch_date" id="dispatch-change-date" class="erp-input">
+                        </label>
+
+                        <label>Dispatch Qty
+                            <input type="number" name="proposed_dispatch_qty" id="dispatch-change-qty" min="1" class="erp-input">
+                        </label>
+
+                    </div>
+
+                    <label>Reason (required)
+                        <textarea name="reason" id="dispatch-change-reason" class="erp-input" required rows="3"></textarea>
+                    </label>
+
+                </div>
+
+                <div class="erp-modal-footer">
+
+                    <button type="button" class="erp-btn erp-btn-secondary" data-modal-close>Cancel</button>
+
+                    <button type="submit" class="erp-btn erp-btn-primary">Submit for PM Approval</button>
+
+                </div>
+
+            </form>
+
+        </div>
+
+    </div>
+
+    {% endif %}
+
 {% endblock %}
 
 
@@ -674,6 +763,82 @@ document.addEventListener('DOMContentLoaded', function () {
         });
 
     }
+
+    const modal = document.getElementById('dispatch-change-modal');
+
+    const form = document.getElementById('dispatch-change-form');
+
+    const correctionFields = document.getElementById('dispatch-correction-fields');
+
+    const requestTypeInput = document.getElementById('dispatch-change-request-type');
+
+    const titleEl = document.getElementById('dispatch-change-modal-title');
+
+    function openModal(dispatchId, requestType, prefill) {
+
+        if (!modal || !form) return;
+
+        form.action = "/dispatch/" + dispatchId + "/request-change/";
+
+        requestTypeInput.value = requestType;
+
+        if (requestType === 'void') {
+
+            titleEl.textContent = 'Void Dispatch Entry';
+
+            correctionFields.style.display = 'none';
+
+        } else {
+
+            titleEl.textContent = 'Request Correction';
+
+            correctionFields.style.display = '';
+
+            document.getElementById('dispatch-change-job-card-no').value = prefill.jobCardNo || '';
+
+            document.getElementById('dispatch-change-dc-no').value = prefill.dcNo || '';
+
+            document.getElementById('dispatch-change-date').value = prefill.dispatchDate || '';
+
+            document.getElementById('dispatch-change-qty').value = prefill.dispatchQty || '';
+
+        }
+
+        document.getElementById('dispatch-change-reason').value = '';
+
+        modal.classList.add('open');
+
+    }
+
+    document.querySelectorAll('.dispatch-request-change-btn').forEach((btn) => {
+
+        btn.addEventListener('click', function () {
+
+            openModal(btn.dataset.dispatchId, 'correction', {
+
+                jobCardNo: btn.dataset.jobCardNo,
+
+                dcNo: btn.dataset.dcNo,
+
+                dispatchDate: btn.dataset.dispatchDate,
+
+                dispatchQty: btn.dataset.dispatchQty,
+
+            });
+
+        });
+
+    });
+
+    document.querySelectorAll('.dispatch-request-void-btn').forEach((btn) => {
+
+        btn.addEventListener('click', function () {
+
+            openModal(btn.dataset.dispatchId, 'void', {});
+
+        });
+
+    });
 
 });
 

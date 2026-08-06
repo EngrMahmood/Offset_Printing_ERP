@@ -1424,6 +1424,89 @@ class Dispatch(models.Model):
         return f"{self.job_card.job_card_no} - {self.dispatch_date}"
 
 
+class DispatchChangeRequest(models.Model):
+    """PM-approval-gated correction/void request for a Dispatch record.
+
+    Mirrors planning.models.JobCardChangeRequest: a dispatch officer submits
+    a proposed correction (or a void), and nothing on the Dispatch record
+    changes until a Production Manager approves it.
+    """
+
+    REQUEST_TYPE_CHOICES = [
+        ('correction', 'Correction'),
+        ('void', 'Void'),
+    ]
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending PM Approval'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    dispatch = models.ForeignKey(
+        Dispatch,
+        on_delete=models.CASCADE,
+        related_name='change_requests',
+    )
+
+    request_type = models.CharField(max_length=20, choices=REQUEST_TYPE_CHOICES, default='correction')
+
+    current_job_card = models.ForeignKey(
+        JobCard,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+    proposed_job_card = models.ForeignKey(
+        JobCard,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='+',
+    )
+
+    current_dc_no = models.CharField(max_length=50, blank=True, null=True)
+    proposed_dc_no = models.CharField(max_length=50, blank=True, null=True)
+
+    current_dispatch_date = models.DateField(null=True, blank=True)
+    proposed_dispatch_date = models.DateField(null=True, blank=True)
+
+    current_dispatch_qty = models.IntegerField(null=True, blank=True)
+    proposed_dispatch_qty = models.IntegerField(null=True, blank=True)
+
+    reason = models.TextField()
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+
+    requested_by = models.ForeignKey(
+        'auth.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        related_name='requested_dispatch_changes',
+    )
+    requested_at = models.DateTimeField(auto_now_add=True)
+
+    approved_by = models.ForeignKey(
+        'auth.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reviewed_dispatch_changes',
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    rejection_reason = models.TextField(blank=True, null=True)
+
+    class Meta:
+        ordering = ['-requested_at']
+
+    def __str__(self):
+        return f"{self.get_request_type_display()} request for Dispatch #{self.dispatch_id} ({self.status})"
+
+    @property
+    def is_void(self):
+        return self.request_type == 'void'
+
+
 class ChangeLog(models.Model):
     ENTITY_CHOICES = [
         ('job_card', 'Job Card'),
