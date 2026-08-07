@@ -1295,6 +1295,16 @@ def item_request_detail(request, pk):
     sc_decision = decisions['SUPPLY_CHAIN']
     active_review_tab = 'sc' if (can_review_sc or item_request.status == 'SC_REVIEW') else 'manager'
 
+    # The REVISE entry that put the request into NEEDS_REVISION, for the revision banner.
+    revision_note = approvals.last() if item_request.status == 'NEEDS_REVISION' else None
+
+    if can_resubmit:
+        active_page_tab = 'details'
+    elif can_review_manager or can_review_sc:
+        active_page_tab = 'review'
+    else:
+        active_page_tab = 'details'
+
     return render(request, 'supply_chain/item_request/detail.html', {
         'item_request': item_request,
         'approvals': approvals,
@@ -1303,6 +1313,8 @@ def item_request_detail(request, pk):
         'manager_decision': manager_decision,
         'sc_decision': sc_decision,
         'active_review_tab': active_review_tab,
+        'active_page_tab': active_page_tab,
+        'revision_note': revision_note,
         'can_review_manager': can_review_manager,
         'can_review_sc': can_review_sc,
         'can_resubmit': can_resubmit,
