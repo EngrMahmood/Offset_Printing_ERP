@@ -5,13 +5,24 @@
 {% block header_subtitle %}All logged maintenance activity.{% endblock %}
 {% block header_actions %}
     <a href="?{{ request.GET.urlencode }}&export=xlsx" class="erp-btn erp-btn-secondary">Export Excel</a>
-    <a href="{% url 'maintenance:record_create' %}" class="erp-btn erp-btn-primary">New Maintenance Record</a>
+    <a href="{% url 'maintenance:complaint_create' %}" class="erp-btn erp-btn-primary">Report a Complaint</a>
 {% endblock %}
 
 {% block content %}
 <div class="erp-page-stack">
     <section class="erp-section-shell">
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            <a href="{% url 'maintenance:record_list' %}" class="erp-btn {% if not view %}erp-btn-primary{% else %}erp-btn-secondary{% endif %}">All Records</a>
+            <a href="{% url 'maintenance:record_list' %}?view=mine" class="erp-btn {% if view == 'mine' %}erp-btn-primary{% else %}erp-btn-secondary{% endif %}">My Complaints</a>
+            {% if is_staff %}
+            <a href="{% url 'maintenance:record_list' %}?view=assigned" class="erp-btn {% if view == 'assigned' %}erp-btn-primary{% else %}erp-btn-secondary{% endif %}">My Tickets</a>
+            {% endif %}
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
         <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(4,1fr); gap:12px; align-items:end;">
+            {% if view %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
             <div class="erp-input-group">
                 <label class="erp-input-label">Status</label>
                 <select name="status" class="erp-select">

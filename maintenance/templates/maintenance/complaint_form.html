@@ -1,0 +1,36 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Report a Complaint{% endblock %}
+{% block header_title %}Report a Complaint{% endblock %}
+{% block header_subtitle %}Tell us the machine and what's wrong — maintenance will take it from here.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'maintenance:record_list' %}" class="erp-btn erp-btn-secondary">Back to List</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="post" class="erp-form-grid" style="grid-template-columns:1fr; gap:20px; max-width:520px;">
+            {% csrf_token %}
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="{{ form.machine.id_for_label }}" style="font-size:1.05rem;">{{ form.machine.label }}</label>
+                {{ form.machine }}
+                {% if form.machine.errors %}<div class="erp-alert erp-alert-danger">{{ form.machine.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" style="font-size:1.05rem;">{{ form.machine_stopped.label }}</label>
+                {{ form.machine_stopped }}
+                {% if form.machine_stopped.errors %}<div class="erp-alert erp-alert-danger">{{ form.machine_stopped.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="{{ form.fault_description.id_for_label }}" style="font-size:1.05rem;">{{ form.fault_description.label }}</label>
+                {{ form.fault_description }}
+                {% if form.fault_description.errors %}<div class="erp-alert erp-alert-danger">{{ form.fault_description.errors|striptags }}</div>{% endif %}
+            </div>
+            <div class="erp-actions">
+                <button type="submit" class="erp-btn erp-btn-primary" style="font-size:1.1rem; padding:14px 28px;">Report Complaint</button>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

@@ -39,6 +39,64 @@ class MaintenanceRecordForm(forms.ModelForm):
         self.fields['remarks'].required = False
 
 
+class ComplaintForm(forms.ModelForm):
+    """Minimal shop-floor intake: what machine, what's wrong, is it stopped.
+    Nothing technical — the engineer classifies everything else at triage."""
+
+    machine_stopped = forms.ChoiceField(
+        label='Is the machine running?',
+        choices=[('no', "No — it's stopped"), ('yes', "Yes — still running, but needs attention")],
+        widget=forms.RadioSelect(attrs={'class': 'erp-radio-group'}),
+        initial='yes',
+    )
+
+    class Meta:
+        model = MaintenanceRecord
+        fields = ['machine', 'fault_description']
+        labels = {
+            'fault_description': "What's wrong with the machine?",
+        }
+        widgets = {
+            'machine': forms.Select(attrs={'class': 'erp-select'}),
+            'fault_description': forms.Textarea(attrs={'class': 'erp-input', 'rows': 4, 'placeholder': 'Describe the problem in your own words...'}),
+        }
+
+
+class TriageForm(forms.ModelForm):
+    """The engineer's classification screen: turns a raw complaint into a
+    properly assessed record and moves it from REPORTED to DIAGNOSED."""
+
+    class Meta:
+        model = MaintenanceRecord
+        fields = [
+            'fault_types', 'maintenance_type', 'priority', 'execution_type', 'proposed_solution',
+            'spare_parts_needed', 'repair_needed', 'repair_details', 'assigned_to',
+        ]
+        widgets = {
+            'fault_types': forms.CheckboxSelectMultiple(attrs={'class': 'erp-checkbox-group'}),
+            'maintenance_type': forms.Select(attrs={'class': 'erp-select'}),
+            'priority': forms.Select(attrs={'class': 'erp-select'}),
+            'execution_type': forms.Select(attrs={'class': 'erp-select'}),
+            'proposed_solution': forms.Textarea(attrs={'class': 'erp-input', 'rows': 2}),
+            'repair_details': forms.Textarea(attrs={'class': 'erp-input', 'rows': 2}),
+            'assigned_to': forms.Select(attrs={'class': 'erp-select'}),
+        }
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+        self.fields['fault_types'].queryset = FaultCategory.objects.filter(is_active=True)
+        self.fields['maintenance_type'].required = True
+        self.fields['proposed_solution'].required = False
+        self.fields['repair_details'].required = False
+        self.fields['assigned_to'].required = False
+        self.fields['assigned_to'].queryset = User.objects.filter(
+            is_active=True, profile__role__in=('admin', 'manager', 'production_manager', 'maintenance_engineer'),
+        )
+
+
 class MaintenanceSparePartForm(forms.ModelForm):
     class Meta:
         model = MaintenanceSparePart

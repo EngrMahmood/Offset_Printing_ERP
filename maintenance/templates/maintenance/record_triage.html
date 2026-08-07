@@ -1,0 +1,34 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Triage {{ record.record_no }}{% endblock %}
+{% block header_title %}Triage — {{ record.record_no }}{% endblock %}
+{% block header_subtitle %}{{ record.machine }} · reported by {{ record.reported_by }} on {{ record.reported_date }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'maintenance:record_detail' record.pk %}" class="erp-btn erp-btn-secondary">Back to Record</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <h3>Reported Fault</h3>
+        <p>{{ record.fault_description }}</p>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Classify &amp; Assign</h3>
+        <form method="post" class="erp-form-grid" style="grid-template-columns:1fr 1fr; gap:16px; max-width:900px;">
+            {% csrf_token %}
+            {% for field in form %}
+            <div class="erp-input-group" {% if field.name == 'fault_types' or field.name == 'proposed_solution' or field.name == 'repair_details' %}style="grid-column:1 / -1;"{% endif %}>
+                <label class="erp-input-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
+                {{ field }}
+                {% if field.errors %}<div class="erp-alert erp-alert-danger">{{ field.errors|striptags }}</div>{% endif %}
+            </div>
+            {% endfor %}
+            <div class="erp-actions" style="grid-column:1 / -1;">
+                <button type="submit" class="erp-btn erp-btn-primary">Save Triage &amp; Move to Diagnosed</button>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

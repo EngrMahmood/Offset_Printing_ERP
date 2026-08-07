@@ -4,11 +4,21 @@
 {% block header_title %}Maintenance Dashboard{% endblock %}
 {% block header_subtitle %}Open faults, machines currently down, and quick access to logging.{% endblock %}
 {% block header_actions %}
-    <a href="{% url 'maintenance:record_create' %}" class="erp-btn erp-btn-primary">New Maintenance Record</a>
+    <a href="{% url 'maintenance:complaint_create' %}" class="erp-btn erp-btn-primary">Report a Complaint</a>
 {% endblock %}
 
 {% block content %}
 <div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div style="display:flex; gap:12px; flex-wrap:wrap;">
+            <a href="{% url 'maintenance:record_list' %}?view=mine" class="erp-btn erp-btn-secondary">My Complaints ({{ my_complaints_count }})</a>
+            {% if is_staff %}
+            <a href="{% url 'maintenance:record_list' %}?status=REPORTED" class="erp-btn erp-btn-secondary">New Complaints Awaiting Triage ({{ new_complaints_count }})</a>
+            <a href="{% url 'maintenance:record_list' %}?view=assigned" class="erp-btn erp-btn-secondary">My Tickets ({{ my_tickets_count }})</a>
+            {% endif %}
+        </div>
+    </section>
+
     <section class="erp-section-shell">
         <h3>Open Records ({{ open_count }})</h3>
         <div class="erp-table-wrap erp-table-dense">

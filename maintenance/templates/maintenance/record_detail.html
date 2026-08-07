@@ -2,7 +2,7 @@
 
 {% block title %}{{ record.record_no }}{% endblock %}
 {% block header_title %}{{ record.record_no }} — {{ record.machine }}{% endblock %}
-{% block header_subtitle %}{{ record.get_maintenance_type_display }} · {{ record.get_priority_display }} priority · {{ record.get_status_display }}{% endblock %}
+{% block header_subtitle %}{% if record.maintenance_type %}{{ record.get_maintenance_type_display }} · {% endif %}{{ record.get_priority_display }} priority · {{ record.get_status_display }}{% endblock %}
 {% block header_actions %}
     <a href="{% url 'maintenance:record_list' %}" class="erp-btn erp-btn-secondary">Back to List</a>
 {% endblock %}
@@ -11,36 +11,62 @@
 <div class="erp-page-stack">
     <section class="erp-section-shell">
         <h3>Fault Details</h3>
-        <p><strong>Fault types:</strong> {% for ft in record.fault_types.all %}{{ ft.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>
+        {% if record.fault_types.all %}<p><strong>Fault types:</strong> {% for ft in record.fault_types.all %}{{ ft.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
         <p><strong>Description:</strong> {{ record.fault_description }}</p>
         {% if record.proposed_solution %}<p><strong>Proposed solution:</strong> {{ record.proposed_solution }}</p>{% endif %}
         <p><strong>Execution type:</strong> {{ record.get_execution_type_display }}</p>
         {% if record.repair_needed %}<p><strong>Repair details:</strong> {{ record.repair_details }}</p>{% endif %}
-        {% if record.assigned_to %}<p><strong>Assigned to:</strong> {{ record.assigned_to }}</p>{% endif %}
+        {% if record.assigned_to %}
+        <p>
+            <strong>Assigned to:</strong> {{ record.assigned_to }}
+            {% if can_reassign %}
+            <a href="#reassign" class="erp-btn erp-btn-secondary" style="padding:2px 10px; font-size:0.85em; margin-left:8px;" onclick="document.getElementById('reassign-form').style.display='flex'; return false;">Reassign</a>
+            {% endif %}
+        </p>
+        {% elif can_reassign %}
+        <p><strong>Assigned to:</strong> Unassigned
+            <a href="#reassign" class="erp-btn erp-btn-secondary" style="padding:2px 10px; font-size:0.85em; margin-left:8px;" onclick="document.getElementById('reassign-form').style.display='flex'; return false;">Assign</a>
+        </p>
+        {% endif %}
         {% if record.remarks %}<p><strong>Remarks:</strong> {{ record.remarks }}</p>{% endif %}
-    </section>
-
-    {% if can_review %}
-    <section class="erp-section-shell">
-        <h3>Manager Approval Required</h3>
-        <p>This record is pending approval before work can begin.</p>
-        <form method="post" action="{% url 'maintenance:record_review' record.pk %}" style="display:flex; gap:8px; align-items:end;">
+        {% if can_reassign %}
+        <form id="reassign-form" method="post" action="{% url 'maintenance:record_reassign' record.pk %}" style="display:none; gap:8px; align-items:end; margin-top:8px;">
             {% csrf_token %}
             <div class="erp-input-group">
-                <label class="erp-input-label">Comment</label>
-                <input type="text" name="comment" class="erp-input">
+                <label class="erp-input-label">Assign to</label>
+                <select name="assigned_to" class="erp-select">
+                    <option value="">Select engineer...</option>
+                    {% for engineer in engineers %}
+                    <option value="{{ engineer.pk }}" {% if record.assigned_to_id == engineer.pk %}selected{% endif %}>{{ engineer.get_full_name|default:engineer.username }}</option>
+                    {% endfor %}
+                </select>
             </div>
-            <button type="submit" name="action" value="APPROVE" class="erp-btn erp-btn-primary">Approve</button>
-            <button type="submit" name="action" value="REJECT" class="erp-btn erp-btn-secondary">Reject</button>
+            <button type="submit" class="erp-btn erp-btn-primary">Save</button>
         </form>
+        {% endif %}
     </section>
+
+    {% if needs_triage %}
+        {% if can_work %}
+        <section class="erp-section-shell">
+            <h3>Awaiting Triage</h3>
+            <p>This complaint hasn't been classified yet. Review it and assign fault type, priority, and how it will be handled.</p>
+            <a href="{% url 'maintenance:record_triage' record.pk %}" class="erp-btn erp-btn-primary">Triage This Complaint</a>
+        </section>
+        {% else %}
+        <section class="erp-section-shell">
+            <h3>Status</h3>
+            <p>Current: <strong>{{ record.get_status_display }}</strong> — a maintenance engineer will review this shortly.</p>
+        </section>
+        {% endif %}
     {% endif %}
 
+    {% if can_work %}
     <section class="erp-section-shell">
         <h3>Status</h3>
         <p>Current: <strong>{{ record.get_status_display }}</strong></p>
         {% if next_statuses %}
-        <form method="post" action="{% url 'maintenance:record_transition' record.pk %}" class="erp-form-grid" style="grid-template-columns:1fr 1fr auto; gap:12px; align-items:end;">
+        <form method="post" action="{% url 'maintenance:record_transition' record.pk %}" class="erp-form-grid" style="grid-template-columns:1fr 1fr 1fr auto; gap:12px; align-items:end;">
             {% csrf_token %}
             <div class="erp-input-group">
                 <label class="erp-input-label">Move to</label>
@@ -54,11 +80,24 @@
                 <label class="erp-input-label">Note</label>
                 <input type="text" name="note" class="erp-input">
             </div>
+            {% if 'COMPLETED' in next_statuses %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">Labour hours (if completing)</label>
+                <input type="number" name="labour_hours" step="0.5" class="erp-input" value="{{ record.labour_hours }}">
+            </div>
+            {% endif %}
             <button type="submit" class="erp-btn erp-btn-primary">Update Status</button>
         </form>
         {% endif %}
     </section>
+    {% elif not needs_triage %}
+    <section class="erp-section-shell">
+        <h3>Status</h3>
+        <p>Current: <strong>{{ record.get_status_display }}</strong></p>
+    </section>
+    {% endif %}
 
+    {% if can_work and record.spare_parts_needed %}
     <section class="erp-section-shell">
         <h3>Spare Parts</h3>
         <div class="erp-table-wrap erp-table-dense">
@@ -91,7 +130,9 @@
             <button type="submit" class="erp-btn erp-btn-secondary">Add Line</button>
         </form>
     </section>
+    {% endif %}
 
+    {% if can_work and record.execution_type == 'OUTSOURCE' %}
     <section class="erp-section-shell">
         <h3>Service Jobs (Outsource)</h3>
         <div class="erp-table-wrap erp-table-dense">
@@ -125,13 +166,16 @@
             <button type="submit" class="erp-btn erp-btn-secondary">Add Service Job</button>
         </form>
     </section>
+    {% endif %}
 
+    {% if can_raise_demand %}
     <section class="erp-section-shell">
         <form method="post" action="{% url 'maintenance:raise_demand' record.pk %}">
             {% csrf_token %}
             <button type="submit" class="erp-btn erp-btn-primary">Raise Demand (Item Requests) for Pending Lines</button>
         </form>
     </section>
+    {% endif %}
 
     <section class="erp-section-shell">
         <h3>Downtime</h3>
@@ -191,27 +235,6 @@
     </section>
 
     <section class="erp-section-shell">
-        <h3>Approvals</h3>
-        <div class="erp-table-wrap erp-table-dense">
-            <table class="erp-table">
-                <thead><tr><th>When</th><th>Actor</th><th>Action</th><th>Comment</th></tr></thead>
-                <tbody>
-                    {% for approval in approvals %}
-                    <tr>
-                        <td>{{ approval.created_at }}</td>
-                        <td>{{ approval.actor }}</td>
-                        <td>{{ approval.get_action_display }}</td>
-                        <td>{{ approval.comment }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="4">No approval activity yet.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-    </section>
-
-    <section class="erp-section-shell">
         <h3>Activity Log</h3>
         <div class="erp-table-wrap erp-table-dense">
             <table class="erp-table">
@@ -230,6 +253,14 @@
                 </tbody>
             </table>
         </div>
+        <form method="post" action="{% url 'maintenance:record_comment' record.pk %}" style="display:flex; gap:8px; align-items:end; margin-top:12px;">
+            {% csrf_token %}
+            <div class="erp-input-group" style="flex:1;">
+                <label class="erp-input-label">Add a comment</label>
+                <input type="text" name="note" class="erp-input" placeholder="Post an update without changing status...">
+            </div>
+            <button type="submit" class="erp-btn erp-btn-secondary">Post Comment</button>
+        </form>
     </section>
 </div>
 {% endblock %}

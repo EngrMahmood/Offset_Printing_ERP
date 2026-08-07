@@ -54,7 +54,7 @@ class MaintenanceRecord(models.Model):
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name='maintenance_records_reported',
     )
     fault_types = models.ManyToManyField(FaultCategory, related_name='maintenance_records', blank=True)
-    maintenance_type = models.CharField(max_length=20, choices=MAINTENANCE_TYPE_CHOICES)
+    maintenance_type = models.CharField(max_length=20, choices=MAINTENANCE_TYPE_CHOICES, blank=True, default='')
     execution_type = models.CharField(max_length=20, choices=EXECUTION_TYPE_CHOICES, default='IN_HOUSE')
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES, default='MEDIUM')
     fault_description = models.TextField()

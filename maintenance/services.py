@@ -1,11 +1,65 @@
 from datetime import timedelta
 
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
 
+from core.notifications import notify_roles, notify_users
 from supply_chain.models import ItemRequest
 
-from .models import MaintenanceActivityLog, MaintenanceApproval, MaintenanceRecord, PreventiveMaintenancePlan
+from .models import MachineDowntime, MaintenanceActivityLog, MaintenanceApproval, MaintenanceRecord, PreventiveMaintenancePlan
+
+ENGINEER_ROLES = ('maintenance_engineer', 'production_manager')
+
+
+def _detail_link(record):
+    try:
+        return reverse('maintenance:record_detail', args=[record.pk])
+    except Exception:
+        return ''
+
+
+def notify_complaint_raised(record, actor):
+    notify_roles(
+        ENGINEER_ROLES,
+        event_type='maintenance.complaint_raised',
+        title=f'New complaint: {record.record_no} — {record.machine}',
+        message=f'{actor.username} reported a fault on {record.machine}: {record.fault_description}',
+        link=_detail_link(record),
+        entity_type='maintenancerecord',
+        entity_id=record.pk,
+        actor=actor,
+    )
+
+
+def notify_triaged(record, actor):
+    if not record.reported_by_id:
+        return
+    notify_users(
+        [record.reported_by],
+        event_type='maintenance.triaged',
+        title=f'{record.record_no} picked up by {actor.username}',
+        message=f'Your complaint on {record.machine} is being assessed by maintenance.',
+        link=_detail_link(record),
+        entity_type='maintenancerecord',
+        entity_id=record.pk,
+        actor=actor,
+    )
+
+
+def notify_status_update(record, actor):
+    if not record.reported_by_id:
+        return
+    notify_users(
+        [record.reported_by],
+        event_type='maintenance.status_update',
+        title=f'{record.record_no} — {record.get_status_display()}',
+        message=f'Your reported issue on {record.machine} is now {record.get_status_display()}.',
+        link=_detail_link(record),
+        entity_type='maintenancerecord',
+        entity_id=record.pk,
+        actor=actor,
+    )
 
 
 def generate_record_no(record):
@@ -95,6 +149,23 @@ def _maintenance_department():
     return dept
 
 
+def open_downtime(record, reason='BREAKDOWN'):
+    """No-ops if a downtime interval is already open for this record."""
+    already_open = record.downtime_intervals.filter(end_at__isnull=True).exists()
+    if already_open:
+        return None
+    return MachineDowntime.objects.create(
+        machine=record.machine, record=record, start_at=timezone.now(), reason=reason,
+    )
+
+
+def open_breakdown_downtime_if_needed(record):
+    """Called at triage once the engineer classifies a record as BREAKDOWN."""
+    if record.maintenance_type != 'BREAKDOWN':
+        return None
+    return open_downtime(record, reason='BREAKDOWN')
+
+
 def submit_for_approval(record, user):
     MaintenanceApproval.objects.create(record=record, actor=user, action='SUBMIT')
     log_activity(record, user, 'Submitted for approval', to_status=record.status)
@@ -136,6 +207,8 @@ def generate_due_pm_records(as_of=None, actor=None):
         is_active=True, interval_type='DAYS', next_due_at__isnull=False, next_due_at__lte=as_of,
     )
     for plan in plans:
+        # Already fully classified (it's a scheduled PM job) — skip straight to
+        # DIAGNOSED like an engineer-direct entry, same as record_create.
         record = MaintenanceRecord.objects.create(
             machine=plan.machine,
             reported_date=as_of,
@@ -143,10 +216,20 @@ def generate_due_pm_records(as_of=None, actor=None):
             maintenance_type='PREVENTIVE',
             priority='MEDIUM',
             fault_description=f'Preventive maintenance due: {plan.title}',
-            status='PENDING_APPROVAL',
+            status='DIAGNOSED',
         )
         generate_record_no(record)
         log_activity(record, actor, 'Auto-generated from PM plan', to_status=record.status, note=plan.title)
+        notify_roles(
+            ENGINEER_ROLES,
+            event_type='maintenance.pm_due',
+            title=f'PM due: {record.record_no} — {record.machine}',
+            message=f'Preventive maintenance "{plan.title}" is due on {record.machine}.',
+            link=_detail_link(record),
+            entity_type='maintenancerecord',
+            entity_id=record.pk,
+            actor=actor,
+        )
         plan.last_done_at = as_of
         plan.next_due_at = as_of + timedelta(days=plan.interval_value)
         plan.save(update_fields=['last_done_at', 'next_due_at'])

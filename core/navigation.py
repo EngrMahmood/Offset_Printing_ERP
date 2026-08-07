@@ -42,7 +42,7 @@ ITEM_REQUEST_NAV_ROLES = {
     'admin', 'manager', 'supply_chain', 'planner', 'production_manager', 'production',
     'graphics_designer', 'operator', 'dispatch', 'qc', 'storekeeper', 'finance',
 }
-MAINTENANCE_NAV_ROLES = {'admin', 'manager', 'maintenance_engineer', 'production_manager'}
+MAINTENANCE_NAV_ROLES = {'admin', 'manager', 'maintenance_engineer', 'production_manager', 'production', 'operator'}
 # Chat is an org-wide utility — open to every role by default (see chat.management.commands.seed_chat_permissions,
 # which owns the actual Permission/Role grants; this set exists only for parity with the other *_NAV_ROLES constants).
 CHAT_NAV_ROLES = {
