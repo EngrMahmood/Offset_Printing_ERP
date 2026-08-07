@@ -42,6 +42,8 @@ def generate_request_no(item_request):
 
 def submit_request(item_request, user):
     item_request.status = 'MGR_REVIEW'
+    if not item_request.request_no:
+        generate_request_no(item_request)
     item_request.save(update_fields=['status'])
     ItemRequestApproval.objects.create(
         request=item_request, actor=user, action='SUBMIT', stage='REQUESTER',
