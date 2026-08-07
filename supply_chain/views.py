@@ -1223,13 +1223,47 @@ def item_request_list(request):
     if request.GET.get('export') == 'xlsx':
         return export_item_requests(requests_qs, filename='item_requests.xlsx')
 
+    can_manage_reviews = _is_manager(request.user)
+    can_manage_sc = _is_supply_chain(request.user)
+
     rows = []
     for req in requests_qs:
         days_in_stage, sla_limit, breached = sla_status(req, req.approvals.all())
         rows.append({'request': req, 'sla_breached': breached, 'days_in_stage': days_in_stage, 'sla_limit': sla_limit})
 
+    # Role-scoped queues, so each person lands on the slice of work that is
+    # actually theirs instead of scanning one flat list for it.
+    needs_action_rows = [
+        r for r in rows if (
+            (can_manage_reviews and r['request'].status == 'MGR_REVIEW')
+            or (can_manage_sc and r['request'].status == 'SC_REVIEW')
+            or (r['request'].raised_by_id == request.user.id and r['request'].status == 'NEEDS_REVISION')
+        )
+    ]
+    mine_rows = [r for r in rows if r['request'].raised_by_id == request.user.id]
+    in_progress_rows = [
+        r for r in rows if r['request'].status in ('SUBMITTED', 'MGR_REVIEW', 'SC_REVIEW', 'NEEDS_REVISION')
+    ]
+    procurement_rows = [r for r in rows if r['request'].status in ('APPROVED', 'IN_PROCUREMENT', 'RECEIVED')]
+    closed_rows = [r for r in rows if r['request'].status in ('CLOSED', 'REJECTED')]
+
+    show_needs_action_tab = can_manage_reviews or can_manage_sc or bool(needs_action_rows)
+    if show_needs_action_tab and needs_action_rows:
+        active_tab = 'needs_action'
+    elif not (can_manage_reviews or can_manage_sc):
+        active_tab = 'mine'
+    else:
+        active_tab = 'all'
+
     return render(request, 'supply_chain/item_request/list.html', {
         'rows': rows,
+        'needs_action_rows': needs_action_rows,
+        'mine_rows': mine_rows,
+        'in_progress_rows': in_progress_rows,
+        'procurement_rows': procurement_rows,
+        'closed_rows': closed_rows,
+        'show_needs_action_tab': show_needs_action_tab,
+        'active_tab': active_tab,
         'types': ItemRequestType.objects.filter(is_active=True),
         'departments': ItemRequestDepartment.objects.filter(is_active=True),
         'status_choices': ItemRequest.STATUS_CHOICES,

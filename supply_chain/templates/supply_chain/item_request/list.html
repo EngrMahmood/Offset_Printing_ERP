@@ -49,75 +49,78 @@
         </section>
 
         <section class="erp-section-shell">
+            <div class="erp-tab-strip">
+                {% if show_needs_action_tab %}
+                <button type="button" class="erp-tab {% if active_tab == 'needs_action' %}is-active{% endif %}" data-target="panel-needs-action">Needs My Action{% if needs_action_rows %} ({{ needs_action_rows|length }}){% endif %}</button>
+                {% endif %}
+                <button type="button" class="erp-tab {% if active_tab == 'mine' %}is-active{% endif %}" data-target="panel-mine">My Requests ({{ mine_rows|length }})</button>
+                <button type="button" class="erp-tab {% if active_tab == 'in_progress' %}is-active{% endif %}" data-target="panel-in-progress">In Progress ({{ in_progress_rows|length }})</button>
+                <button type="button" class="erp-tab {% if active_tab == 'procurement' %}is-active{% endif %}" data-target="panel-procurement">Procurement ({{ procurement_rows|length }})</button>
+                <button type="button" class="erp-tab {% if active_tab == 'closed' %}is-active{% endif %}" data-target="panel-closed">Closed ({{ closed_rows|length }})</button>
+                <button type="button" class="erp-tab {% if active_tab == 'all' %}is-active{% endif %}" data-target="panel-all">All ({{ rows|length }})</button>
+            </div>
+
             <form method="post" action="{% url 'supply_chain:item_request_bulk_delete' %}" id="bulk-delete-form" onsubmit="return confirm('Delete the selected item request(s)? This cannot be undone from the UI.');">
                 {% csrf_token %}
-                {% if is_superuser %}
-                <div class="erp-actions mb-2">
-                    <button type="submit" class="erp-btn erp-btn-secondary text-red-600">Delete Selected</button>
-                </div>
+
+                {% if show_needs_action_tab %}
+                <section id="panel-needs-action" class="erp-tab-panel {% if active_tab == 'needs_action' %}is-active{% endif %}">
+                    <p class="erp-empty-note mb-2">Requests waiting on a decision only you can make — a review at your stage, or a revision on your own request.</p>
+                    {% include 'supply_chain/item_request/_rows_table.html' with rows=needs_action_rows show_admin_actions=False %}
+                </section>
                 {% endif %}
-                <div class="erp-table-wrap erp-table-dense">
-                    <table class="erp-table">
-                        <thead>
-                            <tr>
-                                {% if is_superuser %}<th><input type="checkbox" id="select-all"></th>{% endif %}
-                                <th>IR-ID</th>
-                                <th>Item Title</th>
-                                <th>Type</th>
-                                <th>Department</th>
-                                <th>Machine</th>
-                                <th>Status</th>
-                                <th>SLA</th>
-                                <th>Raised By</th>
-                                <th>Date</th>
-                                {% if is_superuser %}<th>Actions</th>{% endif %}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for row in rows %}
-                            {% with r=row.request %}
-                            <tr>
-                                {% if is_superuser %}
-                                <td><input type="checkbox" name="selected_ids" value="{{ r.pk }}" class="row-checkbox"></td>
-                                {% endif %}
-                                <td><a href="{% url 'supply_chain:item_request_detail' r.pk %}">{{ r.request_no|default:'—' }}</a></td>
-                                <td>{{ r.item_title }}</td>
-                                <td>{{ r.request_type.name }}</td>
-                                <td>{{ r.department.name }}</td>
-                                <td>{{ r.machine_display }}</td>
-                                <td><span class="erp-badge">{{ r.get_status_display }}</span></td>
-                                <td>
-                                    {% if row.sla_breached %}
-                                    <span class="erp-badge erp-badge-danger" title="{{ row.days_in_stage }}d in stage, limit {{ row.sla_limit }}d">Overdue</span>
-                                    {% elif row.sla_limit %}
-                                    <span class="erp-badge">{{ row.days_in_stage }}/{{ row.sla_limit }}d</span>
-                                    {% else %}—{% endif %}
-                                </td>
-                                <td>{{ r.raised_by.username }}</td>
-                                <td>{{ r.request_date }}</td>
-                                {% if is_superuser %}
-                                <td>
-                                    <button type="submit" formaction="{% url 'supply_chain:item_request_delete' r.pk %}" formnovalidate class="erp-btn erp-btn-secondary text-red-600" onclick="return confirm('Delete item request {{ r.request_no|default:r.pk }}? This cannot be undone from the UI.');">Delete</button>
-                                </td>
-                                {% endif %}
-                            </tr>
-                            {% endwith %}
-                            {% empty %}
-                            <tr><td colspan="10">No item requests found.</td></tr>
-                            {% endfor %}
-                        </tbody>
-                    </table>
-                </div>
+
+                <section id="panel-mine" class="erp-tab-panel {% if active_tab == 'mine' %}is-active{% endif %}">
+                    <p class="erp-empty-note mb-2">Every request you've raised, at any stage.</p>
+                    {% include 'supply_chain/item_request/_rows_table.html' with rows=mine_rows show_admin_actions=False %}
+                </section>
+
+                <section id="panel-in-progress" class="erp-tab-panel {% if active_tab == 'in_progress' %}is-active{% endif %}">
+                    <p class="erp-empty-note mb-2">Everyone's requests still moving through submission or review.</p>
+                    {% include 'supply_chain/item_request/_rows_table.html' with rows=in_progress_rows show_admin_actions=False %}
+                </section>
+
+                <section id="panel-procurement" class="erp-tab-panel {% if active_tab == 'procurement' %}is-active{% endif %}">
+                    <p class="erp-empty-note mb-2">Approved requests being sourced, ordered, or received.</p>
+                    {% include 'supply_chain/item_request/_rows_table.html' with rows=procurement_rows show_admin_actions=False %}
+                </section>
+
+                <section id="panel-closed" class="erp-tab-panel {% if active_tab == 'closed' %}is-active{% endif %}">
+                    <p class="erp-empty-note mb-2">Closed and rejected requests.</p>
+                    {% include 'supply_chain/item_request/_rows_table.html' with rows=closed_rows show_admin_actions=False %}
+                </section>
+
+                <section id="panel-all" class="erp-tab-panel {% if active_tab == 'all' %}is-active{% endif %}">
+                    {% if is_superuser %}
+                    <div class="erp-actions mb-2">
+                        <button type="submit" class="erp-btn erp-btn-secondary text-red-600">Delete Selected</button>
+                    </div>
+                    {% endif %}
+                    {% include 'supply_chain/item_request/_rows_table.html' with rows=rows show_admin_actions=is_superuser %}
+                </section>
             </form>
         </section>
     </div>
     <script>
         (function () {
-            const selectAll = document.getElementById('select-all');
-            if (!selectAll) return;
-            selectAll.addEventListener('change', function () {
-                document.querySelectorAll('.row-checkbox').forEach(function (cb) {
-                    cb.checked = selectAll.checked;
+            var tabs = document.querySelectorAll('.erp-tab[data-target]');
+            var panels = document.querySelectorAll('.erp-tab-panel');
+            tabs.forEach(function (tab) {
+                tab.addEventListener('click', function () {
+                    tabs.forEach(function (t) { t.classList.remove('is-active'); });
+                    panels.forEach(function (p) { p.classList.remove('is-active'); });
+                    tab.classList.add('is-active');
+                    var panel = document.getElementById(tab.dataset.target);
+                    if (panel) { panel.classList.add('is-active'); }
+                });
+            });
+
+            document.addEventListener('change', function (event) {
+                if (!event.target.classList.contains('select-all-rows')) return;
+                var panel = event.target.closest('.erp-tab-panel');
+                if (!panel) return;
+                panel.querySelectorAll('.row-checkbox').forEach(function (cb) {
+                    cb.checked = event.target.checked;
                 });
             });
         })();

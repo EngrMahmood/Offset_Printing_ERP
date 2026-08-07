@@ -1,0 +1,54 @@
+<div class="erp-table-wrap erp-table-dense">
+    <table class="erp-table">
+        <thead>
+            <tr>
+                {% if show_admin_actions %}<th><input type="checkbox" class="select-all-rows"></th>{% endif %}
+                <th>IR-ID</th>
+                <th>Item Title</th>
+                <th>Type</th>
+                <th>Department</th>
+                <th>Machine</th>
+                <th>Status</th>
+                <th>SLA</th>
+                <th>Raised By</th>
+                <th>Date</th>
+                {% if show_admin_actions %}<th>Actions</th>{% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for row in rows %}
+            {% with r=row.request %}
+            <tr>
+                {% if show_admin_actions %}
+                <td><input type="checkbox" name="selected_ids" value="{{ r.pk }}" class="row-checkbox"></td>
+                {% endif %}
+                <td><a href="{% url 'supply_chain:item_request_detail' r.pk %}">{{ r.request_no|default:'—' }}</a></td>
+                <td>{{ r.item_title }}</td>
+                <td>{{ r.request_type.name }}</td>
+                <td>{{ r.department.name }}</td>
+                <td>{{ r.machine_display }}</td>
+                <td>
+                    <span class="erp-badge{% if r.status == 'NEEDS_REVISION' or r.status == 'REJECTED' %} erp-badge-rejected{% elif r.status == 'CLOSED' or r.status == 'RECEIVED' %} erp-badge-approved{% elif r.status == 'SUBMITTED' %} erp-badge-pending{% endif %}">{{ r.get_status_display }}</span>
+                </td>
+                <td>
+                    {% if row.sla_breached %}
+                    <span class="erp-badge erp-badge-danger" title="{{ row.days_in_stage }}d in stage, limit {{ row.sla_limit }}d">Overdue</span>
+                    {% elif row.sla_limit %}
+                    <span class="erp-badge">{{ row.days_in_stage }}/{{ row.sla_limit }}d</span>
+                    {% else %}—{% endif %}
+                </td>
+                <td>{{ r.raised_by.username }}</td>
+                <td>{{ r.request_date }}</td>
+                {% if show_admin_actions %}
+                <td>
+                    <button type="submit" formaction="{% url 'supply_chain:item_request_delete' r.pk %}" formnovalidate class="erp-btn erp-btn-secondary text-red-600" onclick="return confirm('Delete item request {{ r.request_no|default:r.pk }}? This cannot be undone from the UI.');">Delete</button>
+                </td>
+                {% endif %}
+            </tr>
+            {% endwith %}
+            {% empty %}
+            <tr><td colspan="{% if show_admin_actions %}11{% else %}9{% endif %}">No item requests here.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
