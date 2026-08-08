@@ -50,7 +50,7 @@ except ImportError:
     REPORTLAB_AVAILABLE = False
 
 from core.jc_numbering import allocate_next_jc_number
-from core.models import ChangeLog, JobCard, Machine
+from core.models import ChangeLog, JobCard, JOB_CARD_PLANNING_EDITABLE_STATUSES, Machine
 from core.jobcard_service import job_card_queue_queryset, execute_job_card_action
 from core.views import permission_required
 from reports.export.services import export_as_pdf, export_as_xlsx
@@ -717,6 +717,31 @@ def planning_sku_recipes_list(request):
     return redirect('planning:sku_recipes')
 
 
+def _planning_job_delete_blocker(job):
+    """
+    None if `job` is safe to permanently delete; otherwise an error message.
+
+    Deleting a PlanningJob only detaches its JobCard (on_delete=SET_NULL) —
+    the JobCard itself survives. That's fine while the card is still in an
+    editable, pre-approval state (draft/pending_data/qc_rejected), but once
+    it has progressed through QC/PM approval, deleting the PlanningJob
+    orphans an already-approved JobCard with no way back into Planning to
+    manage it, while it keeps sitting in whichever workflow queue matches
+    its status (e.g. the Release tab) looking like a normal, live job.
+    """
+    job_card = getattr(job, 'job_card', None)
+    if not job_card:
+        return None
+    if job_card.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES:
+        return None
+    return (
+        f'Cannot delete planning job {job.jc_number}: its job card '
+        f'{job_card.job_card_no} has already progressed to '
+        f'"{job_card.workflow_status_label}". Archive or cancel it '
+        f'instead of permanently deleting it, or resolve the job card first.'
+    )
+
+
 @login_required
 def planning_home(request):
     from printing_plates.models import PlateRequest
@@ -829,7 +854,35 @@ def planning_home(request):
                 messages.error(request, 'Select at least one planning row to delete.')
                 return redirect('planning:jobs')
 
-            deleted_count = PlanningJob.objects.filter(id__in=selected_ids, is_active=True).delete()[0]
+            candidates = PlanningJob.objects.filter(id__in=selected_ids, is_active=True).select_related('job_card')
+            deletable_ids = []
+            blocked_labels = []
+            for candidate in candidates:
+                blocker = _planning_job_delete_blocker(candidate)
+                if blocker:
+                    blocked_labels.append(candidate.jc_number)
+                else:
+                    deletable_ids.append(candidate.id)
+
+            deleted_count = 0
+            if deletable_ids:
+                for job in PlanningJob.objects.filter(id__in=deletable_ids):
+                    ChangeLog.objects.create(
+                        entity_type='planning_job',
+                        record_id=job.pk,
+                        record_label=job.jc_number,
+                        action='delete',
+                        changed_by=request.user,
+                        change_reason='Bulk delete from Planning Jobs list',
+                    )
+                deleted_count = PlanningJob.objects.filter(id__in=deletable_ids).delete()[0]
+
+            if blocked_labels:
+                messages.error(
+                    request,
+                    f'Skipped {len(blocked_labels)} job(s) with an already-approved job card '
+                    f'(archive or cancel instead): {", ".join(blocked_labels)}.',
+                )
             messages.success(request, f'Bulk delete complete. Deleted {deleted_count} jobs.')
             return redirect('planning:jobs')
 
@@ -847,7 +900,19 @@ def planning_home(request):
                 return redirect('planning:jobs')
 
             if action == 'delete':
+                blocker = _planning_job_delete_blocker(job)
+                if blocker:
+                    messages.error(request, blocker)
+                    return redirect('planning:jobs')
                 try:
+                    ChangeLog.objects.create(
+                        entity_type='planning_job',
+                        record_id=job.pk,
+                        record_label=job.jc_number,
+                        action='delete',
+                        changed_by=request.user,
+                        change_reason='Deleted from Planning Jobs list',
+                    )
                     job.delete()
                     messages.success(request, f'Planning job {job.jc_number} was permanently deleted.')
                 except ProtectedError:
@@ -1384,7 +1449,36 @@ def planning_jobs_archived(request):
                 if not _user_is_admin(request.user):
                     messages.error(request, 'Only administrators can permanently delete archived planning jobs.')
                     return redirect('planning:jobs_archived')
-                deleted_count = PlanningJob.objects.filter(id__in=selected_ids, is_active=False).delete()[0]
+
+                candidates = PlanningJob.objects.filter(id__in=selected_ids, is_active=False).select_related('job_card')
+                deletable_ids = []
+                blocked_labels = []
+                for candidate in candidates:
+                    blocker = _planning_job_delete_blocker(candidate)
+                    if blocker:
+                        blocked_labels.append(candidate.jc_number)
+                    else:
+                        deletable_ids.append(candidate.id)
+
+                deleted_count = 0
+                if deletable_ids:
+                    for job in PlanningJob.objects.filter(id__in=deletable_ids):
+                        ChangeLog.objects.create(
+                            entity_type='planning_job',
+                            record_id=job.pk,
+                            record_label=job.jc_number,
+                            action='delete',
+                            changed_by=request.user,
+                            change_reason='Bulk delete from Archived Planning Jobs list',
+                        )
+                    deleted_count = PlanningJob.objects.filter(id__in=deletable_ids).delete()[0]
+
+                if blocked_labels:
+                    messages.error(
+                        request,
+                        f'Skipped {len(blocked_labels)} job(s) with an already-approved job card '
+                        f'(archive or cancel instead): {", ".join(blocked_labels)}.',
+                    )
                 messages.success(request, f'Bulk delete complete. Deleted {deleted_count} jobs.')
                 return redirect('planning:jobs_archived')
 
@@ -1418,6 +1512,18 @@ def planning_jobs_archived(request):
             if not _user_is_admin(request.user):
                 messages.error(request, 'Only administrators can permanently delete archived planning jobs.')
                 return redirect('planning:jobs_archived')
+            blocker = _planning_job_delete_blocker(job)
+            if blocker:
+                messages.error(request, blocker)
+                return redirect('planning:jobs_archived')
+            ChangeLog.objects.create(
+                entity_type='planning_job',
+                record_id=job.pk,
+                record_label=job.jc_number,
+                action='delete',
+                changed_by=request.user,
+                change_reason='Deleted from Archived Planning Jobs list',
+            )
             job.delete()
             messages.success(request, f'Planning job {job.jc_number} was permanently deleted.')
             return redirect('planning:jobs_archived')
