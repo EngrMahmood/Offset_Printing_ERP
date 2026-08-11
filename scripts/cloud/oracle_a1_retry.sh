@@ -126,7 +126,7 @@ while true; do
     exit 0
   fi
 
-  if echo "$result" | grep -qiE "out of (host )?capacity|toomanyrequests|429"; then
+  if echo "$result" | grep -qiE "out of (host )?capacity|toomanyrequests|429|connection.*timed out|connectionerror|timeout"; then
     echo "  -> capacity/rate-limit issue, will retry in ${RETRY_INTERVAL_SECONDS}s."
   else
     echo ""

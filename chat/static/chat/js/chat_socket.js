@@ -514,12 +514,25 @@
     document.getElementById('chat-composer').addEventListener('submit', function (event) {
         event.preventDefault();
         if (!state.currentRoomId) return;
+        // Guard against a slow/in-flight send being fired twice (e.g. the
+        // server is under load and the user presses Enter or the send
+        // button again before the first request has come back) -- without
+        // this, each press creates a distinct message with its own ID, so
+        // the existing same-ID dedup in appendMessage() never catches it.
+        if (state.sendingMessage) return;
+
         const input = document.getElementById('chat-message-input');
         const body = input.value.trim();
         if (!body) return;
 
         const postBody = { body: body };
         if (state.replyToMessageId) postBody.reply_to = state.replyToMessageId;
+
+        const composer = event.target;
+        const submitBtn = composer.querySelector('button[type="submit"]');
+        state.sendingMessage = true;
+        input.disabled = true;
+        if (submitBtn) submitBtn.disabled = true;
 
         api((urls.messages || '').replace('/0/', '/' + state.currentRoomId + '/'), {
             method: 'POST',
@@ -533,6 +546,11 @@
             loadRoomList();
         }).catch(function (err) {
             alert((err.data && err.data.detail) || 'Could not send message.');
+        }).finally(function () {
+            state.sendingMessage = false;
+            input.disabled = false;
+            if (submitBtn) submitBtn.disabled = false;
+            input.focus();
         });
     });
 
