@@ -19,7 +19,7 @@ set "STANDBY_KEY=%USERPROFILE%\.ssh\offset-erp-oracle.key"
 set "STANDBY_HOST=offseterpbackup.duckdns.org"
 set "VM_USER=ubuntu"
 set "REPO_DIR=%~dp0..\..\.."
-set "LOG_FILE=%REPO_DIR%\backups\update_standby.log"
+set "LOG_FILE=%REPO_DIR%\backups\update_standby_all.log"
 
 if not exist "%REPO_DIR%\backups" mkdir "%REPO_DIR%\backups"
 echo [%date% %time%] Starting full standby update (code + data) >> "%LOG_FILE%"
