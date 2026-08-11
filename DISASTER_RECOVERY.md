@@ -1,40 +1,50 @@
 # Disaster Recovery — If This PC Crashes / Is Replaced
 
-This covers what to do if the Windows PC running the ERP (and used to manage
-the cloud deployment) dies, is replaced, or otherwise becomes unavailable.
+**As of 2026-08-11, the Windows PC is dev-only.** Production is the cloud VM
+at `offseterp.duckdns.org` (Oracle A1 instance). This doc originally assumed
+the PC was the authoritative primary — it no longer is. See
+`DEPLOY_CLOUD.md` section 6 for the current architecture.
+
+This covers what to do if the Windows PC dies, is replaced, or otherwise
+becomes unavailable.
 
 ## What's actually at risk
 
-Most of this setup lives in places that survive a PC crash on their own:
+Most of this setup lives in places that survive a PC crash on their own —
+and now that production runs on the cloud VM independently of this PC, a PC
+crash is a *development environment* loss, not a data-loss event:
 
 | Thing | Where it really lives | At risk if this PC dies? |
 |---|---|---|
 | App source code | GitHub (`EngrMahmood/Offset_Printing_ERP`) | No |
-| Cloud server itself | Oracle Cloud (independent VM) | No — keeps running |
-| Cloud database/media | Oracle VM's disk | No |
+| Production server + database | Oracle Cloud A1 instance (`offseterp.duckdns.org`), independent VM | No — keeps running |
+| Standby server + database | Oracle Cloud old VM (`offseterpbackup.duckdns.org`), independent VM, kept in sync via `sync_standby_from_primary.bat` | No — keeps running |
 | Cloud backups | Google Drive (`offseterp@gmail.com`) | No |
-| **Production database (freshest copy)** | **This PC's `db.sqlite3`** | **Yes** |
-| Daily local backups | `E:\Offset ERP DB Backup`, mirrored to OneDrive | Only if OneDrive wasn't syncing |
-| **SSH private key** (VM access) | `%USERPROFILE%\.ssh\offset-erp-oracle.key` | **Yes — only copy** |
+| This PC's local `db.sqlite3` | This PC (dev/test data only — not production) | Yes, but not production data |
+| **SSH private key (primary)** | `%USERPROFILE%\.ssh\offset-erp-oracle-a1` | **Yes — only copy** |
+| **SSH private key (standby)** | `%USERPROFILE%\.ssh\offset-erp-oracle.key` | **Yes — only copy** |
 | **Android signing keystore** | `android-twa\android.keystore` + password | **Yes — only copy, and irreplaceable** |
 
-The two bolded "only copy" items are the real single points of failure —
-back those up **before** anything happens, not after.
+The bolded "only copy" items are the real single points of failure — back
+those up **before** anything happens, not after. Losing this PC does **not**
+put production data at risk; it only costs you your dev environment and,
+until restored, your ability to deploy/sync from a PC.
 
 ## Do this now, before any crash
 
-1. **Back up the SSH key**: copy `%USERPROFILE%\.ssh\offset-erp-oracle.key`
-   to a password manager or another secure, separate location (a second
-   device, encrypted USB drive, etc.). Anyone with this file can access the
-   cloud server, so treat it like a password, not a regular file.
+1. **Back up both SSH keys**: copy `%USERPROFILE%\.ssh\offset-erp-oracle-a1`
+   (primary) and `%USERPROFILE%\.ssh\offset-erp-oracle.key` (standby) to a
+   password manager or another secure, separate location (a second device,
+   encrypted USB drive, etc.). Anyone with these files can access the cloud
+   servers, so treat them like passwords, not regular files.
 2. **Back up the Android keystore**: same treatment for
    `android-twa\android.keystore` and `android-twa\keystore_password.txt`.
    If these are lost, you can never publish another update to the existing
    Play Store app listing — there is no recovery path for this one.
 3. **Confirm OneDrive is actually syncing** — open OneDrive's tray icon and
    check `Offset ERP DB Backup` shows a green checkmark (fully synced), not
-   a spinning/paused icon. This is what makes your local daily backups
-   survive a PC loss.
+   a spinning/paused icon. This only backs up whatever local dev data is on
+   this PC — it is not a production backup.
 
 ## If this PC crashes and you're setting up a new one
 
@@ -51,28 +61,27 @@ Two things `requirements.txt` can't cover, since they're not Python packages:
   chat/notifications/caching. `channels`/`cache` in `settings.py` are
   already set to talk RESP2 for compatibility with older Redis 5.x.
 
-### 2. Get the production database back
-The cloud VM has the most recent *synced* copy (as of the last nightly
-sync — could be up to 24h stale). Pull it back down:
+### 2. Get a local dev copy of the database (optional)
+Production data lives on the cloud VM and was **not** affected by the PC
+crash — there's nothing to "recover" there. If you want a fresh local copy
+for dev/testing on the new PC, use the read-only pull script once the SSH
+key is restored (next step):
 ```bash
-ssh -i <path-to-restored-ssh-key> ubuntu@offseterp.duckdns.org \
-  "docker compose -f ~/offset-erp/docker-compose.yml exec web cat /data/db.sqlite3" > db.sqlite3
+scripts\cloud\pull_db_from_cloud.bat
 ```
-If you have a **more recent** local backup recovered from OneDrive
-(`Offset ERP DB Backup` folder), that one is fresher — use that instead as
-`db.sqlite3` in the project root. Compare timestamps and pick the newer one.
+This saves a timestamped copy under `backups\from_cloud\` — do **not**
+overwrite the live cloud database from this PC (`sync_db_to_cloud.bat` is
+retired for exactly this reason; see `DEPLOY_CLOUD.md` section 6).
 
-Also recover `media/` the same way — either from OneDrive's backup ZIPs
-(the app's `/backup/` includes media if that setting was enabled) or by
-copying it back down from the VM's `offset-erp_media` Docker volume.
-
-### 3. Restore the SSH key
-Copy your backed-up `offset-erp-oracle.key` to
-`%USERPROFILE%\.ssh\offset-erp-oracle.key` on the new PC. If you didn't
-back it up and it's truly gone, you'll need to add a new key via **Oracle
-Cloud Console → Compute → Instances → offset-erp-server → Console
+### 3. Restore the SSH key(s)
+Copy your backed-up `offset-erp-oracle-a1` (primary) to
+`%USERPROFILE%\.ssh\offset-erp-oracle-a1`, and `offset-erp-oracle.key`
+(standby) to `%USERPROFILE%\.ssh\offset-erp-oracle.key` on the new PC. If
+you didn't back one up and it's truly gone, you'll need to add a new key via
+**Oracle Cloud Console → Compute → Instances → [instance name] → Console
 Connection** (browser-based serial console, doesn't need SSH) to log in and
-add a new public key to `~/.ssh/authorized_keys` manually.
+add a new public key to `~/.ssh/authorized_keys` manually — do this for
+whichever instance's key you lost.
 
 ### 4. Restore the Android keystore
 Copy `android.keystore` and `keystore_password.txt` back into `android-twa/`
@@ -101,11 +110,11 @@ Follow `DEPLOYMENT.md` for the normal server startup process (this hasn't
 changed — same as before any of the cloud work).
 
 ### 7. Verify
-- Log in locally, confirm the restored data looks right (spot-check a few
-  recent job cards against what you remember).
-- Run `scripts\cloud\sync_db_to_cloud.bat` once to push the recovered data back
-  up to the cloud copy, so both sides match again (only if the Windows PC
-  is still primary — see the note in step 5 above).
+- Log in locally against the dev server, confirm it comes up.
+- Do **not** run `sync_db_to_cloud.bat` to "push data back" — that
+  direction is retired and would overwrite real production data with stale
+  dev data. If you need current data locally, use
+  `scripts\cloud\pull_db_from_cloud.bat` instead (cloud → PC, read-only).
 - Confirm `https://offseterp.duckdns.org` is still reachable (it should be
   — the cloud VM never went down, it's independent of this PC).
 

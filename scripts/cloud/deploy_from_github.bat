@@ -8,7 +8,7 @@ REM only updates the cloud copy at https://offseterp.duckdns.org.
 setlocal
 
 set "SILENT=%~1"
-set "KEY_PATH=%USERPROFILE%\.ssh\offset-erp-oracle.key"
+set "KEY_PATH=%USERPROFILE%\.ssh\offset-erp-oracle-a1"
 set "VM_HOST=offseterp.duckdns.org"
 set "VM_USER=ubuntu"
 

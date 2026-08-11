@@ -5,14 +5,26 @@ LAN server — untouched by any of this). This doc covers standing up a
 **separate, public** deployment on a free cloud VM and making it installable
 on Android as a PWA.
 
-**Live deployment**: `offset-erp-server` on Oracle Cloud (Mumbai region),
-**https://offseterp.duckdns.org** — VM.Standard.E2.1.Micro (1 OCPU/1GB + 2GB
-swap), Ubuntu 24.04, public IP `130.210.51.29`. Set up 2026-08-04. (Originally
-launched on a `sslip.io` hostname, then moved to this free DuckDNS name —
-same VM/cert-issuing process either way, see §1a below for either option.)
+**Live deployment (production, as of 2026-08-11)**: `offseterp-a1` on Oracle
+Cloud (Mumbai region), **https://offseterp.duckdns.org** — Ampere A1
+(2 OCPU/~11.7GB RAM), Ubuntu 24.04, public IP `130.210.16.111`. This is now
+**the** authoritative production system — all real work (web + Android)
+happens here.
 
-Nothing here changes how the Windows server runs. Do this in parallel, verify
-it, and only decide about cutover once it's proven stable.
+**Standby**: the original VM, `offset-erp-server` (VM.Standard.E2.1.Micro,
+1 OCPU/1GB + 2GB swap, public IP `130.210.51.29`), kept alive at
+**https://offseterpbackup.duckdns.org** as a warm standby, refreshed by a
+one-directional pull FROM the primary (see §6). Never terminated — see the
+failover runbook in §6a if the primary ever goes down.
+
+**The Windows PC (`DEPLOYMENT.md`) is development-only as of 2026-08-11.**
+It is *not* a source of truth and its local `db.sqlite3` should not be
+treated as production data — it fell behind the cloud VM significantly
+before this was caught (the cloud VM was the one real users, including
+remote/mobile, were actually writing to). Do not re-enable
+`sync_db_to_cloud.bat` or its scheduled task as a push (Windows → cloud) —
+that direction is retired. Use `pull_db_from_cloud.bat` if you want a local
+read-only copy for dev/testing.
 
 **If this PC (the one managing the cloud deployment) is ever lost/crashes**,
 see `DISASTER_RECOVERY.md` — the live site keeps running regardless, but the
@@ -180,7 +192,7 @@ code change (not data — see §6 for that) from GitHub to the live server:
 
 **Manual**:
 ```bash
-ssh -i ~/.ssh/offset-erp-oracle.key ubuntu@offseterp.duckdns.org
+ssh -i ~/.ssh/offset-erp-oracle-a1 ubuntu@offseterp.duckdns.org
 bash ~/offset-erp/scripts/cloud/deploy_update.sh
 ```
 
@@ -193,51 +205,58 @@ migrating (same startup-race note as §3) if there were pending migrations.
 If you don't have the SSH key or terminal access handy, ask me to run it —
 same one-liner either way.
 
-## 6. Keeping the cloud copy in sync with production
+## 6. Keeping the standby in sync with production
 
-The cloud deployment is a **separate copy** of the data — nothing syncs
-automatically between it and the Windows LAN server unless you push it.
+**As of 2026-08-11, the cloud VM (`offseterp.duckdns.org`) is production and
+the Windows PC is development-only.** `sync_db_to_cloud.bat` (Windows →
+cloud push) is **retired** — running it would overwrite real production data
+with the stale Windows dev copy. Its scheduled task ("Offset ERP Cloud
+Sync") is disabled; leave it disabled.
 
-> **Once the cloud VM becomes the primary server, stop using this
-> direction entirely.** `sync_db_to_cloud.bat` pushes local → cloud and
-> *overwrites* whatever's on the VM — fine while the Windows PC is the
-> source of truth, actively destructive once real users are writing data
-> directly on the VM. Any scheduled task running it should be disabled
-> before cutover (`schtasks /Change /TN "Offset ERP Cloud Sync" /DISABLE`
-> on whichever PC has it registered). Use `pull_db_from_cloud.bat`
-> (cloud → local, read-only) instead if you still want a local copy.
+**Standby refresh (primary → old VM, one-directional pull)**: double-click
+`scripts\cloud\sync_standby_from_primary.bat` to refresh the standby
+(`offseterpbackup.duckdns.org`, the old VM) with a fresh snapshot pulled
+from the primary. Safe to run anytime — takes a live snapshot on the
+primary via Docker, downloads it to this PC, then uploads/loads it into the
+standby. Needs both `%USERPROFILE%\.ssh\offset-erp-oracle-a1` (primary) and
+`%USERPROFILE%\.ssh\offset-erp-oracle.key` (standby). Log:
+`backups\sync_standby.log`.
 
-**Manual, one click**: double-click `scripts\cloud\sync_db_to_cloud.bat`
-anytime. It takes a live, non-disruptive snapshot of `db.sqlite3` (SQLite's
-online backup API — safe even with the production server actively in use),
-packs `media/`, uploads both to the VM, and loads them into the running
-deployment. Needs `%USERPROFILE%\.ssh\offset-erp-oracle.key` present (the
-VM's SSH private key). Falls back to whatever Python is on PATH if no
-project venv is set up on that machine.
+**Local dev copy (read-only)**: `scripts\cloud\pull_db_from_cloud.bat`
+downloads a read-only snapshot of the primary's data to this PC for local
+development/testing — does not touch the live server.
 
-**Automatic (only while the Windows PC is still primary)**:
-`scripts\cloud\ERP_CloudSync_Task.xml` can be registered as a Windows
-Scheduled Task ("Offset ERP Cloud Sync") wrapping the script above. Check
-`backups\sync_to_cloud.log` for a history of runs/results. Register with:
-```
-schtasks /Create /F /TN "Offset ERP Cloud Sync" /XML "scripts\cloud\ERP_CloudSync_Task.xml"
-```
+### 6a. Manual failover runbook
 
-**Manual fallback, no script/SSH command-line needed (WinSCP)**: if the
-`.bat` script or SSH access is ever unavailable, you can push a database
-file by hand:
+If the primary (`130.210.16.111`) ever goes down:
+1. Re-point `offseterp.duckdns.org`'s A record (DuckDNS dashboard) to the
+   standby's IP, `130.210.51.29`.
+2. On the standby VM: stop nginx, `sudo certbot certonly --standalone
+   --non-interactive --agree-tos -m you@example.com -d offseterp.duckdns.org`,
+   copy the new cert into `certs/`, update `.env` `ALLOWED_HOSTS`/
+   `CSRF_TRUSTED_ORIGINS` to `offseterp.duckdns.org`, `docker compose up -d`.
+3. It becomes primary until the original is fixed. Deliberately manual — no
+   automatic health-check failover at this scale.
+
+**Manual fallback, no script/SSH command-line needed (WinSCP)**: this is for
+refreshing the **standby** (`offseterpbackup.duckdns.org`) only, if
+`sync_standby_from_primary.bat` or SSH access is ever unavailable. **Do not**
+do this against `offseterp.duckdns.org` (the primary) — pushing any local
+Windows PC file there would overwrite real production data with a stale dev
+copy, exactly what `sync_db_to_cloud.bat` being retired is meant to prevent.
 1. Install **WinSCP** (free, winscp.net).
-2. New Session → File protocol: **SFTP** → Host name: `offseterp.duckdns.org`
-   → User name: `ubuntu` → Advanced → SSH → Authentication → Private key
-   file: browse to `%USERPROFILE%\.ssh\offset-erp-oracle.key` (convert to
-   `.ppk` with WinSCP's bundled PuTTYgen if it won't accept the OpenSSH
-   format directly — it'll prompt you to do this automatically) → Login.
-3. Get a database file to upload — either a fresh snapshot (see the Python
-   one-liner in `scripts\cloud\sync_db_to_cloud.bat` step [1/5]) or a ZIP
-   downloaded from the cloud site's own `/backup/` dashboard (extract
-   `db.sqlite3` from it first).
-4. Drag that file onto the VM's home directory (`/home/ubuntu/`) in WinSCP's
-   remote pane, named `sync_db.sqlite3`.
+2. New Session → File protocol: **SFTP** → Host name:
+   `offseterpbackup.duckdns.org` → User name: `ubuntu` → Advanced → SSH →
+   Authentication → Private key file: browse to
+   `%USERPROFILE%\.ssh\offset-erp-oracle.key` (convert to `.ppk` with
+   WinSCP's bundled PuTTYgen if it won't accept the OpenSSH format directly
+   — it'll prompt you to do this automatically) → Login.
+3. Get a database file to upload — a fresh snapshot pulled from the
+   *primary* (see the Python one-liner in
+   `scripts\cloud\sync_standby_from_primary.bat` step [1/5], or just run
+   `pull_db_from_cloud.bat` first and use its output).
+4. Drag that file onto the standby VM's home directory (`/home/ubuntu/`) in
+   WinSCP's remote pane, named `sync_db.sqlite3`.
 5. **One remaining step still needs a terminal** — a file sitting on the
    VM's disk doesn't reach the running app by itself. Open WinSCP's built-in
    terminal (Commands → Open Terminal, or use PuTTY separately with the same

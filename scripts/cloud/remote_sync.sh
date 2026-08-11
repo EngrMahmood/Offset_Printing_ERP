@@ -1,6 +1,7 @@
 #!/bin/bash
-# Run on the cloud VM by sync_db_to_cloud.bat — loads a freshly uploaded
-# db.sqlite3 + media.tar.gz into the running Docker deployment.
+# Run on the target VM by sync_standby_from_primary.bat (primary -> standby)
+# or the retired sync_db_to_cloud.bat — loads a freshly uploaded db.sqlite3 +
+# media.tar.gz into the running Docker deployment.
 set -e
 cd ~/offset-erp
 docker compose cp ~/sync_db.sqlite3 web:/data/db.sqlite3

@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
   <RegistrationInfo>
-    <Description>Offset ERP daily cloud sync. Pushes a live snapshot of the production database and media to the cloud deployment (offseterp.duckdns.org) at 20:20 every day, 15 minutes after the local auto-backup task.</Description>
+    <Description>RETIRED as of 2026-08-11 (left Disabled in Task Scheduler - do not re-enable). Used to push a live snapshot of the Windows PC's database to the cloud (offseterp.duckdns.org) daily at 20:20, back when the PC was the authoritative primary. That is no longer true: offseterp.duckdns.org is now production and this PC is dev-only, so this direction would overwrite real data. See DEPLOY_CLOUD.md section 6.</Description>
     <URI>\Offset ERP Cloud Sync</URI>
   </RegistrationInfo>
   <Triggers>

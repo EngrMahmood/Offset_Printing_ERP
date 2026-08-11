@@ -1,20 +1,31 @@
 @echo off
-REM Pushes a live snapshot of the production SQLite database (and media
-REM files) from this Windows PC up to the cloud deployment on Oracle Cloud.
-REM Safe to run while the production server is actively in use — it uses
-REM SQLite's online backup API, not a raw file copy, so it never reads a
-REM half-written page.
+REM *** RETIRED as of 2026-08-11 ***
+REM This pushed Windows PC -> cloud, back when the Windows PC was the
+REM authoritative source. That is no longer true: the cloud VM
+REM (offseterp.duckdns.org) is now production, and this Windows PC is
+REM development-only. Running this script would OVERWRITE real production
+REM data with the stale/older Windows copy.
 REM
-REM Double-click this file to run it.
+REM If you actually need this direction again for some reason, pass "force"
+REM as the first argument. Otherwise use sync_standby_from_primary.bat
+REM (primary -> standby) or pull_db_from_cloud.bat (cloud -> local, read-only)
+REM instead. See DEPLOY_CLOUD.md section 6.
+if /i not "%~1"=="force" (
+    echo ============================================
+    echo  This script is retired - see comment block at top of file.
+    echo  Re-run with "force" as the first argument if you really mean it.
+    echo ============================================
+    goto :eof
+)
 
 setlocal
 
-REM Pass "silent" as the first argument (used by the scheduled task) to skip
-REM the "press any key" prompt at the end, since no one is there to press it.
-set "SILENT=%~1"
+REM Pass "silent" as the second argument (first is "force") to skip the
+REM "press any key" prompt at the end, since no one is there to press it.
+set "SILENT=%~2"
 
 REM ---- Configuration ----
-set "KEY_PATH=%USERPROFILE%\.ssh\offset-erp-oracle.key"
+set "KEY_PATH=%USERPROFILE%\.ssh\offset-erp-oracle-a1"
 set "VM_HOST=offseterp.duckdns.org"
 set "VM_USER=ubuntu"
 set "REPO_DIR=%~dp0..\.."

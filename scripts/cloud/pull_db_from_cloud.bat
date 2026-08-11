@@ -11,7 +11,7 @@ REM Pass "silent" as the first argument to skip the "press any key" prompt.
 set "SILENT=%~1"
 
 REM ---- Configuration ----
-set "KEY_PATH=%USERPROFILE%\.ssh\offset-erp-oracle.key"
+set "KEY_PATH=%USERPROFILE%\.ssh\offset-erp-oracle-a1"
 set "VM_HOST=offseterp.duckdns.org"
 set "VM_USER=ubuntu"
 set "REPO_DIR=%~dp0..\.."
