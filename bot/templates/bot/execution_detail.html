@@ -1,0 +1,129 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Execution #{{ execution.pk }} | Bot / Automation{% endblock %}
+
+{% block extra_head %}
+<style>
+    .bot-meta-grid {
+        display: grid;
+        grid-template-columns: 160px 1fr;
+        gap: 6px 14px;
+        font-size: 13px;
+    }
+    .bot-meta-grid dt { font-weight: 600; color: #475569; }
+    .bot-meta-grid dd { margin: 0; word-break: break-word; }
+    .bot-email-frame {
+        border: 1px solid #d7dee6;
+        border-radius: 0 0 6px 6px;
+        background: #ffffff;
+        padding: 18px 20px;
+        overflow-x: auto;
+    }
+    .bot-subject-bar {
+        background: #f1f5f9;
+        border: 1px solid #d7dee6;
+        border-bottom: none;
+        border-radius: 6px 6px 0 0;
+        padding: 10px 20px;
+        font-weight: 600;
+        font-size: 14px;
+    }
+    .bot-error-box {
+        background: #fef2f2;
+        border: 1px solid #fecaca;
+        border-radius: 6px;
+        padding: 12px 14px;
+        font-size: 12px;
+        white-space: pre-wrap;
+        overflow-x: auto;
+    }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+
+    <div class="erp-page-intro">
+        <div>
+            <h2 class="erp-section-title">
+                {{ execution.bot.name }} — {{ execution.started_at|date:"d M Y, h:i A" }}
+            </h2>
+            <p class="erp-card-subtitle">
+                Execution #{{ execution.pk }} · {{ execution.get_trigger_display }} trigger
+            </p>
+        </div>
+        <div class="erp-actions">
+            <a href="{% url 'bot:execution_list' %}" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back to History
+            </a>
+            <a href="{% url 'bot:bot_preview' execution.bot.pk %}" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-eye"></i> Preview Current
+            </a>
+        </div>
+    </div>
+
+    <div class="erp-section-shell">
+        <h3 class="erp-section-title">Result</h3>
+        <dl class="bot-meta-grid">
+            <dt>Status</dt>
+            <dd>
+                {% if execution.status == 'SENT' %}
+                    <span class="erp-badge erp-badge-approved">Sent</span>
+                {% elif execution.status == 'FAILED' %}
+                    <span class="erp-badge erp-badge-rejected">Failed</span>
+                {% elif execution.status == 'SKIPPED' %}
+                    <span class="erp-badge erp-badge-pending">Skipped — no records to report</span>
+                {% else %}
+                    <span class="erp-badge erp-badge-production">Running</span>
+                {% endif %}
+            </dd>
+            <dt>Started</dt>
+            <dd>{{ execution.started_at|date:"d M Y, h:i:s A" }}</dd>
+            <dt>Finished</dt>
+            <dd>{{ execution.finished_at|date:"d M Y, h:i:s A"|default:"—" }}</dd>
+            <dt>Duration</dt>
+            <dd>{% if execution.duration_seconds %}{{ execution.duration_seconds }} s{% else %}—{% endif %}</dd>
+            <dt>Records</dt>
+            <dd>{{ execution.record_count|default_if_none:"—" }}</dd>
+            <dt>Attachment</dt>
+            <dd>{{ execution.attachment_name|default:"None" }}</dd>
+            <dt>Triggered by</dt>
+            <dd>
+                {% if execution.triggered_by %}
+                    {{ execution.triggered_by.get_full_name|default:execution.triggered_by.username }}
+                {% else %}
+                    Scheduler
+                {% endif %}
+            </dd>
+        </dl>
+    </div>
+
+    <div class="erp-section-shell">
+        <h3 class="erp-section-title">Recipients</h3>
+        <dl class="bot-meta-grid">
+            <dt>To</dt>
+            <dd>{{ execution.recipients_to|default:"—" }}</dd>
+            <dt>CC</dt>
+            <dd>{{ execution.recipients_cc|default:"—" }}</dd>
+            <dt>BCC</dt>
+            <dd>{{ execution.recipients_bcc|default:"—" }}</dd>
+        </dl>
+    </div>
+
+    {% if execution.error_message %}
+    <div class="erp-section-shell">
+        <h3 class="erp-section-title">Error</h3>
+        <div class="bot-error-box">{{ execution.error_message }}</div>
+    </div>
+    {% endif %}
+
+    {% if execution.rendered_subject or execution.rendered_body %}
+    <div class="erp-section-shell">
+        <h3 class="erp-section-title">Email as generated</h3>
+        <div class="bot-subject-bar">{{ execution.rendered_subject|default:"(no subject)" }}</div>
+        <div class="bot-email-frame">{{ execution.rendered_body|safe }}</div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}

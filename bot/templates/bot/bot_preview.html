@@ -1,0 +1,142 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Preview — {{ bot.name }} | Bot / Automation{% endblock %}
+
+{% block extra_head %}
+<style>
+    .bot-meta-grid {
+        display: grid;
+        grid-template-columns: 140px 1fr;
+        gap: 6px 14px;
+        font-size: 13px;
+    }
+    .bot-meta-grid dt { font-weight: 600; color: #475569; }
+    .bot-meta-grid dd { margin: 0; word-break: break-word; }
+    .bot-email-frame {
+        border: 1px solid #d7dee6;
+        border-radius: 6px;
+        background: #ffffff;
+        padding: 18px 20px;
+        overflow-x: auto;
+    }
+    .bot-subject-bar {
+        background: #f1f5f9;
+        border: 1px solid #d7dee6;
+        border-bottom: none;
+        border-radius: 6px 6px 0 0;
+        padding: 10px 20px;
+        font-weight: 600;
+        font-size: 14px;
+    }
+    .bot-subject-bar + .bot-email-frame { border-radius: 0 0 6px 6px; }
+    .bot-test-row { display: flex; gap: 8px; align-items: flex-end; flex-wrap: wrap; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+
+    <div class="erp-page-intro">
+        <div>
+            <h2 class="erp-section-title">Preview — {{ bot.name }}</h2>
+            <p class="erp-card-subtitle">
+                This is rendered by the same code that sends the real email. Nothing has been sent.
+            </p>
+        </div>
+        <div class="erp-actions">
+            <a href="{% url 'bot:bot_list' %}" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            <a href="{% url 'bot:bot_edit' bot.pk %}" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-cog"></i> Edit
+            </a>
+        </div>
+    </div>
+
+    {% if error %}
+        <div class="erp-alert erp-alert-danger">
+            <strong>The report could not be generated.</strong><br>
+            <code>{{ error }}</code><br>
+            <small>
+                Check the Report and Report filters on the edit screen. A scheduled run
+                in this state would be logged as Failed, not sent.
+            </small>
+        </div>
+    {% endif %}
+
+    {% if would_skip %}
+        <div class="erp-alert erp-alert-warning">
+            The report currently returns <strong>0 rows</strong> and
+            <em>Send when empty</em> is off — a scheduled run right now would be logged as
+            <strong>Skipped</strong> and no email would go out.
+        </div>
+    {% endif %}
+
+    <div class="erp-section-shell">
+        <h3 class="erp-section-title">Delivery</h3>
+        <dl class="bot-meta-grid">
+            <dt>To</dt>
+            <dd>{% if to %}{{ to|join:", " }}{% else %}<span style="color:#dc2626;">No recipients resolved</span>{% endif %}</dd>
+            <dt>CC</dt>
+            <dd>{{ cc|join:", "|default:"—" }}</dd>
+            <dt>BCC</dt>
+            <dd>{{ bcc|join:", "|default:"—" }}</dd>
+            <dt>Schedule</dt>
+            <dd>{{ bot.get_frequency_display }} at {{ bot.send_time|time:"h:i A" }} (Asia/Karachi)</dd>
+            <dt>Records</dt>
+            <dd>{% if parts %}{{ parts.record_count }}{% else %}—{% endif %}</dd>
+            <dt>Attachment</dt>
+            <dd>
+                {% if bot.attach_report %}
+                    {{ bot.get_attachment_format_display }} — generated at send time
+                {% else %}
+                    Off
+                {% endif %}
+            </dd>
+            <dt>Status</dt>
+            <dd>
+                {% if bot.is_active %}
+                    <span class="erp-badge erp-badge-approved">Active</span>
+                {% else %}
+                    <span class="erp-badge erp-badge-pending">Inactive</span>
+                {% endif %}
+            </dd>
+        </dl>
+    </div>
+
+    {% if parts %}
+    <div class="erp-section-shell">
+        <h3 class="erp-section-title">Email</h3>
+        <div class="bot-subject-bar">{{ parts.subject }}</div>
+        <div class="bot-email-frame">{{ parts.html_body|safe }}</div>
+    </div>
+
+    <div class="erp-section-shell">
+        <h3 class="erp-section-title">Send a test copy</h3>
+        <p class="erp-card-subtitle">
+            Sends this exact email to one address only. Logged as a Test execution;
+            the real recipients are not contacted.
+        </p>
+        <form method="post" action="{% url 'bot:bot_test_send' bot.pk %}" class="bot-test-row">
+            {% csrf_token %}
+            <div>
+                <label for="{{ test_form.email.id_for_label }}"
+                       style="display:block; font-weight:600; font-size:13px;">
+                    {{ test_form.email.label }}
+                </label>
+                {{ test_form.email }}
+            </div>
+            <button type="submit" class="erp-btn erp-btn-success">
+                <i class="fas fa-paper-plane"></i> Send Test
+            </button>
+        </form>
+    </div>
+
+    <details class="erp-section-shell">
+        <summary style="cursor:pointer; font-weight:600;">Plain-text version (what non-HTML clients see)</summary>
+        <pre style="white-space:pre-wrap; font-size:12px; margin-top:12px;">{{ parts.text_body }}</pre>
+    </details>
+    {% endif %}
+
+</div>
+{% endblock %}

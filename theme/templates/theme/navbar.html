@@ -136,6 +136,14 @@
                class="erp-topnav-module {% if app == 'backup' %}is-active{% endif %}">
                 Backup
             </a>
+            {% endif %}
+            {% if nav.can_access_bot %}
+            <a href="{% url 'bot:bot_list' %}" data-nav-key="bot" data-nav-label="Automation"
+               class="erp-topnav-module {% if app == 'bot' %}is-active{% endif %}">
+                Automation
+            </a>
+            {% endif %}
+            {% if request.user.is_superuser or request.user.profile.role == 'admin' %}
             <a href="{% url 'notification_settings_home' %}" data-nav-key="settings" data-nav-label="Settings"
                class="erp-topnav-module {% if url == 'notification_settings_home' %}is-active{% endif %}">
                 Settings
@@ -534,6 +542,17 @@
         <a href="{% url 'backup:settings' %}"
            class="erp-subnav-link {% if url == 'settings' %}is-active{% endif %}">
             Backup Settings
+        </a>
+    </div>
+    {% elif app == 'bot' %}
+    <div class="erp-subnav">
+        <a href="{% url 'bot:bot_list' %}"
+           class="erp-subnav-link {% if url == 'bot_list' or url == 'bot_create' or url == 'bot_edit' or url == 'bot_preview' %}is-active{% endif %}">
+            Automations
+        </a>
+        <a href="{% url 'bot:execution_list' %}"
+           class="erp-subnav-link {% if url == 'execution_list' or url == 'execution_detail' %}is-active{% endif %}">
+            Execution History
         </a>
     </div>
     {% endif %}

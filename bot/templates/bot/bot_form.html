@@ -1,0 +1,103 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}{% if is_create %}New Automation{% else %}{{ bot.name }}{% endif %} | Bot / Automation{% endblock %}
+
+{% block extra_head %}
+<style>
+    .bot-form-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+        gap: 16px;
+    }
+    .bot-field { display: flex; flex-direction: column; gap: 4px; }
+    .bot-field label { font-weight: 600; font-size: 13px; }
+    .bot-field .helptext { font-size: 12px; color: #64748b; }
+    .bot-field ul.errorlist { color: #dc2626; font-size: 12px; list-style: none; padding: 0; margin: 0; }
+    .bot-field-wide { grid-column: 1 / -1; }
+    .bot-checkbox-list ul { list-style: none; padding: 0; margin: 0; columns: 2; }
+    .bot-checkbox-list li { font-size: 13px; break-inside: avoid; }
+    .bot-var-table { font-size: 12px; width: 100%; border-collapse: collapse; }
+    .bot-var-table td { padding: 3px 6px; border-bottom: 1px solid #e2e8f0; }
+    .bot-var-table code { background: #eaf1f8; padding: 1px 5px; border-radius: 3px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+
+    <div class="erp-page-intro">
+        <div>
+            <h2 class="erp-section-title">
+                {% if is_create %}New Automation{% else %}{{ bot.name }}{% endif %}
+            </h2>
+            <p class="erp-card-subtitle">
+                Everything here is stored in the database — no code change is needed to
+                retime, retarget, or reword this automation.
+            </p>
+        </div>
+        <div class="erp-actions">
+            <a href="{% url 'bot:bot_list' %}" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-arrow-left"></i> Back
+            </a>
+            {% if not is_create %}
+                <a href="{% url 'bot:bot_preview' bot.pk %}" class="erp-btn erp-btn-success">
+                    <i class="fas fa-eye"></i> Preview Email
+                </a>
+            {% endif %}
+        </div>
+    </div>
+
+    {% if form.non_field_errors %}
+        <div class="erp-alert erp-alert-danger">{{ form.non_field_errors }}</div>
+    {% endif %}
+
+    <form method="post">
+        {% csrf_token %}
+
+        {% for group in form.grouped_fields %}
+            <div class="erp-section-shell">
+                <h3 class="erp-section-title">{{ group.title }}</h3>
+                <div class="bot-form-grid">
+                    {% for item in group.items %}
+                        <div class="bot-field{% if item.wide %} bot-field-wide{% endif %}{% if item.checklist %} bot-checkbox-list{% endif %}">
+                            <label {% if not item.checklist %}for="{{ item.field.id_for_label }}"{% endif %}>
+                                {{ item.field.label }}
+                            </label>
+                            {{ item.field }}
+                            {% if item.field.help_text %}
+                                <span class="helptext">{{ item.field.help_text }}</span>
+                            {% endif %}
+                            {{ item.field.errors }}
+                        </div>
+                    {% endfor %}
+                </div>
+
+                {% if group.title == 'Schedule' %}
+                    <p class="helptext" style="margin-top:8px; font-size:12px; color:#64748b;">
+                        Times are in the server timezone (Asia/Karachi).
+                    </p>
+                {% endif %}
+
+                {% if group.title == 'Email Draft' %}
+                    <div style="margin-top:12px;">
+                        <label style="font-weight:600; font-size:13px;">Available variables</label>
+                        <table class="bot-var-table">
+                            {% for name, description in variables %}
+                                <tr><td><code>{{ name }}</code></td><td>{{ description }}</td></tr>
+                            {% endfor %}
+                        </table>
+                    </div>
+                {% endif %}
+            </div>
+        {% endfor %}
+
+        <div class="erp-actions erp-actions-right">
+            <a href="{% url 'bot:bot_list' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+            <button type="submit" class="erp-btn erp-btn-success">
+                <i class="fas fa-save"></i> Save Automation
+            </button>
+        </div>
+    </form>
+
+</div>
+{% endblock %}

@@ -1,0 +1,135 @@
+{% extends 'theme/base.html' %}
+
+{% block title %}Bot Execution History | Offset ERP{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+
+    <div class="erp-page-intro">
+        <div>
+            <h2 class="erp-section-title">Execution History</h2>
+            <p class="erp-card-subtitle">
+                Every attempt — scheduled, manual and test — with the exact email that was sent.
+            </p>
+        </div>
+        <div class="erp-actions">
+            <a href="{% url 'bot:bot_list' %}" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-robot"></i> Automations
+            </a>
+        </div>
+    </div>
+
+    <div class="erp-section-shell">
+        <form method="get" class="erp-actions" style="margin-bottom:14px; align-items:flex-end;">
+            <div>
+                <label for="filter-bot" style="display:block; font-weight:600; font-size:13px;">Bot</label>
+                <select name="bot" id="filter-bot" class="erp-input">
+                    <option value="">All bots</option>
+                    {% for bot in bots %}
+                        <option value="{{ bot.pk }}" {% if selected_bot == bot.pk|stringformat:"s" %}selected{% endif %}>
+                            {{ bot.name }}
+                        </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label for="filter-status" style="display:block; font-weight:600; font-size:13px;">Status</label>
+                <select name="status" id="filter-status" class="erp-input">
+                    <option value="">All statuses</option>
+                    {% for value, label in status_choices %}
+                        <option value="{{ value }}" {% if selected_status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-filter"></i> Filter
+            </button>
+            <a href="{% url 'bot:execution_list' %}" class="erp-btn erp-btn-secondary">Clear</a>
+        </form>
+
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Date/Time</th>
+                        <th>Bot</th>
+                        <th>Trigger</th>
+                        <th>Status</th>
+                        <th>Recipients</th>
+                        <th>Records</th>
+                        <th>Error</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for execution in page_obj %}
+                    <tr>
+                        <td>{{ execution.started_at|date:"d M Y, h:i A" }}</td>
+                        <td>{{ execution.bot.name }}</td>
+                        <td>
+                            {{ execution.get_trigger_display }}
+                            {% if execution.triggered_by %}
+                                <br><small style="color:#64748b;">{{ execution.triggered_by.get_full_name|default:execution.triggered_by.username }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if execution.status == 'SENT' %}
+                                <span class="erp-badge erp-badge-approved">Sent</span>
+                            {% elif execution.status == 'FAILED' %}
+                                <span class="erp-badge erp-badge-rejected">Failed</span>
+                            {% elif execution.status == 'SKIPPED' %}
+                                <span class="erp-badge erp-badge-pending">Skipped</span>
+                            {% else %}
+                                <span class="erp-badge erp-badge-production">Running</span>
+                            {% endif %}
+                        </td>
+                        <td><small>{{ execution.recipients_to|default:"—"|truncatechars:60 }}</small></td>
+                        <td>{{ execution.record_count|default_if_none:"—" }}</td>
+                        <td>
+                            {% if execution.error_message %}
+                                <small style="color:#dc2626;">
+                                    {{ execution.error_message|truncatechars:70 }}
+                                </small>
+                            {% else %}
+                                —
+                            {% endif %}
+                        </td>
+                        <td>
+                            <a href="{% url 'bot:execution_detail' execution.pk %}"
+                               class="erp-btn erp-btn-secondary">Details</a>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="8" style="text-align:center; padding:24px; color:#64748b;">
+                            No executions recorded yet.
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        {% if page_obj.has_other_pages %}
+        <div class="erp-actions" style="margin-top:14px; justify-content:center;">
+            {% if page_obj.has_previous %}
+                <a class="erp-btn erp-btn-secondary"
+                   href="?page={{ page_obj.previous_page_number }}&bot={{ selected_bot }}&status={{ selected_status }}">
+                    Previous
+                </a>
+            {% endif %}
+            <span style="align-self:center; font-size:13px; color:#64748b;">
+                Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}
+            </span>
+            {% if page_obj.has_next %}
+                <a class="erp-btn erp-btn-secondary"
+                   href="?page={{ page_obj.next_page_number }}&bot={{ selected_bot }}&status={{ selected_status }}">
+                    Next
+                </a>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+
+</div>
+{% endblock %}

@@ -90,6 +90,7 @@ INSTALLED_APPS = [
     'maintenance',
     'floor_dashboard',
     'chat',
+    'bot',
 ]
 
 MIDDLEWARE = [

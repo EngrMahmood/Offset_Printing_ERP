@@ -22,6 +22,7 @@ NAV_PERMISSION_CODES = {
     'item_request': 'nav.item_request',
     'maintenance': 'nav.maintenance',
     'chat': 'nav.chat',
+    'bot': 'nav.bot',
 }
 
 PLANNING_NAV_ROLES = {'admin', 'manager', 'planner'}
@@ -49,6 +50,10 @@ CHAT_NAV_ROLES = {
     'admin', 'manager', 'planner', 'production_manager', 'production', 'graphics_designer',
     'operator', 'dispatch', 'qc', 'storekeeper', 'finance', 'supply_chain', 'maintenance_engineer',
 }
+# Bot / Automation sends mail to distribution lists on a schedule, so it stays
+# with the roles who own that decision (see bot.management.commands.seed_bots,
+# which owns the actual Permission/Role grant).
+BOT_NAV_ROLES = {'admin', 'manager'}
 
 
 def _role_from_request(request: Any) -> str:
@@ -152,6 +157,7 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_access_item_request': _allow('item_request'),
         'can_access_maintenance': _allow('maintenance'),
         'can_access_chat': _allow('chat'),
+        'can_access_bot': _allow('bot'),
         'can_access_tasks': is_authenticated,
         'can_access_floor_dashboard': is_authenticated,
         # Managers/admins who can approve edit-lock override requests.

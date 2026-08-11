@@ -41,6 +41,7 @@ urlpatterns = [
     path('audit/', include('audit.urls', namespace='audit')),
     path('tasks/', include('tasks.urls', namespace='tasks')),
     path('backup/', include('backup.urls', namespace='backup')),
+    path('bot/', include('bot.urls', namespace='bot')),
     path('maintenance/', include('maintenance.urls', namespace='maintenance')),
     path('floor-dashboard/', include('floor_dashboard.urls', namespace='floor_dashboard')),
     path('chat/', include('chat.urls', namespace='chat')),

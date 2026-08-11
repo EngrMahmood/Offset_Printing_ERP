@@ -1,0 +1,192 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}Bot / Automation | Offset ERP{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+
+    <div class="erp-page-intro">
+        <div>
+            <span class="erp-status-chip {% if active_count %}success{% else %}warning{% endif %}">
+                <span class="erp-status-dot"></span>
+                {{ active_count }} active automation{{ active_count|pluralize }}
+            </span>
+            <span class="erp-status-chip info" style="margin-left: 8px;">
+                Scheduler checks every minute
+            </span>
+        </div>
+        <div class="erp-actions">
+            <a href="{% url 'bot:execution_list' %}" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-history"></i> Execution History
+            </a>
+            <a href="{% url 'bot:bot_create' %}" class="erp-btn erp-btn-success">
+                <i class="fas fa-plus"></i> New Automation
+            </a>
+        </div>
+    </div>
+
+    <div class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <h2 class="erp-section-title">Automations</h2>
+                <p class="erp-card-subtitle">
+                    Each row is a scheduled report email. Preview and test-send before activating.
+                </p>
+            </div>
+        </div>
+
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Bot</th>
+                        <th>Report</th>
+                        <th>Schedule</th>
+                        <th>Recipients</th>
+                        <th>Last Run</th>
+                        <th>Next Run</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for bot in bots %}
+                    <tr>
+                        <td>
+                            <strong>{{ bot.name }}</strong><br>
+                            <small style="color:#64748b;">{{ bot.code }}</small>
+                        </td>
+                        <td>
+                            {{ bot.report_slug }}
+                            {% if bot.report_filters %}
+                                <br><small style="color:#64748b;">{{ bot.report_filters }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {{ bot.get_frequency_display }} at {{ bot.send_time|time:"h:i A" }}
+                        </td>
+                        <td>
+                            {% if bot.email_to %}<small>{{ bot.email_to }}</small><br>{% endif %}
+                            {% if bot.recipient_roles %}
+                                <small style="color:#64748b;">Roles: {{ bot.recipient_roles }}</small>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if bot.last_run_at %}
+                                {{ bot.last_run_at|date:"d M, h:i A" }}
+                            {% else %}
+                                <span style="color:#94a3b8;">Never</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if bot.is_active and bot.next_run_at %}
+                                {{ bot.next_run_at|date:"d M, h:i A" }}
+                            {% else %}
+                                <span style="color:#94a3b8;">—</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if bot.is_active %}
+                                <span class="erp-badge erp-badge-approved">Active</span>
+                            {% else %}
+                                <span class="erp-badge erp-badge-pending">Inactive</span>
+                            {% endif %}
+                            {% if bot.last_status == 'FAILED' %}
+                                <br><span class="erp-badge erp-badge-rejected">Last run failed</span>
+                            {% endif %}
+                        </td>
+                        <td>
+                            <div class="erp-actions">
+                                <a href="{% url 'bot:bot_preview' bot.pk %}" class="erp-btn erp-btn-secondary">
+                                    <i class="fas fa-eye"></i> Preview
+                                </a>
+                                <a href="{% url 'bot:bot_edit' bot.pk %}" class="erp-btn erp-btn-secondary">
+                                    <i class="fas fa-cog"></i> Edit
+                                </a>
+                                <form action="{% url 'bot:bot_run_now' bot.pk %}" method="post" style="display:inline;">
+                                    {% csrf_token %}
+                                    <button type="submit" class="erp-btn erp-btn-warning">
+                                        <i class="fas fa-paper-plane"></i> Run Now
+                                    </button>
+                                </form>
+                                <form action="{% url 'bot:bot_toggle' bot.pk %}" method="post" style="display:inline;">
+                                    {% csrf_token %}
+                                    <button type="submit"
+                                            class="erp-btn {% if bot.is_active %}erp-btn-danger{% else %}erp-btn-success{% endif %}">
+                                        {% if bot.is_active %}
+                                            <i class="fas fa-pause"></i> Deactivate
+                                        {% else %}
+                                            <i class="fas fa-play"></i> Activate
+                                        {% endif %}
+                                    </button>
+                                </form>
+                            </div>
+                        </td>
+                    </tr>
+                {% empty %}
+                    <tr>
+                        <td colspan="8" style="text-align:center; padding:24px; color:#64748b;">
+                            No automations yet.
+                            Run <code>python manage.py seed_bots</code> to create the
+                            Pending Production Release bot, or add one manually.
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    {% if recent_executions %}
+    <div class="erp-section-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <h2 class="erp-section-title">Recent Activity</h2>
+            </div>
+            <a href="{% url 'bot:execution_list' %}" class="erp-btn erp-btn-secondary">View all</a>
+        </div>
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Date/Time</th>
+                        <th>Bot</th>
+                        <th>Trigger</th>
+                        <th>Status</th>
+                        <th>Records</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for execution in recent_executions %}
+                    <tr>
+                        <td>{{ execution.started_at|date:"d M, h:i A" }}</td>
+                        <td>{{ execution.bot.name }}</td>
+                        <td>{{ execution.get_trigger_display }}</td>
+                        <td>
+                            {% if execution.status == 'SENT' %}
+                                <span class="erp-badge erp-badge-approved">Sent</span>
+                            {% elif execution.status == 'FAILED' %}
+                                <span class="erp-badge erp-badge-rejected">Failed</span>
+                            {% elif execution.status == 'SKIPPED' %}
+                                <span class="erp-badge erp-badge-pending">Skipped</span>
+                            {% else %}
+                                <span class="erp-badge erp-badge-production">Running</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ execution.record_count|default_if_none:"—" }}</td>
+                        <td>
+                            <a href="{% url 'bot:execution_detail' execution.pk %}"
+                               class="erp-btn erp-btn-secondary">Details</a>
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
