@@ -140,7 +140,7 @@ def build_context(bot, payload, headers, labels, rows, now, table_html=None, tab
         'bot_name': bot.name,
         'user_name': (run_as.get_full_name() or run_as.username) if run_as else '',
         'department': department,
-        'filters_summary': summarize_filters(bot.report_filters or {}),
+        'filters_summary': summarize_filters(bot.effective_filters()),
     }
 
 

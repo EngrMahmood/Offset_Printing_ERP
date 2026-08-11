@@ -66,7 +66,9 @@ def fetch_report(bot, user=None) -> dict:
     onto the BotExecution row.
     """
     run_as = user or bot.resolve_run_as_user()
-    filters = dict(bot.report_filters or {})
+    # effective_filters(), not report_filters — it layers the bot's period
+    # control on top of the raw JSON.
+    filters = bot.effective_filters()
     request = build_stub_request(run_as, filters)
     return run_report(bot.report_slug, request, filters=filters)
 

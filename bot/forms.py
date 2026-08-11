@@ -2,7 +2,7 @@ import json
 
 from django import forms
 
-from bot.models import WEEKDAY_CHOICES, BotAutomation
+from bot.models import PERIOD_CUSTOM, WEEKDAY_CHOICES, BotAutomation
 from bot.report_adapter import available_report_choices
 
 
@@ -11,7 +11,11 @@ class BotAutomationForm(forms.ModelForm):
     # full grid width; everything else sits in the auto-fit columns.
     FIELD_GROUPS = [
         ('Identity', ['code', 'name', 'is_active', 'description']),
-        ('Report', ['report_slug', 'run_as', 'report_filters']),
+        ('Report', [
+            'report_slug', 'run_as',
+            'report_period', 'report_date_from', 'report_date_to',
+            'report_filters',
+        ]),
         ('Schedule', ['frequency', 'send_time', 'day_of_month', 'start_date', 'end_date', 'weekdays']),
         ('Recipients', ['email_to', 'email_cc', 'email_bcc', 'recipient_roles']),
         ('Email Draft', ['subject_template', 'body_template']),
@@ -63,14 +67,16 @@ class BotAutomationForm(forms.ModelForm):
         required=False,
         widget=forms.Textarea(attrs={'rows': 3, 'spellcheck': 'false'}),
         label='Report filters (JSON)',
-        help_text='e.g. {"stage": "not_released"}. Leave blank for the report defaults.',
+        help_text='Escape hatch for any other filter the report accepts, '
+                  'e.g. {"stage": "not_released"}. Leave blank for the report defaults. '
+                  'The Period above wins over a "period" key typed in here.',
     )
 
     class Meta:
         model = BotAutomation
         fields = [
             'code', 'name', 'description', 'is_active',
-            'report_slug', 'report_filters',
+            'report_slug', 'report_period', 'report_date_from', 'report_date_to', 'report_filters',
             'frequency', 'send_time', 'weekdays', 'day_of_month', 'start_date', 'end_date',
             'email_to', 'email_cc', 'email_bcc', 'recipient_roles',
             'subject_template', 'body_template', 'max_rows_in_body',
@@ -82,6 +88,8 @@ class BotAutomationForm(forms.ModelForm):
             'send_time': forms.TimeInput(attrs={'type': 'time'}, format='%H:%M'),
             'start_date': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
             'end_date': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
+            'report_date_from': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
+            'report_date_to': forms.DateInput(attrs={'type': 'date'}, format='%Y-%m-%d'),
             'email_to': forms.Textarea(attrs={'rows': 2}),
             'email_cc': forms.Textarea(attrs={'rows': 2}),
             'email_bcc': forms.Textarea(attrs={'rows': 2}),
@@ -155,6 +163,17 @@ class BotAutomationForm(forms.ModelForm):
         end_date = cleaned.get('end_date')
         if start_date and end_date and end_date < start_date:
             self.add_error('end_date', 'End date cannot be before the start date.')
+
+        period = cleaned.get('report_period')
+        date_from = cleaned.get('report_date_from')
+        date_to = cleaned.get('report_date_to')
+        if period == PERIOD_CUSTOM:
+            if not date_from:
+                self.add_error('report_date_from', 'A custom range needs a start date.')
+            if not date_to:
+                self.add_error('report_date_to', 'A custom range needs an end date.')
+        if date_from and date_to and date_to < date_from:
+            self.add_error('report_date_to', 'Range end cannot be before the range start.')
 
         if cleaned.get('frequency') == 'MONTHLY' and not cleaned.get('day_of_month'):
             self.add_error('day_of_month', 'Monthly bots need a day of month.')

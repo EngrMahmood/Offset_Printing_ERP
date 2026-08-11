@@ -62,6 +62,9 @@
                             {% if bot.report_filters %}
                                 <br><small style="color:#64748b;">{{ bot.report_filters }}</small>
                             {% endif %}
+                            {% if bot.report_period %}
+                                <br><small style="color:#64748b;">Period: {{ bot.get_report_period_display }}</small>
+                            {% endif %}
                         </td>
                         <td>
                             {{ bot.get_frequency_display }} at {{ bot.send_time|time:"h:i A" }}

@@ -441,6 +441,133 @@ class SeedCommandTests(TestCase):
         bot.refresh_from_db()
         self.assertEqual(bot.email_to, 'planning@example.com')
 
+    def test_seeds_the_three_production_stage_bots(self):
+        from django.core.management import call_command
+        from io import StringIO
+
+        call_command('seed_bots', stdout=StringIO())
+
+        expected = {
+            'PRODUCTION_PENDING_PRINTING': 'printing',
+            'PRODUCTION_PENDING_PACKING': 'packing',
+            'PRODUCTION_PENDING_DISPATCH': 'dispatch',
+        }
+        for code, stage in expected.items():
+            bot = BotAutomation.objects.get(code=code)
+            self.assertEqual(bot.report_slug, 'pending-work')
+            self.assertEqual(bot.report_filters, {'stage': stage})
+            self.assertEqual(bot.report_period, 'month')
+            # Recipients are business config — the user fills them in.
+            self.assertEqual(bot.email_to, '')
+            self.assertEqual(bot.recipient_roles, '')
+            self.assertFalse(bot.is_active)
+
+        # Distinct send times so three reports don't hit the SMTP session at once.
+        times = {BotAutomation.objects.get(code=code).send_time for code in expected}
+        self.assertEqual(len(times), 3)
+
+
+class PeriodFilterTests(TestCase):
+    """The bot's period control has to behave like the report screen's own:
+    a preset covers its window, "all" covers everything, custom uses the dates."""
+
+    def test_blank_period_leaves_the_report_defaults_alone(self):
+        bot = make_bot(report_filters={'stage': 'printing'}, report_period='')
+        self.assertEqual(bot.effective_filters(), {'stage': 'printing'})
+
+    def test_preset_is_merged_into_the_filters(self):
+        bot = make_bot(report_filters={'stage': 'printing'}, report_period='all')
+        self.assertEqual(bot.effective_filters(), {'stage': 'printing', 'period': 'all'})
+
+    def test_custom_period_carries_the_date_window(self):
+        bot = make_bot(
+            report_filters={'stage': 'packing'},
+            report_period='custom',
+            report_date_from=datetime.date(2026, 1, 1),
+            report_date_to=datetime.date(2026, 3, 31),
+        )
+        self.assertEqual(
+            bot.effective_filters(),
+            {
+                'stage': 'packing',
+                'period': 'custom',
+                'date_from': '2026-01-01',
+                'date_to': '2026-03-31',
+            },
+        )
+
+    def test_preset_drops_stale_dates_and_beats_a_period_in_the_raw_json(self):
+        bot = make_bot(
+            report_filters={'stage': 'dispatch', 'period': 'today', 'date_from': '2020-01-01'},
+            report_period='all',
+        )
+        self.assertEqual(bot.effective_filters(), {'stage': 'dispatch', 'period': 'all'})
+
+    def test_period_reaches_the_report_request_get(self):
+        """The pending-work executor reads request.GET, not the filters kwarg —
+        so the period has to survive into the stub request's query string."""
+        from bot.report_adapter import fetch_report
+
+        bot = make_bot(report_filters={'stage': 'printing'}, report_period='all')
+        captured = {}
+
+        def fake_run_report(slug, request, filters=None):
+            captured['stage'] = request.GET.get('stage')
+            captured['period'] = request.GET.get('period')
+            captured['filters'] = filters
+            return make_payload(SAMPLE_ROWS)
+
+        with mock.patch('bot.report_adapter.run_report', fake_run_report):
+            fetch_report(bot, user=None)
+
+        self.assertEqual(captured['stage'], 'printing')
+        self.assertEqual(captured['period'], 'all')
+        self.assertEqual(captured['filters'], {'stage': 'printing', 'period': 'all'})
+
+    def test_custom_period_requires_both_dates(self):
+        form = BotAutomationForm(_form_post(report_period='custom'))
+        self.assertFalse(form.is_valid())
+        self.assertIn('report_date_from', form.errors)
+        self.assertIn('report_date_to', form.errors)
+
+    def test_custom_range_cannot_end_before_it_starts(self):
+        form = BotAutomationForm(_form_post(
+            report_period='custom',
+            report_date_from='2026-03-31',
+            report_date_to='2026-01-01',
+        ))
+        self.assertFalse(form.is_valid())
+        self.assertIn('report_date_to', form.errors)
+
+    def test_valid_period_saves_and_round_trips_through_the_form(self):
+        form = BotAutomationForm(_form_post(report_period='all'))
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        bot = form.save()
+        self.assertEqual(bot.report_period, 'all')
+        self.assertEqual(BotAutomationForm(instance=bot)['report_period'].value(), 'all')
+
+
+def _form_post(**overrides):
+    """A complete, valid BotAutomationForm POST, before the overrides."""
+    data = {
+        'code': 'PERIOD_BOT',
+        'name': 'Period Bot',
+        'report_slug': 'pending-work',
+        'report_filters': '{"stage": "printing"}',
+        'report_period': '',
+        'frequency': 'DAILY',
+        'send_time': '08:30',
+        'email_to': 'planning@example.com',
+        'subject_template': DEFAULT_SUBJECT_TEMPLATE,
+        'body_template': DEFAULT_BODY_TEMPLATE,
+        'max_rows_in_body': '100',
+        'attachment_format': 'xlsx',
+        'retry_count': '2',
+        'retry_interval_minutes': '15',
+    }
+    data.update(overrides)
+    return data
+
 
 class EditFormRoundTripTests(TestCase):
     """Opening an existing bot's form and saving it unchanged must be a no-op.

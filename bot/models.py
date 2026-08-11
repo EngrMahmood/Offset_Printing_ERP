@@ -27,6 +27,22 @@ ATTACHMENT_FORMAT_CHOICES = [
     ('pdf', 'PDF (.pdf)'),
 ]
 
+# Mirrors the Period dropdown the reports themselves offer
+# (reports/templates/reports/pending-work.html) and the presets understood by
+# reports.services._parse_period_filter. Blank means "send whatever the report
+# would show by default" — today that is the current month.
+PERIOD_DEFAULT = ''
+PERIOD_CUSTOM = 'custom'
+
+PERIOD_CHOICES = [
+    (PERIOD_DEFAULT, 'Report default'),
+    ('today', 'Today'),
+    ('week', 'This Week'),
+    ('month', 'This Month'),
+    (PERIOD_CUSTOM, 'Custom Range'),
+    ('all', 'All Time'),
+]
+
 WEEKDAY_CHOICES = [
     ('0', 'Monday'),
     ('1', 'Tuesday'),
@@ -75,6 +91,28 @@ for production.</p>
 Production Printing</p>
 """
 
+# Seed copy for the per-stage production backlog bots (printing / packing /
+# dispatch). STAGE is substituted once at seed time rather than left as a
+# template variable, so an admin can reword one bot's email from the UI without
+# touching the other two.
+_STAGE_BODY_TEMPLATE = """<p>Dear Team,</p>
+
+<p>Below is the pending STAGE work as of {{date}} ({{filters_summary}}).</p>
+
+{{report_table}}
+
+<p>Total pending job cards: {{total_records}}</p>
+
+<p>Kindly clear the backlog as per priority.</p>
+
+<p>Regards,<br>
+Production Printing</p>
+"""
+
+
+def stage_body_template(stage_label):
+    return _STAGE_BODY_TEMPLATE.replace('STAGE', stage_label)
+
 
 def _split_addresses(raw):
     """Split a comma/newline/semicolon separated address blob into a clean list."""
@@ -110,6 +148,24 @@ class BotAutomation(models.Model):
         default=dict,
         blank=True,
         help_text='Filters passed to the report, e.g. {"stage": "not_released"}.',
+    )
+    report_period = models.CharField(
+        max_length=10,
+        choices=PERIOD_CHOICES,
+        blank=True,
+        default=PERIOD_DEFAULT,
+        help_text="Date range the report covers, same presets as the report screen. "
+                  "Blank leaves the report's own default (current month).",
+    )
+    report_date_from = models.DateField(
+        null=True,
+        blank=True,
+        help_text="Start of the range when the period is Custom Range.",
+    )
+    report_date_to = models.DateField(
+        null=True,
+        blank=True,
+        help_text="End of the range when the period is Custom Range.",
     )
 
     # --- When to send -----------------------------------------------------
@@ -226,6 +282,31 @@ class BotAutomation(models.Model):
             if 0 <= value <= 6:
                 numbers.add(value)
         return numbers
+
+    def effective_filters(self):
+        """The full filter dict handed to the report engine.
+
+        `report_filters` stays the general escape hatch for any key a report
+        understands; the period control is layered on top of it because that is
+        the one an admin can actually see, so it must win over a stale `period`
+        left behind in the raw JSON.
+        """
+        filters = dict(self.report_filters or {})
+        if not self.report_period:
+            return filters
+
+        filters['period'] = self.report_period
+        if self.report_period == PERIOD_CUSTOM:
+            if self.report_date_from:
+                filters['date_from'] = self.report_date_from.isoformat()
+            if self.report_date_to:
+                filters['date_to'] = self.report_date_to.isoformat()
+        else:
+            # A preset covers its own window — leftover explicit dates would
+            # only muddy the filter summary shown in the email.
+            filters.pop('date_from', None)
+            filters.pop('date_to', None)
+        return filters
 
     def resolve_run_as_user(self):
         """The user whose permissions the report executes under."""
