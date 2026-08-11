@@ -214,7 +214,7 @@ with the stale Windows dev copy. Its scheduled task ("Offset ERP Cloud
 Sync") is disabled; leave it disabled.
 
 **Standby refresh (primary → old VM, one-directional pull)**: double-click
-`scripts\cloud\sync_standby_from_primary.bat` to refresh the standby
+`scripts\cloud\standby\sync_standby_from_primary.bat` to refresh the standby
 (`offseterpbackup.duckdns.org`, the old VM) with a fresh snapshot pulled
 from the primary. Safe to run anytime — takes a live snapshot on the
 primary via Docker, downloads it to this PC, then uploads/loads it into the
@@ -240,7 +240,7 @@ If the primary (`130.210.16.111`) ever goes down:
 
 **Manual fallback, no script/SSH command-line needed (WinSCP)**: this is for
 refreshing the **standby** (`offseterpbackup.duckdns.org`) only, if
-`sync_standby_from_primary.bat` or SSH access is ever unavailable. **Do not**
+`scripts\cloud\standby\sync_standby_from_primary.bat` or SSH access is ever unavailable. **Do not**
 do this against `offseterp.duckdns.org` (the primary) — pushing any local
 Windows PC file there would overwrite real production data with a stale dev
 copy, exactly what `sync_db_to_cloud.bat` being retired is meant to prevent.
@@ -253,7 +253,7 @@ copy, exactly what `sync_db_to_cloud.bat` being retired is meant to prevent.
    — it'll prompt you to do this automatically) → Login.
 3. Get a database file to upload — a fresh snapshot pulled from the
    *primary* (see the Python one-liner in
-   `scripts\cloud\sync_standby_from_primary.bat` step [1/5], or just run
+   `scripts\cloud\standby\sync_standby_from_primary.bat` step [1/5], or just run
    `pull_db_from_cloud.bat` first and use its output).
 4. Drag that file onto the standby VM's home directory (`/home/ubuntu/`) in
    WinSCP's remote pane, named `sync_db.sqlite3`.

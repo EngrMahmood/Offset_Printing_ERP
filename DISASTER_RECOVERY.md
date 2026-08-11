@@ -18,7 +18,7 @@ crash is a *development environment* loss, not a data-loss event:
 |---|---|---|
 | App source code | GitHub (`EngrMahmood/Offset_Printing_ERP`) | No |
 | Production server + database | Oracle Cloud A1 instance (`offseterp.duckdns.org`), independent VM | No — keeps running |
-| Standby server + database | Oracle Cloud old VM (`offseterpbackup.duckdns.org`), independent VM, kept in sync via `sync_standby_from_primary.bat` | No — keeps running |
+| Standby server + database | Oracle Cloud old VM (`offseterpbackup.duckdns.org`), independent VM, kept in sync via `scripts\cloud\standby\sync_standby_from_primary.bat` | No — keeps running |
 | Cloud backups | Google Drive (`offseterp@gmail.com`) | No |
 | This PC's local `db.sqlite3` | This PC (dev/test data only — not production) | Yes, but not production data |
 | **SSH private key (primary)** | `%USERPROFILE%\.ssh\offset-erp-oracle-a1` | **Yes — only copy** |

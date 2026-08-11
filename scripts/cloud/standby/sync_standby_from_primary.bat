@@ -21,7 +21,7 @@ set "PRIMARY_HOST=offseterp.duckdns.org"
 set "STANDBY_KEY=%USERPROFILE%\.ssh\offset-erp-oracle.key"
 set "STANDBY_HOST=offseterpbackup.duckdns.org"
 set "VM_USER=ubuntu"
-set "REPO_DIR=%~dp0..\.."
+set "REPO_DIR=%~dp0..\..\.."
 set "LOG_FILE=%REPO_DIR%\backups\sync_standby.log"
 
 if not exist "%REPO_DIR%\backups" mkdir "%REPO_DIR%\backups"
@@ -70,7 +70,7 @@ scp -i "%STANDBY_KEY%" -o StrictHostKeyChecking=accept-new "%TMP_MEDIA%" %VM_USE
 if errorlevel 1 goto :fail_upload
 
 echo [4/5] Loading data into the standby deployment...
-scp -i "%STANDBY_KEY%" -o StrictHostKeyChecking=accept-new "%~dp0remote_sync.sh" %VM_USER%@%STANDBY_HOST%:~/remote_sync.sh
+scp -i "%STANDBY_KEY%" -o StrictHostKeyChecking=accept-new "%~dp0..\remote_sync.sh" %VM_USER%@%STANDBY_HOST%:~/remote_sync.sh
 if errorlevel 1 goto :fail_upload
 ssh -i "%STANDBY_KEY%" -o StrictHostKeyChecking=accept-new %VM_USER%@%STANDBY_HOST% "sed -i 's/\r$//' ~/remote_sync.sh && bash ~/remote_sync.sh"
 if errorlevel 1 (
