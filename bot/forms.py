@@ -103,10 +103,19 @@ class BotAutomationForm(forms.ModelForm):
 
         instance = kwargs.get('instance') or self.instance
         if instance and instance.pk:
-            self.fields['weekdays'].initial = [str(n) for n in sorted(instance.weekday_numbers)]
-            self.fields['recipient_roles'].initial = instance.role_keys
-            self.fields['report_filters'].initial = json.dumps(instance.report_filters or {}, indent=2)
-            self.fields['report_slug'].initial = instance.report_slug
+            # These must land in self.initial, not field.initial. ModelForm has
+            # already filled self.initial from the instance via model_to_dict,
+            # and BoundField.value() reads self.initial first — so field.initial
+            # was never reaching the widgets. The stored values are the wrong
+            # shape for these three widgets: report_filters rendered as Python's
+            # dict repr (single quotes, rejected by clean_report_filters as
+            # "Not valid JSON"), and weekdays/recipient_roles rendered as one CSV
+            # string that matched no checkbox, so reopening a bot and saving it
+            # silently cleared them.
+            self.initial['weekdays'] = [str(n) for n in sorted(instance.weekday_numbers)]
+            self.initial['recipient_roles'] = instance.role_keys
+            self.initial['report_filters'] = json.dumps(instance.report_filters or {}, indent=2)
+            self.initial['report_slug'] = instance.report_slug
 
         for name, field in self.fields.items():
             widget = field.widget

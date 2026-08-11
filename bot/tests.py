@@ -5,6 +5,7 @@ The report itself is stubbed out — these tests are about the bot's own logic
 reports app produces correct rows.
 """
 import datetime
+import json
 from unittest import mock
 
 from django.contrib.auth import get_user_model
@@ -13,6 +14,7 @@ from django.test import TestCase, override_settings
 from django.utils import timezone
 
 from bot import schedule, services, template_engine
+from bot.forms import BotAutomationForm
 from bot.models import (
     DEFAULT_BODY_TEMPLATE,
     DEFAULT_SUBJECT_TEMPLATE,
@@ -438,3 +440,55 @@ class SeedCommandTests(TestCase):
         self.assertEqual(BotAutomation.objects.filter(code='PENDING_PRODUCTION_RELEASE').count(), 1)
         bot.refresh_from_db()
         self.assertEqual(bot.email_to, 'planning@example.com')
+
+
+class EditFormRoundTripTests(TestCase):
+    """Opening an existing bot's form and saving it unchanged must be a no-op.
+
+    ModelForm fills self.initial from the instance, and BoundField.value() reads
+    self.initial before field.initial — so any field whose stored shape differs
+    from its widget's shape has to be corrected there, or the rendered form
+    carries values its own clean_* methods reject (or silently drops them).
+    """
+
+    def _bound_data(self, form):
+        """The POST an untouched browser form would produce."""
+        data = {}
+        for name, field in form.fields.items():
+            value = form[name].value()
+            if value is None or value is False:
+                continue
+            if isinstance(value, list):
+                data[name] = [str(item) for item in value]
+            elif value is True:
+                data[name] = 'on'
+            else:
+                data[name] = str(value)
+        return data
+
+    def test_filters_render_as_json_not_python_repr(self):
+        bot = make_bot(report_filters={'stage': 'not_released'})
+        rendered = BotAutomationForm(instance=bot)['report_filters'].value()
+        self.assertEqual(json.loads(rendered), {'stage': 'not_released'})
+        self.assertNotIn("'", rendered, 'JSON textarea must not show a Python dict repr')
+
+    def test_weekdays_and_roles_render_as_checkbox_lists(self):
+        bot = make_bot(weekdays='0,2,4', recipient_roles='planner,manager')
+        form = BotAutomationForm(instance=bot)
+        self.assertEqual(form['weekdays'].value(), ['0', '2', '4'])
+        self.assertEqual(form['recipient_roles'].value(), ['planner', 'manager'])
+
+    def test_saving_an_untouched_form_changes_nothing(self):
+        bot = make_bot(
+            report_filters={'stage': 'not_released'},
+            weekdays='0,2,4',
+            recipient_roles='planner,manager',
+        )
+        form = BotAutomationForm(self._bound_data(BotAutomationForm(instance=bot)), instance=bot)
+        self.assertTrue(form.is_valid(), form.errors.as_json())
+        form.save()
+
+        bot.refresh_from_db()
+        self.assertEqual(bot.report_filters, {'stage': 'not_released'})
+        self.assertEqual(bot.weekdays, '0,2,4')
+        self.assertEqual(bot.recipient_roles, 'planner,manager')
