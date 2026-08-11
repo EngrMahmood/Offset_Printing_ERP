@@ -4074,7 +4074,10 @@ def pending_sku_master_entry(request):
             params['po'] = return_po
         if return_q:
             params['q'] = return_q
-        url = reverse('qc:pending_skus')
+        # Readonly (QC review) sessions don't hold can_edit_jobcard, which
+        # qc:pending_skus requires — send them back to the review queue
+        # instead of bouncing them into a permission error.
+        url = reverse('qc:master_review') if is_readonly else reverse('qc:pending_skus')
         return redirect(f'{url}?{urlencode(params)}' if params else url)
 
     def _redirect_qc_review():
@@ -4091,36 +4094,16 @@ def pending_sku_master_entry(request):
     except (TypeError, ValueError):
         po_doc_id = None
 
-    if not sku or not po_doc_id:
-        messages.error(request, 'Missing SKU or PO reference for master-data entry.')
+    if not sku:
+        messages.error(request, 'Missing SKU reference for master-data entry.')
         return _redirect_pending()
 
-    po_doc = PoDocument.objects.filter(id=po_doc_id).first()
-    if not po_doc:
-        messages.error(request, 'PO document was not found.')
-        return _redirect_pending()
-
-    payload = po_doc.extracted_payload or {}
-    po_number = payload.get('po_number') or '-'
-    items = _sanitize_po_payload_items(payload)
-    is_admin_user = _user_is_admin(request.user)
-    user_can_approve_qc = bool(profile and profile.can_approve_sku_master_review())
-
-    suggested_item = None
-    sku_key = _sku_key(sku)
-    for item in items:
-        if _sku_key(item.get('sku')) == sku_key:
-            suggested_item = item
-            break
-    suggested_item = suggested_item or {}
-    po_job_name = (suggested_item.get('job_name') or '').strip() or sku
-    po_department = (payload.get('department') or '').strip()
-    po_unit_cost = _to_decimal(suggested_item.get('unit_cost'))
-    po_color_spec = _normalize_color_spec_input(
-        suggested_item.get('color_spec') or suggested_item.get('colour') or suggested_item.get('color') or ''
-    )
-    po_application = _normalize_application_input(suggested_item.get('application') or payload.get('application') or '')
-    po_remarks = (suggested_item.get('remarks') or '').strip()
+    po_doc = None
+    if po_doc_id:
+        po_doc = PoDocument.objects.filter(id=po_doc_id).first()
+        if not po_doc:
+            messages.error(request, 'PO document was not found.')
+            return _redirect_pending()
 
     # Fetch the best available recipe using priority: approved > reviewed > pending_review > draft
     _all_recipes = list(SkuRecipe.objects.filter(sku__iexact=sku))
@@ -4128,8 +4111,52 @@ def pending_sku_master_entry(request):
     if _all_recipes:
         recipe = min(_all_recipes, key=lambda r: SKU_RECIPE_STATUS_ORDER.get(r.master_data_status or '', 99))
 
-    po_number_val = payload.get('po_number') or ''
-    job_obj = PlanningJob.objects.filter(po_number=po_number_val, sku__iexact=sku).first()
+    if not po_doc and not recipe:
+        messages.error(request, 'Missing SKU or PO reference for master-data entry.')
+        return _redirect_pending()
+
+    is_admin_user = _user_is_admin(request.user)
+    user_can_approve_qc = bool(profile and profile.can_approve_sku_master_review())
+
+    if po_doc:
+        payload = po_doc.extracted_payload or {}
+        po_number = payload.get('po_number') or '-'
+        items = _sanitize_po_payload_items(payload)
+
+        suggested_item = None
+        sku_key = _sku_key(sku)
+        for item in items:
+            if _sku_key(item.get('sku')) == sku_key:
+                suggested_item = item
+                break
+        suggested_item = suggested_item or {}
+        po_job_name = (suggested_item.get('job_name') or '').strip() or (recipe.job_name if recipe else '') or sku
+        po_department = (payload.get('department') or '').strip()
+        po_unit_cost = _to_decimal(suggested_item.get('unit_cost'))
+        po_color_spec = _normalize_color_spec_input(
+            suggested_item.get('color_spec') or suggested_item.get('colour') or suggested_item.get('color') or ''
+        )
+        po_application = _normalize_application_input(suggested_item.get('application') or payload.get('application') or '')
+        po_remarks = (suggested_item.get('remarks') or '').strip()
+        po_number_val = payload.get('po_number') or ''
+    else:
+        # No PO document backs this SKU (e.g. added directly via master data) —
+        # source display/defaults from the existing recipe instead.
+        payload = {}
+        po_number = '-'
+        items = []
+        suggested_item = {}
+        po_job_name = (recipe.job_name if recipe else '') or sku
+        po_department = ''
+        po_unit_cost = recipe.default_unit_cost if recipe else None
+        po_color_spec = recipe.color_spec if recipe else ''
+        po_application = recipe.application if recipe else ''
+        po_remarks = recipe.remarks if recipe else ''
+        po_number_val = ''
+
+    job_obj = None
+    if po_number_val:
+        job_obj = PlanningJob.objects.filter(po_number=po_number_val, sku__iexact=sku).first()
     if job_obj and not recipe:
         recipe = ensure_sku_recipe_for_planning_job(job_obj, actor=request.user)
         sync_planning_job_fields_to_sku_recipe(job_obj, recipe)
@@ -4268,6 +4295,14 @@ def pending_sku_master_entry(request):
             obj.job_name = po_job_name
             if not recipe:
                 obj.created_by = request.user
+
+            if action == 'send_to_plate_making' and not po_doc:
+                messages.error(
+                    request,
+                    f'SKU {sku} has no PO document to send to plate making from. '
+                    f'Send to QC Review, or configure it from an open PO instead.',
+                )
+                return _redirect_pending()
 
             if action == 'send_to_plate_making':
                 # Find the draft PlanningJob first so we can block duplicate plate requests.
@@ -4425,11 +4460,12 @@ def pending_sku_master_entry(request):
                     obj.approved_at = None
                     obj.save()
 
-                    configured = set(payload.get('new_skus_configured') or [])
-                    configured.add(sku)
-                    payload['new_skus_configured'] = sorted(configured)
-                    po_doc.extracted_payload = payload
-                    po_doc.save(update_fields=['extracted_payload'])
+                    if po_doc:
+                        configured = set(payload.get('new_skus_configured') or [])
+                        configured.add(sku)
+                        payload['new_skus_configured'] = sorted(configured)
+                        po_doc.extracted_payload = payload
+                        po_doc.save(update_fields=['extracted_payload'])
 
                     messages.success(request, f'SKU {sku} submitted for QC review.')
                     return _redirect_pending()
@@ -4441,11 +4477,12 @@ def pending_sku_master_entry(request):
                 obj.approved_at = None
                 obj.save()
 
-                configured = set(payload.get('new_skus_configured') or [])
-                configured.add(sku)
-                payload['new_skus_configured'] = sorted(configured)
-                po_doc.extracted_payload = payload
-                po_doc.save(update_fields=['extracted_payload'])
+                if po_doc:
+                    configured = set(payload.get('new_skus_configured') or [])
+                    configured.add(sku)
+                    payload['new_skus_configured'] = sorted(configured)
+                    po_doc.extracted_payload = payload
+                    po_doc.save(update_fields=['extracted_payload'])
 
                 messages.success(request, f'SKU {sku} saved as Draft.')
                 return _redirect_pending()
@@ -4489,8 +4526,8 @@ def pending_sku_master_entry(request):
         repeat_flag_display, _reason = classify_po_line(
             sku,
             po_number,
-            po_doc_created_at=po_doc.created_at,
-            po_doc_id=po_doc.id,
+            po_doc_created_at=po_doc.created_at if po_doc else None,
+            po_doc_id=po_doc.id if po_doc else None,
             recipe=current_recipe,
         )
 

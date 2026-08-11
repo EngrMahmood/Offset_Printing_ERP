@@ -63,7 +63,9 @@
                 {% else %}
                     <span class="erp-badge erp-badge-pending" title="No prior job card or master recipe found — this is the first production run for this SKU.">🆕 New</span>
                 {% endif %}
+                {% if po_doc_id %}
                 <a href="{% url 'qc:po_review' po_doc_id %}" class="erp-btn erp-btn-secondary sm">Open PO</a>
+                {% endif %}
             </div>
         </div>
 
