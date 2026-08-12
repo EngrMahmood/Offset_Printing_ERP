@@ -9,6 +9,7 @@ from django.utils import timezone
 import zoneinfo
 
 from core.navigation import REPORTS_NAV_ROLES
+from core.permissions import user_has_permission
 from reports.filters import parse_universal_filters
 from reports.report_engine.serializer import to_json_safe
 from reports.report_registry import registry
@@ -24,6 +25,13 @@ def _has_access(request, permissions: tuple[str, ...]) -> bool:
         return True
     profile = getattr(user, 'profile', None)
     if profile is not None and getattr(profile, 'role', None) in REPORTS_NAV_ROLES:
+        return True
+    # `permissions` entries are Django-style codes (e.g. 'core.view_reports'), but
+    # this app's actual role/permission grants (Settings -> Roles & Permissions,
+    # incl. per-user overrides) live in the soft-coded core.permissions system
+    # under 'action.<name>' codes, not Django's built-in auth permissions. Check
+    # both so grants made through Settings actually take effect.
+    if any(user_has_permission(user, f'action.{code.rsplit(".", 1)[-1]}') for code in permissions):
         return True
     return any(user.has_perm(code) for code in permissions)
 
