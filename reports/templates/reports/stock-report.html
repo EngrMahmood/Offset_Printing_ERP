@@ -1,0 +1,83 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ report.title }} — Reports{% endblock %}
+{% block header_title %}{{ report.title }}{% endblock %}
+{% block header_subtitle %}Finished-goods excess stock currently on hand per SKU/job — auto-tracked from over-packed runs, or entered by a planner from a physical stock check.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .sr-summary-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+    .sr-card {
+        background: #fff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 14px 16px;
+    }
+    .sr-card-label {
+        font-size: 11px;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #64748b;
+        font-weight: 700;
+    }
+    .sr-card-value { font-size: 24px; font-weight: 700; color: #0f172a; margin-top: 4px; }
+    .sr-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .sr-export-links { display: flex; gap: 8px; margin-bottom: 10px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="sr-summary-grid">
+            <div class="sr-card">
+                <div class="sr-card-label">SKUs With Stock</div>
+                <div class="sr-card-value">{{ data.summary.sku_count }}</div>
+            </div>
+            <div class="sr-card">
+                <div class="sr-card-label">Total Stock Qty (pcs)</div>
+                <div class="sr-card-value">{{ data.summary.total_stock_qty|floatformat:"-2"|intcomma }}</div>
+            </div>
+        </div>
+
+        <div class="sr-export-links">
+            <a href="{% url 'reports:reports_api:export_report' 'stock-report' %}?type=xlsx" class="erp-btn erp-btn-secondary sm">Export (Excel)</a>
+            <a href="{% url 'reports:reports_api:export_report' 'stock-report' %}?type=pdf" class="erp-btn erp-btn-secondary sm">Export (PDF)</a>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Job Card</th><th>PO/WO</th><th>SKU</th><th>Job Name</th>
+                        <th class="sr-num">Stock Qty (pcs)</th><th class="sr-num">Stock Bag</th><th>Last Updated</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data.rows %}
+                    <tr>
+                        <td>{{ row.jc_number }}</td>
+                        <td>{{ row.po_number|default:'—' }}</td>
+                        <td>{{ row.sku }}</td>
+                        <td>{{ row.job_name }}</td>
+                        <td class="sr-num">{{ row.stock_qty|floatformat:"-2"|intcomma }}</td>
+                        <td class="sr-num">{{ row.stock_bag|floatformat:"-2"|default:'—' }}</td>
+                        <td>{{ row.updated_at|default:'—' }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7">No excess stock currently on hand.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}

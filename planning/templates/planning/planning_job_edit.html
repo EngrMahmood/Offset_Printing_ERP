@@ -90,7 +90,6 @@
             <div class="erp-info-item"><div class="erp-info-item__label">Purchase Sheet Required</div><div class="erp-info-item__value" id="calc-purchase-sheets">{{ job.purchase_sheet_required_display|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">PKT Value</div><div class="erp-info-item__value" id="calc-pkt-value">{{ job.calculated_pkt_value|floatformat:"-2"|default:'-' }}</div></div>
             <div class="erp-info-item"><div class="erp-info-item__label">Balance Qty (pcs)</div><div class="erp-info-item__value">{{ job.balance_qty|default:'-' }}</div></div>
-            <div class="erp-info-item"><div class="erp-info-item__label">Stock Qty</div><div class="erp-info-item__value">{{ job.stock_qty|floatformat:"-2"|default:'-' }}</div></div>
         </div>
     </section>
 
@@ -113,6 +112,9 @@
                 <div class="erp-form-field{% if field.errors %} has-error{% endif %}{% if field.name == 'remarks' or field.name == 'requirement' %} erp-form-grid__full{% endif %}">
                     <label class="erp-form-label" for="{{ field.id_for_label }}">{{ field.label }}</label>
                     {{ field }}
+                    {% if field.name == 'stock_qty' %}
+                        <div class="erp-note" style="margin-top:4px;">Enter known physical stock to reduce sheets required. After this job is packed, this value is recalculated automatically from leftover excess for the next repeat run.</div>
+                    {% endif %}
                     {% if field.errors %}
                         <div style="color:#e74c3c; font-size:12px; margin-top:4px;">{{ field.errors|striptags }}</div>
                     {% endif %}

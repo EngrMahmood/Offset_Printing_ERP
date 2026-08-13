@@ -60,6 +60,8 @@ class PlanningJobFinalizationForm(forms.ModelForm):
             'wastage_sheets',
             'purchase_material_origin',
             'destination',
+            'stock_qty',
+            'stock_bag',
             'remarks',
             'requirement',
         ]
@@ -71,6 +73,8 @@ class PlanningJobFinalizationForm(forms.ModelForm):
         labels = {
             'requirement': 'Special Instructions',
             'purchase_material_origin': 'Purchase Material Origin',
+            'stock_qty': 'Stock Qty (pcs)',
+            'stock_bag': 'Stock Bag',
         }
 
     def __init__(self, *args, **kwargs):

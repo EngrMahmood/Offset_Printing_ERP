@@ -2248,6 +2248,23 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
             if key in item_sku_keys and key not in existing_jobs_by_sku:
                 existing_jobs_by_sku[key] = job
 
+    # Leftover stock from a prior run of the same SKU (a different PO), so a
+    # brand-new repeat job can be seeded with it automatically. Only the most
+    # recently updated prior job per SKU is used — the leftover is
+    # transferred (zeroed on the source), not duplicated, once consumed below.
+    prior_stock_by_sku = {}
+    if item_sku_keys:
+        stock_query = Q()
+        for sku_key in item_sku_keys:
+            stock_query |= Q(sku__iexact=sku_key)
+        prior_stock_candidates = PlanningJob.objects.filter(stock_query, stock_qty__gt=0, is_active=True)
+        if po_number:
+            prior_stock_candidates = prior_stock_candidates.exclude(po_number=po_number)
+        for job in prior_stock_candidates.order_by('-updated_at'):
+            key = _sku_key(job.sku)
+            if key not in prior_stock_by_sku:
+                prior_stock_by_sku[key] = job
+
     # Reconcile PR-only jobs (no po_number yet) with the arriving real PO:
     # match by SKU + order qty so an urgent PR-based job gets this PO linked
     # onto it instead of spawning a duplicate job card. Only auto-match when
@@ -2361,6 +2378,11 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
         purchase_sheet_required_value = _to_int(item.get('purchase_sheet_required') or item.get('purchase_sheet_require')) or (existing_job.purchase_sheet_required if existing_job else None)
         pkt_value = _to_decimal(item.get('pkt') or item.get('pkt_value') or '') or (existing_job.pkt_value if existing_job else None)
         stock_qty_value = _to_decimal(item.get('stock_qty') or item.get('stock') or '') or (existing_job.stock_qty if existing_job else None)
+        carried_from_job = None
+        if not existing_job and stock_qty_value is None:
+            carried_from_job = prior_stock_by_sku.get(sku_key)
+            if carried_from_job:
+                stock_qty_value = carried_from_job.stock_qty
         balance_qty_value = _to_int(item.get('balance_qty') or item.get('balance') or '') or (existing_job.balance_qty if existing_job else None)
         plate_set_no_value = (item.get('plate_set_no') or item.get('p_set_no') or '').strip() or (recipe.plate_set_no if recipe else (existing_job.plate_set_no if existing_job else ''))
         die_cutting_value = (item.get('die_cutting') or '').strip() or (recipe.die_cutting if recipe else (existing_job.die_cutting if hasattr(existing_job, 'die_cutting') else ''))
@@ -2377,6 +2399,11 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
             requirement_value = _append_unique_note_line(
                 requirement_value,
                 _build_cost_mismatch_note(recipe.default_unit_cost, unit_cost_dec),
+            )
+        if carried_from_job:
+            requirement_value = _append_unique_note_line(
+                requirement_value,
+                f'Stock {stock_qty_value} carried forward from {carried_from_job.jc_number}.',
             )
 
         item_remarks = (item.get('remarks') or '').strip()
@@ -2442,6 +2469,9 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
             jc_number=jc_number,
             defaults=defaults,
         )
+        if carried_from_job:
+            carried_from_job.stock_qty = 0
+            carried_from_job.save(update_fields=['stock_qty', 'updated_at'])
         from .sku_classification import sync_plate_making_stage_with_repeat_flag
 
         sync_plate_making_stage_with_repeat_flag(job_obj, save=True)

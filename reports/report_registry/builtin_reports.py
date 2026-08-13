@@ -11,6 +11,7 @@ from reports.services import (
     build_production_insights_context,
     build_qc_approvals_context,
     build_raw_material_cutting_context,
+    build_stock_report_context,
     build_wastage_report_context,
 )
 from reports.report_registry.metadata import ReportDefinition
@@ -55,6 +56,10 @@ def _wastage_report_executor(request, filters):
 
 def _pending_work_executor(request, filters):
     return build_pending_work_context(request)
+
+
+def _stock_report_executor(request, filters):
+    return build_stock_report_context(request)
 
 
 def _kpi_scorecard_executor(request, filters):
@@ -248,6 +253,25 @@ registry.register(
         category='execution',
         navigation_group='operations',
         executor=_pending_work_executor,
+    )
+)
+
+registry.register(
+    ReportDefinition(
+        slug='stock-report',
+        title='Stock Report',
+        description='Finished-goods excess stock currently on hand per SKU/job, carried forward from over-packed runs.',
+        department='planning',
+        permissions=('core.view_reports',),
+        filters=(),
+        supported_exports=('csv', 'xlsx', 'pdf'),
+        supported_charts=(),
+        drilldown_support=False,
+        cache_timeout=120,
+        icon='fa-boxes-stacked',
+        category='planning',
+        navigation_group='operations',
+        executor=_stock_report_executor,
     )
 )
 

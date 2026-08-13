@@ -94,6 +94,12 @@ REPORT_CATALOG = [
         'description': "Quantity still owed at printing, packing, and dispatch for open jobs, so month-end close can focus on what's stuck.",
         'focus': 'Execution',
     },
+    {
+        'key': 'stock-report',
+        'title': 'Stock Report',
+        'description': 'Finished-goods excess stock currently on hand per SKU/job, carried forward from over-packed runs.',
+        'focus': 'Planning',
+    },
 ]
 
 
@@ -2437,6 +2443,46 @@ def build_pending_work_context(request):
     }
 
 
+def build_stock_report_context(request):
+    """Finished-goods excess stock currently on hand — leftover from
+    over-packed runs (see Production._sync_excess_production_to_stock), or
+    entered directly by a planner from physical stock counts.
+    """
+    rows = []
+    jobs = PlanningJob.objects.filter(stock_qty__gt=0, is_active=True).order_by('-updated_at')
+    for job in jobs:
+        rows.append({
+            'jc_number': job.jc_number,
+            'po_number': job.po_number or '',
+            'sku': job.sku,
+            'job_name': job.job_name,
+            'stock_qty': job.stock_qty,
+            'stock_bag': job.stock_bag,
+            'updated_at': timezone.localtime(job.updated_at).strftime('%d-%m-%Y %H:%M') if job.updated_at else '',
+        })
+
+    summary = {
+        'sku_count': len(rows),
+        'total_stock_qty': sum(row['stock_qty'] for row in rows),
+    }
+
+    headers = ['jc_number', 'po_number', 'sku', 'job_name', 'stock_qty', 'stock_bag', 'updated_at']
+    header_labels = {
+        'jc_number': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'job_name': 'Job Name',
+        'stock_qty': 'Stock Qty (pcs)', 'stock_bag': 'Stock Bag', 'updated_at': 'Last Updated',
+    }
+
+    return {
+        'report': next(item for item in REPORT_CATALOG if item['key'] == 'stock-report'),
+        'headers': headers,
+        'header_labels': header_labels,
+        'filters': {},
+        'summary': summary,
+        'rows': rows,
+        'export_rows': rows,
+    }
+
+
 def build_report_context(report_type, request):
     builders = {
         'machine-planning': build_machine_planning_context,
@@ -2448,6 +2494,7 @@ def build_report_context(report_type, request):
         'raw-material-cutting-request': build_raw_material_cutting_context,
         'wastage-report': build_wastage_report_context,
         'pending-work': build_pending_work_context,
+        'stock-report': build_stock_report_context,
     }
     builder = builders.get(report_type)
     if builder is None:
