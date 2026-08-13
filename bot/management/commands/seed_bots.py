@@ -21,6 +21,21 @@ from core import navigation as nav
 
 BOT_001_CODE = 'PENDING_PRODUCTION_RELEASE'
 DAILY_PRODUCTION_CODE = 'DAILY_PRODUCTION_REPORT'
+STOCK_REPORT_CODE = 'STOCK_REPORT_EXCESS_INVENTORY'
+
+STOCK_REPORT_BODY = """<p>Dear Planning Team,</p>
+
+<p>Below is the current finished-goods excess stock on hand as of {{date}} —
+leftover from over-packed runs, or entered manually from a physical stock
+check. Carried forward automatically the next time each SKU is planned.</p>
+
+{{report_table}}
+
+<p>Total SKUs/jobs holding stock: {{total_records}}</p>
+
+<p>Regards,<br>
+Production Printing</p>
+"""
 
 DAILY_PRODUCTION_BODY = """<p>Dear Team,</p>
 
@@ -87,6 +102,7 @@ class Command(BaseCommand):
         for spec in STAGE_BOTS:
             self._seed_stage_bot(spec)
         self._seed_daily_production()
+        self._seed_stock_report()
         self.stdout.write(self.style.SUCCESS('Bot seed complete.'))
 
     def _seed_permission(self):
@@ -166,6 +182,35 @@ class Command(BaseCommand):
             send_time=datetime.time(7, 0),
             subject_template='Daily Production Report - {{period_label}} ({{period_from}})',
             body_template=DAILY_PRODUCTION_BODY,
+            attach_report=True,
+            attachment_format='xlsx',
+            send_when_empty=False,
+        )
+        self.stdout.write(self.style.SUCCESS(f'Created bot: {bot}'))
+        self.stdout.write('  Inactive, no recipients — add recipients in /bot/ then activate.')
+
+    def _seed_stock_report(self):
+        if BotAutomation.objects.filter(code=STOCK_REPORT_CODE).exists():
+            self.stdout.write(f'{STOCK_REPORT_CODE} already exists — left untouched.')
+            return
+
+        bot = BotAutomation.objects.create(
+            code=STOCK_REPORT_CODE,
+            name='Stock Report - Excess Inventory',
+            description=(
+                'Daily email listing finished-goods excess stock currently on hand '
+                'per SKU/job — leftover from over-packed runs, or entered manually '
+                'from a physical stock check.'
+            ),
+            is_active=False,
+            report_slug='stock-report',
+            # Point-in-time snapshot query — the report ignores date filters.
+            report_filters={},
+            report_period='',
+            frequency='DAILY',
+            send_time=datetime.time(7, 30),
+            subject_template='Stock Report - Excess Inventory - {{date}}',
+            body_template=STOCK_REPORT_BODY,
             attach_report=True,
             attachment_format='xlsx',
             send_when_empty=False,
