@@ -7,6 +7,7 @@ variables and no access to the ORM.
 from __future__ import annotations
 
 import html
+from datetime import datetime
 
 from django.template import Context, Template
 from django.utils.safestring import mark_safe
@@ -24,6 +25,9 @@ SUPPORTED_VARIABLES = [
     ('{{user_name}}', 'Full name of the user the report runs as'),
     ('{{department}}', 'Department of that user, if set'),
     ('{{filters_summary}}', 'Human-readable summary of the applied filters'),
+    ('{{period_label}}', 'Period the report covers, e.g. Yesterday or This Month'),
+    ('{{period_from}}', 'First day of that period, e.g. 12 Aug 2026 (blank for All Time)'),
+    ('{{period_to}}', 'Last day of that period'),
 ]
 
 _TABLE_STYLE = (
@@ -115,13 +119,30 @@ def summarize_filters(filters: dict) -> str:
     return ', '.join(parts) or 'None'
 
 
+def _friendly_date(iso_date: str) -> str:
+    """'2026-08-12' -> '12 Aug 2026', matching {{date}}. Anything else passes
+    through untouched — a report is free to hand back a label of its own."""
+    if not iso_date:
+        return ''
+    try:
+        return datetime.strptime(iso_date, '%Y-%m-%d').strftime('%d %b %Y')
+    except ValueError:
+        return iso_date
+
+
 def build_context(bot, payload, headers, labels, rows, now, table_html=None, table_text=None) -> dict:
     """The full variable set available to subject/body templates."""
     run_as = bot.resolve_run_as_user()
     profile = getattr(run_as, 'profile', None)
     department = getattr(getattr(profile, 'department', None), 'name', '') or ''
 
-    from bot.report_adapter import report_title
+    from bot.report_adapter import period_info, report_title
+
+    period_label, period_from, period_to = period_info(payload or {})
+    if not period_label and bot.report_period:
+        # No payload (the form's validation probe) or a report that doesn't
+        # report its own window — the bot still knows what it asked for.
+        period_label = bot.get_report_period_display()
 
     if table_html is None:
         table_html = build_html_table(headers, labels, rows, bot.max_rows_in_body)
@@ -141,6 +162,9 @@ def build_context(bot, payload, headers, labels, rows, now, table_html=None, tab
         'user_name': (run_as.get_full_name() or run_as.username) if run_as else '',
         'department': department,
         'filters_summary': summarize_filters(bot.effective_filters()),
+        'period_label': period_label,
+        'period_from': _friendly_date(period_from),
+        'period_to': _friendly_date(period_to),
     }
 
 

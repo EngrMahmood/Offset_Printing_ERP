@@ -37,6 +37,7 @@ PERIOD_CUSTOM = 'custom'
 PERIOD_CHOICES = [
     (PERIOD_DEFAULT, 'Report default'),
     ('today', 'Today'),
+    ('yesterday', 'Yesterday'),
     ('week', 'This Week'),
     ('month', 'This Month'),
     (PERIOD_CUSTOM, 'Custom Range'),

@@ -20,6 +20,20 @@ from bot.models import (
 from core import navigation as nav
 
 BOT_001_CODE = 'PENDING_PRODUCTION_RELEASE'
+DAILY_PRODUCTION_CODE = 'DAILY_PRODUCTION_REPORT'
+
+DAILY_PRODUCTION_BODY = """<p>Dear Team,</p>
+
+<p>Below is the daily production summary for {{period_label}} ({{period_from}}) —
+jobs released, printing, packing and dispatch for the day.</p>
+
+{{report_table}}
+
+<p>Kindly review and address any shortfall against plan.</p>
+
+<p>Regards,<br>
+Production Printing</p>
+"""
 
 # The three production backlog bots. Same report, different `stage` slice —
 # which is exactly the "new automation = new configuration row, not new code"
@@ -72,6 +86,7 @@ class Command(BaseCommand):
         self._seed_bot_001()
         for spec in STAGE_BOTS:
             self._seed_stage_bot(spec)
+        self._seed_daily_production()
         self.stdout.write(self.style.SUCCESS('Bot seed complete.'))
 
     def _seed_permission(self):
@@ -124,6 +139,39 @@ class Command(BaseCommand):
         self.stdout.write(
             '  Inactive by design — open /bot/, preview it, send a test, then activate.'
         )
+
+    def _seed_daily_production(self):
+        if BotAutomation.objects.filter(code=DAILY_PRODUCTION_CODE).exists():
+            self.stdout.write(f'{DAILY_PRODUCTION_CODE} already exists — left untouched.')
+            return
+
+        bot = BotAutomation.objects.create(
+            code=DAILY_PRODUCTION_CODE,
+            name='Daily Production Report',
+            description=(
+                'Every morning, emails yesterday\'s Daily Production overview — jobs '
+                'released, impressions, printed sheets, packed pcs, dispatch and '
+                'process wastage for the day.'
+            ),
+            is_active=False,
+            report_slug='daily-production',
+            # `tab` picks which of the report's six tables gets exported; the other
+            # tabs (printing / packing / dispatch / released / wastage) are reachable
+            # by cloning this bot and changing this one value.
+            report_filters={'tab': 'overview'},
+            report_period='yesterday',
+            frequency='DAILY',
+            # Ahead of the 08:00-08:30 backlog bots — yesterday's numbers first,
+            # then today's outstanding work.
+            send_time=datetime.time(7, 0),
+            subject_template='Daily Production Report - {{period_label}} ({{period_from}})',
+            body_template=DAILY_PRODUCTION_BODY,
+            attach_report=True,
+            attachment_format='xlsx',
+            send_when_empty=False,
+        )
+        self.stdout.write(self.style.SUCCESS(f'Created bot: {bot}'))
+        self.stdout.write('  Inactive, no recipients — add recipients in /bot/ then activate.')
 
     def _seed_stage_bot(self, spec):
         if BotAutomation.objects.filter(code=spec['code']).exists():

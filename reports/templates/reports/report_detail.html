@@ -35,6 +35,7 @@
                 <select name="period" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px; background: white;">
                     <option value="month" {% if request.GET.period == 'month' or not request.GET.period %}selected{% endif %}>This Month</option>
                     <option value="today" {% if request.GET.period == 'today' %}selected{% endif %}>Today</option>
+                    <option value="yesterday" {% if request.GET.period == 'yesterday' %}selected{% endif %}>Yesterday</option>
                     <option value="week" {% if request.GET.period == 'week' %}selected{% endif %}>This Week</option>
                     <option value="days" {% if request.GET.period == 'days' %}selected{% endif %}>Last 30 Days</option>
                     <option value="all" {% if request.GET.period == 'all' %}selected{% endif %}>All Time</option>

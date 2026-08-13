@@ -53,6 +53,7 @@
                 <label class="erp-input-label" for="dp-period">Period</label>
                 <select name="period" id="dp-period" class="erp-select">
                     <option value="today" {% if data.period == 'today' %}selected{% endif %}>Today</option>
+                    <option value="yesterday" {% if data.period == 'yesterday' %}selected{% endif %}>Yesterday</option>
                     <option value="week" {% if data.period == 'week' %}selected{% endif %}>This Week</option>
                     <option value="month" {% if data.period == 'month' %}selected{% endif %}>This Month</option>
                     <option value="custom" {% if data.period == 'custom' %}selected{% endif %}>Custom Range</option>

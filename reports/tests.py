@@ -1117,6 +1117,38 @@ class PeriodFilterPrecedenceTests(TestCase):
         self.assertEqual(start, date(2026, 7, 10))
         self.assertEqual(end, date(2026, 7, 12))
 
+    def test_yesterday_is_a_single_complete_day(self):
+        """What the morning automations report on — the last complete day, not
+        today's partial one."""
+        from datetime import timedelta
+        from django.utils import timezone
+        yesterday = timezone.localdate() - timedelta(days=1)
+
+        period, start, end = self._period('period=yesterday')
+        self.assertEqual(period, 'yesterday')
+        self.assertEqual(start, yesterday)
+        self.assertEqual(end, yesterday)
+
+    def test_yesterday_beats_stale_date_inputs(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        yesterday = timezone.localdate() - timedelta(days=1)
+
+        period, start, end = self._period(
+            'period=yesterday&date_from=2026-07-01&date_to=2026-07-21'
+        )
+        self.assertEqual(period, 'yesterday')
+        self.assertEqual(start, yesterday)
+        self.assertEqual(end, yesterday)
+
+    def test_yesterday_is_labelled(self):
+        from django.test import RequestFactory
+        from reports.services import _parse_period_filter
+        request = RequestFactory().get('/reports/daily-production/?period=yesterday')
+        request.user = self.user
+        label = _parse_period_filter(request)[3]
+        self.assertEqual(label, 'Yesterday')
+
 
 class PendingWorkReportTests(TestCase):
     """Process-wise pending backlog: printing/packing/dispatch gaps per job."""

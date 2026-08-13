@@ -40,8 +40,25 @@ def make_payload(rows):
             'export_rows': rows,
             'headers': ['job_card_no', 'sku', 'status'],
             'header_labels': {'job_card_no': 'Job Card', 'sku': 'SKU', 'status': 'Status'},
+            # daily-production reports its resolved window at the top of `data`;
+            # pending-work nests the same keys under data['filters'].
+            'period_label': 'Yesterday',
+            'date_from': '2026-08-10',
+            'date_to': '2026-08-10',
         },
     }
+
+
+def make_nested_payload(rows):
+    """pending-work's payload shape — same keys, one level deeper."""
+    payload = make_payload(rows)
+    data = payload['data']
+    data['filters'] = {
+        'period_label': data.pop('period_label'),
+        'date_from': data.pop('date_from'),
+        'date_to': data.pop('date_to'),
+    }
+    return payload
 
 
 SAMPLE_ROWS = [
@@ -274,6 +291,36 @@ class TemplateRenderingTests(TestCase):
             rendered = template_engine.render_template(name, context)
             self.assertNotEqual(rendered.strip(), '', f'{name} rendered empty')
 
+    def test_period_variables_come_from_the_report_not_the_clock(self):
+        """A 07:00 bot reporting on yesterday must not title itself with today."""
+        bot = make_bot(report_period='yesterday')
+        context = self._context(bot)
+        self.assertEqual(context['period_label'], 'Yesterday')
+        self.assertEqual(context['period_from'], '10 Aug 2026')
+        self.assertEqual(context['period_to'], '10 Aug 2026')
+        self.assertEqual(context['date'], '11 Aug 2026')  # still the run date
+
+    def test_period_variables_read_the_nested_payload_shape_too(self):
+        bot = make_bot(report_period='yesterday')
+        payload = make_nested_payload(SAMPLE_ROWS)
+        headers, labels, rows = services.report_adapter.extract_rows(payload)
+        context = template_engine.build_context(
+            bot, payload, headers, labels, rows, local(2026, 8, 11, 8, 30)
+        )
+        self.assertEqual(context['period_label'], 'Yesterday')
+        self.assertEqual(context['period_from'], '10 Aug 2026')
+
+    def test_period_label_falls_back_to_the_bots_own_choice(self):
+        """Reports that don't report their window still get a usable label."""
+        bot = make_bot(report_period='all')
+        payload = make_payload(SAMPLE_ROWS)
+        payload['data'].pop('period_label')
+        headers, labels, rows = services.report_adapter.extract_rows(payload)
+        context = template_engine.build_context(
+            bot, payload, headers, labels, rows, local(2026, 8, 11, 8, 30)
+        )
+        self.assertEqual(context['period_label'], 'All Time')
+
     def test_subject_substitutes_the_date_and_stays_single_line(self):
         bot = make_bot(subject_template='Pending Work - {{date}}\nsecond line')
         subject = template_engine.render_subject(bot, self._context(bot))
@@ -466,6 +513,20 @@ class SeedCommandTests(TestCase):
         times = {BotAutomation.objects.get(code=code).send_time for code in expected}
         self.assertEqual(len(times), 3)
 
+    def test_seeds_the_daily_production_bot(self):
+        from django.core.management import call_command
+        from io import StringIO
+
+        call_command('seed_bots', stdout=StringIO())
+
+        bot = BotAutomation.objects.get(code='DAILY_PRODUCTION_REPORT')
+        self.assertEqual(bot.report_slug, 'daily-production')
+        self.assertEqual(bot.effective_filters(), {'tab': 'overview', 'period': 'yesterday'})
+        self.assertFalse(bot.is_active)
+        self.assertEqual(bot.email_to, '')
+        # Runs before the backlog bots — yesterday's numbers, then today's work.
+        self.assertLess(bot.send_time, datetime.time(8, 0))
+
 
 class PeriodFilterTests(TestCase):
     """The bot's period control has to behave like the report screen's own:
@@ -523,6 +584,40 @@ class PeriodFilterTests(TestCase):
         self.assertEqual(captured['stage'], 'printing')
         self.assertEqual(captured['period'], 'all')
         self.assertEqual(captured['filters'], {'stage': 'printing', 'period': 'all'})
+
+    def test_yesterday_reaches_the_report_request_get(self):
+        """The reports app resolves 'yesterday' itself — the bot only has to
+        deliver the preset intact."""
+        from bot.report_adapter import fetch_report
+
+        bot = make_bot(report_filters={'tab': 'overview'}, report_period='yesterday')
+        captured = {}
+
+        def fake_run_report(slug, request, filters=None):
+            captured['slug'] = slug
+            captured['tab'] = request.GET.get('tab')
+            captured['period'] = request.GET.get('period')
+            return make_payload(SAMPLE_ROWS)
+
+        with mock.patch('bot.report_adapter.run_report', fake_run_report):
+            fetch_report(bot, user=None)
+
+        self.assertEqual(captured['tab'], 'overview')
+        self.assertEqual(captured['period'], 'yesterday')
+
+    def test_yesterday_resolves_to_one_day_through_the_reports_app(self):
+        """End-to-end guard: a preset the reports app doesn't know silently
+        falls back to the whole month, which would be the wrong email."""
+        from django.test import RequestFactory
+        from reports.services import _parse_period_filter
+
+        bot = make_bot(report_period='yesterday')
+        query = '&'.join(f'{k}={v}' for k, v in bot.effective_filters().items())
+        request = RequestFactory().get(f'/reports/daily-production/?{query}')
+        start, end, period, label, _, _ = _parse_period_filter(request)
+
+        expected = timezone.localdate() - datetime.timedelta(days=1)
+        self.assertEqual((start, end, period, label), (expected, expected, 'yesterday', 'Yesterday'))
 
     def test_custom_period_requires_both_dates(self):
         form = BotAutomationForm(_form_post(report_period='custom'))

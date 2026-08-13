@@ -162,6 +162,11 @@ def _parse_period_filter(request, default_period='month'):
     if period == 'today':
         start = end = today
         label = 'Today'
+    elif period == 'yesterday':
+        # The last complete production day — what the morning automations report
+        # on. Same key/label the Floor TV dashboard already uses.
+        start = end = today - timedelta(days=1)
+        label = 'Yesterday'
     elif period == 'week':
         start = today - timedelta(days=today.weekday())
         end = today

@@ -124,6 +124,33 @@ def build_attachment(payload: dict, slug: str, fmt: str) -> tuple[str, bytes, st
     return filename, content, _MIME_TYPES[fmt]
 
 
+def period_info(payload: dict) -> tuple[str, str, str]:
+    """(label, date_from, date_to) for the window the report actually covered.
+
+    Reports agree on the key names but not on where they sit: daily-production
+    puts period_label/date_from/date_to at the top of its data dict, while
+    pending-work nests the same three under data['filters']. Check both, and
+    return blanks rather than guessing — All Time legitimately has no dates.
+    """
+    data = payload.get('data') or {}
+    if not isinstance(data, dict):
+        return '', '', ''
+
+    sources = [data]
+    nested = data.get('filters')
+    if isinstance(nested, dict):
+        sources.append(nested)
+
+    def pick(key):
+        for source in sources:
+            value = source.get(key)
+            if value:
+                return str(value)
+        return ''
+
+    return pick('period_label'), pick('date_from'), pick('date_to')
+
+
 def report_title(payload: dict) -> str:
     """Report title including the active filter slice (e.g. "... - Not Yet
     Released"), matching what the exports name themselves."""

@@ -193,7 +193,7 @@ class BotAutomationForm(forms.ModelForm):
         probe = {
             'today': '', 'date': '', 'time': '', 'report_title': '', 'report_table': '',
             'total_records': 0, 'bot_name': '', 'user_name': '', 'department': '',
-            'filters_summary': '',
+            'filters_summary': '', 'period_label': '', 'period_from': '', 'period_to': '',
         }
         for field in ('subject_template', 'body_template'):
             value = cleaned.get(field)
