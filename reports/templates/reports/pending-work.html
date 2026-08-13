@@ -129,7 +129,7 @@
                 <table class="erp-table">
                     <thead>
                         <tr>
-                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Status</th>
+                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Status</th><th>Supervisor Status</th>
                             <th class="dp-num">Order Qty (Pcs)</th><th class="dp-num">Printed (Pcs)</th>
                             <th class="dp-num">Pending (Pcs)</th><th class="dp-num">Days Stuck</th>
                         </tr>
@@ -142,13 +142,14 @@
                             <td>{{ row.sku }}</td>
                             <td>{{ row.machine|default:'—' }}</td>
                             <td>{{ row.status }}</td>
+                            <td>{{ row.supervisor_status|default:'—' }}</td>
                             <td class="dp-num">{{ row.order_qty_pcs|intcomma }}</td>
                             <td class="dp-num">{{ row.printed_pcs|intcomma }}</td>
                             <td class="dp-num"><strong>{{ row.pending_qty|intcomma }}</strong></td>
                             <td class="dp-num {% if row.days_pending|default:0 > 7 %}pw-days-old{% endif %}">{{ row.days_pending }}</td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="9">Nothing pending at printing.</td></tr>
+                        <tr><td colspan="10">Nothing pending at printing.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -167,7 +168,7 @@
                 <table class="erp-table">
                     <thead>
                         <tr>
-                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Status</th>
+                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Status</th><th>Supervisor Status</th>
                             <th class="dp-num">Printed (Pcs)</th><th class="dp-num">Packed (Pcs)</th>
                             <th class="dp-num">Pending (Pcs)</th><th class="dp-num">Days Stuck</th>
                         </tr>
@@ -180,13 +181,14 @@
                             <td>{{ row.sku }}</td>
                             <td>{{ row.machine|default:'—' }}</td>
                             <td>{{ row.status }}</td>
+                            <td>{{ row.supervisor_status|default:'—' }}</td>
                             <td class="dp-num">{{ row.printed_pcs|intcomma }}</td>
                             <td class="dp-num">{{ row.packed_pcs|intcomma }}</td>
                             <td class="dp-num"><strong>{{ row.pending_qty|intcomma }}</strong></td>
                             <td class="dp-num {% if row.days_pending|default:0 > 7 %}pw-days-old{% endif %}">{{ row.days_pending }}</td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="9">Nothing pending at packing.</td></tr>
+                        <tr><td colspan="10">Nothing pending at packing.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -205,7 +207,7 @@
                 <table class="erp-table">
                     <thead>
                         <tr>
-                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Status</th>
+                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Machine</th><th>Status</th><th>Supervisor Status</th>
                             <th class="dp-num">Packed (Pcs)</th><th class="dp-num">Dispatched (Pcs)</th>
                             <th class="dp-num">Pending (Pcs)</th><th class="dp-num">Days Stuck</th>
                         </tr>
@@ -218,13 +220,14 @@
                             <td>{{ row.sku }}</td>
                             <td>{{ row.machine|default:'—' }}</td>
                             <td>{{ row.status }}</td>
+                            <td>{{ row.supervisor_status|default:'—' }}</td>
                             <td class="dp-num">{{ row.packed_pcs|intcomma }}</td>
                             <td class="dp-num">{{ row.dispatched_pcs|intcomma }}</td>
                             <td class="dp-num"><strong>{{ row.pending_qty|intcomma }}</strong></td>
                             <td class="dp-num {% if row.days_pending|default:0 > 7 %}pw-days-old{% endif %}">{{ row.days_pending }}</td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="9">Nothing pending at dispatch.</td></tr>
+                        <tr><td colspan="10">Nothing pending at dispatch.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -246,7 +249,7 @@
                 <table class="erp-table">
                     <thead>
                         <tr>
-                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Status</th>
+                            <th>Job Card</th><th>PO</th><th>SKU</th><th>Status</th><th>Stage</th>
                             <th class="dp-num">Order Qty (Pcs)</th><th class="dp-num">Days Since Entry</th>
                         </tr>
                     </thead>
@@ -257,11 +260,12 @@
                             <td>{{ row.po_number|default:'—' }}</td>
                             <td>{{ row.sku }}</td>
                             <td>{{ row.status }}</td>
+                            <td>{{ row.planning_stage|default:'—' }}</td>
                             <td class="dp-num">{{ row.order_qty_pcs|intcomma }}</td>
                             <td class="dp-num {% if row.days_pending|default:0 > 7 %}pw-days-old{% endif %}">{{ row.days_pending }}</td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="6">Nothing waiting on release.</td></tr>
+                        <tr><td colspan="7">Nothing waiting on release.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

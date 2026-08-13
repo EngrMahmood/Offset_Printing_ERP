@@ -2259,7 +2259,9 @@ def build_pending_work_context(request):
     if start and end:
         job_cards = _filter_job_cards_by_period(job_cards, start, end)
 
-    job_cards = job_cards.select_related('planning_job', 'machine_name').prefetch_related(
+    job_cards = job_cards.select_related(
+        'planning_job', 'machine_name', 'production_wip_status__status',
+    ).prefetch_related(
         Prefetch('productions', queryset=Production.objects.filter(is_active=True)),
         Prefetch('dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
     ).order_by('created_at')
@@ -2285,6 +2287,7 @@ def build_pending_work_context(request):
             'po_number': job.po_number or '',
             'sku': job.sku,
             'status': job.workflow_status_label,
+            'planning_stage': job.get_planning_stage_display(),
             'order_qty_pcs': job.order_qty or 0,
             'days_pending': (today - job.created_at.date()).days if job.created_at else '',
         })
@@ -2296,6 +2299,7 @@ def build_pending_work_context(request):
                 'po_number': job.PO_No or '',
                 'sku': job.SKU,
                 'status': job.workflow_status_label,
+                'planning_stage': job.planning_job.get_planning_stage_display() if job.planning_job else '',
                 'order_qty_pcs': job.order_qty or 0,
                 'days_pending': (today - job.created_at.date()).days if job.created_at else '',
             })
@@ -2339,6 +2343,7 @@ def build_pending_work_context(request):
             'sku': job.SKU,
             'machine': job.machine_name_display,
             'status': job.workflow_status_label,
+            'supervisor_status': job.wip_status_name or 'Not Set',
             'order_qty_pcs': order_qty_pcs,
             'printed_pcs': printed_pcs,
             'packed_pcs': packed_pcs,
@@ -2392,16 +2397,17 @@ def build_pending_work_context(request):
         ]
 
     if stage == 'not_released':
-        headers = ['job_card_no', 'po_number', 'sku', 'status', 'order_qty_pcs', 'days_pending']
+        headers = ['job_card_no', 'po_number', 'sku', 'status', 'planning_stage', 'order_qty_pcs', 'days_pending']
     elif stage in ('printing', 'packing', 'dispatch'):
-        headers = ['job_card_no', 'po_number', 'sku', 'machine', 'status',
+        headers = ['job_card_no', 'po_number', 'sku', 'machine', 'status', 'supervisor_status',
                    'order_qty_pcs', 'printed_pcs', 'packed_pcs', 'dispatched_pcs', 'pending_qty', 'days_pending']
     else:
-        headers = ['stage', 'job_card_no', 'po_number', 'sku', 'machine', 'status',
+        headers = ['stage', 'job_card_no', 'po_number', 'sku', 'machine', 'status', 'supervisor_status',
                    'order_qty_pcs', 'printed_pcs', 'packed_pcs', 'dispatched_pcs', 'pending_qty', 'days_pending']
     header_labels = {
         'stage': 'Stage', 'job_card_no': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'machine': 'Machine',
-        'status': 'Status', 'order_qty_pcs': 'Order Qty (Pcs)', 'printed_pcs': 'Printed (Pcs)',
+        'status': 'Status', 'planning_stage': 'Stage', 'supervisor_status': 'Supervisor Status',
+        'order_qty_pcs': 'Order Qty (Pcs)', 'printed_pcs': 'Printed (Pcs)',
         'packed_pcs': 'Packed (Pcs)', 'dispatched_pcs': 'Dispatched (Pcs)', 'pending_qty': 'Pending (Pcs)',
         'days_pending': 'Days Stuck',
     }
