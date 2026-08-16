@@ -85,7 +85,7 @@
 .chat-thread__presence { font-size: 11px; font-weight: 400; color: #94a3b8; min-height: 14px; }
 .chat-thread__presence.is-online { color: #16a34a; }
 .chat-thread__presence.is-away { color: #d97706; }
-.chat-thread__typing { font-size: 11px; font-weight: 400; color: #16a34a; min-height: 14px; }
+.chat-thread__typing-bar { font-size: 12px; font-weight: 500; color: #16a34a; min-height: 18px; padding: 0 16px; }
 .chat-thread__actions { display: flex; gap: 6px; }
 
 .chat-thread__messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 4px; }

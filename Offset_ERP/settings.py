@@ -26,6 +26,32 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')
 EMAIL_BACKEND = 'core.email_backend.DynamicGmailEmailBackend'
 DEFAULT_FROM_EMAIL = os.environ.get('GMAIL_ADDRESS', 'no-reply@offsetprintingerp.local')
 
+# Local LLM (LM Studio, OpenAI-compatible chat endpoint). Never hardcode the
+# endpoint elsewhere — everything routes through these settings so pointing
+# at a different host later (e.g. an Oracle VM) is a config change, not a
+# code change. See core/llm/client.py.
+LLM_ENABLED = os.environ.get('LLM_ENABLED', 'True') == 'True'
+LLM_ENDPOINT_URL = os.environ.get('LLM_ENDPOINT_URL', 'http://127.0.0.1:1234')
+# ibm-granite/granite-4.0-micro: winner of a 4-way benchmark on this app's
+# real prompts (core/management/commands/llm_benchmark.py), avg 22.8s with
+# ZERO reasoning tokens on every call — it's not a "thinking" model at all,
+# so there's no hidden chain-of-thought overhead to strip or wait out.
+# Runner-up nvidia/nemotron-3-nano-4b averaged 38.1s (still does some light
+# reasoning, ~15-280 tokens/call). qwen3-4b-thinking averaged 124.6s
+# (~400-1000 reasoning tokens/call — avoid anything tagged "thinking" for
+# this app's use case, phrasing already-fetched facts needs no reasoning).
+# google/gemma-4-e4b skips reasoning too but is slower per-token on this
+# iGPU (47.2s avg). Re-run llm_benchmark before changing this again — don't
+# guess from token counts alone, per-token speed varies by model on this
+# hardware.
+LLM_MODEL_ID = os.environ.get('LLM_MODEL_ID', 'granite-4.0-micro')
+# core/llm/client.py defaults max_tokens generously (4000) as a safety
+# ceiling regardless of model — it stops on its own once done, so a high
+# ceiling doesn't slow down the common case, it just avoids truncating an
+# unusually slow run. Timeout is set to match that worst case.
+LLM_TIMEOUT_SECONDS = float(os.environ.get('LLM_TIMEOUT_SECONDS', '300'))
+CHAT_AI_ASSISTANT_USERNAME = os.environ.get('CHAT_AI_ASSISTANT_USERNAME', 'ai-assistant')
+
 
 # Quick-start development settings - unsuitable for production
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/

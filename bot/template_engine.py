@@ -28,6 +28,7 @@ SUPPORTED_VARIABLES = [
     ('{{period_label}}', 'Period the report covers, e.g. Yesterday or This Month'),
     ('{{period_from}}', 'First day of that period, e.g. 12 Aug 2026 (blank for All Time)'),
     ('{{period_to}}', 'Last day of that period'),
+    ('{{ai_summary}}', 'AI-generated plain-English summary of this report (blank if AI summary is off or unavailable)'),
 ]
 
 _TABLE_STYLE = (
@@ -130,7 +131,7 @@ def _friendly_date(iso_date: str) -> str:
         return iso_date
 
 
-def build_context(bot, payload, headers, labels, rows, now, table_html=None, table_text=None) -> dict:
+def build_context(bot, payload, headers, labels, rows, now, table_html=None, table_text=None, ai_summary='') -> dict:
     """The full variable set available to subject/body templates."""
     run_as = bot.resolve_run_as_user()
     profile = getattr(run_as, 'profile', None)
@@ -165,6 +166,7 @@ def build_context(bot, payload, headers, labels, rows, now, table_html=None, tab
         'period_label': period_label,
         'period_from': _friendly_date(period_from),
         'period_to': _friendly_date(period_to),
+        'ai_summary': ai_summary,
     }
 
 

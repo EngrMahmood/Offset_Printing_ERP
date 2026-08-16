@@ -348,6 +348,54 @@
                     </div>
                 </form>
             </details>
+
+            <details class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-100 group">
+                <summary class="flex items-center justify-between cursor-pointer select-none p-4">
+                    <div>
+                        <h3 class="font-bold text-slate-800 text-sm">AI Features</h3>
+                        <p class="text-xs text-slate-500 mt-0.5">
+                            {% if ai_settings.ai_enabled %}
+                                Enabled — bot report summaries and the chat AI assistant use the local LLM. Click to change.
+                            {% else %}
+                                Disabled — no AI features are active anywhere right now.
+                            {% endif %}
+                        </p>
+                    </div>
+                    <i class="fas fa-chevron-down text-slate-400 text-xs transition-transform group-open:rotate-180"></i>
+                </summary>
+                <form method="post" action="{% url 'ai_settings_edit' %}" class="p-4 pt-0 space-y-3">
+                    {% csrf_token %}
+                    <label class="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+                        <input type="checkbox" name="ai_enabled" {% if ai_settings.ai_enabled %}checked{% endif %}
+                               class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+                        <span>
+                            <span class="block text-sm font-semibold text-slate-800">Enable AI features</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Master switch. Turning this off disables every AI feature below immediately — no restart needed.</span>
+                        </span>
+                    </label>
+                    <label class="flex items-start gap-3 p-3 rounded-lg cursor-pointer">
+                        <input type="checkbox" name="bot_summaries_enabled" {% if ai_settings.bot_summaries_enabled %}checked{% endif %}
+                               class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+                        <span>
+                            <span class="block text-sm font-semibold text-slate-800">Bot report summaries</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Allow bot report emails to include an AI-written summary paragraph, for bots that also have their own "Use AI Summary" option turned on.</span>
+                        </span>
+                    </label>
+                    <label class="flex items-start gap-3 p-3 rounded-lg cursor-pointer">
+                        <input type="checkbox" name="chat_assistant_enabled" {% if ai_settings.chat_assistant_enabled %}checked{% endif %}
+                               class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+                        <span>
+                            <span class="block text-sm font-semibold text-slate-800">Chat AI Assistant</span>
+                            <span class="block text-xs text-slate-500 mt-0.5">Allow the AI Assistant chat bot to reply to messages at all. Off means it stops responding entirely, rather than replying with unphrased raw data.</span>
+                        </span>
+                    </label>
+                    <div class="flex justify-end">
+                        <button type="submit" class="shrink-0 bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm flex items-center gap-2 text-sm transition-all">
+                            <i class="fas fa-save"></i><span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </details>
         </div>
 
         <!-- Users list -->

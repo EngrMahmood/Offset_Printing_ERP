@@ -2137,6 +2137,31 @@ def email_settings_edit(request):
 
 
 @login_required
+@require_POST
+def ai_settings_edit(request):
+    """Superuser-only: master + per-feature switches for the local LLM AI
+    features. Read at call-time by core.llm.client.call_chat(), so this
+    takes effect immediately with no server restart — flipping the master
+    switch off stops any AI call already in flight from being repeated, and
+    the very next one is blocked."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can edit AI settings.')
+        return redirect('notification_settings_home')
+
+    from core.models import AISettings
+
+    settings_obj = AISettings.get_solo()
+    settings_obj.ai_enabled = bool(request.POST.get('ai_enabled'))
+    settings_obj.bot_summaries_enabled = bool(request.POST.get('bot_summaries_enabled'))
+    settings_obj.chat_assistant_enabled = bool(request.POST.get('chat_assistant_enabled'))
+    settings_obj.updated_by = request.user
+    settings_obj.save()
+
+    messages.success(request, 'AI settings saved.')
+    return redirect(f"/settings/#access-control")
+
+
+@login_required
 def download_template(request):
     """Download template in CSV or Excel format"""
     file_format = request.GET.get('format', 'csv').lower()
@@ -2461,8 +2486,9 @@ def notification_settings_home(request):
 
     access_audits_raw = AccessControlAuditLog.objects.all().select_related('changed_by').order_by('-timestamp')[:50]
 
-    from core.models import EmailSettings
+    from core.models import AISettings, EmailSettings
     email_settings = EmailSettings.get_solo() if request.user.is_superuser else None
+    ai_settings = AISettings.get_solo() if request.user.is_superuser else None
 
     context = {
         'events': events,
@@ -2484,6 +2510,7 @@ def notification_settings_home(request):
         'override_category_open': override_category_open,
         'access_audits': access_audits_raw,
         'email_settings': email_settings,
+        'ai_settings': ai_settings,
     }
     return render(request, 'notification_settings.html', context)
 

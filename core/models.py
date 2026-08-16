@@ -2132,3 +2132,44 @@ class EmailSettings(models.Model):
     def get_solo(cls):
         obj, _ = cls.objects.get_or_create(pk=1)
         return obj
+
+
+class AISettings(models.Model):
+    """Singleton row controlling the local LLM AI features (bot report
+    summaries, chat AI assistant), editable from Settings so a superuser
+    never has to touch server environment variables or restart the server.
+    Read at call-time by core.llm.client.call_chat() — this DB row wins over
+    the LLM_ENABLED env var, matching the EmailSettings/DynamicGmailEmailBackend
+    pattern (DB overrides env, env is the fallback for servers set up before
+    this UI existed)."""
+
+    ai_enabled = models.BooleanField(
+        default=True,
+        help_text="Master switch for every AI feature. Turning this off disables AI "
+                  "everywhere immediately — bot summaries, chat assistant — no restart needed.",
+    )
+    bot_summaries_enabled = models.BooleanField(
+        default=True,
+        help_text="Allow bot report emails to include an AI-written summary paragraph, "
+                  "for bots that also have their own 'Use AI Summary' option turned on.",
+    )
+    chat_assistant_enabled = models.BooleanField(
+        default=True,
+        help_text="Allow the AI Assistant chat bot to reply to messages at all. Turning "
+                  "this off makes it stop responding entirely, rather than replying with "
+                  "unphrased raw data.",
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+
+    class Meta:
+        verbose_name = 'AI Settings'
+        verbose_name_plural = 'AI Settings'
+
+    def __str__(self):
+        return 'AI Settings'
+
+    @classmethod
+    def get_solo(cls):
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj

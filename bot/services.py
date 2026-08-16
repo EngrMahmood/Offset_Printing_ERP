@@ -72,6 +72,30 @@ def resolve_recipients(bot):
     return to, cc, bcc
 
 
+def _build_ai_summary(bot, headers, labels, rows, payload):
+    """Best-effort narration paragraph. Never raises — a summary failure must
+    never block or blank out the report email itself."""
+    if not bot.use_ai_summary:
+        return ''
+    from core.models import AISettings
+    ai_settings = AISettings.get_solo()
+    if not ai_settings.ai_enabled or not ai_settings.bot_summaries_enabled:
+        return ''
+    try:
+        from core.llm.client import call_chat
+        from core.llm.prompts import NARRATION_SYSTEM_PROMPT
+
+        facts = report_adapter.build_narration_facts(payload, headers, labels, rows, fallback_title=bot.name)
+
+        return call_chat([
+            {'role': 'system', 'content': NARRATION_SYSTEM_PROMPT},
+            {'role': 'user', 'content': f'Summarize this report:\n{facts}'},
+        ]) or ''
+    except Exception:
+        logger.warning('AI summary failed for bot %s', bot.code, exc_info=True)
+        return ''
+
+
 def build_email_parts(bot, payload=None, now=None):
     """Render everything the email needs without sending it.
 
@@ -83,7 +107,8 @@ def build_email_parts(bot, payload=None, now=None):
         payload = report_adapter.fetch_report(bot)
 
     headers, labels, rows = report_adapter.extract_rows(payload)
-    context = template_engine.build_context(bot, payload, headers, labels, rows, now)
+    ai_summary = _build_ai_summary(bot, headers, labels, rows, payload)
+    context = template_engine.build_context(bot, payload, headers, labels, rows, now, ai_summary=ai_summary)
 
     return {
         'payload': payload,

@@ -22,6 +22,7 @@ urlpatterns = [
     path('calls/incoming/', api.IncomingCallsView.as_view(), name='calls-incoming'),
 
     path('ice-config/', api.IceConfigView.as_view(), name='ice-config'),
+    path('assistant/ask/', api.AskAssistantView.as_view(), name='assistant-ask'),
     path('users/', api.ChattableUserListView.as_view(), name='chattable-users'),
     path('presence/online/', api.OnlineUsersView.as_view(), name='presence-online'),
 ]

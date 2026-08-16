@@ -91,6 +91,89 @@ def _parse_and_set_mentions(room, message):
     return matched_ids
 
 
+def _maybe_trigger_ai_assistant(room, message, sender):
+    """If this message was just sent to the ai-assistant bot's DM room, kick
+    off a background thread to compute and post the bot's reply. Fire-and-
+    forget: the HTTP response for the staff member's own message must not
+    wait on the LLM round trip (can take well over a minute for this model)."""
+    if room.room_type != 'dm':
+        return
+    from core.models import AISettings
+    ai_settings = AISettings.get_solo()
+    if not ai_settings.ai_enabled or not ai_settings.chat_assistant_enabled:
+        return
+    bot_user = User.objects.filter(username=settings.CHAT_AI_ASSISTANT_USERNAME).first()
+    if bot_user is None or sender.id == bot_user.id:
+        return
+    if not room.participants.filter(user=bot_user, left_at__isnull=True).exists():
+        return
+
+    import threading
+
+    threading.Thread(
+        target=_run_ai_assistant_reply,
+        args=(room.id, message.id, message.body, bot_user.id, sender.id),
+        name=f'AIAssistantReply-{message.id}',
+        daemon=True,
+    ).start()
+
+
+def _run_ai_assistant_reply(room_id, question_message_id, question, bot_user_id, sender_id):
+    """Runs on a background thread — must close its own DB connection when
+    done (Django doesn't share connections across threads) and must never
+    raise into the thread's uncaught-exception path.
+
+    Calls are serialized against the local LLM (see core/llm/client.py's
+    lock), so if a staff member asks two questions before the first one
+    finishes, replies land in *completion* order, not send order — an older,
+    slower question can finish after a newer, faster one. Threading the
+    reply to the question that triggered it (via reply_to) keeps the answer
+    correctly attributed regardless of that ordering, instead of the wrong
+    answer appearing to sit right under an unrelated later question."""
+    from django.db import connection
+
+    bot_display_name = None
+    try:
+        from .ai_assistant import resolve_and_reply
+        from .serializers import MessageSerializer
+
+        room = ChatRoom.objects.get(pk=room_id)
+        bot_user = User.objects.get(pk=bot_user_id)
+        sender = User.objects.get(pk=sender_id)
+        bot_display_name = bot_user.get_full_name() or bot_user.username
+
+        # Reuses the existing typing-indicator event (chat_socket.js /
+        # chat_dock.js already render it generically off payload.event —
+        # no frontend change needed) so staff see something is happening
+        # during the LLM round trip, which can take well over a minute.
+        broadcast_room_event(room.id, 'typing', {
+            'user_id': bot_user.id, 'username': bot_display_name, 'is_typing': True,
+        })
+
+        # user=sender: a report request runs with the asking staff member's
+        # own permissions (same access check as the Reports screen) — not
+        # the bot's or an anonymous user's.
+        reply_text = resolve_and_reply(question, user=sender)
+
+        reply = Message.objects.create(
+            room=room, sender=bot_user, body=reply_text, message_type='text',
+            reply_to_id=question_message_id,
+        )
+        room.touch_last_message(reply.created_at)
+
+        serializer = MessageSerializer(reply)
+        broadcast_room_event(room.id, 'message_created', {'message': serializer.data})
+    except Exception:
+        import logging
+        logging.getLogger(__name__).warning('AI assistant reply failed for room %s', room_id, exc_info=True)
+    finally:
+        if bot_display_name is not None:
+            broadcast_room_event(room_id, 'typing', {
+                'user_id': bot_user_id, 'username': bot_display_name, 'is_typing': False,
+            })
+        connection.close()
+
+
 def _notify_new_message(room, message, sender, preview, mentioned_user_ids=None):
     """Push a toast-worthy event (site-wide, not just to open chat tabs) to
     every other active participant. Room label mirrors ChatRoom.display_name_for:
@@ -415,6 +498,7 @@ class MessageListCreateView(APIView):
         serializer = MessageSerializer(message, context={'request': request})
         broadcast_room_event(room.id, 'message_created', {'message': serializer.data})
         _notify_new_message(room, message, request.user, preview=body, mentioned_user_ids=mentioned_ids)
+        _maybe_trigger_ai_assistant(room, message, request.user)
 
         return Response(serializer.data, status=status.HTTP_201_CREATED)
 
@@ -467,6 +551,24 @@ class MessageDetailView(APIView):
         message.soft_delete()
         broadcast_room_event(room.id, 'message_deleted', {'message_id': message.id})
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+
+class AskAssistantView(APIView):
+    """Synchronous 'ask a question' endpoint — reuses the same resolver as
+    the chat AI assistant. Blocks for the LLM round trip (can be well over a
+    minute), so it's meant for a deliberately-invoked, low-traffic use (e.g.
+    a dashboard widget), not a high-traffic path."""
+
+    permission_classes = [IsAuthenticated, ChatAccessPermission]
+
+    def post(self, request):
+        from .ai_assistant import resolve_and_reply
+
+        question = (request.data.get('question') or '').strip()
+        if not question:
+            return Response({'detail': 'question is required.'}, status=status.HTTP_400_BAD_REQUEST)
+        answer = resolve_and_reply(question, user=request.user)
+        return Response({'answer': answer})
 
 
 class AttachmentUploadView(APIView):
@@ -669,6 +771,6 @@ class ChattableUserListView(APIView):
         data = [
             {'id': u.id, 'username': u.username, 'display_name': u.get_full_name() or u.username}
             for u in users
-            if u.is_superuser or user_has_permission(u, 'nav.chat')
+            if u.is_superuser or user_has_permission(u, 'nav.chat') or u.username == settings.CHAT_AI_ASSISTANT_USERNAME
         ]
         return Response(data)

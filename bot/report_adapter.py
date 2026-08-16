@@ -58,6 +58,26 @@ def build_stub_request(user, filters: dict | None = None) -> StubRequest:
     return StubRequest(user, filters)
 
 
+def build_narration_facts(payload, headers, labels, rows, fallback_title='', max_rows=25) -> str:
+    """Row-capped, LLM-prompt-ready facts block for a report payload. Shared
+    by bot email narration (bot/services.py) and the chat AI assistant
+    (chat/ai_assistant.py) so both phrase the same underlying data the same
+    way. Capped — this is a slow, small-context local model; a 500-row table
+    would blow the context window and response-time budget for no benefit
+    (the full table is available elsewhere: the email attachment, or the
+    report screen itself)."""
+    sample = rows[:max_rows]
+    lines = [
+        f"Report: {report_title(payload) if payload else fallback_title}",
+        f"Total records: {len(rows)}",
+    ]
+    for row in sample:
+        lines.append(', '.join(f'{labels.get(h, h)}: {row.get(h)}' for h in headers))
+    if len(rows) > len(sample):
+        lines.append(f'... and {len(rows) - len(sample)} more row(s) not shown here.')
+    return '\n'.join(lines)
+
+
 def fetch_report(bot, user=None) -> dict:
     """Run the bot's report and return the engine payload.
 

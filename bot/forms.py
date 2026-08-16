@@ -20,7 +20,7 @@ class BotAutomationForm(forms.ModelForm):
         ('Recipients', ['email_to', 'email_cc', 'email_bcc', 'recipient_roles']),
         ('Email Draft', ['subject_template', 'body_template']),
         ('Delivery Options', [
-            'attach_report', 'attachment_format', 'send_when_empty',
+            'attach_report', 'attachment_format', 'send_when_empty', 'use_ai_summary',
             'max_rows_in_body', 'retry_count', 'retry_interval_minutes',
         ]),
     ]
@@ -80,7 +80,7 @@ class BotAutomationForm(forms.ModelForm):
             'frequency', 'send_time', 'weekdays', 'day_of_month', 'start_date', 'end_date',
             'email_to', 'email_cc', 'email_bcc', 'recipient_roles',
             'subject_template', 'body_template', 'max_rows_in_body',
-            'attach_report', 'attachment_format', 'send_when_empty',
+            'attach_report', 'attachment_format', 'send_when_empty', 'use_ai_summary',
             'retry_count', 'retry_interval_minutes', 'run_as',
         ]
         widgets = {
@@ -186,6 +186,22 @@ class BotAutomationForm(forms.ModelForm):
                 'An active bot needs at least one recipient — an address here or a recipient role.',
             )
 
+        # Turning on "Use AI Summary" without also editing the template to
+        # display {{ai_summary}} produces a bot that silently generates a
+        # summary nobody ever sees — this has bitten real bots more than
+        # once. Auto-insert the block (right above the report table, same
+        # placement used everywhere else) the first time the checkbox is
+        # turned on for a template that doesn't already reference it, so the
+        # two are never a two-step, easy-to-forget process.
+        body_template = cleaned.get('body_template') or ''
+        if cleaned.get('use_ai_summary') and body_template and '{{ai_summary}}' not in body_template:
+            insert = '{% if ai_summary %}<p>{{ai_summary}}</p>{% endif %}\n\n'
+            if '{{report_table}}' in body_template:
+                body_template = body_template.replace('{{report_table}}', insert + '{{report_table}}', 1)
+            else:
+                body_template = insert + body_template
+            cleaned['body_template'] = body_template
+
         # Fail at save time rather than at 08:30 on a Monday morning.
         from bot.template_engine import render_template
         from django.template import TemplateSyntaxError
@@ -194,6 +210,7 @@ class BotAutomationForm(forms.ModelForm):
             'today': '', 'date': '', 'time': '', 'report_title': '', 'report_table': '',
             'total_records': 0, 'bot_name': '', 'user_name': '', 'department': '',
             'filters_summary': '', 'period_label': '', 'period_from': '', 'period_to': '',
+            'ai_summary': '',
         }
         for field in ('subject_template', 'body_template'):
             value = cleaned.get(field)

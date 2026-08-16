@@ -210,6 +210,12 @@ class BotAutomation(models.Model):
         default=False,
         help_text="Send the email even when the report returns zero rows.",
     )
+    use_ai_summary = models.BooleanField(
+        default=False,
+        help_text="Prepend a short AI-generated plain-English summary paragraph above the "
+                  "report table. Uses the local LLM; if it's unreachable or times out, the "
+                  "email still sends without the summary.",
+    )
 
     # --- Reliability ------------------------------------------------------
     retry_count = models.PositiveSmallIntegerField(
