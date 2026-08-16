@@ -3,11 +3,17 @@ local LLM to phrase it. Intent resolution is pattern-based, not LLM-driven —
 the LLM's only job is phrasing already-fetched data, never deciding what to
 query, to keep this reliable on a small, slow local model.
 
-Every identifier type below (JC, PO/WO/PR, SKU, Set no, AWC no) resolves back
-to the same JobCard entity, so there is one shared facts/LLM path — per the
-business rule confirmed with the user: PO, WO, and PR are the same
-JobCard.PO_No field (planners fill in whichever number they have at entry
-time — a PO if approved, a WO or PR indent number if not).
+The JobCard identifier types (JC, PO/WO/PR, SKU, Set no, AWC no) all resolve
+back to the same JobCard entity, so they share one facts/LLM path
+(_reply_for) — per the business rule confirmed with the user: PO, WO, and PR
+are the same JobCard.PO_No field (planners fill in whichever number they
+have at entry time — a PO if approved, a WO or PR indent number if not).
+
+Dispatch (by DC no), Task (by number), and raw material stock (by material
+SKU) are separate entities with their own facts-building + reply functions,
+sharing only the LLM-phrasing tail (_phrase_answer) with the JobCard path —
+a DC no in particular can span multiple JobCards, so that one resolves to a
+list rather than a single record.
 """
 from __future__ import annotations
 
@@ -51,12 +57,35 @@ SET_NO_PATTERN = re.compile(
 AWC_PATTERN = re.compile(
     r'\bawc\b\.?\s*(?:no\.?|number|#)?\s*[:\-]?\s*' + _VALUE, re.IGNORECASE
 )
+# "dc" alone is too short/ambiguous to trigger on — require the no/number/#
+# suffix, same reasoning as SET_NO_PATTERN.
+DC_NO_PATTERN = re.compile(
+    r'\bdc\s*(?:no\.?|number|#)\s*[:\-]?\s*' + _VALUE, re.IGNORECASE
+)
+# Numeric-id style, identical shape to SHORT_JC_PATTERN — Task has no
+# formatted code, only a free-text title and the Django pk.
+TASK_ID_PATTERN = re.compile(
+    r'\btask\b\.?\s*(?:no\.?|number|#)?\s*[:\-]?\s*(\d{1,6})\b', re.IGNORECASE
+)
+# Deliberately distinct wording ("material"/"raw material") from SKU_PATTERN
+# so the two never collide on the same message — RawMaterialSku is a
+# separate inventory domain from JobCard.SKU (finished goods). Its own value
+# capture, not _VALUE — unlike every other identifier here, real
+# RawMaterialSku.sku values routinely contain spaces (e.g. "RUBBER COVERING
+# OF SM-74 ROLLER SIZE DIA 75MM"), so this captures to the end of the
+# message rather than stopping at whitespace; resolve_and_reply strips
+# trailing punctuation before using it as a lookup value.
+MATERIAL_SKU_PATTERN = re.compile(
+    r'\b(?:raw\s+)?material\b\.?\s*(?:no\.?|number|#)?\s*[:\-]?\s*(.+)$', re.IGNORECASE
+)
 
 NO_MATCH_REPLY = (
     "I can look up job cards right now by JC number (e.g. JC-07-26-PP-0701, "
-    "or just \"jc 105\"), PO/WO/PR number, SKU, plate set no, or AWC no — or "
-    "ask for a report by name (e.g. \"stock report\", \"daily production "
-    "report\"). I didn't find any of those in your message."
+    "or just \"jc 105\"), PO/WO/PR number, SKU, plate set no, or AWC no. I "
+    "can also look up a dispatch by DC number, a task by number (e.g. "
+    "\"task 5\"), or raw material stock by material SKU — or ask for a "
+    "report by name (e.g. \"stock report\", \"daily production report\"). "
+    "I didn't find any of those in your message."
 )
 
 
@@ -161,6 +190,35 @@ def _find_by_awc(value: str):
     return plate.job_card if plate else None
 
 
+def _find_dispatches_by_dc(value: str):
+    """A DC number is not globally unique — the same DC can legitimately
+    cover multiple job cards (per Dispatch's own docstring) — so this
+    returns a list, not a single record, unlike every other resolver here."""
+    from core.models import Dispatch
+
+    return list(
+        Dispatch.objects.filter(dc_no__iexact=value, is_active=True)
+        .select_related('job_card')
+        .order_by('-dispatch_date')
+    )
+
+
+def _find_task_by_id(task_id: int):
+    from tasks.models import Task
+
+    return Task.objects.filter(pk=task_id).select_related('assignee', 'assigned_team').first()
+
+
+def _find_raw_material_sku(value: str):
+    from supply_chain.models import RawMaterialSku
+
+    return (
+        RawMaterialSku.objects.filter(sku__iexact=value, is_active=True)
+        .select_related('material')
+        .first()
+    )
+
+
 # (pattern, resolver, label used in the "couldn't find" message)
 _LOOKUPS = [
     (PO_WO_PR_PATTERN, _find_by_po, 'PO/WO/PR number'),
@@ -218,8 +276,19 @@ def _facts_for(jc) -> str:
     )
 
 
-def _reply_for(jc, question: str) -> str:
-    facts = _facts_for(jc)
+def _phrase_answer(facts: str, question: str) -> str:
+    """Shared LLM-phrasing tail for every conversational (question-and-
+    answer, as opposed to report-narration) reply in this module — checks
+    the AI enable switch, calls the LLM, falls back to raw facts on failure
+    or when disabled. Never raises, never blank.
+
+    No lock_wait: blocks on core.llm.client._LLM_LOCK until any other
+    in-flight call finishes, rather than racing it and burning our own
+    LLM_TIMEOUT_SECONDS while merely queued. This runs on a background
+    thread already (see chat/api.py: _run_ai_assistant_reply), and the
+    typing indicator stays up the whole time, so a longer wait behind
+    someone else's question is fine — a silent timeout-then-raw-facts
+    fallback would be worse UX than just waiting one's turn."""
     from core.llm.client import _ai_enabled
     if not _ai_enabled():
         return facts
@@ -227,18 +296,72 @@ def _reply_for(jc, question: str) -> str:
     from core.llm.client import call_chat
     from core.llm.prompts import CHAT_ASSISTANT_SYSTEM_PROMPT
 
-    # No lock_wait: block on core.llm.client._LLM_LOCK until any other
-    # in-flight call finishes, rather than racing it and burning our own
-    # LLM_TIMEOUT_SECONDS while merely queued. This runs on a background
-    # thread already (see chat/api.py: _run_ai_assistant_reply), and the
-    # typing indicator stays up the whole time, so a longer wait behind
-    # someone else's question is fine — a silent timeout-then-raw-facts
-    # fallback would be worse UX than just waiting one's turn.
     reply = call_chat([
         {'role': 'system', 'content': CHAT_ASSISTANT_SYSTEM_PROMPT},
         {'role': 'user', 'content': f'Question: {question}\n\nData:\n{facts}'},
     ])
     return reply or facts
+
+
+def _reply_for(jc, question: str) -> str:
+    return _phrase_answer(_facts_for(jc), question)
+
+
+def _facts_for_dispatches(dispatches: list, dc_no: str) -> str:
+    sample = dispatches[:25]
+    lines = [f"DC No: {dc_no}", f"Total dispatch records: {len(dispatches)}"]
+    for d in sample:
+        lines.append(
+            f"Job Card: {d.job_card.job_card_no}, SKU: {d.job_card.SKU}, "
+            f"Dispatch Qty: {d.dispatch_qty}, Date: {d.dispatch_date}"
+        )
+    if len(dispatches) > len(sample):
+        lines.append(f'... and {len(dispatches) - len(sample)} more record(s) not shown here.')
+    return '\n'.join(lines)
+
+
+def _reply_for_dispatches(dispatches: list, dc_no: str, question: str) -> str:
+    return _phrase_answer(_facts_for_dispatches(dispatches, dc_no), question)
+
+
+def _facts_for_task(task) -> str:
+    if task.assignee:
+        assignee = task.assignee.get_full_name() or task.assignee.username
+    else:
+        assignee = 'Not assigned'
+    return (
+        f"Task: {task.title}\n"
+        f"Description: {task.description or 'Not set'}\n"
+        f"Assignee: {assignee}\n"
+        f"Team: {task.assigned_team.name if task.assigned_team else 'Not assigned'}\n"
+        f"Priority: {task.get_priority_display()}\n"
+        f"Status: {task.get_status_display()}\n"
+        f"Due Date: {task.due_date}\n"
+        f"Score: {task.score if task.score is not None else 'Not scored yet'}\n"
+    )
+
+
+def _reply_for_task(task, question: str) -> str:
+    return _phrase_answer(_facts_for_task(task), question)
+
+
+def _facts_for_raw_material(sku_obj) -> str:
+    from supply_chain.demand_gap import _on_hand_by_sku
+
+    on_hand = _on_hand_by_sku([sku_obj.pk]).get(sku_obj.pk, 0)
+    return (
+        f"Material SKU: {sku_obj.sku}\n"
+        f"Material: {sku_obj.material.name}\n"
+        f"Purchase Sheet Size: {sku_obj.purchase_sheet_size}\n"
+        f"On-hand Stock: {on_hand} {sku_obj.uom}\n"
+        f"Safety Stock: {sku_obj.safety_stock}\n"
+        f"Max Stock Level: {sku_obj.max_stock_level}\n"
+        f"Unit Cost: {sku_obj.unit_cost}\n"
+    )
+
+
+def _reply_for_material(sku_obj, question: str) -> str:
+    return _phrase_answer(_facts_for_raw_material(sku_obj), question)
 
 
 def _reply_for_report(slug: str, title: str, question: str, user) -> str:
@@ -314,5 +437,31 @@ def resolve_and_reply(question: str, user=None) -> str:
         if not jc:
             return f"I couldn't find a job card with {label} {value}."
         return _reply_for(jc, question)
+
+    # These three don't resolve to a JobCard, so they can't reuse _LOOKUPS
+    # (which assumes a single JobCard result) — each gets its own branch.
+    dc_match = DC_NO_PATTERN.search(question)
+    if dc_match:
+        dc_no = dc_match.group(1)
+        dispatches = _find_dispatches_by_dc(dc_no)
+        if not dispatches:
+            return f"I couldn't find any dispatch records with DC no {dc_no}."
+        return _reply_for_dispatches(dispatches, dc_no, question)
+
+    task_match = TASK_ID_PATTERN.search(question)
+    if task_match:
+        task_id = int(task_match.group(1))
+        task = _find_task_by_id(task_id)
+        if not task:
+            return f"I couldn't find a task with number {task_id}."
+        return _reply_for_task(task, question)
+
+    material_match = MATERIAL_SKU_PATTERN.search(question)
+    if material_match:
+        value = material_match.group(1).strip().rstrip('?.!,')
+        sku_obj = _find_raw_material_sku(value)
+        if not sku_obj:
+            return f"I couldn't find a raw material with SKU {value}."
+        return _reply_for_material(sku_obj, question)
 
     return NO_MATCH_REPLY
