@@ -1715,7 +1715,7 @@ def build_daily_production_context(request):
             ('impressions', 'Impressions'),
             ('output_sheets', 'Printed Sheets'), ('printing_waste', 'Printing Waste'),
             ('packing_qty', 'Packed Pcs'), ('packing_waste', 'Packing Waste'),
-            ('dispatch_qty', 'Dispatched Pcs'), ('dc_count', 'DCs'),
+            ('dispatch_qty', 'Dispatched Pcs'), ('dc_count', 'Dispatch Challans (DCs)'),
         ]),
         'released': (released_rows, [
             ('date_label', 'Date'), ('released_time', 'Time'), ('job_card_no', 'JC No'),
@@ -1734,7 +1734,7 @@ def build_daily_production_context(request):
         ]),
         'dispatch': (dispatch_rows, [
             ('date_label', 'Date'), ('entries', 'Dispatch Entries'),
-            ('dc_count', 'Delivery Challans'), ('dispatch_qty', 'Dispatched Pcs'),
+            ('dc_count', 'Dispatch Challans (DCs)'), ('dispatch_qty', 'Dispatched Pcs'),
         ]),
         'wastage': (process_wastage_rows, [
             ('period_label', 'Date'), ('process_wastage_pcs', 'Process Wastage (Pcs)'),

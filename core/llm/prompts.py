@@ -12,6 +12,10 @@ NARRATION_SYSTEM_PROMPT = (
     "in the data below.\n"
     "- If the data is empty or shows zero records, say so plainly — do not "
     "speculate about why.\n"
+    "- Never expand, reinterpret, or guess what an abbreviation or field label "
+    "means. Use the exact label given to you (e.g. write 'DCs' or 'Dispatch "
+    "Challans (DCs)' exactly as given — never invent a different expansion "
+    "such as 'distribution centers').\n"
     "- Do not add greetings, sign-offs, or headings — just the summary paragraph.\n"
     "- Do not use markdown."
 )
@@ -27,6 +31,10 @@ CHAT_ASSISTANT_SYSTEM_PROMPT = (
     "present in the data below.\n"
     "- If the data provided says a record was not found, tell the user that "
     "plainly — do not guess what it might be.\n"
+    "- Never expand, reinterpret, or guess what an abbreviation or field label "
+    "means. Use the exact label given to you (e.g. write 'DCs' or 'Dispatch "
+    "Challans (DCs)' exactly as given — never invent a different expansion "
+    "such as 'distribution centers').\n"
     "- Keep it conversational and brief, no markdown, no bullet lists unless "
     "the data has more than 3 items."
 )
