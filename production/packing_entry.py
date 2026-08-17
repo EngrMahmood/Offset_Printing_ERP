@@ -14,7 +14,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views.decorators.http import require_GET
 
-from core.models import JOB_CARD_PRODUCTION_START_STATUSES, JobCard, Production, Sorter
+from core.models import JOB_CARD_PRODUCTION_CONTINUE_STATUSES, JobCard, Production, Sorter
 from core.services import (
     build_audit_snapshot,
     ensure_edit_lock_allowed,
@@ -41,14 +41,14 @@ def _packing_eligible_job_cards_queryset(edit_record=None):
         qs = JobCard.objects.filter(is_active=True).filter(
             Q(pk=edit_record.job_card_id)
             | (
-                Q(status__in=JOB_CARD_PRODUCTION_START_STATUSES)
+                Q(status__in=JOB_CARD_PRODUCTION_CONTINUE_STATUSES)
                 & (Q(is_print_job=False) | Exists(has_printing))
             )
         ).distinct()
     else:
         qs = JobCard.objects.filter(
             is_active=True,
-            status__in=JOB_CARD_PRODUCTION_START_STATUSES,
+            status__in=JOB_CARD_PRODUCTION_CONTINUE_STATUSES,
         ).filter(
             Q(is_print_job=False) | Exists(has_printing),
         )

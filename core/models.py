@@ -281,6 +281,11 @@ JOB_CARD_PLANNING_APPROVAL_STATUSES = {
 }
 JOB_CARD_EXECUTION_STATUSES = {'in_production', 'completed', 'closed'}
 JOB_CARD_PRODUCTION_START_STATUSES = {'released', 'in_production'}
+# Job cards where printing/packing entries may still be logged — includes
+# 'completed'/'closed' because Dispatch can push a job to those statuses
+# (e.g. an urgent dispatch crossing 95% of order qty) before production has
+# been fully logged; catching up the record afterward must not be blocked.
+JOB_CARD_PRODUCTION_CONTINUE_STATUSES = JOB_CARD_PRODUCTION_START_STATUSES | {'completed', 'closed'}
 JOB_CARD_DISPATCHABLE_STATUSES = {'in_production', 'completed', 'closed'}
 JOB_CARD_PRINTABLE_STATUSES = {'production_approved', 'released', 'in_production', 'completed', 'closed'}
 JOB_CARD_PLANNING_REQUIRED_FIELDS = (
@@ -1003,7 +1008,7 @@ class Production(models.Model):
     def clean(self):
         errors = {}
 
-        if self.job_card and self.job_card.workflow_status not in JOB_CARD_PRODUCTION_START_STATUSES:
+        if self.job_card and self.job_card.workflow_status not in JOB_CARD_PRODUCTION_CONTINUE_STATUSES:
             errors['job_card'] = (
                 'Production can only start after the Job Card has been released for execution.'
             )
@@ -1061,7 +1066,7 @@ class Production(models.Model):
                         if item.planning_job_id == planning_job.id:
                             continue
                         member_card = getattr(item.planning_job, 'job_card', None)
-                        if not member_card or member_card.workflow_status not in JOB_CARD_PRODUCTION_START_STATUSES:
+                        if not member_card or member_card.workflow_status not in JOB_CARD_PRODUCTION_CONTINUE_STATUSES:
                             unreleased.append(item.planning_job.jc_number)
                     if unreleased:
                         errors['job_card'] = (

@@ -8,7 +8,7 @@ import re
 from django.db.models import Prefetch, Q, Sum
 
 from core.machine_routing import color_class
-from core.models import JOB_CARD_PRODUCTION_START_STATUSES, JobCard, Machine, Production
+from core.models import JOB_CARD_PRODUCTION_CONTINUE_STATUSES, JobCard, Machine, Production
 from core.services import compute_planned_minutes
 from production.printing_pass_helpers import (
     build_pass_tracking_info,
@@ -119,13 +119,13 @@ def printing_job_cards_queryset(edit_record=None):
     related = _printing_job_cards_related()
     if edit_record:
         qs = JobCard.objects.filter(is_active=True, is_print_job=True).filter(
-            Q(status__in=JOB_CARD_PRODUCTION_START_STATUSES) | Q(pk=edit_record.job_card_id)
+            Q(status__in=JOB_CARD_PRODUCTION_CONTINUE_STATUSES) | Q(pk=edit_record.job_card_id)
         ).distinct().order_by('-created_at')
     else:
         qs = JobCard.objects.filter(
             is_active=True,
             is_print_job=True,
-            status__in=JOB_CARD_PRODUCTION_START_STATUSES,
+            status__in=JOB_CARD_PRODUCTION_CONTINUE_STATUSES,
         ).order_by('-created_at')
     return qs.select_related(*related['select_related']).prefetch_related(*related['prefetch_related'])
 
