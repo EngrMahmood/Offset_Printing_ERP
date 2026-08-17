@@ -240,6 +240,10 @@ def build_printing_job_card_maps(job_cards, edit_record=None):
             'total_impressions_used_display': pass_tracking['total_impressions_used_display'],
             'total_impressions_allowed_display': pass_tracking['total_impressions_allowed_display'],
             'total_impressions_remaining_display': pass_tracking['total_impressions_remaining_display'],
+            'sheets_used_display': pass_tracking['sheets_used_display'],
+            'sheets_allowed_display': pass_tracking['sheets_allowed_display'],
+            'sheets_remaining_display': pass_tracking['sheets_remaining_display'],
+            'good_sheets_target_display': pass_tracking['good_sheets_target_display'],
             'waiting_for_plate': job_is_waiting_for_plates(job_card),
             'history': history_data,
         }

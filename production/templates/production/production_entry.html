@@ -122,16 +122,18 @@
                 </div>
                 <div class="job-info-row">
                     <div><strong>Order Qty</strong><div id="ji_order_qty" class="job-info-badge"></div></div>
-                    <div><strong>Required (Shts)</strong><div id="ji_required_sheets" class="job-info-badge"></div></div>
+                    <div><strong>Total Sheet Budget</strong><div id="ji_required_sheets" class="job-info-badge"></div></div>
                     <div><strong>Produced</strong><div id="ji_produced" class="job-info-badge produced"></div></div>
                     <div><strong>Remaining</strong><div id="ji_remaining" class="job-info-badge balance"></div></div>
                 </div>
+                <p class="erp-help-text" id="ji_sheet_budget_note" style="margin:2px 0 0;"></p>
                 <div class="job-info-row erp-form-grid__full" id="pass_tracking_panel" style="display:none;grid-column:1/-1;">
                     <div style="grid-column:1/-1;">
                         <strong>Print Pass Progress</strong>
                         <div id="ji_pass_type" class="job-info-value" style="margin-bottom:6px;"></div>
                         <div id="ji_pass_meters" style="display:flex;flex-direction:column;gap:4px;font-size:12px;"></div>
                         <div id="ji_total_impressions" class="job-info-value" style="margin-top:6px;"></div>
+                        <div id="ji_sheet_budget_tracker" class="job-info-value" style="margin-top:2px;"></div>
                         <div id="ji_legacy_notice" class="erp-alert erp-alert-warning" style="display:none;margin-top:8px;font-size:12px;padding:8px 10px;"></div>
                         <div id="ji_waiting_plate_notice" class="erp-alert erp-alert-warning" style="display:none;margin-top:8px;font-size:12px;padding:8px 10px;">
                             Waiting for plate — replacement plates are in progress. Printing is still allowed; use care until graphics issues new plates.

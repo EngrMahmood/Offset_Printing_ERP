@@ -1093,10 +1093,13 @@ class Production(models.Model):
         total_existing_consumption = existing_output + existing_waste
         current_consumption = (self.output_sheets or 0) + (self.waste_sheets or 0)
 
-        if total_existing_consumption + current_consumption > self.job_card.total_sheets_allowed_with_tolerance:
+        sheets_allowed = self.job_card.total_sheets_allowed_with_tolerance
+        if total_existing_consumption + current_consumption > sheets_allowed:
+            sheets_remaining = max(0, sheets_allowed - total_existing_consumption)
             errors['output_sheets'] = (
                 "Total sheets (production + waste) exceed allowed sheets with tolerance! "
-                f"Allowed: {self.job_card.total_sheets_allowed_with_tolerance}"
+                f"Job card sheet budget: {sheets_allowed} total, {sheets_remaining} remaining "
+                f"after {total_existing_consumption} already used on earlier passes."
             )
 
         if self.print_pass_number and self.job_card:

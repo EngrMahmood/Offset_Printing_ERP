@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import re
 
+from django.db.models import Sum
+
 from core.models import JobCard
 
 MAX_PRINT_PASSES = 4  # fallback ceiling if the Print Passes master list is empty/misconfigured
@@ -255,6 +257,19 @@ def _build_legacy_notice(job_card, inference, total_passes, sheets_basis):
     )
 
 
+def get_job_card_sheet_usage(job_card, exclude_production_id=None):
+    """Physical sheets (good + waste) already consumed across every pass entry
+    logged so far. Unlike impressions, this is one shared budget for the whole
+    job card — a sheet wasted on an early pass can never reach a later pass —
+    so waste on non-final passes eats directly into what the final pass can
+    still produce as good output."""
+    qs = job_card.productions.filter(is_active=True, entry_type='printing')
+    if exclude_production_id:
+        qs = qs.exclude(pk=exclude_production_id)
+    totals = qs.aggregate(output=Sum('output_sheets'), waste=Sum('waste_sheets'))
+    return int(totals['output'] or 0) + int(totals['waste'] or 0)
+
+
 def build_pass_tracking_info(job_card, exclude_production_id=None):
     inference = resolve_pass_inference(job_card)
     total_passes = inference['passes']
@@ -263,6 +278,11 @@ def build_pass_tracking_info(job_card, exclude_production_id=None):
     allowed_total = int(job_card.total_impressions_allowed_with_tolerance or 0)
     total_used = sum(usage.values())
     sheets_basis = get_sheets_per_pass_basis(job_card)
+
+    sheets_used = get_job_card_sheet_usage(job_card, exclude_production_id)
+    sheets_allowed = int(job_card.total_sheets_allowed_with_tolerance or 0)
+    sheets_remaining = max(0, sheets_allowed - sheets_used)
+    good_sheets_target = int(round(job_card.required_sheets or 0))
 
     pass_rows = []
     for pass_no in range(1, total_passes + 1):
@@ -302,6 +322,14 @@ def build_pass_tracking_info(job_card, exclude_production_id=None):
         'total_impressions_used_display': f'{total_used:,}',
         'total_impressions_allowed_display': f'{allowed_total:,}',
         'total_impressions_remaining_display': f'{max(0, allowed_total - total_used):,}',
+        'sheets_used': sheets_used,
+        'sheets_allowed': sheets_allowed,
+        'sheets_remaining': sheets_remaining,
+        'sheets_used_display': f'{sheets_used:,}',
+        'sheets_allowed_display': f'{sheets_allowed:,}',
+        'sheets_remaining_display': f'{sheets_remaining:,}',
+        'good_sheets_target': good_sheets_target,
+        'good_sheets_target_display': f'{good_sheets_target:,}',
     }
 
 

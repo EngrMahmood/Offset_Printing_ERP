@@ -79,6 +79,12 @@ document.addEventListener('DOMContentLoaded', function(){
         ji('ji_required_sheets').textContent = info.required_sheets;
         ji('ji_produced').textContent = info.produced_qty;
         ji('ji_remaining').textContent = info.remaining_qty;
+        const sheetBudgetNote = document.getElementById('ji_sheet_budget_note');
+        if (sheetBudgetNote) {
+            sheetBudgetNote.textContent = (parseNumber(info.pass_count) || 1) > 1
+                ? 'Includes the planned wastage allowance and is shared across every pass — waste on an earlier pass reduces what the final pass can still produce as good sheets.'
+                : 'Includes the planned wastage allowance.';
+        }
         ji('sum_pass_type').textContent = info.pass_type || 'Single Pass';
         renderPassMeters(info);
         syncPrintPassControls(info);
@@ -185,6 +191,7 @@ document.addEventListener('DOMContentLoaded', function(){
         const meters = document.getElementById('ji_pass_meters');
         const passType = document.getElementById('ji_pass_type');
         const totalLine = document.getElementById('ji_total_impressions');
+        const sheetBudgetLine = document.getElementById('ji_sheet_budget_tracker');
         const legacyNotice = document.getElementById('ji_legacy_notice');
         if (!panel || !meters || !info) {
             return;
@@ -203,6 +210,9 @@ document.addEventListener('DOMContentLoaded', function(){
             if (totalLine) {
                 totalLine.textContent = `Total impressions: ${info.total_impressions_used_display || info.used_impressions} / ${info.total_impressions_allowed_display || info.allowed_impressions}`;
             }
+            if (sheetBudgetLine) {
+                sheetBudgetLine.textContent = '';
+            }
             if (legacyNotice) {
                 legacyNotice.style.display = 'block';
                 legacyNotice.textContent = info.legacy_notice;
@@ -220,6 +230,9 @@ document.addEventListener('DOMContentLoaded', function(){
         });
         if (totalLine) {
             totalLine.textContent = `Total impressions: ${info.total_impressions_used_display || info.used_impressions} / ${info.total_impressions_allowed_display || info.allowed_impressions}`;
+        }
+        if (sheetBudgetLine && info.sheets_allowed_display) {
+            sheetBudgetLine.textContent = `Sheet budget used: ${info.sheets_used_display} / ${info.sheets_allowed_display} — ${info.sheets_remaining_display} left. Final pass good-sheet target: ~${info.good_sheets_target_display}.`;
         }
         if (legacyNotice) {
             if (info.legacy_notice) {
@@ -300,7 +313,9 @@ document.addEventListener('DOMContentLoaded', function(){
             outputEl.disabled = false;
             outputEl.setAttribute('required', 'required');
             if (help) {
-                help.textContent = 'Final pass — enter good sheets and impressions.';
+                help.textContent = (passCount > 1 && info.sheets_remaining_display)
+                    ? `Final pass — enter good sheets and impressions. Target ~${info.good_sheets_target_display} good sheets; sheet budget remaining: ${info.sheets_remaining_display}.`
+                    : 'Final pass — enter good sheets and impressions.';
             }
         } else {
             outputEl.value = '';
