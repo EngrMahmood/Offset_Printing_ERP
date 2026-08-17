@@ -39,6 +39,10 @@ services:
       # Override RCLONE_CONFIG_HOST_PATH in .env if the deploying user
       # isn't "ubuntu" or the config lives elsewhere on the host.
       - ${RCLONE_CONFIG_HOST_PATH:-/home/ubuntu/.config/rclone/rclone.conf}:/root/.config/rclone/rclone.conf:ro
+      # Google service-account key for the sheets_sync DR mirror (see
+      # sheets_sync/client.py). Never baked into the image or committed —
+      # same treatment as certs/, mounted read-only from the host.
+      - ./secrets:/app/secrets:ro
     expose:
       - "8000"
 
