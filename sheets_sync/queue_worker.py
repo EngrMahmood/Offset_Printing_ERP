@@ -12,10 +12,26 @@ logger = logging.getLogger(__name__)
 
 _change_queue = queue.Queue(maxsize=20000)
 _worker_running = False
+_worker_instance = None
 
 
 def get_queue():
     return _change_queue
+
+
+def get_worker_status():
+    """Read-only snapshot for the status dashboard. Same-process only —
+    each Django process (e.g. a management command) has its own worker, so
+    this only reflects the process serving the request."""
+    if _worker_instance is None or _worker_instance._breaker is None:
+        return {'running': False}
+    breaker = _worker_instance._breaker
+    return {
+        'running': True,
+        'queue_size': _change_queue.qsize(),
+        'circuit_open': breaker.is_open,
+        'consecutive_failures': breaker.consecutive_failures,
+    }
 
 
 def _col_letter(n):
@@ -192,6 +208,7 @@ class SheetsSyncWorkerThread(threading.Thread):
 
 
 def start_worker():
+    global _worker_instance
     # Never run under the test runner.
     if 'test' in sys.argv or any('test' in arg for arg in sys.argv):
         logger.info("Running under test runner. Skipping sheets sync worker start.")
@@ -213,5 +230,6 @@ def start_worker():
             logger.info("Sheets sync worker thread is already running.")
             return
 
-    SheetsSyncWorkerThread().start()
+    _worker_instance = SheetsSyncWorkerThread()
+    _worker_instance.start()
     logger.info("In-process sheets sync worker started.")

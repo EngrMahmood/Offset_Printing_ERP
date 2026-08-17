@@ -1,0 +1,205 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+{% load humanize %}
+
+{% block title %}Google Sheets DR Mirror | Offset ERP{% endblock %}
+
+{% block header_title %}Google Sheets Disaster-Recovery Mirror{% endblock %}
+{% block header_subtitle %}One-way, near-real-time mirror of Job Cards, Planning, Production, Maintenance & Supply Chain for use if the ERP ever goes down{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <div class="erp-page-intro">
+        <div>
+            <span class="erp-status-chip {% if setting.enabled %}success{% else %}warning{% endif %}">
+                <span class="erp-status-dot"></span>
+                Sync: {% if setting.enabled %}Enabled{% else %}Disabled{% endif %}
+            </span>
+            {% if worker_status.running %}
+                <span class="erp-status-chip {% if worker_status.circuit_open %}danger{% else %}success{% endif %}" style="margin-left: 8px;">
+                    Worker: {% if worker_status.circuit_open %}Paused (circuit open){% else %}Running{% endif %}
+                </span>
+                <span class="erp-status-chip info" style="margin-left: 8px;">
+                    Queue: {{ worker_status.queue_size }} pending
+                </span>
+            {% else %}
+                <span class="erp-status-chip warning" style="margin-left: 8px;">
+                    Worker: not running in this process
+                </span>
+            {% endif %}
+        </div>
+        <div class="erp-actions">
+            {% if spreadsheet_url %}
+            <a href="{{ spreadsheet_url }}" target="_blank" rel="noopener" class="erp-btn erp-btn-secondary">
+                <i class="fas fa-external-link-alt"></i> Open Spreadsheet
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- KPI Grid -->
+    <div class="erp-kpi-grid">
+        <div class="erp-kpi-card">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Total Rows Mirrored</div>
+                    <div class="erp-kpi-value" style="font-size: 24px; font-weight: 800;">
+                        {{ total_rows|intcomma }}
+                    </div>
+                    <span style="font-size: 11px; color: var(--erp-text-muted);">
+                        Across {{ tabs|length }} tabs
+                    </span>
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-table"></i></div>
+            </div>
+        </div>
+
+        <div class="erp-kpi-card">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Flush Interval</div>
+                    <div class="erp-kpi-value" style="font-size: 24px; font-weight: 800;">
+                        {{ setting.flush_interval_seconds }}s
+                    </div>
+                    <span style="font-size: 11px; color: var(--erp-text-muted);">
+                        Batch size up to {{ setting.max_batch_size }} changes
+                    </span>
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-bolt"></i></div>
+            </div>
+        </div>
+
+        <div class="erp-kpi-card">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Consecutive Failures</div>
+                    <div class="erp-kpi-value" style="font-size: 24px; font-weight: 800; color: {% if worker_status.consecutive_failures %}var(--erp-warning){% else %}var(--erp-success){% endif %};">
+                        {{ worker_status.consecutive_failures|default:0 }}
+                    </div>
+                    <span style="font-size: 11px; color: var(--erp-text-muted);">
+                        Opens circuit at {{ setting.circuit_breaker_failure_threshold }}
+                    </span>
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-shield-alt"></i></div>
+            </div>
+        </div>
+
+        <div class="erp-kpi-card">
+            <div class="erp-kpi-row">
+                <div>
+                    <div class="erp-kpi-label">Spreadsheet</div>
+                    <div class="erp-kpi-value" style="font-size: 12px; margin-top: 12px; font-weight: 600; word-break: break-all;">
+                        {{ setting.spreadsheet_id|default:"Not configured" }}
+                    </div>
+                </div>
+                <div class="erp-kpi-icon"><i class="fas fa-file-excel"></i></div>
+            </div>
+        </div>
+    </div>
+
+    {% if recent_failures %}
+    <div class="erp-alert erp-alert-danger">
+        <h4 style="margin:0 0 6px 0; font-weight:700;"><i class="fas fa-exclamation-triangle"></i> Recent Sync Failures</h4>
+        <ul style="margin: 0; padding-left: 20px; font-size:11px;">
+            {% for err in recent_failures %}
+            <li><strong>{{ err.timestamp|date:"Y-m-d H:i" }}</strong> [{{ err.tab_name }}]: {{ err.error_message|truncatechars:200 }}</li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    <!-- Per-tab status -->
+    <div class="erp-section-shell">
+        <div class="erp-card-header" style="margin-bottom:12px;">
+            <div class="erp-card-title-stack">
+                <h3 class="erp-section-title">Tabs</h3>
+                <p class="erp-card-subtitle">Row counts and last sync attempt per mirrored tab.</p>
+            </div>
+        </div>
+
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Tab</th>
+                        <th>Model</th>
+                        <th>Rows Mirrored</th>
+                        <th>Last Sync Attempt</th>
+                        <th>Last Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tab in tabs %}
+                    <tr>
+                        <td><strong>{{ tab.tab_name }}</strong></td>
+                        <td><code style="font-size:11px;">{{ tab.dotted_path }}</code></td>
+                        <td>{{ tab.row_count|intcomma }}</td>
+                        <td>
+                            {% if tab.last_log %}
+                                {{ tab.last_log.timestamp|date:"Y-m-d H:i:s" }}
+                            {% else %}
+                                Never (backfill only)
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if tab.last_log.status == 'SUCCESS' %}
+                            <span class="erp-badge erp-badge-approved">Success</span>
+                            {% elif tab.last_log.status == 'FAILED' %}
+                            <span class="erp-badge erp-badge-rejected" title="{{ tab.last_log.error_message }}">Failed</span>
+                            {% else %}
+                            <span class="erp-badge erp-badge-pending">No live sync yet</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- Recent activity -->
+    <div class="erp-section-shell">
+        <div class="erp-card-header" style="margin-bottom:12px;">
+            <div class="erp-card-title-stack">
+                <h3 class="erp-section-title">Recent Sync Activity</h3>
+                <p class="erp-card-subtitle">Last 30 flush attempts across all tabs (backfill runs are not logged here).</p>
+            </div>
+        </div>
+
+        <div class="erp-table-wrap">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>Tab</th>
+                        <th>Batch Size</th>
+                        <th>Duration</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for log in recent_activity %}
+                    <tr>
+                        <td>{{ log.timestamp|date:"Y-m-d H:i:s" }}</td>
+                        <td>{{ log.tab_name }}</td>
+                        <td>{{ log.batch_size }}</td>
+                        <td>{{ log.duration_ms|default:"--" }}ms</td>
+                        <td>
+                            {% if log.status == 'SUCCESS' %}
+                            <span class="erp-badge erp-badge-approved">Success</span>
+                            {% elif log.status == 'FAILED' %}
+                            <span class="erp-badge erp-badge-rejected" title="{{ log.error_message }}">Failed</span>
+                            {% else %}
+                            <span class="erp-badge erp-badge-pending">{{ log.status }}</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" style="text-align:center; color:var(--erp-text-muted);">No live sync activity yet since the last backfill.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

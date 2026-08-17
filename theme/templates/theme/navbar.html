@@ -136,6 +136,10 @@
                class="erp-topnav-module {% if app == 'backup' %}is-active{% endif %}">
                 Backup
             </a>
+            <a href="{% url 'sheets_sync:dashboard' %}" data-nav-key="sheets_sync" data-nav-label="Sheets Sync"
+               class="erp-topnav-module {% if app == 'sheets_sync' %}is-active{% endif %}">
+                Sheets Sync
+            </a>
             {% endif %}
             {% if nav.can_access_bot %}
             <a href="{% url 'bot:bot_list' %}" data-nav-key="bot" data-nav-label="Automation"
