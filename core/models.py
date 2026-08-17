@@ -155,6 +155,28 @@ class PrintColor(models.Model):
         return 0
 
 
+class PrintPassOption(models.Model):
+    """Master list for SkuRecipe/PlanningJob 'print_passes' values (1, 2, 3, 4, ...),
+    editable by admins from Master Data instead of being hard-coded in planning/forms.py."""
+
+    name = models.CharField(
+        max_length=10,
+        unique=True,
+        help_text='Number of press passes, e.g. 1, 2, 3, 4',
+    )
+    is_active = models.BooleanField(default=True)
+    sort_order = models.PositiveSmallIntegerField(default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['sort_order', 'name']
+        verbose_name = 'Print Pass Option'
+        verbose_name_plural = 'Print Pass Options'
+
+    def __str__(self):
+        return self.name
+
+
 class Material(models.Model):
     name = models.CharField(max_length=100, unique=True)
 

@@ -711,6 +711,71 @@
         </table>
         </div>
 
+        <h2 class="section-header">Print Passes</h2>
+        <p class="erp-help-text" style="margin:0 0 10px;">Used on SKU master as "No. of Passes" (Print + Pack jobs). Only admin can add or edit.</p>
+        {% if is_admin_user %}
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+            {% csrf_token %}
+            <input type="hidden" name="entity_type" value="print_pass">
+            <input type="hidden" name="action" value="create_master">
+            <input type="text" name="new_name" placeholder="e.g. 5" required>
+            <button type="submit" class="btn btn-green">Add Print Pass</button>
+        </form>
+        {% endif %}
+        <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>No. of Passes</th>
+                    <th>Active</th>
+                    <th>SKU Recipes</th>
+                    <th>Planning Jobs</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in print_pass_rows %}
+                <tr>
+                    <td>{{ row.record.id }}</td>
+                    <td>
+                        {% if is_admin_user %}
+                        <form method="POST" style="display:flex;gap:8px;align-items:center;">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="print_pass">
+                            <input type="hidden" name="action" value="edit_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <input type="text" name="new_name" value="{{ row.record.name }}" required>
+                            <button type="submit" class="btn btn-green">Edit</button>
+                        </form>
+                        {% else %}
+                        {{ row.record.name }}
+                        {% endif %}
+                    </td>
+                    <td>{% if row.record.is_active %}Yes{% else %}No{% endif %}</td>
+                    <td>{{ row.sku_recipe_count }}</td>
+                    <td>{{ row.planning_job_count }}</td>
+                    <td>
+                        {% if is_superuser_user %}
+                        <form method="POST" style="display:inline;" onsubmit="return confirm('Delete print pass {{ row.record.name|escapejs }} permanently?');">
+                            {% csrf_token %}
+                            <input type="hidden" name="entity_type" value="print_pass">
+                            <input type="hidden" name="action" value="delete_master">
+                            <input type="hidden" name="record_id" value="{{ row.record.id }}">
+                            <button type="submit" class="btn btn-danger">Delete</button>
+                        </form>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6">No print pass options found.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        </div>
+
         <h2 class="section-header">Vendors</h2>
         {% if is_admin_user %}
         <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">

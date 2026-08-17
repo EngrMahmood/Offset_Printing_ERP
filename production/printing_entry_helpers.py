@@ -11,10 +11,10 @@ from core.machine_routing import color_class
 from core.models import JOB_CARD_PRODUCTION_START_STATUSES, JobCard, Machine, Production
 from core.services import compute_planned_minutes
 from production.printing_pass_helpers import (
-    MAX_PRINT_PASSES,
     build_pass_tracking_info,
     effective_print_pass_number,
     get_job_card_pass_count,
+    get_max_print_passes,
 )
 from printing_plates.services import job_is_waiting_for_plates
 
@@ -37,7 +37,7 @@ def get_degraded_machine_pass_hint(job_card, machine, planned_passes):
     if colors_per_pass <= effective:
         return None
     factor = math.ceil(colors_per_pass / effective)
-    suggested = min(MAX_PRINT_PASSES, max(int(planned_passes or 1), int(planned_passes or 1) * factor))
+    suggested = min(get_max_print_passes(), max(int(planned_passes or 1), int(planned_passes or 1) * factor))
     return {
         'machine_name': machine.name,
         'default_colors': default_colors,

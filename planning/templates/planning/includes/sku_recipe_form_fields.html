@@ -84,7 +84,7 @@
     {% if form.machine_name.errors %}<div class="erp-form-error">{{ form.machine_name.errors.0 }}</div>{% endif %}
 </div>
 {% endwith %}
-{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.print_passes label='No. of Passes' required=True help_text='Press passes for this SKU (1, 2, 3, or 4). Not used for Cut & Pack.' %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.print_passes label='No. of Passes' required=True help_text='Press passes for this SKU. Not used for Cut & Pack.' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.default_unit_cost label='Default Unit Cost' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.daily_demand label='Daily Demand' %}
 

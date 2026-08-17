@@ -6,8 +6,18 @@ import re
 
 from core.models import JobCard
 
-MAX_PRINT_PASSES = 4
+MAX_PRINT_PASSES = 4  # fallback ceiling if the Print Passes master list is empty/misconfigured
 INFERENCE_RATIO_TOLERANCE = 0.18
+
+
+def get_max_print_passes():
+    """Highest active value in the Print Passes master list (Master Data), so the
+    pass ceiling grows without a code change. Falls back to MAX_PRINT_PASSES."""
+    from core.models import PrintPassOption
+
+    values = PrintPassOption.objects.filter(is_active=True).values_list('name', flat=True)
+    nums = [int(v) for v in values if str(v).isdigit()]
+    return max(nums) if nums else MAX_PRINT_PASSES
 
 
 def has_explicit_planning_passes(job_card):
@@ -73,11 +83,12 @@ def infer_pass_count_from_impressions(job_card):
     if ratio <= 1 + INFERENCE_RATIO_TOLERANCE:
         return 1
 
-    for passes in range(MAX_PRINT_PASSES, 1, -1):
+    max_passes = get_max_print_passes()
+    for passes in range(max_passes, 1, -1):
         if abs(ratio - passes) <= INFERENCE_RATIO_TOLERANCE:
             return passes
 
-    rounded = max(1, min(MAX_PRINT_PASSES, round(ratio)))
+    rounded = max(1, min(max_passes, round(ratio)))
     if rounded > 1 and abs(ratio - rounded) <= INFERENCE_RATIO_TOLERANCE:
         return rounded
     return None

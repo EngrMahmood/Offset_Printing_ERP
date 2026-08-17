@@ -352,8 +352,8 @@
                 {% csrf_token %}
                 <input type="hidden" name="job_card_id" id="pass_override_job_id" value="">
                 <div class="erp-form-field" style="min-width:140px;">
-                    <label class="erp-label" for="pass_override_count">Total passes (1–4)</label>
-                    <input type="number" class="erp-input" name="pass_count" id="pass_override_count" min="1" max="4" step="1">
+                    <label class="erp-label" for="pass_override_count">Total passes (1–{{ max_print_passes }})</label>
+                    <input type="number" class="erp-input" name="pass_count" id="pass_override_count" min="1" max="{{ max_print_passes }}" step="1">
                     <p class="erp-help-text" style="margin:2px 0 0;">Leave blank and submit to clear an existing override.</p>
                 </div>
                 <div class="erp-form-field" style="flex:1;min-width:220px;">

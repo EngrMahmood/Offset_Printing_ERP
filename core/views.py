@@ -39,6 +39,7 @@ from .models import (
     Notification,
     Operator,
     PrintColor,
+    PrintPassOption,
     ProductType,
     Production,
     ProductionDowntime,
@@ -1578,6 +1579,7 @@ def master_data(request):
         'supervisor': Supervisor,
         'vendor': Vendor,
         'print_color': PrintColor,
+        'print_pass': PrintPassOption,
     }
 
     if request.method == 'POST':
@@ -1602,6 +1604,9 @@ def master_data(request):
             if not new_name:
                 messages.error(request, f'{label} name is required.')
                 return redirect('master_data')
+            if entity_type == 'print_pass' and not (new_name.isdigit() and int(new_name) > 0):
+                messages.error(request, 'No. of Passes must be a positive whole number.')
+                return redirect('master_data')
             if model.objects.filter(name__iexact=new_name).exists():
                 messages.error(request, f'{label} "{new_name}" already exists.')
                 return redirect('master_data')
@@ -1621,6 +1626,9 @@ def master_data(request):
             new_name = (request.POST.get('new_name') or '').strip()
             if not new_name:
                 messages.error(request, 'Name is required.')
+            elif entity_type == 'print_pass' and not (new_name.isdigit() and int(new_name) > 0):
+                messages.error(request, 'No. of Passes must be a positive whole number.')
+                return redirect('master_data')
             else:
                 duplicate = model.objects.exclude(pk=record.pk).filter(name__iexact=new_name).first()
                 if duplicate:
@@ -1866,14 +1874,16 @@ def master_data(request):
     prod_operator_counter = Counter(x['operator_id'] for x in prod_values if x['operator_id'])
     prod_supervisor_counter = Counter(x['supervisor_id'] for x in prod_values if x['supervisor_id'])
 
-    pj_values = list(PlanningJob.objects.filter(is_active=True).values('department', 'destination', 'color_spec', 'sku'))
+    pj_values = list(PlanningJob.objects.filter(is_active=True).values('department', 'destination', 'color_spec', 'print_passes', 'sku'))
     pj_department_counter = Counter((x['department'] or '').strip().lower() for x in pj_values if x['department'])
     pj_destination_counter = Counter((x['destination'] or '').strip().lower() for x in pj_values if x['destination'])
     pj_color_counter = Counter((x['color_spec'] or '').strip().lower() for x in pj_values if x['color_spec'])
+    pj_passes_counter = Counter(str(x['print_passes']) for x in pj_values if x['print_passes'])
 
-    recipe_values = list(SkuRecipe.objects.filter(is_active=True).values('product_type', 'color_spec', 'sku'))
+    recipe_values = list(SkuRecipe.objects.filter(is_active=True).values('product_type', 'color_spec', 'print_passes', 'sku'))
     recipe_product_type_counter = Counter((x['product_type'] or '').strip().lower() for x in recipe_values if x['product_type'])
     recipe_color_counter = Counter((x['color_spec'] or '').strip().lower() for x in recipe_values if x['color_spec'])
+    recipe_passes_counter = Counter(str(x['print_passes']) for x in recipe_values if x['print_passes'])
 
     plate_req_values = list(PlateRequest.objects.values_list('vendor', flat=True))
     plate_req_vendor_counter = Counter(v.strip().lower() for v in plate_req_values if v)
@@ -1972,6 +1982,15 @@ def master_data(request):
             'planning_job_count': pj_color_counter[name_key],
         })
 
+    print_pass_rows = []
+    for item in PrintPassOption.objects.all().order_by('sort_order', 'name', 'id'):
+        name_key = (item.name or '').strip().lower()
+        print_pass_rows.append({
+            'record': item,
+            'sku_recipe_count': recipe_passes_counter[name_key],
+            'planning_job_count': pj_passes_counter[name_key],
+        })
+
     application_type_rows = [{'record': item} for item in ApplicationType.objects.all().order_by('name', 'id')]
 
     context = {
@@ -1986,6 +2005,7 @@ def master_data(request):
         'application_type_rows': application_type_rows,
         'vendor_rows': vendor_rows,
         'print_color_rows': print_color_rows,
+        'print_pass_rows': print_pass_rows,
         'is_admin_user': bool(getattr(request.user, 'profile', None) and request.user.profile.role == 'admin'),
         'is_superuser_user': bool(request.user.is_superuser),
     }

@@ -53,9 +53,9 @@ from production.printing_entry_helpers import (
     resolve_related_machine,
 )
 from production.printing_pass_helpers import (
-    MAX_PRINT_PASSES,
     effective_print_pass_number,
     get_job_card_pass_count,
+    get_max_print_passes,
     validate_print_pass_number,
 )
 
@@ -538,6 +538,7 @@ def printing_production_entry(request):
         'edit_lock_days': get_record_edit_lock_days(),
         'edit_lock_applies': bool(edit_record and record_is_time_locked('production', edit_record)),
         'is_view_mode': is_view_mode,
+        'max_print_passes': get_max_print_passes(),
     }
 
     return render(request, 'production/production_entry.html', context)
@@ -839,8 +840,9 @@ def set_pass_override(request):
         messages.error(request, 'Pass count must be a whole number.')
         return redirect('printing_production_entry')
 
-    if pass_count < 1 or pass_count > MAX_PRINT_PASSES:
-        messages.error(request, f'Pass count must be between 1 and {MAX_PRINT_PASSES}.')
+    max_passes = get_max_print_passes()
+    if pass_count < 1 or pass_count > max_passes:
+        messages.error(request, f'Pass count must be between 1 and {max_passes}.')
         return redirect('printing_production_entry')
     if not reason:
         messages.error(request, 'A reason is required to override the pass count.')

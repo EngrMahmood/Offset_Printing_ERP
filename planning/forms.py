@@ -39,15 +39,6 @@ APPLICATION_CHOICES = [
     ('NO', 'NO'),
 ]
 
-PRINT_PASS_CHOICES = [
-    ('', 'Select Passes'),
-    (1, '1 Pass'),
-    (2, '2 Passes'),
-    (3, '3 Passes'),
-    (4, '4 Passes'),
-]
-
-
 class PlanningJobFinalizationForm(forms.ModelForm):
     """Form to collect layout specs, purchase material, and release constraints
     during job finalization stage.
@@ -306,13 +297,24 @@ class SkuRecipeForm(forms.ModelForm):
         self.fields['job_process_type'].required = True
 
         if 'print_passes' in self.fields:
+            from core.models import PrintPassOption
+
+            pass_options = PrintPassOption.objects.filter(is_active=True).order_by('sort_order', 'name')
+            pass_choices = [('', 'Select Passes')] + [
+                (int(item.name), f'{item.name} Pass' + ('' if item.name == '1' else 'es')) for item in pass_options
+            ]
+            current_passes = _current_field_value('print_passes')
+            existing_values = {int(item.name) for item in pass_options}
+            if current_passes not in (None, '') and int(current_passes) not in existing_values:
+                pass_choices.append((int(current_passes), f'{current_passes} Passes'))
             self.fields['print_passes'].widget = forms.Select(
-                choices=PRINT_PASS_CHOICES,
+                choices=pass_choices,
                 attrs={'class': 'erp-select', 'id': 'id_print_passes'},
             )
             self.fields['print_passes'].label = 'No. of Passes'
             self.fields['print_passes'].help_text = (
-                'Press passes for this SKU (1, 2, 3, or 4). Not used for Cut & Pack.'
+                'Press passes for this SKU. Not used for Cut & Pack. '
+                'Admin can add more options from Master Data.'
             )
 
         # Print Color required only for Print + Pack (validated in clean()).
@@ -358,12 +360,15 @@ class SkuRecipeForm(forms.ModelForm):
         return cleaned
 
     def clean_print_passes(self):
+        from core.models import PrintPassOption
+
         value = self.cleaned_data.get('print_passes')
         if value in (None, ''):
             return None
         passes = int(value)
-        if passes not in {1, 2, 3, 4}:
-            raise forms.ValidationError('Select 1, 2, 3, or 4 passes.')
+        current = self.instance.print_passes if self.instance and self.instance.pk else None
+        if passes != current and not PrintPassOption.objects.filter(name=str(passes), is_active=True).exists():
+            raise forms.ValidationError('Select a valid number of passes from the master list (admin can add new values).')
         return passes
 
     def clean_color_spec(self):
