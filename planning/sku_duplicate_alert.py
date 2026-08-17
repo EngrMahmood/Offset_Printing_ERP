@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from django.db.models import Q
+from django.db.models.functions import Upper
 from django.utils import timezone
 
 from core.models import Dispatch, JobCard
@@ -13,16 +13,6 @@ from planning.services import _sku_key
 from workflow.services import _normalize_status
 
 RECENT_DISPATCH_DAYS = 14
-
-
-def _sku_filter_q(sku_values):
-    sku_values = [value for value in sku_values if (value or '').strip()]
-    if not sku_values:
-        return Q(pk__in=[])
-    query = Q()
-    for sku in sku_values:
-        query |= Q(sku__iexact=sku.strip())
-    return query
 
 
 def _job_sort_key(job):
@@ -242,11 +232,16 @@ def attach_sku_duplicate_alerts_to_jobs(jobs):
     if not sku_to_jobs_on_page:
         return job_list
 
-    unique_skus = list({(job.sku or '').strip() for job in job_list if (job.sku or '').strip()})
+    # A per-SKU Q(...) |= chain blows past SQLite's expression-tree depth
+    # limit (1000) once the page/export being annotated covers that many
+    # unique SKUs (export_jobs in planning/views.py is capped at 1000) — a
+    # single Upper(...) IN (...) filter has no such ceiling.
+    unique_skus = list({_sku_key(job.sku) for job in job_list if (job.sku or '').strip()})
     cluster_qs = (
         PlanningJob.objects.filter(is_active=True)
         .exclude(status__iexact='completed')
-        .filter(_sku_filter_q(unique_skus))
+        .annotate(sku_upper=Upper('sku'))
+        .filter(sku_upper__in=unique_skus)
         .select_related('job_card')
     )
     clusters_by_key = {}
@@ -255,12 +250,10 @@ def attach_sku_duplicate_alerts_to_jobs(jobs):
         clusters_by_key.setdefault(key, []).append(job)
 
     dispatch_cutoff = timezone.localdate() - timedelta(days=RECENT_DISPATCH_DAYS)
-    dispatch_sku_q = Q()
-    for sku in unique_skus:
-        dispatch_sku_q |= Q(job_card__SKU__iexact=sku)
     dispatch_qs = (
         Dispatch.objects.filter(is_active=True, dispatch_date__gte=dispatch_cutoff)
-        .filter(dispatch_sku_q)
+        .annotate(job_card_sku_upper=Upper('job_card__SKU'))
+        .filter(job_card_sku_upper__in=unique_skus)
         .select_related('job_card', 'job_card__planning_job')
         .order_by('-dispatch_date', '-id')
     )

@@ -3924,10 +3924,11 @@ def pending_skus(request):
     sku_values = sorted({row['sku'] for row in pending_rows if row.get('sku')})
     recipes_by_sku = {}
     if sku_values:
-        recipe_query = Q()
-        for sku in sku_values:
-            recipe_query |= Q(sku__iexact=sku)
-        recipes = SkuRecipe.objects.filter(recipe_query)
+        # A per-SKU Q(...) |= chain blows past SQLite's expression-tree depth
+        # limit (1000) once enough PO documents are scanned — Upper(...) IN
+        # (...) has no such ceiling.
+        sku_keys = {sku.strip().upper() for sku in sku_values}
+        recipes = SkuRecipe.objects.annotate(sku_upper=Upper('sku')).filter(sku_upper__in=sku_keys)
         recipes_by_sku = {recipe.sku.upper(): recipe for recipe in recipes}
 
     for row in pending_rows:
