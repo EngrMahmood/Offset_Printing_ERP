@@ -33,6 +33,7 @@ from django.core.files.base import ContentFile
 from django.core.paginator import Paginator
 from django.db import transaction
 from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models.functions import Upper
 from django.db.models.deletion import ProtectedError
 from django.http import Http404, HttpResponse
 from django.utils import timezone
@@ -2757,12 +2758,16 @@ def approval_queue(request):
     )
 
     if active_sku_keys:
-        sku_query = Q()
-        for sku in active_sku_keys:
-            sku_query |= Q(sku__iexact=sku)
-        pending_sku_approval_count = SkuRecipe.objects.filter(is_active=True, master_data_status='pending_review').filter(sku_query).count()
-        sku_reviewed_count = SkuRecipe.objects.filter(is_active=True, master_data_status='reviewed').filter(sku_query).count()
-        sku_approved_count = SkuRecipe.objects.filter(is_active=True, master_data_status='approved').filter(sku_query).count()
+        # One Q(sku__iexact=...) per SKU ORed together blows past SQLite's
+        # expression-tree depth limit (1000) once the system has that many
+        # active SKUs — a single `Upper(sku) IN (...)` filter has no such
+        # ceiling and is faster besides.
+        active_sku_matches = SkuRecipe.objects.filter(is_active=True).annotate(
+            sku_key=Upper('sku')
+        ).filter(sku_key__in=active_sku_keys)
+        pending_sku_approval_count = active_sku_matches.filter(master_data_status='pending_review').count()
+        sku_reviewed_count = active_sku_matches.filter(master_data_status='reviewed').count()
+        sku_approved_count = active_sku_matches.filter(master_data_status='approved').count()
     else:
         pending_sku_approval_count = 0
         sku_reviewed_count = 0
