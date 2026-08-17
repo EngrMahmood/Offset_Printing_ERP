@@ -209,16 +209,33 @@ same one-liner either way.
 
 **As of 2026-08-11, the cloud VM (`offseterp.duckdns.org`) is production and
 the Windows PC is development-only.** `sync_db_to_cloud.bat` (Windows →
-cloud push) is **retired** — running it would overwrite real production data
-with the stale Windows dev copy. Its scheduled task ("Offset ERP Cloud
-Sync") is disabled; leave it disabled.
+cloud push) is **retired**, and its scheduled task ("Offset ERP Cloud Sync")
+was **removed entirely as of 2026-08-17** (it only ever ran disabled; the
+XML/task definition was deleted rather than left around as a live footgun).
+Running that direction would overwrite real production data with the stale
+Windows dev copy — if this direction is ever genuinely needed again, run
+`sync_db_to_cloud.bat force` manually, never via a scheduled task.
 
-**Standby refresh (primary → old VM, one-directional pull)**: double-click
-`scripts\cloud\standby\sync_standby_from_primary.bat` to refresh the standby
-(`offseterpbackup.duckdns.org`, the old VM) with a fresh snapshot pulled
-from the primary. Safe to run anytime — takes a live snapshot on the
-primary via Docker, downloads it to this PC, then uploads/loads it into the
-standby. Needs both `%USERPROFILE%\.ssh\offset-erp-oracle-a1` (primary) and
+**Standby refresh, automatic (primary VM → old VM, cron, as of
+2026-08-17)**: `scripts/cloud/standby/cron_sync_standby_from_primary.sh` runs
+on the **primary VM itself** via cron, twice daily at `08:15` and `15:15 UTC`
+(1:15pm/8:15pm Pakistan Time) — chosen over a Windows Task Scheduler job
+because the VM is always on, unlike the dev PC. It needs
+`~/.ssh/offset-erp-oracle-standby` on the primary (a copy of the standby's
+private key — placed there once during setup; never committed). Log on the
+primary: `~/offset-erp/logs/standby_sync.log`. Install the cron job with
+`crontab -e` as the `ubuntu` user on the primary:
+```
+15 8,15 * * * /home/ubuntu/offset-erp/scripts/cloud/standby/cron_sync_standby_from_primary.sh
+```
+
+**Standby refresh, manual (primary → old VM, one-directional pull)**:
+double-click `scripts\cloud\standby\sync_standby_from_primary.bat` on the
+Windows PC to refresh the standby on demand — still useful for an
+out-of-band refresh between the twice-daily cron runs. Safe to run
+anytime — takes a live snapshot on the primary via Docker, downloads it to
+this PC, then uploads/loads it into the standby. Needs both
+`%USERPROFILE%\.ssh\offset-erp-oracle-a1` (primary) and
 `%USERPROFILE%\.ssh\offset-erp-oracle.key` (standby). Log:
 `backups\sync_standby.log`.
 
