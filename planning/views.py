@@ -4,6 +4,7 @@ import base64
 import io
 import json
 import re
+from collections import Counter
 from difflib import SequenceMatcher
 from datetime import date, datetime
 
@@ -2760,14 +2761,21 @@ def approval_queue(request):
     if active_sku_keys:
         # One Q(sku__iexact=...) per SKU ORed together blows past SQLite's
         # expression-tree depth limit (1000) once the system has that many
-        # active SKUs — a single `Upper(sku) IN (...)` filter has no such
-        # ceiling and is faster besides.
-        active_sku_matches = SkuRecipe.objects.filter(is_active=True).annotate(
-            sku_key=Upper('sku')
-        ).filter(sku_key__in=active_sku_keys)
-        pending_sku_approval_count = active_sku_matches.filter(master_data_status='pending_review').count()
-        sku_reviewed_count = active_sku_matches.filter(master_data_status='reviewed').count()
-        sku_approved_count = active_sku_matches.filter(master_data_status='approved').count()
+        # active SKUs. A single `Upper(sku) IN (...)` filter has no such
+        # ceiling, but `IN` itself is bound by SQLite's max bound-parameter
+        # count — chunked() keeps every query safely under that too, however
+        # large active_sku_keys grows.
+        from core.services import chunked
+
+        status_counts = Counter()
+        for chunk in chunked(active_sku_keys):
+            rows = SkuRecipe.objects.filter(is_active=True).annotate(
+                sku_key=Upper('sku')
+            ).filter(sku_key__in=chunk).values_list('master_data_status', flat=True)
+            status_counts.update(rows)
+        pending_sku_approval_count = status_counts.get('pending_review', 0)
+        sku_reviewed_count = status_counts.get('reviewed', 0)
+        sku_approved_count = status_counts.get('approved', 0)
     else:
         pending_sku_approval_count = 0
         sku_reviewed_count = 0
@@ -3925,11 +3933,15 @@ def pending_skus(request):
     recipes_by_sku = {}
     if sku_values:
         # A per-SKU Q(...) |= chain blows past SQLite's expression-tree depth
-        # limit (1000) once enough PO documents are scanned — Upper(...) IN
-        # (...) has no such ceiling.
+        # limit (1000) once enough PO documents are scanned. Upper(...) IN
+        # (...) has no such ceiling, but IN itself is bound by SQLite's max
+        # bound-parameter count — chunked() keeps it safe at any scale.
+        from core.services import chunked
+
         sku_keys = {sku.strip().upper() for sku in sku_values}
-        recipes = SkuRecipe.objects.annotate(sku_upper=Upper('sku')).filter(sku_upper__in=sku_keys)
-        recipes_by_sku = {recipe.sku.upper(): recipe for recipe in recipes}
+        for chunk in chunked(sku_keys):
+            recipes = SkuRecipe.objects.annotate(sku_upper=Upper('sku')).filter(sku_upper__in=chunk)
+            recipes_by_sku.update({recipe.sku.upper(): recipe for recipe in recipes})
 
     for row in pending_rows:
         recipe = recipes_by_sku.get(_sku_key(row.get('sku')))

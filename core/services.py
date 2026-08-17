@@ -8,6 +8,26 @@ from django.contrib import messages
 from .models import Department, DeliveryLocation, ProductType, JobCard, Production, Dispatch, ChangeLog, EditOverrideRequest
 from .constants import AUDIT_CONFIG
 
+# SQLite's compiled-in bound-parameter ceiling (SQLITE_MAX_VARIABLE_NUMBER)
+# is commonly 999 on older builds and 32766 on modern ones — a single
+# `field__in=values` filter with more values than that raises "too many SQL
+# variables". 900 stays safely under either, with headroom for whatever
+# other params share the same query.
+SQL_IN_CHUNK_SIZE = 900
+
+
+def chunked(values, size=SQL_IN_CHUNK_SIZE):
+    """Yield `values` (any iterable) in fixed-size list chunks.
+
+    Use this to split a large `field__in=values` filter into several safe
+    queries instead of one that can exceed SQLite's bound-parameter limit —
+    see SQL_IN_CHUNK_SIZE. Unlike a `Q(...) |= Q(...)` OR-chain per value,
+    this has no expression-tree-depth ceiling either.
+    """
+    values = list(values)
+    for i in range(0, len(values), size):
+        yield values[i:i + size]
+
 
 def find_completed_job_card_matches(query, limit=5):
     """

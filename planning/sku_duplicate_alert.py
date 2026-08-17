@@ -8,6 +8,7 @@ from django.db.models.functions import Upper
 from django.utils import timezone
 
 from core.models import Dispatch, JobCard
+from core.services import chunked
 from planning.models import PLANNING_STAGE_CHOICES, PlanningJob
 from planning.services import _sku_key
 from workflow.services import _normalize_status
@@ -234,32 +235,42 @@ def attach_sku_duplicate_alerts_to_jobs(jobs):
 
     # A per-SKU Q(...) |= chain blows past SQLite's expression-tree depth
     # limit (1000) once the page/export being annotated covers that many
-    # unique SKUs (export_jobs in planning/views.py is capped at 1000) — a
-    # single Upper(...) IN (...) filter has no such ceiling.
+    # unique SKUs (export_jobs in planning/views.py is capped at 1000).
+    # Upper(...) IN (...) has no such ceiling, but IN itself is bound by
+    # SQLite's max bound-parameter count — chunked() keeps it safe at any
+    # scale (10k+ unique SKUs included).
     unique_skus = list({_sku_key(job.sku) for job in job_list if (job.sku or '').strip()})
-    cluster_qs = (
-        PlanningJob.objects.filter(is_active=True)
-        .exclude(status__iexact='completed')
-        .annotate(sku_upper=Upper('sku'))
-        .filter(sku_upper__in=unique_skus)
-        .select_related('job_card')
-    )
+
     clusters_by_key = {}
-    for job in cluster_qs:
-        key = _sku_key(job.sku)
-        clusters_by_key.setdefault(key, []).append(job)
+    for chunk in chunked(unique_skus):
+        cluster_qs = (
+            PlanningJob.objects.filter(is_active=True)
+            .exclude(status__iexact='completed')
+            .annotate(sku_upper=Upper('sku'))
+            .filter(sku_upper__in=chunk)
+            .select_related('job_card')
+        )
+        for job in cluster_qs:
+            key = _sku_key(job.sku)
+            clusters_by_key.setdefault(key, []).append(job)
 
     dispatch_cutoff = timezone.localdate() - timedelta(days=RECENT_DISPATCH_DAYS)
-    dispatch_qs = (
-        Dispatch.objects.filter(is_active=True, dispatch_date__gte=dispatch_cutoff)
-        .annotate(job_card_sku_upper=Upper('job_card__SKU'))
-        .filter(job_card_sku_upper__in=unique_skus)
-        .select_related('job_card', 'job_card__planning_job')
-        .order_by('-dispatch_date', '-id')
-    )
+    all_dispatches = []
+    for chunk in chunked(unique_skus):
+        dispatch_qs = (
+            Dispatch.objects.filter(is_active=True, dispatch_date__gte=dispatch_cutoff)
+            .annotate(job_card_sku_upper=Upper('job_card__SKU'))
+            .filter(job_card_sku_upper__in=chunk)
+            .select_related('job_card', 'job_card__planning_job')
+        )
+        all_dispatches.extend(dispatch_qs)
+    # Re-sort after merging chunks so the per-SKU "most recent 8" cap below
+    # still sees dispatches in the same order as the original single query.
+    all_dispatches.sort(key=lambda d: (d.dispatch_date, d.id), reverse=True)
+
     # Case-insensitive dispatch grouping
     dispatches_by_key = {}
-    for dispatch in dispatch_qs:
+    for dispatch in all_dispatches:
         sku = (dispatch.job_card.SKU or '').strip()
         key = _sku_key(sku)
         if not key:

@@ -428,11 +428,15 @@ def master_sku_review_queue(request):
     recipes_by_sku = {}
     if sku_values:
         # A per-SKU Q(...) |= chain blows past SQLite's expression-tree depth
-        # limit (1000) once enough PO documents are scanned — Upper(...) IN
-        # (...) has no such ceiling.
+        # limit (1000) once enough PO documents are scanned. Upper(...) IN
+        # (...) has no such ceiling, but IN itself is bound by SQLite's max
+        # bound-parameter count — chunked() keeps it safe at any scale.
+        from core.services import chunked
+
         sku_keys = {sku.strip().upper() for sku in sku_values}
-        recipes = SkuRecipe.objects.annotate(sku_upper=Upper('sku')).filter(sku_upper__in=sku_keys, is_active=True)
-        recipes_by_sku = {recipe.sku.upper(): recipe for recipe in recipes}
+        for chunk in chunked(sku_keys):
+            recipes = SkuRecipe.objects.annotate(sku_upper=Upper('sku')).filter(sku_upper__in=chunk, is_active=True)
+            recipes_by_sku.update({recipe.sku.upper(): recipe for recipe in recipes})
 
     review_rows = []
     po_summary_map = {}
@@ -810,11 +814,15 @@ def pending_skus(request):
     recipes_by_sku = {}
     if sku_values:
         # A per-SKU Q(...) |= chain blows past SQLite's expression-tree depth
-        # limit (1000) once enough PO documents are scanned — Upper(...) IN
-        # (...) has no such ceiling.
+        # limit (1000) once enough PO documents are scanned. Upper(...) IN
+        # (...) has no such ceiling, but IN itself is bound by SQLite's max
+        # bound-parameter count — chunked() keeps it safe at any scale.
+        from core.services import chunked
+
         sku_keys = {sku.strip().upper() for sku in sku_values}
-        recipes = SkuRecipe.objects.annotate(sku_upper=Upper('sku')).filter(sku_upper__in=sku_keys)
-        recipes_by_sku = {recipe.sku.upper(): recipe for recipe in recipes}
+        for chunk in chunked(sku_keys):
+            recipes = SkuRecipe.objects.annotate(sku_upper=Upper('sku')).filter(sku_upper__in=chunk)
+            recipes_by_sku.update({recipe.sku.upper(): recipe for recipe in recipes})
 
     for row in pending_rows:
         recipe = recipes_by_sku.get(_sku_key(row.get('sku')))
