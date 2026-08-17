@@ -34,6 +34,16 @@ def dashboard(request):
             'last_log': last_log,
         })
 
+    stock_balance_log = SheetsSyncLog.objects.filter(tab_name='Stock Balance').order_by('-timestamp').first()
+    if stock_balance_log:
+        from supply_chain.models import RawMaterialSku
+        tabs.append({
+            'tab_name': 'Stock Balance',
+            'dotted_path': '(computed aggregate, refreshed after each Stock Transactions sync)',
+            'row_count': RawMaterialSku.objects.count(),
+            'last_log': stock_balance_log,
+        })
+
     recent_failures = SheetsSyncLog.objects.filter(status='FAILED').order_by('-timestamp')[:15]
     recent_activity = SheetsSyncLog.objects.order_by('-timestamp')[:30]
 

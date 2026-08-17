@@ -44,6 +44,11 @@ class Command(BaseCommand):
         for entry in entries:
             self._backfill_entry(spreadsheet, entry, force=options['force'])
 
+        self.stdout.write("Computing Stock Balance summary...")
+        from sheets_sync.stock_balance import rewrite_stock_balance_tab
+        row_count = rewrite_stock_balance_tab(spreadsheet)
+        self.stdout.write(self.style.SUCCESS(f"Stock Balance: {row_count} SKUs summarized."))
+
         self.stdout.write(self.style.SUCCESS("Backfill complete."))
 
     def _backfill_entry(self, spreadsheet, entry, force):

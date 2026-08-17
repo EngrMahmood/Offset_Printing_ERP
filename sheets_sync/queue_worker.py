@@ -197,7 +197,33 @@ class SheetsSyncWorkerThread(threading.Thread):
                 self._requeue(tab_events)
                 all_ok = False
 
+        if 'Stock Transactions' in by_tab:
+            self._refresh_stock_balance(spreadsheet)
+
         return all_ok
+
+    def _refresh_stock_balance(self, spreadsheet):
+        """Recomputes the Stock Balance aggregate tab after a Stock
+        Transactions flush. Best-effort: a failure here is logged but does
+        not affect the main sync's success/failure or circuit breaker,
+        since it's a derived convenience tab, not part of the core mirror."""
+        from sheets_sync.models import SheetsSyncLog
+        from sheets_sync.stock_balance import rewrite_stock_balance_tab
+
+        start = time.monotonic()
+        try:
+            row_count = rewrite_stock_balance_tab(spreadsheet)
+            SheetsSyncLog.objects.create(
+                tab_name='Stock Balance', batch_size=row_count, status='SUCCESS',
+                duration_ms=int((time.monotonic() - start) * 1000),
+            )
+        except Exception as exc:
+            logger.exception("sheets_sync: stock balance refresh failed")
+            SheetsSyncLog.objects.create(
+                tab_name='Stock Balance', batch_size=0, status='FAILED',
+                error_message=str(exc)[:2000],
+                duration_ms=int((time.monotonic() - start) * 1000),
+            )
 
     def _requeue(self, events):
         for event in events:

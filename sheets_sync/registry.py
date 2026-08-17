@@ -11,7 +11,8 @@ Maintenance (Phase 3), and Supply Chain (Phase 4) are added incrementally.
 JOB_CARD_HEADERS = [
     'Job Card No', 'PO No', 'SKU', 'Material', 'Colour', 'Application',
     'Order Qty', 'Total Impressions Required', 'Machine', 'Department',
-    'Status', 'Workflow Status', 'Destination', 'Remarks', 'Updated At', 'Deleted',
+    'Status', 'Workflow Status', 'Destination', 'Remarks',
+    'Balance Qty', 'Dispatch %', 'Job Status', 'Updated At', 'Deleted',
 ]
 
 PLANNING_HEADERS = [
@@ -23,7 +24,8 @@ PLANNING_HEADERS = [
 PRODUCTION_HEADERS = [
     'Job Card No', 'Date', 'Shift', 'Entry Type', 'Machine', 'Output Sheets',
     'Waste Sheets', 'Impressions', 'Packing Qty', 'Downtime Minutes',
-    'Status', 'Remarks', 'Updated At', 'Deleted',
+    'Status', 'Remarks', 'OEE %', 'Availability %', 'Performance %', 'Quality %',
+    'Updated At', 'Deleted',
 ]
 
 PRODUCTION_DOWNTIME_HEADERS = [
@@ -77,6 +79,38 @@ ITEM_REQUEST_HEADERS = [
     'IR-ID', 'Request Type', 'Request Date', 'Item Title', 'Machine',
     'UOM', 'Required Quantity', 'Department', 'Status', 'Raised By',
     'Local/Import', 'Estimated Unit Price', 'Updated At', 'Deleted',
+]
+
+RAW_MATERIAL_SKU_HEADERS = [
+    'SKU', 'Material', 'Purchase Sheet Size', 'SKU Type', 'UOM',
+    'Sheet Packing/Pcs', 'Unit Cost', 'Safety Stock', 'Max Stock Level',
+    'Lead Time Days', 'Active', 'Updated At', 'Deleted',
+]
+
+MACHINE_HEADERS = [
+    'Machine Name', 'Machine Type', 'Std Impressions/Hour',
+    'Std Setup Min/Color', 'Plate Life Impressions', 'Default Colors',
+    'Min Print Length (mm)', 'Min Print Width (mm)', 'Max Print Length (mm)',
+    'Max Print Width (mm)', 'Active', 'Updated At', 'Deleted',
+]
+
+MATERIAL_HEADERS = [
+    'Name', 'Updated At', 'Deleted',
+]
+
+DEPARTMENT_HEADERS = [
+    'Name', 'Updated At', 'Deleted',
+]
+
+PRODUCT_TYPE_HEADERS = [
+    'Name', 'Updated At', 'Deleted',
+]
+
+SKU_RECIPE_HEADERS = [
+    'SKU', 'Job Name', 'Material', 'Color Spec', 'Application',
+    'Product Type', 'Machine', 'Job Process Type', 'Print Passes',
+    'Size W (mm)', 'Size H (mm)', 'UPS', 'Print Sheet Size', 'Active',
+    'Notes', 'Updated At', 'Deleted',
 ]
 
 SYNCED_MODELS = [
@@ -170,6 +204,48 @@ SYNCED_MODELS = [
         'headers': ITEM_REQUEST_HEADERS,
         'serializer': 'serialize_item_request',
         'key_field': 'request_no',
+    },
+    {
+        'dotted_path': 'supply_chain.RawMaterialSku',
+        'tab_name': 'Raw Material SKUs',
+        'headers': RAW_MATERIAL_SKU_HEADERS,
+        'serializer': 'serialize_raw_material_sku',
+        'key_field': 'sku',
+    },
+    {
+        'dotted_path': 'core.Machine',
+        'tab_name': 'Machines',
+        'headers': MACHINE_HEADERS,
+        'serializer': 'serialize_machine',
+        'key_field': 'name',
+    },
+    {
+        'dotted_path': 'core.Material',
+        'tab_name': 'Materials',
+        'headers': MATERIAL_HEADERS,
+        'serializer': 'serialize_material',
+        'key_field': 'name',
+    },
+    {
+        'dotted_path': 'core.Department',
+        'tab_name': 'Departments',
+        'headers': DEPARTMENT_HEADERS,
+        'serializer': 'serialize_department',
+        'key_field': 'name',
+    },
+    {
+        'dotted_path': 'core.ProductType',
+        'tab_name': 'Product Types',
+        'headers': PRODUCT_TYPE_HEADERS,
+        'serializer': 'serialize_product_type',
+        'key_field': 'name',
+    },
+    {
+        'dotted_path': 'planning.SkuRecipe',
+        'tab_name': 'SKU Master',
+        'headers': SKU_RECIPE_HEADERS,
+        'serializer': 'serialize_sku_recipe',
+        'key_field': 'sku',
     },
 ]
 

@@ -13,6 +13,19 @@ def _s(value):
     return str(value)
 
 
+def _safe_attr(instance, attr_name):
+    """Read a property/method off `instance`, tolerating any exception it
+    might raise (e.g. edge-case division or missing related rows) so one
+    bad computed field never breaks the whole sync row."""
+    try:
+        value = getattr(instance, attr_name)
+        if callable(value):
+            value = value()
+        return _s(value)
+    except Exception:
+        return ''
+
+
 def serialize_job_card(instance, deleted=False):
     return {
         'Job Card No': _s(instance.job_card_no),
@@ -29,6 +42,9 @@ def serialize_job_card(instance, deleted=False):
         'Workflow Status': _s(instance.workflow_status_label),
         'Destination': _s(instance.destination),
         'Remarks': _s(instance.remarks),
+        'Balance Qty': _safe_attr(instance, 'balance_qty'),
+        'Dispatch %': _safe_attr(instance, 'dispatch_completion_percent'),
+        'Job Status': _safe_attr(instance, 'job_status'),
         'Updated At': _s(instance.updated_at) if hasattr(instance, 'updated_at') else '',
         'Deleted': 'YES' if deleted else '',
     }
@@ -54,6 +70,16 @@ def serialize_planning_job(instance, deleted=False):
     }
 
 
+def _safe_percent(instance, attr_name):
+    """Read a 0..1 OEE-style ratio property and render it as a rounded
+    percentage, tolerating any exception the property might raise."""
+    try:
+        ratio = getattr(instance, attr_name)
+        return _s(round(float(ratio or 0) * 100, 2))
+    except Exception:
+        return ''
+
+
 def serialize_production(instance, deleted=False):
     return {
         'Job Card No': _s(instance.job_card.job_card_no) if instance.job_card_id else '',
@@ -68,6 +94,10 @@ def serialize_production(instance, deleted=False):
         'Downtime Minutes': _s(instance.downtime_minutes),
         'Status': _s(instance.get_status_display()) if instance.status else '',
         'Remarks': _s(instance.remark_notes),
+        'OEE %': _safe_percent(instance, 'oee'),
+        'Availability %': _safe_percent(instance, 'availability'),
+        'Performance %': _safe_percent(instance, 'performance'),
+        'Quality %': _safe_percent(instance, 'quality'),
         'Updated At': _s(instance.updated_at) if hasattr(instance, 'updated_at') else '',
         'Deleted': 'YES' if deleted else '',
     }
@@ -242,6 +272,88 @@ def serialize_item_request(instance, deleted=False):
     }
 
 
+def serialize_raw_material_sku(instance, deleted=False):
+    return {
+        'SKU': _s(instance.sku),
+        'Material': _s(instance.material),
+        'Purchase Sheet Size': _s(instance.purchase_sheet_size),
+        'SKU Type': _s(instance.sku_type) if instance.sku_type_id else '',
+        'UOM': _s(instance.uom),
+        'Sheet Packing/Pcs': _s(instance.sheet_packing_pcs),
+        'Unit Cost': _s(instance.unit_cost),
+        'Safety Stock': _s(instance.safety_stock),
+        'Max Stock Level': _s(instance.max_stock_level),
+        'Lead Time Days': _s(instance.lead_time_days),
+        'Active': 'YES' if instance.is_active else 'NO',
+        'Updated At': _s(instance.updated_at) if hasattr(instance, 'updated_at') else '',
+        'Deleted': 'YES' if deleted else '',
+    }
+
+
+def serialize_machine(instance, deleted=False):
+    return {
+        'Machine Name': _s(instance.name),
+        'Machine Type': _s(instance.get_machine_type_display()) if instance.machine_type else '',
+        'Std Impressions/Hour': _s(instance.standard_impressions_per_hour),
+        'Std Setup Min/Color': _s(instance.standard_setup_minutes_per_color),
+        'Plate Life Impressions': _s(instance.plate_life_impressions),
+        'Default Colors': _s(instance.default_colors),
+        'Min Print Length (mm)': _s(instance.min_print_length_mm),
+        'Min Print Width (mm)': _s(instance.min_print_width_mm),
+        'Max Print Length (mm)': _s(instance.max_print_length_mm),
+        'Max Print Width (mm)': _s(instance.max_print_width_mm),
+        'Active': 'YES' if instance.is_active else 'NO',
+        'Updated At': _s(instance.updated_at) if hasattr(instance, 'updated_at') else '',
+        'Deleted': 'YES' if deleted else '',
+    }
+
+
+def serialize_material(instance, deleted=False):
+    return {
+        'Name': _s(instance.name),
+        'Updated At': _s(instance.updated_at) if hasattr(instance, 'updated_at') else '',
+        'Deleted': 'YES' if deleted else '',
+    }
+
+
+def serialize_department(instance, deleted=False):
+    return {
+        'Name': _s(instance.name),
+        'Updated At': _s(instance.updated_at) if hasattr(instance, 'updated_at') else '',
+        'Deleted': 'YES' if deleted else '',
+    }
+
+
+def serialize_product_type(instance, deleted=False):
+    return {
+        'Name': _s(instance.name),
+        'Updated At': _s(instance.updated_at) if hasattr(instance, 'updated_at') else '',
+        'Deleted': 'YES' if deleted else '',
+    }
+
+
+def serialize_sku_recipe(instance, deleted=False):
+    return {
+        'SKU': _s(instance.sku),
+        'Job Name': _s(instance.job_name),
+        'Material': _s(instance.material),
+        'Color Spec': _s(instance.color_spec),
+        'Application': _s(instance.application),
+        'Product Type': _s(instance.product_type),
+        'Machine': _s(instance.machine_name),
+        'Job Process Type': _s(instance.get_job_process_type_display()) if instance.job_process_type else '',
+        'Print Passes': _s(instance.print_passes),
+        'Size W (mm)': _s(instance.size_w_mm),
+        'Size H (mm)': _s(instance.size_h_mm),
+        'UPS': _s(instance.ups),
+        'Print Sheet Size': _s(instance.print_sheet_size),
+        'Active': 'YES' if instance.is_active else 'NO',
+        'Notes': _s(instance.notes),
+        'Updated At': _s(instance.updated_at) if hasattr(instance, 'updated_at') else '',
+        'Deleted': 'YES' if deleted else '',
+    }
+
+
 SERIALIZERS = {
     'serialize_job_card': serialize_job_card,
     'serialize_planning_job': serialize_planning_job,
@@ -256,4 +368,10 @@ SERIALIZERS = {
     'serialize_stock_transaction': serialize_stock_transaction,
     'serialize_stock_demand': serialize_stock_demand,
     'serialize_item_request': serialize_item_request,
+    'serialize_raw_material_sku': serialize_raw_material_sku,
+    'serialize_machine': serialize_machine,
+    'serialize_material': serialize_material,
+    'serialize_department': serialize_department,
+    'serialize_product_type': serialize_product_type,
+    'serialize_sku_recipe': serialize_sku_recipe,
 }
