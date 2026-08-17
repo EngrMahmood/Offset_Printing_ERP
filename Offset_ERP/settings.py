@@ -113,6 +113,7 @@ INSTALLED_APPS = [
     'audit',
     'tasks',
     'backup',
+    'sheets_sync',
     'maintenance',
     'floor_dashboard',
     'chat',
