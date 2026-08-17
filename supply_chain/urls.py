@@ -34,6 +34,8 @@ urlpatterns = [
     path('transaction/<int:pk>/edit/', views.transaction_edit, name='transaction_edit'),
     path('transaction/<int:pk>/delete/', views.transaction_delete, name='transaction_delete'),
 
+    path('stock-balance/', views.stock_balance, name='stock_balance'),
+
     path('reports/consumption/', views.consumption_reports, name='consumption_reports'),
     path('kpis/', views.kpi_dashboard, name='kpi_dashboard'),
     path('job-card-links/', views.jc_links, name='jc_links'),

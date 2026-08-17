@@ -330,6 +330,10 @@
            class="erp-subnav-link {% if url == 'adjustment' %}is-active{% endif %}">
             Adjustment
         </a>
+        <a href="{% url 'supply_chain:stock_balance' %}"
+           class="erp-subnav-link {% if url == 'stock_balance' %}is-active{% endif %}">
+            Stock Balance
+        </a>
         <a href="{% url 'supply_chain:consumption_reports' %}"
            class="erp-subnav-link {% if url == 'consumption_reports' %}is-active{% endif %}">
             Reports

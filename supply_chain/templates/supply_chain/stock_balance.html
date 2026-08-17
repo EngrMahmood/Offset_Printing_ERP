@@ -1,0 +1,86 @@
+{% extends 'theme/base.html' %}
+{% load theme_tags %}
+
+{% block title %}Stock Balance — Supply Chain{% endblock %}
+{% block header_title %}Stock Balance{% endblock %}
+{% block header_subtitle %}Current stock on hand per SKU: Opening + Receiving − Issuance + Adjustment.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'supply_chain:kpi_dashboard' %}" class="erp-btn erp-btn-secondary">Full KPI Engine</a>
+    <a href="{% url 'supply_chain:dashboard' %}" class="erp-btn erp-btn-secondary">Dashboard</a>
+{% endblock %}
+
+{% block content %}
+    <div class="erp-page-stack">
+        <section class="erp-section-shell">
+            <div class="erp-info-grid">
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">SKUs Tracked</div>
+                    <div class="erp-info-item__value">{{ rows|length }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Stockout</div>
+                    <div class="erp-info-item__value">{{ stockout_count }}</div>
+                </div>
+                <div class="erp-info-item">
+                    <div class="erp-info-item__label">Below Safety Stock</div>
+                    <div class="erp-info-item__value">{{ below_safety_count }}</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="erp-section-shell">
+            <div class="erp-card-header">
+                <div class="erp-card-title-stack">
+                    <h3 class="erp-section-title">Current Balance by SKU</h3>
+                    <p class="erp-card-subtitle">For deeper analysis (ABC/FSN classification, turnover, reorder point) see the Full KPI Engine.</p>
+                </div>
+            </div>
+            <div class="erp-table-wrap">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>SKU</th>
+                            <th>Material</th>
+                            <th>Purchase Size</th>
+                            <th>UOM</th>
+                            <th class="text-right">Opening</th>
+                            <th class="text-right">Receiving</th>
+                            <th class="text-right">Issuance</th>
+                            <th class="text-right">Adjustment</th>
+                            <th class="text-right">Balance</th>
+                            <th class="text-right">Safety Stock</th>
+                            <th class="text-right">Max Level</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in rows %}
+                        <tr>
+                            <td><strong>{{ row.item.sku|default:'—' }}</strong></td>
+                            <td>{{ row.item.material.name }}</td>
+                            <td>{{ row.item.purchase_sheet_size }}</td>
+                            <td>{{ row.item.uom }}</td>
+                            <td class="text-right">{{ row.opening }}</td>
+                            <td class="text-right">{{ row.receiving }}</td>
+                            <td class="text-right">{{ row.issuance }}</td>
+                            <td class="text-right">{{ row.adjustment }}</td>
+                            <td class="text-right"><strong>{{ row.closing }}</strong></td>
+                            <td class="text-right">{{ row.item.safety_stock }}</td>
+                            <td class="text-right">{{ row.item.max_stock_level }}</td>
+                            <td>
+                                {% if row.stockout %}<span class="erp-badge erp-badge-rejected">Stockout</span>
+                                {% elif row.below_safety %}<span class="erp-badge erp-badge-warning">Below Safety</span>
+                                {% elif row.overstock %}<span class="erp-badge erp-badge-hold">Overstock</span>
+                                {% else %}<span class="erp-badge erp-badge-approved">OK</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="12">No raw material SKUs configured.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+{% endblock %}

@@ -159,6 +159,21 @@ def kpi_dashboard(request):
 
 
 @supply_chain_required
+def stock_balance(request):
+    from .services import build_dashboard_data
+    rows = build_dashboard_data()
+    for row in rows:
+        row['below_safety'] = row['closing'] <= row['item'].safety_stock
+    below_safety_count = sum(1 for row in rows if row['below_safety'])
+    stockout_count = sum(1 for row in rows if row['stockout'])
+    return render(request, 'supply_chain/stock_balance.html', {
+        'rows': rows,
+        'below_safety_count': below_safety_count,
+        'stockout_count': stockout_count,
+    })
+
+
+@supply_chain_required
 def item_list(request):
     show_archived = request.GET.get('show') == 'archived'
     items = (
