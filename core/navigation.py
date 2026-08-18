@@ -94,6 +94,16 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         from core.permissions import user_has_permission
         return user_has_permission(request.user, NAV_PERMISSION_CODES[nav_key])
 
+    def _can_manage_task_automation() -> bool:
+        # Mirrors tasks.views.is_manager_or_admin exactly, so the nav link's
+        # visibility can never drift from what the view actually allows.
+        if not is_authenticated:
+            return False
+        if is_superuser:
+            return True
+        from core.permissions import user_has_permission
+        return user_has_permission(request.user, 'action.manage_tasks')
+
     def _pending_item_reviews() -> int:
         if not _allow('item_request'):
             return 0
@@ -159,6 +169,9 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_access_chat': _allow('chat'),
         'can_access_bot': _allow('bot'),
         'can_access_tasks': is_authenticated,
+        # Managers/admins who can view/edit the Tasks -> Automation page
+        # (same permission code tasks.views.is_manager_or_admin checks).
+        'can_manage_task_automation': _can_manage_task_automation(),
         'can_access_floor_dashboard': is_authenticated,
         # Managers/admins who can approve edit-lock override requests.
         'can_review_overrides': can_review_overrides,

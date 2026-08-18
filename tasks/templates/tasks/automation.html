@@ -1,0 +1,120 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}Task Automation — Offset ERP{% endblock %}
+
+{% block header_title %}Task Automation{% endblock %}
+{% block header_subtitle %}Global defaults for assignment/reminder emails, and the activity log{% endblock %}
+
+{% block header_actions %}
+<a href="{% url 'tasks:dashboard' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-arrow-left"></i> Back to Tasks</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <div class="erp-card bg-white">
+        <h3 class="font-bold text-slate-800 text-sm mb-3 pb-2 border-b border-slate-100"><i class="fas fa-sliders-h text-purple-500 mr-1"></i> Global Defaults</h3>
+        <p class="text-xs text-slate-500 -mt-2 mb-3">
+            Individual tasks can override the reminder interval and add CC/BCC from their own edit form — these settings are only the fallback for tasks that don't.
+        </p>
+        <form method="post" class="space-y-3">
+            {% csrf_token %}
+            <label class="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
+                <input type="checkbox" name="assignment_email_enabled" {% if settings.assignment_email_enabled %}checked{% endif %}
+                       class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+                <span>
+                    <span class="block text-sm font-semibold text-slate-800">Send assignment emails</span>
+                    <span class="block text-xs text-slate-500 mt-0.5">Emails the assignee (or every team member) the moment a task is assigned or reassigned.</span>
+                </span>
+            </label>
+            <label class="flex items-start gap-3 p-3 rounded-lg cursor-pointer">
+                <input type="checkbox" name="reminders_enabled" {% if settings.reminders_enabled %}checked{% endif %}
+                       class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
+                <span>
+                    <span class="block text-sm font-semibold text-slate-800">Send recurring reminders</span>
+                    <span class="block text-xs text-slate-500 mt-0.5">Repeats for any task still pending/in-progress, until it's completed, verified, or cancelled.</span>
+                </span>
+            </label>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Default reminder interval (days)</label>
+                    <input type="number" name="reminder_interval_days" min="1" value="{{ settings.reminder_interval_days }}" class="erp-input">
+                </div>
+                <div class="space-y-1">
+                    <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Start reminders from</label>
+                    <select name="remind_from" class="erp-select">
+                        <option value="assignment" {% if settings.remind_from == 'assignment' %}selected{% endif %}>The moment it's assigned</option>
+                        <option value="overdue" {% if settings.remind_from == 'overdue' %}selected{% endif %}>Only once overdue (past due date)</option>
+                    </select>
+                </div>
+            </div>
+            <div class="flex justify-end pt-2">
+                <button type="submit" class="erp-btn erp-btn-primary px-5 py-2 text-xs font-bold"><i class="fas fa-save mr-1"></i> Save Defaults</button>
+            </div>
+        </form>
+    </div>
+
+    <div class="erp-card bg-white p-0">
+        <div class="p-4 border-b border-slate-100">
+            <h3 class="font-bold text-slate-800 text-sm"><i class="fas fa-list text-purple-500 mr-1"></i> Activity Log</h3>
+            <p class="text-xs text-slate-500 mt-0.5">Every assignment/reminder email actually sent or attempted.</p>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-slate-50/70">
+                    <tr class="text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">
+                        <th class="px-4 py-3">Task</th>
+                        <th class="px-4 py-3">Kind</th>
+                        <th class="px-4 py-3">Sent At</th>
+                        <th class="px-4 py-3">Status</th>
+                        <th class="px-4 py-3">To / CC / BCC</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-100">
+                    {% for log in page_obj %}
+                    <tr>
+                        <td class="px-4 py-2.5">
+                            <a href="{% url 'tasks:detail' log.task_id %}" class="text-brand-600 hover:text-brand-700 font-medium">{{ log.task.title }}</a>
+                        </td>
+                        <td class="px-4 py-2.5 text-slate-600">{{ log.get_kind_display }}</td>
+                        <td class="px-4 py-2.5 text-slate-600">{{ log.sent_at|date:"d M Y, H:i" }}</td>
+                        <td class="px-4 py-2.5">
+                            {% if log.status == 'SENT' %}
+                                <span class="bg-emerald-50 text-emerald-700 border border-emerald-100 text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase">Sent</span>
+                            {% else %}
+                                <span class="bg-red-50 text-red-700 border border-red-100 text-[10px] px-2 py-0.5 rounded-full font-semibold uppercase" title="{{ log.error_message }}">Failed</span>
+                            {% endif %}
+                        </td>
+                        <td class="px-4 py-2.5 text-xs text-slate-500">
+                            <div><span class="text-slate-400">To:</span> {{ log.recipients_to|default:"—" }}</div>
+                            {% if log.recipients_cc %}<div><span class="text-slate-400">Cc:</span> {{ log.recipients_cc }}</div>{% endif %}
+                            {% if log.recipients_bcc %}<div><span class="text-slate-400">Bcc:</span> {{ log.recipients_bcc }}</div>{% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="5" class="text-center py-10 text-slate-400 text-xs">
+                            <i class="fas fa-inbox text-3xl mb-3 block text-slate-300"></i>
+                            No assignment/reminder emails have been sent yet.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% if page_obj.paginator.num_pages > 1 %}
+        <div class="p-4 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
+            <span>Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
+            <div class="flex gap-2">
+                {% if page_obj.has_previous %}
+                    <a href="?page={{ page_obj.previous_page_number }}" class="erp-btn erp-btn-secondary px-3 py-1.5">Previous</a>
+                {% endif %}
+                {% if page_obj.has_next %}
+                    <a href="?page={{ page_obj.next_page_number }}" class="erp-btn erp-btn-secondary px-3 py-1.5">Next</a>
+                {% endif %}
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

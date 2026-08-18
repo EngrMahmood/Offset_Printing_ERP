@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Team, Task, TaskComment, TaskNotificationSettings, TaskReminderLog
+from .models import Team, Task, TaskComment, TaskNotificationSettings, TaskNotificationLog
 
 @admin.register(Team)
 class TeamAdmin(admin.ModelAdmin):
@@ -26,12 +26,12 @@ class TaskNotificationSettingsAdmin(admin.ModelAdmin):
     def has_add_permission(self, request):
         return not TaskNotificationSettings.objects.exists()
 
-@admin.register(TaskReminderLog)
-class TaskReminderLogAdmin(admin.ModelAdmin):
-    list_display = ('task', 'sent_at', 'status')
-    list_filter = ('status',)
-    search_fields = ('task__title', 'recipients')
-    readonly_fields = [f.name for f in TaskReminderLog._meta.fields]
+@admin.register(TaskNotificationLog)
+class TaskNotificationLogAdmin(admin.ModelAdmin):
+    list_display = ('task', 'kind', 'sent_at', 'status')
+    list_filter = ('kind', 'status')
+    search_fields = ('task__title', 'recipients_to', 'recipients_cc', 'recipients_bcc')
+    readonly_fields = [f.name for f in TaskNotificationLog._meta.fields]
 
     def has_add_permission(self, request):
         return False

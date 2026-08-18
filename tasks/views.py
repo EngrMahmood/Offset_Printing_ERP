@@ -3,9 +3,10 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib.auth.models import User
+from django.core.paginator import Paginator
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
-from .models import Team, Task, TaskComment
+from .models import REMIND_FROM_CHOICES, Team, Task, TaskComment, TaskNotificationLog, TaskNotificationSettings
 from .forms import TaskForm, TeamForm
 
 def is_manager_or_admin(user):
@@ -232,3 +233,51 @@ def teams_list(request):
         'is_manager': is_manager_or_admin(request.user),
     }
     return render(request, 'tasks/teams.html', context)
+
+
+@login_required
+def automation(request):
+    """Global assignment/reminder-email defaults + the notification activity
+    log — manager/admin only, same gate as edit/delete/grade elsewhere in
+    this app (not superuser-only, unlike the old site-wide Settings page)."""
+    if not is_manager_or_admin(request.user):
+        messages.error(request, "You do not have permission to manage task automation.")
+        return redirect('tasks:dashboard')
+
+    settings_obj = TaskNotificationSettings.get_solo()
+
+    if request.method == 'POST':
+        interval_raw = (request.POST.get('reminder_interval_days') or '').strip()
+        try:
+            interval_days = int(interval_raw)
+            if interval_days < 1:
+                raise ValueError()
+        except ValueError:
+            messages.error(request, 'Reminder interval must be a whole number of days, at least 1.')
+            return redirect('tasks:automation')
+
+        remind_from = (request.POST.get('remind_from') or '').strip()
+        if remind_from not in dict(REMIND_FROM_CHOICES):
+            messages.error(request, 'Invalid "start reminders from" value.')
+            return redirect('tasks:automation')
+
+        settings_obj.assignment_email_enabled = bool(request.POST.get('assignment_email_enabled'))
+        settings_obj.reminders_enabled = bool(request.POST.get('reminders_enabled'))
+        settings_obj.reminder_interval_days = interval_days
+        settings_obj.remind_from = remind_from
+        settings_obj.updated_by = request.user
+        settings_obj.save()
+
+        messages.success(request, 'Task automation settings saved.')
+        return redirect('tasks:automation')
+
+    logs = TaskNotificationLog.objects.select_related('task').all()
+    paginator = Paginator(logs, 50)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    context = {
+        'settings': settings_obj,
+        'page_obj': page_obj,
+        'is_manager': True,
+    }
+    return render(request, 'tasks/automation.html', context)

@@ -109,7 +109,6 @@ urlpatterns = [
     path('settings/users/create/', views.user_create, name='user_create'),
     path('settings/email/', views.email_settings_edit, name='email_settings_edit'),
     path('settings/ai/', views.ai_settings_edit, name='ai_settings_edit'),
-    path('settings/tasks/', views.task_notification_settings_edit, name='task_notification_settings_edit'),
     path('forgot-password/', views.forgot_password, name='forgot_password'),
 
     # Self-service password reset (Gmail SMTP — see settings.py)

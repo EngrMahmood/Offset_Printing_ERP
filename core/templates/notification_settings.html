@@ -396,60 +396,6 @@
                     </div>
                 </form>
             </details>
-
-            <details class="lg:col-span-2 bg-white rounded-xl shadow-sm border border-slate-100 group">
-                <summary class="flex items-center justify-between cursor-pointer select-none p-4">
-                    <div>
-                        <h3 class="font-bold text-slate-800 text-sm">Task Assignment & Reminder Emails</h3>
-                        <p class="text-xs text-slate-500 mt-0.5">
-                            {% if task_notification_settings.assignment_email_enabled or task_notification_settings.reminders_enabled %}
-                                Reminders every {{ task_notification_settings.reminder_interval_days }} day{{ task_notification_settings.reminder_interval_days|pluralize }}. Click to change.
-                            {% else %}
-                                Disabled — assignees aren't emailed about tasks right now.
-                            {% endif %}
-                        </p>
-                    </div>
-                    <i class="fas fa-chevron-down text-slate-400 text-xs transition-transform group-open:rotate-180"></i>
-                </summary>
-                <form method="post" action="{% url 'task_notification_settings_edit' %}" class="p-4 pt-0 space-y-3">
-                    {% csrf_token %}
-                    <label class="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">
-                        <input type="checkbox" name="assignment_email_enabled" {% if task_notification_settings.assignment_email_enabled %}checked{% endif %}
-                               class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
-                        <span>
-                            <span class="block text-sm font-semibold text-slate-800">Send assignment emails</span>
-                            <span class="block text-xs text-slate-500 mt-0.5">Emails the assignee (or every team member) the moment a task is assigned or reassigned.</span>
-                        </span>
-                    </label>
-                    <label class="flex items-start gap-3 p-3 rounded-lg cursor-pointer">
-                        <input type="checkbox" name="reminders_enabled" {% if task_notification_settings.reminders_enabled %}checked{% endif %}
-                               class="mt-0.5 h-4 w-4 rounded border-slate-300 text-brand-600 focus:ring-brand-500">
-                        <span>
-                            <span class="block text-sm font-semibold text-slate-800">Send recurring reminders</span>
-                            <span class="block text-xs text-slate-500 mt-0.5">Repeats for any task still pending/in-progress, until it's completed, verified, or cancelled.</span>
-                        </span>
-                    </label>
-                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Reminder interval (days)</label>
-                            <input type="number" name="reminder_interval_days" min="1" value="{{ task_notification_settings.reminder_interval_days }}"
-                                   class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
-                        </div>
-                        <div>
-                            <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Start reminders from</label>
-                            <select name="remind_from" class="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-sm focus:bg-white focus:border-brand-500 transition-all">
-                                <option value="assignment" {% if task_notification_settings.remind_from == 'assignment' %}selected{% endif %}>The moment it's assigned</option>
-                                <option value="overdue" {% if task_notification_settings.remind_from == 'overdue' %}selected{% endif %}>Only once overdue (past due date)</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="flex justify-end">
-                        <button type="submit" class="shrink-0 bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm flex items-center gap-2 text-sm transition-all">
-                            <i class="fas fa-save"></i><span>Save</span>
-                        </button>
-                    </div>
-                </form>
-            </details>
         </div>
 
         <!-- Users list -->

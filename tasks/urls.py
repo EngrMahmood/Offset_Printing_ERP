@@ -12,4 +12,5 @@ urlpatterns = [
     path('<int:pk>/update-status/', views.update_status, name='update_status'),
     path('<int:pk>/score/', views.grade_task, name='score'),
     path('teams/', views.teams_list, name='teams'),
+    path('automation/', views.automation, name='automation'),
 ]

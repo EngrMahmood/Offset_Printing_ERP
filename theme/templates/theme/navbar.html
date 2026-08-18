@@ -532,6 +532,12 @@
            class="erp-subnav-link {% if url == 'teams' %}is-active{% endif %}">
             Manage Teams
         </a>
+        {% if nav.can_manage_task_automation %}
+        <a href="{% url 'tasks:automation' %}"
+           class="erp-subnav-link {% if url == 'automation' %}is-active{% endif %}">
+            Automation
+        </a>
+        {% endif %}
     </div>
 
     {% elif url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'request_edit_override' or url == 'quick_add_master' or url == 'job_card_finalization_queue' %}

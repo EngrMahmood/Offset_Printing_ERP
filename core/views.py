@@ -2184,44 +2184,6 @@ def ai_settings_edit(request):
 
 
 @login_required
-@require_POST
-def task_notification_settings_edit(request):
-    """Superuser-only: enable/disable and tune the Tasks module's assignment
-    and recurring reminder emails. Read at signal/scheduler-tick time by
-    tasks.emails/tasks.reminders, so this takes effect immediately."""
-    if not request.user.is_superuser:
-        add_unique_message(request, messages.ERROR, '❌ Only a superuser can edit task notification settings.')
-        return redirect('notification_settings_home')
-
-    from tasks.models import TaskNotificationSettings, REMIND_FROM_CHOICES
-
-    interval_raw = (request.POST.get('reminder_interval_days') or '').strip()
-    try:
-        interval_days = int(interval_raw)
-        if interval_days < 1:
-            raise ValueError()
-    except ValueError:
-        messages.error(request, 'Reminder interval must be a whole number of days, at least 1.')
-        return redirect(f"/settings/#access-control")
-
-    remind_from = (request.POST.get('remind_from') or '').strip()
-    if remind_from not in dict(REMIND_FROM_CHOICES):
-        messages.error(request, 'Invalid "start reminders from" value.')
-        return redirect(f"/settings/#access-control")
-
-    settings_obj = TaskNotificationSettings.get_solo()
-    settings_obj.assignment_email_enabled = bool(request.POST.get('assignment_email_enabled'))
-    settings_obj.reminders_enabled = bool(request.POST.get('reminders_enabled'))
-    settings_obj.reminder_interval_days = interval_days
-    settings_obj.remind_from = remind_from
-    settings_obj.updated_by = request.user
-    settings_obj.save()
-
-    messages.success(request, 'Task notification settings saved.')
-    return redirect(f"/settings/#access-control")
-
-
-@login_required
 def download_template(request):
     """Download template in CSV or Excel format"""
     file_format = request.GET.get('format', 'csv').lower()
@@ -2547,10 +2509,8 @@ def notification_settings_home(request):
     access_audits_raw = AccessControlAuditLog.objects.all().select_related('changed_by').order_by('-timestamp')[:50]
 
     from core.models import AISettings, EmailSettings
-    from tasks.models import TaskNotificationSettings
     email_settings = EmailSettings.get_solo() if request.user.is_superuser else None
     ai_settings = AISettings.get_solo() if request.user.is_superuser else None
-    task_notification_settings = TaskNotificationSettings.get_solo() if request.user.is_superuser else None
 
     context = {
         'events': events,
@@ -2573,7 +2533,6 @@ def notification_settings_home(request):
         'access_audits': access_audits_raw,
         'email_settings': email_settings,
         'ai_settings': ai_settings,
-        'task_notification_settings': task_notification_settings,
     }
     return render(request, 'notification_settings.html', context)
 

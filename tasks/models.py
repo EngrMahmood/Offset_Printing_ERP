@@ -78,6 +78,22 @@ class Task(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # Optional per-task overrides for the automation in tasks/reminders.py +
+    # tasks/emails.py. Blank means "use the global default" (Tasks -> Automation).
+    reminder_interval_days = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text="Override the global reminder interval for this task specifically. "
+                   "Blank uses the default set in Tasks → Automation."
+    )
+    cc_emails = models.TextField(
+        blank=True,
+        help_text="CC on this task's assignment/reminder emails. Comma or newline separated."
+    )
+    bcc_emails = models.TextField(
+        blank=True,
+        help_text="BCC on this task's assignment/reminder emails. Comma or newline separated."
+    )
+
     class Meta:
         ordering = ['-created_at']
 
@@ -165,25 +181,34 @@ class TaskNotificationSettings(models.Model):
         return obj
 
 
-class TaskReminderLog(models.Model):
-    """One row per reminder email actually sent (or attempted) for a task —
-    the dedup anchor for the reminder scheduler, and an audit trail."""
+class TaskNotificationLog(models.Model):
+    """One row per assignment/reminder email actually sent (or attempted) for
+    a task — the dedup anchor for the reminder scheduler, and the activity
+    log shown on the Tasks -> Automation page. Renamed from TaskReminderLog:
+    now covers assignment sends too, not just reminders."""
+
+    KIND_ASSIGNMENT = 'ASSIGNMENT'
+    KIND_REMINDER = 'REMINDER'
+    KIND_CHOICES = [(KIND_ASSIGNMENT, 'Assignment'), (KIND_REMINDER, 'Reminder')]
 
     STATUS_SENT = 'SENT'
     STATUS_FAILED = 'FAILED'
     STATUS_CHOICES = [(STATUS_SENT, 'Sent'), (STATUS_FAILED, 'Failed')]
 
-    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='reminder_logs')
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='notification_logs')
+    kind = models.CharField(max_length=10, choices=KIND_CHOICES, default=KIND_REMINDER)
     sent_at = models.DateTimeField(auto_now_add=True)
     status = models.CharField(max_length=10, choices=STATUS_CHOICES, default=STATUS_SENT)
-    recipients = models.TextField(blank=True)
+    recipients_to = models.TextField(blank=True)
+    recipients_cc = models.TextField(blank=True)
+    recipients_bcc = models.TextField(blank=True)
     error_message = models.TextField(blank=True)
 
     class Meta:
-        verbose_name = 'Task Reminder Log'
-        verbose_name_plural = 'Task Reminder Logs'
+        verbose_name = 'Task Notification Log'
+        verbose_name_plural = 'Task Notification Logs'
         ordering = ['-sent_at']
         indexes = [models.Index(fields=['task', '-sent_at'])]
 
     def __str__(self):
-        return f'{self.task_id} reminder @ {self.sent_at:%Y-%m-%d %H:%M} ({self.status})'
+        return f'{self.task_id} {self.get_kind_display()} @ {self.sent_at:%Y-%m-%d %H:%M} ({self.status})'

@@ -5,19 +5,29 @@ from __future__ import annotations
 
 import logging
 
-from django.conf import settings
-from django.core.mail import send_mail
+from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 from django.utils import timezone
 
-from .models import REMIND_FROM_OVERDUE, Task, TaskNotificationSettings, TaskReminderLog
+from .models import REMIND_FROM_OVERDUE, Task, TaskNotificationLog, TaskNotificationSettings
 
 logger = logging.getLogger(__name__)
 
 
 def _last_reminder_or_created_date(task):
-    last = task.reminder_logs.filter(status=TaskReminderLog.STATUS_SENT).order_by('-sent_at').first()
+    last = task.notification_logs.filter(
+        kind=TaskNotificationLog.KIND_REMINDER, status=TaskNotificationLog.STATUS_SENT
+    ).order_by('-sent_at').first()
     return (last.sent_at if last else task.created_at).date()
+
+
+def effective_interval_days(task, settings_obj):
+    """The per-task override if the task set one, else the global default.
+    Checked with `is not None` rather than truthiness -- 0 is a valid
+    override (remind every tick) and must not be treated as "unset"."""
+    if task.reminder_interval_days is not None:
+        return task.reminder_interval_days
+    return settings_obj.reminder_interval_days
 
 
 def is_reminder_due(task, settings_obj, now=None) -> bool:
@@ -29,6 +39,7 @@ def is_reminder_due(task, settings_obj, now=None) -> bool:
         return False
 
     now = now or timezone.now()
+    interval_days = effective_interval_days(task, settings_obj)
 
     if settings_obj.remind_from == REMIND_FROM_OVERDUE:
         if task.due_date is None or now.date() <= task.due_date:
@@ -37,7 +48,7 @@ def is_reminder_due(task, settings_obj, now=None) -> bool:
     else:
         anchor = _last_reminder_or_created_date(task)
 
-    return (now.date() - anchor).days >= settings_obj.reminder_interval_days
+    return (now.date() - anchor).days >= interval_days
 
 
 def due_reminder_tasks(now=None):
@@ -53,10 +64,12 @@ def due_reminder_tasks(now=None):
 
 
 def send_reminder_email(task):
-    """Sends the recurring "still pending" reminder and writes a TaskReminderLog
-    row. Never raises to the caller — failures are recorded, not propagated,
-    matching bot/services.py::run_bot's outer try/except."""
-    from .emails import resolve_recipients, task_detail_url
+    """Sends a single recurring "still pending" reminder (To = every resolved
+    recipient, Cc/Bcc = the task's own overrides) and writes a
+    TaskNotificationLog row. Never raises to the caller — failures are
+    recorded, not propagated, matching bot/services.py::run_bot's outer
+    try/except."""
+    from .emails import _split_addresses, resolve_recipients, task_detail_url
 
     settings_obj = TaskNotificationSettings.get_solo()
     if not settings_obj.reminders_enabled:
@@ -68,6 +81,9 @@ def send_reminder_email(task):
         # "sent" would corrupt the dedup anchor for _last_reminder_or_created_date).
         return
 
+    to_addrs = [addr for _, addr in recipients]
+    cc_addrs = _split_addresses(task.cc_emails)
+    bcc_addrs = _split_addresses(task.bcc_emails)
     detail_url = task_detail_url(task)
     is_team_assignment = bool(task.assigned_team_id)
     today = timezone.now().date()
@@ -75,33 +91,40 @@ def send_reminder_email(task):
     days_overdue = (today - task.due_date).days if task.due_date and today > task.due_date else 0
 
     try:
-        for user, addr in recipients:
-            body = render_to_string('tasks/email/reminder.html', {
-                'task': task,
-                'recipient': user,
-                'is_team_assignment': is_team_assignment,
-                'team': task.assigned_team,
-                'days_pending': days_pending,
-                'days_overdue': days_overdue,
-                'detail_url': detail_url,
-            })
-            send_mail(
-                subject=f"Reminder: task still pending — {task.title}",
-                message=body,
-                from_email=None,
-                recipient_list=[addr],
-                fail_silently=False,
-            )
-        TaskReminderLog.objects.create(
+        body = render_to_string('tasks/email/reminder.html', {
+            'task': task,
+            'recipients': [u for u, _ in recipients],
+            'is_team_assignment': is_team_assignment,
+            'team': task.assigned_team,
+            'days_pending': days_pending,
+            'days_overdue': days_overdue,
+            'detail_url': detail_url,
+        })
+        message = EmailMessage(
+            subject=f"Reminder: task still pending — {task.title}",
+            body=body,
+            from_email=None,
+            to=to_addrs,
+            cc=cc_addrs,
+            bcc=bcc_addrs,
+        )
+        message.send(fail_silently=False)
+        TaskNotificationLog.objects.create(
             task=task,
-            status=TaskReminderLog.STATUS_SENT,
-            recipients=', '.join(addr for _, addr in recipients),
+            kind=TaskNotificationLog.KIND_REMINDER,
+            status=TaskNotificationLog.STATUS_SENT,
+            recipients_to=', '.join(to_addrs),
+            recipients_cc=', '.join(cc_addrs),
+            recipients_bcc=', '.join(bcc_addrs),
         )
     except Exception as exc:
         logger.exception('Failed to send task reminder email for task id %s', task.pk)
-        TaskReminderLog.objects.create(
+        TaskNotificationLog.objects.create(
             task=task,
-            status=TaskReminderLog.STATUS_FAILED,
-            recipients=', '.join(addr for _, addr in recipients),
+            kind=TaskNotificationLog.KIND_REMINDER,
+            status=TaskNotificationLog.STATUS_FAILED,
+            recipients_to=', '.join(to_addrs),
+            recipients_cc=', '.join(cc_addrs),
+            recipients_bcc=', '.join(bcc_addrs),
             error_message=str(exc),
         )

@@ -7,13 +7,19 @@ class TaskForm(forms.ModelForm):
 
     class Meta:
         model = Task
-        fields = ['title', 'description', 'assignee', 'assigned_team', 'priority', 'due_date']
+        fields = [
+            'title', 'description', 'assignee', 'assigned_team', 'priority', 'due_date',
+            'reminder_interval_days', 'cc_emails', 'bcc_emails',
+        ]
         widgets = {
             'title': forms.TextInput(attrs={'class': 'erp-input', 'placeholder': 'Task Title'}),
             'description': forms.Textarea(attrs={'class': 'erp-input', 'rows': 4, 'placeholder': 'Task Description'}),
             'assignee': forms.Select(attrs={'class': 'erp-select'}),
             'assigned_team': forms.Select(attrs={'class': 'erp-select'}),
             'priority': forms.Select(attrs={'class': 'erp-select'}),
+            'reminder_interval_days': forms.NumberInput(attrs={'class': 'erp-input', 'min': 1, 'placeholder': 'Use default'}),
+            'cc_emails': forms.Textarea(attrs={'class': 'erp-input', 'rows': 2, 'placeholder': 'cc1@example.com, cc2@example.com'}),
+            'bcc_emails': forms.Textarea(attrs={'class': 'erp-input', 'rows': 2, 'placeholder': 'bcc1@example.com, bcc2@example.com'}),
         }
 
     def __init__(self, *args, **kwargs):

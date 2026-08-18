@@ -86,6 +86,41 @@
                 </div>
             </div>
 
+            <!-- Notification overrides (optional) -->
+            <details class="border border-slate-100 rounded-lg group">
+                <summary class="cursor-pointer select-none px-3 py-2 text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                    <span>Notification overrides (optional)</span>
+                    <i class="fas fa-chevron-down text-slate-400 text-xs transition-transform group-open:rotate-180"></i>
+                </summary>
+                <div class="p-3 pt-0 space-y-3">
+                    <div class="space-y-1">
+                        <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Reminder interval (days)</label>
+                        {{ form.reminder_interval_days }}
+                        {% if form.reminder_interval_days.errors %}
+                            <span class="text-xs text-rose-500 block">{{ form.reminder_interval_days.errors.0 }}</span>
+                        {% endif %}
+                        <span class="text-[10px] text-slate-400">Leave blank to use the default set in Tasks → Automation.</span>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div class="space-y-1">
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">CC</label>
+                            {{ form.cc_emails }}
+                            {% if form.cc_emails.errors %}
+                                <span class="text-xs text-rose-500 block">{{ form.cc_emails.errors.0 }}</span>
+                            {% endif %}
+                        </div>
+                        <div class="space-y-1">
+                            <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">BCC</label>
+                            {{ form.bcc_emails }}
+                            {% if form.bcc_emails.errors %}
+                                <span class="text-xs text-rose-500 block">{{ form.bcc_emails.errors.0 }}</span>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <span class="text-[10px] text-slate-400 block">Applied to this task's assignment and reminder emails only.</span>
+                </div>
+            </details>
+
             <div class="pt-4 border-t border-slate-100 flex justify-end gap-2">
                 <a href="{% if task %}{% url 'tasks:detail' task.pk %}{% else %}{% url 'tasks:dashboard' %}{% endif %}" class="erp-btn erp-btn-secondary px-4 py-2 text-xs">Cancel</a>
                 <button type="submit" class="erp-btn erp-btn-primary px-5 py-2 text-xs font-bold"><i class="fas fa-save mr-1"></i> Save Task</button>

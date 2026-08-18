@@ -1,8 +1,9 @@
-Hi {{ recipient.get_full_name|default:recipient.username }},
+Hello,
 
 {% if is_team_assignment %}A task has been assigned to your team ({{ team.name }}):{% else %}A task has been assigned to you:{% endif %}
 
 Title: {{ task.title }}
+Assigned to: {% for r in recipients %}{{ r.get_full_name|default:r.username }}{% if not forloop.last %}, {% endif %}{% endfor %}
 Priority: {{ task.get_priority_display }}
 Due date: {{ task.due_date }}
 
