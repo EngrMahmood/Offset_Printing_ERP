@@ -1,0 +1,13 @@
+Hi {{ recipient.get_full_name|default:recipient.username }},
+
+{% if is_team_assignment %}A task has been assigned to your team ({{ team.name }}):{% else %}A task has been assigned to you:{% endif %}
+
+Title: {{ task.title }}
+Priority: {{ task.get_priority_display }}
+Due date: {{ task.due_date }}
+
+{{ task.description }}
+
+View the task: {{ detail_url }}
+
+- Offset Printing ERP

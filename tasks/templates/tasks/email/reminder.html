@@ -1,0 +1,16 @@
+Hi {{ recipient.get_full_name|default:recipient.username }},
+
+This is a reminder that the following task is still {{ task.get_status_display|lower }}{% if is_team_assignment %}, assigned to your team ({{ team.name }}){% endif %}:
+
+Title: {{ task.title }}
+Priority: {{ task.get_priority_display }}
+Due date: {{ task.due_date }}
+{% if days_overdue > 0 %}
+This task is {{ days_overdue }} day{{ days_overdue|pluralize }} overdue.
+{% else %}
+Pending for {{ days_pending }} day{{ days_pending|pluralize }}.
+{% endif %}
+
+View the task: {{ detail_url }}
+
+- Offset Printing ERP

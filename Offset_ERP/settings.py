@@ -26,6 +26,13 @@ REDIS_URL = os.environ.get('REDIS_URL', 'redis://127.0.0.1:6379')
 EMAIL_BACKEND = 'core.email_backend.DynamicGmailEmailBackend'
 DEFAULT_FROM_EMAIL = os.environ.get('GMAIL_ADDRESS', 'no-reply@offsetprintingerp.local')
 
+# Base URL used to build absolute links inside emails sent from background code
+# with no `request` object (task assignment/reminder emails — see tasks/emails.py).
+TASK_APP_BASE_URL = os.environ.get('TASK_APP_BASE_URL', 'https://offseterp.duckdns.org')
+# Opt-out for the in-process task reminder scheduler thread (tasks/scheduler.py),
+# defaulting to ON like BOT_INPROCESS_SCHEDULER. Set False to disable.
+TASK_REMINDER_INPROCESS_SCHEDULER = os.environ.get('TASK_REMINDER_INPROCESS_SCHEDULER', 'True') == 'True'
+
 # Local LLM (LM Studio, OpenAI-compatible chat endpoint). Never hardcode the
 # endpoint elsewhere — everything routes through these settings so pointing
 # at a different host later (e.g. an Oracle VM) is a config change, not a

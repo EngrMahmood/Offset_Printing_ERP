@@ -99,11 +99,13 @@ urlpatterns = [
     path('settings/access-control/roles/permissions/', views.access_role_permissions_edit, name='access_role_permissions_edit'),
     path('settings/access-control/user-overrides/', views.access_user_overrides_edit, name='access_user_overrides_edit'),
     path('settings/access-control/users/role/', views.access_user_role_update, name='access_user_role_update'),
+    path('settings/access-control/users/official-email/', views.access_user_official_email_update, name='access_user_official_email_update'),
     path('settings/access-control/users/password-reset/', views.access_user_password_reset, name='access_user_password_reset'),
     path('settings/access-control/users/toggle-active/', views.access_user_toggle_active, name='access_user_toggle_active'),
     path('settings/users/create/', views.user_create, name='user_create'),
     path('settings/email/', views.email_settings_edit, name='email_settings_edit'),
     path('settings/ai/', views.ai_settings_edit, name='ai_settings_edit'),
+    path('settings/tasks/', views.task_notification_settings_edit, name='task_notification_settings_edit'),
     path('forgot-password/', views.forgot_password, name='forgot_password'),
 
     # Self-service password reset (Gmail SMTP — see settings.py)

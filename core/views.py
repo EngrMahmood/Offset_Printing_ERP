@@ -2077,6 +2077,7 @@ def user_create(request):
     if request.method == 'POST':
         username = (request.POST.get('username') or '').strip()
         email = (request.POST.get('email') or '').strip()
+        official_email = (request.POST.get('official_email') or '').strip()
         first_name = (request.POST.get('first_name') or '').strip()
         last_name = (request.POST.get('last_name') or '').strip()
         role = (request.POST.get('role') or '').strip()
@@ -2098,6 +2099,7 @@ def user_create(request):
             profile = user.profile
             profile.role = role
             profile.department_id = department_id
+            profile.official_email = official_email
             profile.save()
             sync_viewer_django_group(user, role)
 
@@ -2178,6 +2180,44 @@ def ai_settings_edit(request):
     settings_obj.save()
 
     messages.success(request, 'AI settings saved.')
+    return redirect(f"/settings/#access-control")
+
+
+@login_required
+@require_POST
+def task_notification_settings_edit(request):
+    """Superuser-only: enable/disable and tune the Tasks module's assignment
+    and recurring reminder emails. Read at signal/scheduler-tick time by
+    tasks.emails/tasks.reminders, so this takes effect immediately."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can edit task notification settings.')
+        return redirect('notification_settings_home')
+
+    from tasks.models import TaskNotificationSettings, REMIND_FROM_CHOICES
+
+    interval_raw = (request.POST.get('reminder_interval_days') or '').strip()
+    try:
+        interval_days = int(interval_raw)
+        if interval_days < 1:
+            raise ValueError()
+    except ValueError:
+        messages.error(request, 'Reminder interval must be a whole number of days, at least 1.')
+        return redirect(f"/settings/#access-control")
+
+    remind_from = (request.POST.get('remind_from') or '').strip()
+    if remind_from not in dict(REMIND_FROM_CHOICES):
+        messages.error(request, 'Invalid "start reminders from" value.')
+        return redirect(f"/settings/#access-control")
+
+    settings_obj = TaskNotificationSettings.get_solo()
+    settings_obj.assignment_email_enabled = bool(request.POST.get('assignment_email_enabled'))
+    settings_obj.reminders_enabled = bool(request.POST.get('reminders_enabled'))
+    settings_obj.reminder_interval_days = interval_days
+    settings_obj.remind_from = remind_from
+    settings_obj.updated_by = request.user
+    settings_obj.save()
+
+    messages.success(request, 'Task notification settings saved.')
     return redirect(f"/settings/#access-control")
 
 
@@ -2507,8 +2547,10 @@ def notification_settings_home(request):
     access_audits_raw = AccessControlAuditLog.objects.all().select_related('changed_by').order_by('-timestamp')[:50]
 
     from core.models import AISettings, EmailSettings
+    from tasks.models import TaskNotificationSettings
     email_settings = EmailSettings.get_solo() if request.user.is_superuser else None
     ai_settings = AISettings.get_solo() if request.user.is_superuser else None
+    task_notification_settings = TaskNotificationSettings.get_solo() if request.user.is_superuser else None
 
     context = {
         'events': events,
@@ -2531,6 +2573,7 @@ def notification_settings_home(request):
         'access_audits': access_audits_raw,
         'email_settings': email_settings,
         'ai_settings': ai_settings,
+        'task_notification_settings': task_notification_settings,
     }
     return render(request, 'notification_settings.html', context)
 
@@ -2707,6 +2750,39 @@ def access_user_role_update(request):
             new_values={'role': new_role},
         )
         messages.success(request, f"{target_user.username}'s role updated to {profile.get_role_display()}.")
+    return redirect('/settings/#access-control')
+
+
+@login_required
+@require_POST
+def access_user_official_email_update(request):
+    """Superuser-only: set the official/company email used for automated
+    notifications (task assignments, reminders, etc.) — see
+    core.models.notification_email(). Separate from the account's login
+    email, for users where the two differ."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can change a user\'s official email.')
+        return redirect('notification_settings_home')
+
+    from django.contrib.auth import get_user_model
+    from core.models import AccessControlAuditLog
+
+    User = get_user_model()
+    target_user = get_object_or_404(User, id=request.POST.get('user_id'))
+    new_official_email = (request.POST.get('official_email') or '').strip()
+
+    profile = target_user.profile
+    old_official_email = profile.official_email
+    if old_official_email != new_official_email:
+        profile.official_email = new_official_email
+        profile.save()
+        AccessControlAuditLog.objects.create(
+            changed_by=request.user, action='update', target_type='user_official_email',
+            target_label=target_user.username,
+            old_values={'official_email': old_official_email},
+            new_values={'official_email': new_official_email},
+        )
+        messages.success(request, f"{target_user.username}'s official email updated.")
     return redirect('/settings/#access-control')
 
 

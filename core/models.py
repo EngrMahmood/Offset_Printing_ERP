@@ -1657,6 +1657,13 @@ class UserProfile(models.Model):
         help_text="Allow this user to approve/reject SKUs in master review"
     )
 
+    official_email = models.EmailField(
+        blank=True,
+        help_text="Company/official email for automated notifications (task assignments, "
+                   "reminders, etc.). Falls back to the account's login email if left blank — "
+                   "set this when a user's login email is personal rather than official."
+    )
+
     created_at = models.DateTimeField(auto_now_add=True)
 
     # {"row1": [nav-key,...], "row2": [nav-key,...], "overflow": [nav-key,...]}
@@ -1795,6 +1802,17 @@ class UserProfile(models.Model):
     def can_view_reports(self):
         """Can view financial/operational reports"""
         return self._has_permission('action.view_reports')
+
+
+def notification_email(user):
+    """The address automated notifications (task assignments/reminders, etc.)
+    should use for this user — their official email if set, else their
+    account's login email. Use this instead of `user.email` directly anywhere
+    an automated notification is sent."""
+    profile = getattr(user, 'profile', None)
+    if profile and profile.official_email:
+        return profile.official_email
+    return user.email
 
 
 # =========================

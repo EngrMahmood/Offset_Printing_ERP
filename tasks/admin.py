@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import Team, Task, TaskComment
+from .models import Team, Task, TaskComment, TaskNotificationSettings, TaskReminderLog
 
 @admin.register(Team)
 class TeamAdmin(admin.ModelAdmin):
@@ -18,3 +18,20 @@ class TaskAdmin(admin.ModelAdmin):
 class TaskCommentAdmin(admin.ModelAdmin):
     list_display = ('task', 'user', 'created_at')
     search_fields = ('comment',)
+
+@admin.register(TaskNotificationSettings)
+class TaskNotificationSettingsAdmin(admin.ModelAdmin):
+    list_display = ('assignment_email_enabled', 'reminders_enabled', 'reminder_interval_days', 'remind_from', 'updated_at')
+
+    def has_add_permission(self, request):
+        return not TaskNotificationSettings.objects.exists()
+
+@admin.register(TaskReminderLog)
+class TaskReminderLogAdmin(admin.ModelAdmin):
+    list_display = ('task', 'sent_at', 'status')
+    list_filter = ('status',)
+    search_fields = ('task__title', 'recipients')
+    readonly_fields = [f.name for f in TaskReminderLog._meta.fields]
+
+    def has_add_permission(self, request):
+        return False
