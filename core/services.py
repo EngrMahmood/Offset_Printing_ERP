@@ -70,14 +70,17 @@ def compute_job_card_wastage_metrics(job_card):
     ups = job_card.ups or 1
     plan_qty_pcs = int(job_card.total_sheets_planned * ups)
 
-    dispatch_qty_pcs = sum(d.dispatch_qty for d in job_card.dispatch_set.filter(is_active=True))
-    printing_waste_sheets = sum(
-        p.waste_sheets for p in job_card.productions.filter(is_active=True, entry_type='printing')
-    )
+    # total_dispatch / printing_productions / packing_productions all reuse
+    # a prefetched `dispatch_set`/`productions` in-memory when the caller
+    # prefetched them (JobCard._is_prefetched) instead of firing a fresh
+    # query — calling .filter() directly on the related managers here (as
+    # this used to) always bypasses that cache, which turns "wastage for N
+    # job cards" into an N+1 query storm on pages like the Job Card
+    # Finalization queue.
+    dispatch_qty_pcs = job_card.total_dispatch
+    printing_waste_sheets = sum(p.waste_sheets for p in job_card.printing_productions)
     printing_waste_pcs = printing_waste_sheets * ups
-    sorting_waste_pcs = sum(
-        p.sorting_waste_qty for p in job_card.productions.filter(is_active=True, entry_type='packing')
-    )
+    sorting_waste_pcs = sum(p.sorting_waste_qty for p in job_card.packing_productions)
     dispatch_gap_pcs = max(plan_qty_pcs - dispatch_qty_pcs, 0)
 
     is_completed = job_card.status in ('completed', 'closed') or job_card.job_status == 'Completed'

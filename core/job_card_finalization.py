@@ -70,10 +70,21 @@ def job_card_finalization_queue(request):
     min_dispatch_pct = _to_float(request.GET.get('min_dispatch_pct'), default=DEFAULT_DISPATCH_FLOOR_PERCENT)
     max_dispatch_pct = _to_float(request.GET.get('max_dispatch_pct'))
 
+    # Every _row() computes dispatch/printing/packing/wastage figures from
+    # JobCard.total_dispatch / printing_productions / packing_productions,
+    # which reuse a prefetched productions/dispatch_set instead of a fresh
+    # query per job card (JobCard._is_prefetched) — without this, a page of
+    # a few hundred job cards fires 10+ queries each, which is what was
+    # making this page slow to load.
+    related = dict(
+        select_related=('planning_job', 'material'),
+        prefetch_related=('productions', 'dispatch_set'),
+    )
     stuck_floor = min_dispatch_pct if min_dispatch_pct is not None else DEFAULT_DISPATCH_FLOOR_PERCENT
     stuck_jobs = [
         jc for jc in JobCard.objects.filter(is_active=True, status='in_production')
-            .select_related('planning_job', 'material')
+            .select_related(*related['select_related'])
+            .prefetch_related(*related['prefetch_related'])
             .order_by('-updated_at')[:STUCK_LIST_CAP]
         if jc.dispatch_completion_percent >= stuck_floor
     ]
@@ -81,13 +92,15 @@ def job_card_finalization_queue(request):
 
     completed_not_closed = list(
         JobCard.objects.filter(is_active=True, status='completed')
-        .select_related('planning_job', 'material')
+        .select_related(*related['select_related'])
+        .prefetch_related(*related['prefetch_related'])
         .order_by('-updated_at')[:STUCK_LIST_CAP]
     )
 
     closed_jobs = list(
         JobCard.objects.filter(is_active=True, status='closed')
-        .select_related('planning_job', 'material')
+        .select_related(*related['select_related'])
+        .prefetch_related(*related['prefetch_related'])
         .order_by('-updated_at')[:STUCK_LIST_CAP]
     )
 

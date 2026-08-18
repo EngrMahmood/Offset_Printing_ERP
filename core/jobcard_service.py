@@ -347,6 +347,26 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
             extra_message=reason,
         )
 
+        # A job card that already has printing/packing entries recorded
+        # (e.g. it was reopened for a data correction — machine/pass count/
+        # etc — after production had genuinely started, then walked back
+        # through the full approval pipeline to 'released') would otherwise
+        # sit invisible to Dispatch Entry: JOB_CARD_DISPATCHABLE_STATUSES
+        # excludes 'released', despite the job having a real remaining
+        # balance. Cascade straight through to 'in_production', matching
+        # what already happens on a normal first-time release once a
+        # Production record is saved (production/views.py, packing_entry.py
+        # both call start_production() there) — here it's the reverse case,
+        # where the production record already existed before 'released' was
+        # (re-)reached.
+        if target_status == 'released' and (job_card.total_printed_pcs > 0 or job_card.total_packed_pcs > 0):
+            transition_job_card_status(
+                job_card,
+                'in_production',
+                actor=actor,
+                reason='System: production already recorded before this release — resuming In Production',
+            )
+
     return job_card
 
 
