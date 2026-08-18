@@ -201,6 +201,35 @@ def log_job_card_workflow_change(job_card, actor, action, reason='', before_stat
     )
 
 
+def job_card_completion_blockers(job_card):
+    """Reasons a job card cannot become 'completed' yet. Empty list = clear
+    to proceed. Applied to both the automatic 95%-dispatch completion signal
+    (core.signals._sync_job_card_dispatch_status) and the manual Close tool
+    (core.job_card_finalization) via transition_job_card_status, so a job can
+    never reach 'completed'/'closed' — auto or forced — without production
+    data behind it.
+
+    A repeat job fulfilled entirely from carried-forward stock
+    (PlanningJob.stock_qty) can legitimately have zero *new* packing entries
+    this cycle, so packed pcs and stock qty are counted together against
+    what's actually been dispatched, not checked as a bare "packed > 0".
+    """
+    reasons = []
+    if job_card.is_print_job and job_card.total_printed_pcs <= 0:
+        reasons.append('No printing entries have been logged for this job.')
+
+    stock_qty = job_card.planning_job.stock_qty if job_card.planning_job_id else 0
+    covered = job_card.total_packed_pcs + (stock_qty or 0)
+    if covered <= 0:
+        reasons.append('No packing entries have been logged for this job.')
+    elif covered < job_card.total_dispatch:
+        reasons.append(
+            f'Packed + stock ({covered}) is less than dispatched ({job_card.total_dispatch}) — '
+            'packing data looks incomplete for the amount already shipped.'
+        )
+    return reasons
+
+
 def transition_job_card_status(job_card: JobCard, target_status, actor=None, reason=''):
     target_status = normalize_job_card_status(target_status, default='')
     if not target_status:
@@ -298,6 +327,11 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
     if target_status in JOB_CARD_PLANNING_APPROVAL_STATUSES and job_card.planning_missing_fields():
         missing_fields = ', '.join(job_card.planning_missing_fields())
         raise ValidationError({'status': f'Complete planning fields before moving to {target_status}: {missing_fields}.'})
+
+    if target_status == 'completed':
+        blockers = job_card_completion_blockers(job_card)
+        if blockers:
+            raise ValidationError({'status': '; '.join(blockers)})
 
     with transaction.atomic():
         before_status = current_status

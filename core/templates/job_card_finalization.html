@@ -7,6 +7,15 @@
         body { font-family: 'IBM Plex Sans', Arial, sans-serif; margin: 0; padding: 0; background: var(--erp-bg-soft, #f3f5f8); overflow-x: hidden; color: #233042; }
         .container { max-width: 100%; margin: 0 auto; padding: 16px 20px; }
         .section-header { margin-top: 20px; margin-bottom: 6px; }
+        .filter-bar {
+            display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap;
+            background: #fff; border: 1px solid #e5eaf0; border-radius: 4px; padding: 10px 12px; margin-bottom: 6px;
+        }
+        .filter-field { display: flex; flex-direction: column; gap: 3px; }
+        .filter-field label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.02em; color: #5f6f84; font-weight: 700; }
+        .filter-field input { padding: 6px 8px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 12px; }
+        .filter-field input[type="number"] { width: 100px; }
+        .filter-field input[type="text"] { width: 220px; }
         .table-shell {
             width: 100%;
             overflow-x: auto;
@@ -16,7 +25,7 @@
             border-radius: 4px;
             background: #fff;
         }
-        table { width: 100%; min-width: 900px; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
+        table { width: 100%; min-width: 1100px; border-collapse: collapse; margin-top: 8px; font-size: 11px; }
         th, td { border-bottom: 1px solid #e1e8f0; padding: 7px 8px; text-align: left; vertical-align: top; white-space: nowrap; }
         th { position: sticky; top: 0; z-index: 2; background: #eef2f7; color: #304256; font-size: 10px; letter-spacing: 0.02em; text-transform: uppercase; }
         .num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -26,6 +35,7 @@
         .btn-green:hover { background: #16733d; }
         .btn-amber { background: #8a6116; }
         .btn-amber:hover { background: #704e12; }
+        .btn-sm { padding: 4px 8px; font-size: 11px; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
         .muted { color: #6b7280; font-size: 12px; }
         .alert { border-radius: 6px; padding: 10px 12px; margin-bottom: 12px; }
@@ -33,13 +43,15 @@
         .alert-error { background: #fce8e6; color: #8a1c1c; border: 1px solid #f5c2c7; }
         .close-panel {
             position: sticky; bottom: 0; background: #fff; border: 1px solid #e5eaf0;
-            border-radius: 4px; padding: 10px 12px; margin-top: 10px;
+            border-radius: 4px; padding: 10px 12px; margin-top: 4px; margin-bottom: 16px;
             display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
         }
         .close-panel input[type="text"] { flex: 1; min-width: 260px; padding: 7px 9px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 12px; }
-        .reopen-form { display: flex; gap: 6px; align-items: center; }
-        .reopen-form input[type="text"] { width: 160px; padding: 5px 7px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 11px; }
+        .row-form { display: flex; gap: 6px; align-items: center; }
+        .row-form input[type="text"] { width: 150px; padding: 5px 7px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 11px; }
         .gap-badge { color: #8a1c1c; font-weight: 600; }
+        .blocker-row { background: #fff8f0; }
+        .blocker-note { color: #8a4b00; font-size: 10px; max-width: 220px; white-space: normal; }
     </style>
 {% endblock %}
 {% block header_title %}Job Card Finalization{% endblock %}
@@ -53,89 +65,144 @@
         {% endfor %}
     {% endif %}
 
-    <form method="POST" action="{% url 'job_card_finalization_close' %}" id="close_form">
-        {% csrf_token %}
-
-        <h2 class="section-header">Stuck Near-Complete ({{ stuck_rows|length }})</h2>
-        <p class="muted">In Production, dispatched &ge; {{ stuck_floor_percent }}% of order qty, but never reaches the 95% auto-complete threshold. The unshipped remainder becomes confirmed wastage once closed.</p>
-        <div class="table-shell">
-            <table>
-                <thead>
-                    <tr>
-                        <th></th>
-                        <th>Job Card</th>
-                        <th>SKU</th>
-                        <th class="num">Order Qty</th>
-                        <th class="num">Dispatched</th>
-                        <th class="num">Dispatch %</th>
-                        <th class="num">Printed</th>
-                        <th class="num">Packed</th>
-                        <th class="num">Gap (→ Wastage)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in stuck_rows %}
-                    <tr>
-                        <td><input type="checkbox" name="job_card_ids" value="{{ row.job_card.id }}"></td>
-                        <td>{{ row.job_card.job_card_no }}</td>
-                        <td>{{ row.job_card.SKU|default:'-' }}</td>
-                        <td class="num">{{ row.order_qty|intcomma }}</td>
-                        <td class="num">{{ row.total_dispatch|intcomma }}</td>
-                        <td class="num">{{ row.dispatch_completion_percent }}%</td>
-                        <td class="num">{{ row.total_printed_pcs|intcomma }}</td>
-                        <td class="num">{{ row.total_packed_pcs|intcomma }}</td>
-                        <td class="num gap-badge">{{ row.gap_qty|intcomma }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="9">No job cards currently stuck above {{ stuck_floor_percent }}%.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+    <form method="GET" class="filter-bar">
+        <div class="filter-field">
+            <label for="q">Search (JC / SKU / PO)</label>
+            <input type="text" id="q" name="q" value="{{ filter_q }}">
         </div>
-
-        <h2 class="section-header">Completed — Not Yet Closed ({{ completed_rows|length }})</h2>
-        <p class="muted">Already auto-completed (&ge;95% dispatched), but still shows up on WIP-style reports until closed.</p>
-        <div class="table-shell">
-            <table>
-                <thead>
-                    <tr>
-                        <th></th>
-                        <th>Job Card</th>
-                        <th>SKU</th>
-                        <th class="num">Order Qty</th>
-                        <th class="num">Dispatched</th>
-                        <th class="num">Dispatch %</th>
-                        <th class="num">Printed</th>
-                        <th class="num">Packed</th>
-                        <th class="num">Gap (→ Wastage)</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for row in completed_rows %}
-                    <tr>
-                        <td><input type="checkbox" name="job_card_ids" value="{{ row.job_card.id }}"></td>
-                        <td>{{ row.job_card.job_card_no }}</td>
-                        <td>{{ row.job_card.SKU|default:'-' }}</td>
-                        <td class="num">{{ row.order_qty|intcomma }}</td>
-                        <td class="num">{{ row.total_dispatch|intcomma }}</td>
-                        <td class="num">{{ row.dispatch_completion_percent }}%</td>
-                        <td class="num">{{ row.total_printed_pcs|intcomma }}</td>
-                        <td class="num">{{ row.total_packed_pcs|intcomma }}</td>
-                        <td class="num gap-badge">{{ row.gap_qty|intcomma }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="9">No completed job cards waiting to be closed.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <div class="filter-field">
+            <label for="min_dispatch_pct">Min Dispatch %</label>
+            <input type="number" id="min_dispatch_pct" name="min_dispatch_pct" value="{{ filter_min_dispatch_pct }}" step="0.1" min="0" max="100">
         </div>
-
-        <div class="close-panel">
-            <label for="close_reason" style="font-size:12px;font-weight:600;">Reason</label>
-            <input type="text" id="close_reason" name="reason" placeholder="e.g. Permanent shortfall confirmed with warehouse — closing out remaining wastage" required>
-            <button type="submit" class="btn btn-green" id="close_submit_btn" disabled>Close Selected</button>
+        <div class="filter-field">
+            <label for="max_dispatch_pct">Max Dispatch %</label>
+            <input type="number" id="max_dispatch_pct" name="max_dispatch_pct" value="{{ filter_max_dispatch_pct }}" step="0.1" min="0" max="100">
         </div>
+        <div class="filter-field">
+            <label for="min_wastage_pct">Min Wastage %</label>
+            <input type="number" id="min_wastage_pct" name="min_wastage_pct" value="{{ filter_min_wastage_pct }}" step="0.1" min="0">
+        </div>
+        <button type="submit" class="btn">Apply</button>
+        <a href="{% url 'job_card_finalization_queue' %}" class="btn btn-amber">Reset</a>
     </form>
+
+    <form method="POST" action="{% url 'job_card_finalization_close' %}" id="bulk_close_form">
+        {% csrf_token %}
+    </form>
+
+    <h2 class="section-header">Stuck Near-Complete ({{ stuck_rows|length }})</h2>
+    <p class="muted">In Production, dispatched &ge; {{ stuck_floor_percent }}% of order qty, but never reaches the 95% auto-complete threshold. The unshipped remainder becomes confirmed wastage once closed.</p>
+    <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Job Card</th>
+                    <th>SKU</th>
+                    <th class="num">Order Qty</th>
+                    <th class="num">Dispatched</th>
+                    <th class="num">Dispatch %</th>
+                    <th class="num">Printed</th>
+                    <th class="num">Packed</th>
+                    <th class="num">Wastage %</th>
+                    <th class="num">Gap (→ Wastage)</th>
+                    <th>Close</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in stuck_rows %}
+                <tr class="{% if row.blockers %}blocker-row{% endif %}">
+                    <td>
+                        <input type="checkbox" name="job_card_ids" value="{{ row.job_card.id }}" form="bulk_close_form" {% if row.blockers %}disabled{% endif %}>
+                    </td>
+                    <td>{{ row.job_card.job_card_no }}</td>
+                    <td>{{ row.job_card.SKU|default:'-' }}</td>
+                    <td class="num">{{ row.order_qty|intcomma }}</td>
+                    <td class="num">{{ row.total_dispatch|intcomma }}</td>
+                    <td class="num">{{ row.dispatch_completion_percent }}%</td>
+                    <td class="num">{{ row.total_printed_pcs|intcomma }}</td>
+                    <td class="num">{{ row.total_packed_pcs|intcomma }}</td>
+                    <td class="num">{{ row.wastage.total_wastage_pct }}%</td>
+                    <td class="num gap-badge">{{ row.gap_qty|intcomma }}</td>
+                    <td>
+                        {% if row.blockers %}
+                        <div class="blocker-note">{{ row.blockers|join:" " }}</div>
+                        {% else %}
+                        <form method="POST" action="{% url 'job_card_finalization_close' %}" class="row-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="job_card_ids" value="{{ row.job_card.id }}">
+                            <input type="text" name="reason" placeholder="Reason" required>
+                            <button type="submit" class="btn btn-green btn-sm">Close</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="11">No job cards match the current filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <h2 class="section-header">Completed — Not Yet Closed ({{ completed_rows|length }})</h2>
+    <p class="muted">Already auto-completed (&ge;95% dispatched), but still shows up on WIP-style reports until closed.</p>
+    <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th></th>
+                    <th>Job Card</th>
+                    <th>SKU</th>
+                    <th class="num">Order Qty</th>
+                    <th class="num">Dispatched</th>
+                    <th class="num">Dispatch %</th>
+                    <th class="num">Printed</th>
+                    <th class="num">Packed</th>
+                    <th class="num">Wastage %</th>
+                    <th class="num">Gap (→ Wastage)</th>
+                    <th>Close</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in completed_rows %}
+                <tr class="{% if row.blockers %}blocker-row{% endif %}">
+                    <td>
+                        <input type="checkbox" name="job_card_ids" value="{{ row.job_card.id }}" form="bulk_close_form" {% if row.blockers %}disabled{% endif %}>
+                    </td>
+                    <td>{{ row.job_card.job_card_no }}</td>
+                    <td>{{ row.job_card.SKU|default:'-' }}</td>
+                    <td class="num">{{ row.order_qty|intcomma }}</td>
+                    <td class="num">{{ row.total_dispatch|intcomma }}</td>
+                    <td class="num">{{ row.dispatch_completion_percent }}%</td>
+                    <td class="num">{{ row.total_printed_pcs|intcomma }}</td>
+                    <td class="num">{{ row.total_packed_pcs|intcomma }}</td>
+                    <td class="num">{{ row.wastage.total_wastage_pct }}%</td>
+                    <td class="num gap-badge">{{ row.gap_qty|intcomma }}</td>
+                    <td>
+                        {% if row.blockers %}
+                        <div class="blocker-note">{{ row.blockers|join:" " }}</div>
+                        {% else %}
+                        <form method="POST" action="{% url 'job_card_finalization_close' %}" class="row-form">
+                            {% csrf_token %}
+                            <input type="hidden" name="job_card_ids" value="{{ row.job_card.id }}">
+                            <input type="text" name="reason" placeholder="Reason" required>
+                            <button type="submit" class="btn btn-green btn-sm">Close</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="11">No completed job cards match the current filters.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="close-panel">
+        <label for="bulk_close_reason" style="font-size:12px;font-weight:600;">Bulk close reason</label>
+        <input type="text" id="bulk_close_reason" name="reason" form="bulk_close_form" placeholder="e.g. Permanent shortfall confirmed with warehouse — closing out remaining wastage" required>
+        <button type="submit" form="bulk_close_form" class="btn btn-green" id="close_submit_btn" disabled>Close Selected</button>
+    </div>
 
     <h2 class="section-header">Closed (Reopen)</h2>
     <div class="table-shell">
@@ -147,6 +214,7 @@
                     <th class="num">Order Qty</th>
                     <th class="num">Dispatched</th>
                     <th class="num">Dispatch %</th>
+                    <th class="num">Wastage %</th>
                     <th>Wastage Status</th>
                     <th>Reopen</th>
                 </tr>
@@ -159,9 +227,10 @@
                     <td class="num">{{ row.order_qty|intcomma }}</td>
                     <td class="num">{{ row.total_dispatch|intcomma }}</td>
                     <td class="num">{{ row.dispatch_completion_percent }}%</td>
+                    <td class="num">{{ row.wastage.total_wastage_pct }}%</td>
                     <td>{{ row.wastage.wastage_status }}</td>
                     <td>
-                        <form method="POST" action="{% url 'job_card_finalization_reopen' %}" class="reopen-form" onsubmit="return confirm('Reopen {{ row.job_card.job_card_no|escapejs }} to In Production?');">
+                        <form method="POST" action="{% url 'job_card_finalization_reopen' %}" class="row-form" onsubmit="return confirm('Reopen {{ row.job_card.job_card_no|escapejs }} to In Production?');">
                             {% csrf_token %}
                             <input type="hidden" name="job_card_id" value="{{ row.job_card.id }}">
                             <input type="text" name="reason" placeholder="Reason" required>
@@ -170,7 +239,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="7">No closed job cards.</td></tr>
+                <tr><td colspan="8">No closed job cards.</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -179,13 +248,16 @@
 
 <script>
 (function() {
-    const form = document.getElementById('close_form');
     const submitBtn = document.getElementById('close_submit_btn');
     function refreshState() {
-        const checked = form.querySelectorAll('input[name="job_card_ids"]:checked').length;
+        const checked = document.querySelectorAll('input[name="job_card_ids"][form="bulk_close_form"]:checked').length;
         submitBtn.disabled = checked === 0;
     }
-    form.addEventListener('change', refreshState);
+    document.body.addEventListener('change', function(e) {
+        if (e.target && e.target.name === 'job_card_ids') {
+            refreshState();
+        }
+    });
     refreshState();
 })();
 </script>

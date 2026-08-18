@@ -113,8 +113,14 @@ def _sync_job_card_dispatch_status(job_card):
             from core.jobcard_service import transition_job_card_status
             try:
                 transition_job_card_status(job_card, 'completed', reason='System: Dispatch completion reached >= 95%')
-            except Exception:
-                pass
+            except Exception as exc:
+                # Most commonly job_card_completion_blockers() rejecting the
+                # transition (missing printing/packing entries) — the job
+                # simply stays 'in_production', where the Job Card
+                # Finalization tool (core.job_card_finalization) will surface
+                # it as "stuck near-complete" instead of silently completing
+                # without production data behind it.
+                logger.info('Auto-complete blocked for job card %s: %s', job_card.job_card_no, exc)
     else:
         if job_card.status == 'completed':
             from core.jobcard_service import transition_job_card_status

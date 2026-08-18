@@ -65,7 +65,7 @@
             {% endif %}
             {% if nav.can_access_production %}
             <a href="{% url 'production_dashboard' %}" data-nav-key="production" data-nav-label="Production"
-               class="erp-topnav-module {% if url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'packing_records' or url == 'production_data_anomalies' or url == 'override_requests' or url == 'review_override_request' or url == 'my_override_requests' or url == 'released_jobs' or url == 'request_plate_remake' %}is-active{% endif %}">
+               class="erp-topnav-module {% if url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'packing_records' or url == 'production_data_anomalies' or url == 'override_requests' or url == 'review_override_request' or url == 'my_override_requests' or url == 'released_jobs' or url == 'request_plate_remake' or url == 'job_card_finalization_queue' %}is-active{% endif %}">
                 Production
             </a>
             <a href="{% url 'manual_working:manual_working_list' %}" data-nav-key="manual_working" data-nav-label="Manual Working"
@@ -114,7 +114,7 @@
             {% endif %}
             {% if nav.can_access_master_data %}
             <a href="{% url 'master_data' %}" data-nav-key="master_data" data-nav-label="Master Data"
-                    class="erp-topnav-module {% if url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'request_edit_override' or url == 'quick_add_master' or url == 'job_card_finalization_queue' %}is-active{% endif %}">
+                    class="erp-topnav-module {% if url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'request_edit_override' or url == 'quick_add_master' %}is-active{% endif %}">
                 Master Data
             </a>
             {% endif %}
@@ -430,7 +430,7 @@
         </a>
     </div>
 
-    {% elif url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'packing_records' or url == 'production_data_anomalies' or url == 'override_requests' or url == 'review_override_request' or url == 'my_override_requests' or url == 'released_jobs' or url == 'request_plate_remake' %}
+    {% elif url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'packing_records' or url == 'production_data_anomalies' or url == 'override_requests' or url == 'review_override_request' or url == 'my_override_requests' or url == 'released_jobs' or url == 'request_plate_remake' or url == 'job_card_finalization_queue' %}
     <div class="erp-subnav">
         <a href="{% url 'production_dashboard' %}"
            class="erp-subnav-link {% if url == 'production_dashboard' %}is-active{% endif %}">
@@ -466,6 +466,12 @@
            class="erp-subnav-link {% if url == 'my_override_requests' %}is-active{% endif %}">
             My Requests{% if nav.my_override_actionable_count %}<span class="erp-nav-badge" title="{{ nav.my_override_actionable_count }} approved and ready to edit">{{ nav.my_override_actionable_count }}</span>{% endif %}
         </a>
+        {% if request.user.is_superuser or request.user.profile.role == 'admin' or request.user.profile.role == 'manager' %}
+        <a href="{% url 'job_card_finalization_queue' %}"
+           class="erp-subnav-link {% if url == 'job_card_finalization_queue' %}is-active{% endif %}">
+            Job Card Finalization
+        </a>
+        {% endif %}
     </div>
     {% include 'theme/production_context_nav.html' %}
 
@@ -540,7 +546,7 @@
         {% endif %}
     </div>
 
-    {% elif url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'request_edit_override' or url == 'quick_add_master' or url == 'job_card_finalization_queue' %}
+    {% elif url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'request_edit_override' or url == 'quick_add_master' %}
     <div class="erp-subnav">
         <a href="{% url 'erp_readme' %}"
            class="erp-subnav-link {% if url == 'erp_readme' %}is-active{% endif %}">
