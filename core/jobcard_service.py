@@ -286,6 +286,11 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         ('completed', 'closed'),
         ('closed', 'draft'),
         ('pm_rejected', 'qc_approved'),
+        # Admin/manager "Reopen to Production" — resumes normal dispatch-%
+        # auto-tracking (core.signals._sync_job_card_dispatch_status), unlike
+        # ('closed', 'draft') above which resets the whole workflow.
+        ('completed', 'in_production'),
+        ('closed', 'in_production'),
     }
     if (current_status, target_status) not in allowed_transitions:
         raise ValidationError({'status': f'Transition not allowed from {current_status} to {target_status}.'})
@@ -308,6 +313,57 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
             extra_message=reason,
         )
 
+    return job_card
+
+
+def close_job_card_manually(job_card, actor, reason):
+    """Force a job card to 'closed', walking through 'completed' first if
+    needed, and record the never-dispatched remainder against the existing
+    (previously unused) short_close_* fields as confirmed wastage.
+
+    Used by the admin/manager finalization tool for job cards that will
+    never hit the 95%-dispatch auto-complete threshold (a permanent
+    wastage/shortfall keeps dispatch under 95% of order_qty forever — see
+    core.signals._sync_job_card_dispatch_status), and for job cards that
+    already auto-completed but were never closed (nothing in this app
+    closes a job card automatically today). Once 'closed', the auto-signal
+    never touches it again, so no extra guard flag is needed to make this
+    stick.
+    """
+    if job_card.workflow_status == 'in_production':
+        transition_job_card_status(job_card, 'completed', actor=actor, reason=reason)
+    if job_card.workflow_status == 'completed':
+        gap = max(job_card.order_qty - job_card.total_dispatch, 0)
+        if gap:
+            job_card.short_close_closed_qty = gap
+            job_card.short_close_wastage_qty = gap
+            job_card.short_close_closed_by = actor
+            job_card.short_close_closed_at = timezone.now()
+            job_card.short_close_close_reason = reason
+            job_card.save(update_fields=[
+                'short_close_closed_qty', 'short_close_wastage_qty',
+                'short_close_closed_by', 'short_close_closed_at', 'short_close_close_reason',
+            ])
+        transition_job_card_status(job_card, 'closed', actor=actor, reason=reason)
+    return job_card
+
+
+def reopen_job_card_manually(job_card, actor, reason):
+    """Reopen a manually-closed/completed job card back to 'in_production',
+    clearing any short-close record set by close_job_card_manually() — the
+    gap it confirmed as wastage may no longer be accurate once more
+    production/dispatch activity can be logged against the job again."""
+    transition_job_card_status(job_card, 'in_production', actor=actor, reason=reason)
+    if job_card.short_close_closed_at:
+        job_card.short_close_closed_qty = 0
+        job_card.short_close_wastage_qty = 0
+        job_card.short_close_closed_by = None
+        job_card.short_close_closed_at = None
+        job_card.short_close_close_reason = None
+        job_card.save(update_fields=[
+            'short_close_closed_qty', 'short_close_wastage_qty',
+            'short_close_closed_by', 'short_close_closed_at', 'short_close_close_reason',
+        ])
     return job_card
 
 

@@ -7,6 +7,7 @@ from django.views.static import serve as static_serve
 from core.views import home
 from core import views
 from core import notification_views
+from core import job_card_finalization
 
 urlpatterns = [
     path('admin/', admin.site.urls),
@@ -79,6 +80,9 @@ urlpatterns = [
     path('review-override/<int:override_id>/', views.review_override_request, name='review_override_request'),
     path('shift-config/', views.shift_config, name='shift_config'),
     path('master-data/', views.master_data, name='master_data'),
+    path('job-cards/finalize/', job_card_finalization.job_card_finalization_queue, name='job_card_finalization_queue'),
+    path('job-cards/finalize/close/', job_card_finalization.job_card_finalization_close, name='job_card_finalization_close'),
+    path('job-cards/finalize/reopen/', job_card_finalization.job_card_finalization_reopen, name='job_card_finalization_reopen'),
     path('machine-master-tools/', views.machine_master_tools, name='machine_master_tools'),
     path('erp-readme/', views.erp_readme, name='erp_readme'),
     path('erp-readme/download/', views.download_erp_readme, name='download_erp_readme'),
