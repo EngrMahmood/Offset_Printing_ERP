@@ -32,6 +32,15 @@ TASK_APP_BASE_URL = os.environ.get('TASK_APP_BASE_URL', 'https://offseterp.duckd
 # Opt-out for the in-process task reminder scheduler thread (tasks/scheduler.py),
 # defaulting to ON like BOT_INPROCESS_SCHEDULER. Set False to disable.
 TASK_REMINDER_INPROCESS_SCHEDULER = os.environ.get('TASK_REMINDER_INPROCESS_SCHEDULER', 'True') == 'True'
+# Opt-out for the in-process bot/automation scheduler thread (bot/scheduler.py),
+# same pattern as TASK_REMINDER_INPROCESS_SCHEDULER above. Set False on any
+# server that must never execute scheduled sends itself — critically, the DR
+# standby (offseterpbackup.duckdns.org), which receives a live copy of the
+# primary's database (including real, active bot rows with real recipients)
+# via scripts/cloud/standby/cron_sync_standby_from_primary.sh but must stay
+# passive. Without this, the standby's own web container independently fires
+# every due automation a second time.
+BOT_INPROCESS_SCHEDULER = os.environ.get('BOT_INPROCESS_SCHEDULER', 'True') == 'True'
 
 # Local LLM (LM Studio, OpenAI-compatible chat endpoint). Never hardcode the
 # endpoint elsewhere — everything routes through these settings so pointing
