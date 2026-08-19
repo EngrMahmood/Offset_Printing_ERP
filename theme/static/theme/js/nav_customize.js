@@ -8,7 +8,6 @@
     var modulesEl = document.getElementById('erp-topnav-modules');
     var row2Wrap = document.getElementById('erp-topnav-row2');
     var row2El = document.getElementById('erp-topnav-modules-row2');
-    var moreWrap = document.getElementById('erp-topnav-more');
     var moreBtn = document.getElementById('erp-topnav-more-btn');
     var moreMenu = document.getElementById('erp-topnav-more-menu');
     var customizeBtn = document.getElementById('erp-nav-customize-btn');
@@ -19,8 +18,14 @@
 
     if (!modulesEl) return;
 
-    // Catalog: every nav link that exists right now, keyed by its stable
-    // data-nav-key. Read from ALL THREE containers a module could be in
+    // Every nav item that exists right now — either a plain link
+    // (a.erp-topnav-module) or a grouped dropdown button (.erp-topnav-group,
+    // e.g. "Offset"/"Admin Tools") — is pinnable as a single unit, keyed by
+    // its stable data-nav-key.
+    var CATALOG_SELECTOR = 'a.erp-topnav-module[data-nav-key], .erp-topnav-group[data-nav-key]';
+
+    // Catalog: every nav item that exists right now, keyed by its stable
+    // data-nav-key. Read from ALL THREE containers an item could be in
     // (row1, row2, More) — not just one. navbar_autofit.js's own
     // auto-overflow pass is scheduled via setTimeout(fn, 0), which on a
     // slow-enough network (this script's own <script src> fetch taking a
@@ -34,11 +39,11 @@
     // regardless of which container auto-overflow had already sorted each
     // item into.
     var catalog = Array.prototype.slice.call(
-        modulesEl.querySelectorAll('a.erp-topnav-module[data-nav-key]')
+        modulesEl.querySelectorAll(CATALOG_SELECTOR)
     ).concat(Array.prototype.slice.call(
-        row2El ? row2El.querySelectorAll('a.erp-topnav-module[data-nav-key]') : []
+        row2El ? row2El.querySelectorAll(CATALOG_SELECTOR) : []
     )).concat(Array.prototype.slice.call(
-        moreMenu ? moreMenu.querySelectorAll('a.erp-topnav-module[data-nav-key]') : []
+        moreMenu ? moreMenu.querySelectorAll(CATALOG_SELECTOR) : []
     ));
     var nodesByKey = {};
     var defaultOrder = [];
@@ -159,18 +164,8 @@
     var currentLayout = loadLayout();
     applyLayout(currentLayout);
 
-    // ── "More" dropdown open/close ──────────────────────────────────────
-    if (moreBtn) {
-        moreBtn.addEventListener('click', function (event) {
-            event.stopPropagation();
-            moreMenu.classList.toggle('is-open');
-        });
-        document.addEventListener('click', function (event) {
-            if (!moreWrap.contains(event.target)) {
-                moreMenu.classList.remove('is-open');
-            }
-        });
-    }
+    // "More" dropdown open/close, and the same for grouped dropdowns
+    // (Offset, Admin Tools), is wired centrally in nav_groups.js.
 
     // ── Customize modal ──────────────────────────────────────────────────
     function labelFor(key) {

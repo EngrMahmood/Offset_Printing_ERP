@@ -187,6 +187,13 @@ def home(request):
 
 
 @login_required
+def coming_soon(request, feature):
+    """Placeholder landing page for nav buttons whose module isn't built yet
+    (currently Flexo and Sublimation)."""
+    return render(request, 'coming_soon.html', {'feature': feature})
+
+
+@login_required
 @require_POST
 def save_nav_layout(request):
     """Persist this user's top-nav row1/row2/overflow customization server-side

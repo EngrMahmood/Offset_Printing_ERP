@@ -43,7 +43,7 @@
 
     <link rel="stylesheet" href="{% static 'theme/css/variables.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/base.css' %}?v=2">
-    <link rel="stylesheet" href="{% static 'theme/css/layout.css' %}?v=4">
+    <link rel="stylesheet" href="{% static 'theme/css/layout.css' %}?v=5">
     <link rel="stylesheet" href="{% static 'theme/css/forms.css' %}?v=2">
     <link rel="stylesheet" href="{% static 'theme/css/tables.css' %}">
     <link rel="stylesheet" href="{% static 'theme/css/cards.css' %}">
@@ -202,6 +202,9 @@
         @media (max-width: 640px), (pointer: coarse) {
             .erp-topnav-logout { min-height: 40px; padding: 8px 12px !important; }
             .erp-subnav-link { min-height: 40px !important; height: 40px !important; line-height: 40px !important; }
+            .erp-topnav-group-btn { min-height: 40px !important; }
+            .erp-topnav-group-menu a,
+            .erp-topnav-more-menu a { min-height: 40px !important; line-height: 24px !important; padding-top: 8px !important; padding-bottom: 8px !important; }
         }
     </style>
     {% block extra_head %}{% endblock %}
@@ -239,9 +242,10 @@
     <div id="chat-dock-container"></div>
     {% endif %}
 
-    <script src="{% static 'theme/js/navbar_autofit.js' %}?v=4"></script>
+    <script src="{% static 'theme/js/navbar_autofit.js' %}?v=5"></script>
+    <script src="{% static 'theme/js/nav_groups.js' %}?v=2"></script>
     {% if request.user.is_authenticated %}
-    <script src="{% static 'theme/js/nav_customize.js' %}?v=7"></script>
+    <script src="{% static 'theme/js/nav_customize.js' %}?v=8"></script>
     {% endif %}
     <script src="{% static 'theme/js/modal.js' %}"></script>
     <script src="{% static 'theme/js/filters.js' %}"></script>

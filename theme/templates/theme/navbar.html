@@ -21,16 +21,11 @@
                 Dashboard
             </a>
             {% endif %}
-            {% if nav.can_access_supply_chain %}
-            <a href="{% url 'supply_chain:dashboard' %}" data-nav-key="supply_chain" data-nav-label="Supply Chain"
-               class="erp-topnav-module {% if app == 'supply_chain' and 'item_request' not in url %}is-active{% endif %}">
-                Supply Chain
-            </a>
-            {% endif %}
-            {% if nav.can_access_item_request %}
-            <a href="{% url 'supply_chain:item_request_list' %}" data-nav-key="item_requests" data-nav-label="Item Requests"
-               class="erp-topnav-module {% if 'item_request' in url %}is-active{% endif %}">
-                Item Requests{% if nav.item_request_pending_count %}<span class="erp-nav-badge" title="{{ nav.item_request_pending_count }} awaiting your review">{{ nav.item_request_pending_count }}</span>{% endif %}
+            {% if nav.can_access_supply_chain or nav.can_access_item_request %}
+            <a href="{% if nav.can_access_supply_chain %}{% url 'supply_chain:dashboard' %}{% else %}{% url 'supply_chain:item_request_list' %}{% endif %}"
+               data-nav-key="supply_chain" data-nav-label="Supply Chain"
+               class="erp-topnav-module {% if app == 'supply_chain' %}is-active{% endif %}">
+                Supply Chain{% if nav.can_access_item_request and nav.item_request_pending_count %}<span class="erp-nav-badge" title="{{ nav.item_request_pending_count }} item requests awaiting your review">{{ nav.item_request_pending_count }}</span>{% endif %}
             </a>
             {% endif %}
             {% if nav.can_access_maintenance %}
@@ -39,38 +34,51 @@
                 Maintenance
             </a>
             {% endif %}
-            {% if nav.can_access_planning %}
-            <a href="{% url 'planning:home' %}" data-nav-key="planning" data-nav-label="Planning"
-               class="erp-topnav-module {% if app == 'planning' %}is-active{% endif %}">
-                Planning
-            </a>
+            {% if nav.can_access_planning or nav.can_access_production or nav.can_access_job_summary or nav.can_access_migration or nav.can_access_printing_plates %}
+            <div class="erp-topnav-group" data-nav-key="offset" data-nav-label="Offset">
+                <button type="button" class="erp-topnav-group-btn {% if app == 'planning' or app == 'job_summary' or app == 'migration' or app == 'printing_plates' or url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'packing_records' or url == 'production_data_anomalies' or url == 'override_requests' or url == 'review_override_request' or url == 'my_override_requests' or url == 'released_jobs' or url == 'request_plate_remake' or url == 'job_card_finalization_queue' or url == 'manual_working_list' %}is-active{% endif %}">
+                    Offset <i class="fas fa-caret-down"></i>
+                </button>
+                <div class="erp-topnav-group-menu" role="menu" aria-label="Offset modules">
+                    {% if nav.can_access_planning %}
+                    <a href="{% url 'planning:home' %}" role="menuitem" class="{% if app == 'planning' %}is-active{% endif %}">Planning</a>
+                    {% endif %}
+                    {% if nav.can_access_production %}
+                    <a href="{% url 'production_dashboard' %}" role="menuitem"
+                       class="{% if url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'packing_records' or url == 'production_data_anomalies' or url == 'override_requests' or url == 'review_override_request' or url == 'my_override_requests' or url == 'released_jobs' or url == 'request_plate_remake' or url == 'job_card_finalization_queue' %}is-active{% endif %}">Production</a>
+                    <a href="{% url 'manual_working:manual_working_list' %}" role="menuitem"
+                       class="{% if url == 'manual_working_list' %}is-active{% endif %}">Manual Working</a>
+                    {% endif %}
+                    {% if nav.can_access_job_summary %}
+                    <a href="{% url 'job_summary:home' %}" role="menuitem" class="{% if app == 'job_summary' %}is-active{% endif %}">Jobs Summary</a>
+                    {% endif %}
+                    {% if nav.can_access_migration %}
+                    <a href="{% url 'migration:dashboard' %}" role="menuitem" class="{% if app == 'migration' %}is-active{% endif %}">Migration</a>
+                    {% endif %}
+                    {% if nav.can_access_printing_plates %}
+                    <a href="{% url 'printing_plates:queue' %}" role="menuitem" class="{% if app == 'printing_plates' %}is-active{% endif %}">Printing Plates</a>
+                    {% endif %}
+                </div>
+            </div>
             {% endif %}
+            <a href="{% url 'flexo_placeholder' %}" data-nav-key="flexo" data-nav-label="Flexo"
+               class="erp-topnav-module {% if url == 'flexo_placeholder' %}is-active{% endif %}">
+                Flexo
+            </a>
+            <a href="{% url 'sublimation_placeholder' %}" data-nav-key="sublimation" data-nav-label="Sublimation"
+               class="erp-topnav-module {% if url == 'sublimation_placeholder' %}is-active{% endif %}">
+                Sublimation
+            </a>
             {% if nav.can_access_reports %}
             <a href="{% url 'reports:home' %}" data-nav-key="reports" data-nav-label="Reports"
                class="erp-topnav-module {% if app == 'reports' %}is-active{% endif %}">
                 Reports
             </a>
             {% endif %}
-            {% if nav.can_access_job_summary %}
-            <a href="{% url 'job_summary:home' %}" data-nav-key="job_summary" data-nav-label="Jobs Summary"
-               class="erp-topnav-module {% if app == 'job_summary' %}is-active{% endif %}">
-                Jobs Summary
-            </a>
-            {% endif %}
             {% if nav.can_access_qc %}
             <a href="{% url 'qc:qc_home' %}" data-nav-key="qc" data-nav-label="QC"
                class="erp-topnav-module {% if app == 'qc' %}is-active{% endif %}">
                 QC
-            </a>
-            {% endif %}
-            {% if nav.can_access_production %}
-            <a href="{% url 'production_dashboard' %}" data-nav-key="production" data-nav-label="Production"
-               class="erp-topnav-module {% if url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'packing_records' or url == 'production_data_anomalies' or url == 'override_requests' or url == 'review_override_request' or url == 'my_override_requests' or url == 'released_jobs' or url == 'request_plate_remake' or url == 'job_card_finalization_queue' %}is-active{% endif %}">
-                Production
-            </a>
-            <a href="{% url 'manual_working:manual_working_list' %}" data-nav-key="manual_working" data-nav-label="Manual Working"
-               class="erp-topnav-module {% if url == 'manual_working_list' %}is-active{% endif %}">
-                Manual Working
             </a>
             {% endif %}
             {% if nav.can_access_dispatch %}
@@ -100,59 +108,37 @@
                 <i class="fas fa-comments"></i> Chat<span class="erp-nav-badge" id="chat-nav-badge" style="display:none;"></span>
             </a>
             {% endif %}
-            {% if nav.can_access_migration %}
-            <a href="{% url 'migration:dashboard' %}" data-nav-key="migration" data-nav-label="Migration"
-               class="erp-topnav-module {% if app == 'migration' %}is-active{% endif %}">
-                Migration
-            </a>
-            {% endif %}
-            {% if nav.can_access_printing_plates %}
-            <a href="{% url 'printing_plates:queue' %}" data-nav-key="printing_plates" data-nav-label="Printing Plates"
-               class="erp-topnav-module {% if app == 'printing_plates' %}is-active{% endif %}">
-                Printing Plates
-            </a>
-            {% endif %}
-            {% if nav.can_access_master_data %}
-            <a href="{% url 'master_data' %}" data-nav-key="master_data" data-nav-label="Master Data"
-                    class="erp-topnav-module {% if url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'request_edit_override' or url == 'quick_add_master' %}is-active{% endif %}">
-                Master Data
-            </a>
-            {% endif %}
             {% if nav.can_access_guides %}
             <a href="{% url 'erp_readme' %}" data-nav-key="guides" data-nav-label="Guides"
                     class="erp-topnav-module {% if url == 'erp_readme' or url == 'erp_version' %}is-active{% endif %}">
                 Guides
             </a>
             {% endif %}
-            {% if nav.can_access_floor_dashboard %}
-            <a href="{% url 'floor_dashboard:dashboard' %}" target="_blank" rel="noopener" data-nav-key="floor_tv" data-nav-label="Floor TV"
-               class="erp-topnav-module">
-                <i class="fas fa-tv"></i> Floor TV
-            </a>
-            {% endif %}
-            {% if request.user.is_authenticated %}
-            {% if request.user.is_superuser or request.user.profile.role == 'admin' %}
-            <a href="{% url 'backup:dashboard' %}" data-nav-key="backup" data-nav-label="Backup"
-               class="erp-topnav-module {% if app == 'backup' %}is-active{% endif %}">
-                Backup
-            </a>
-            <a href="{% url 'sheets_sync:dashboard' %}" data-nav-key="sheets_sync" data-nav-label="Sheets Sync"
-               class="erp-topnav-module {% if app == 'sheets_sync' %}is-active{% endif %}">
-                Sheets Sync
-            </a>
-            {% endif %}
-            {% if nav.can_access_bot %}
-            <a href="{% url 'bot:bot_list' %}" data-nav-key="bot" data-nav-label="Automation"
-               class="erp-topnav-module {% if app == 'bot' %}is-active{% endif %}">
-                Automation
-            </a>
-            {% endif %}
-            {% if request.user.is_superuser or request.user.profile.role == 'admin' %}
-            <a href="{% url 'notification_settings_home' %}" data-nav-key="settings" data-nav-label="Settings"
-               class="erp-topnav-module {% if url == 'notification_settings_home' %}is-active{% endif %}">
-                Settings
-            </a>
-            {% endif %}
+            {% if nav.can_access_floor_dashboard or nav.can_access_master_data or nav.can_access_bot or request.user.is_superuser or request.user.profile.role == 'admin' %}
+            <div class="erp-topnav-group" data-nav-key="admin_tools" data-nav-label="Admin Tools">
+                <button type="button" class="erp-topnav-group-btn {% if app == 'floor_dashboard' or app == 'backup' or app == 'sheets_sync' or app == 'bot' or url == 'notification_settings_home' or url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'request_edit_override' or url == 'quick_add_master' %}is-active{% endif %}">
+                    Admin Tools <i class="fas fa-caret-down"></i>
+                </button>
+                <div class="erp-topnav-group-menu" role="menu" aria-label="Admin tools">
+                    {% if nav.can_access_floor_dashboard %}
+                    <a href="{% url 'floor_dashboard:dashboard' %}" target="_blank" rel="noopener" role="menuitem"><i class="fas fa-tv"></i> Floor TV</a>
+                    {% endif %}
+                    {% if request.user.is_superuser or request.user.profile.role == 'admin' %}
+                    <a href="{% url 'backup:dashboard' %}" role="menuitem" class="{% if app == 'backup' %}is-active{% endif %}">Backup</a>
+                    <a href="{% url 'sheets_sync:dashboard' %}" role="menuitem" class="{% if app == 'sheets_sync' %}is-active{% endif %}">Sheets Sync</a>
+                    {% endif %}
+                    {% if nav.can_access_bot %}
+                    <a href="{% url 'bot:bot_list' %}" role="menuitem" class="{% if app == 'bot' %}is-active{% endif %}">Automation</a>
+                    {% endif %}
+                    {% if nav.can_access_master_data %}
+                    <a href="{% url 'master_data' %}" role="menuitem"
+                       class="{% if url == 'master_data' or url == 'machine_master_tools' or url == 'shift_config' or url == 'manage_user_roles' or url == 'bulk_upload_jobcards' or url == 'archived_records' or url == 'request_edit_override' or url == 'quick_add_master' %}is-active{% endif %}">Master Data</a>
+                    {% endif %}
+                    {% if request.user.is_superuser or request.user.profile.role == 'admin' %}
+                    <a href="{% url 'notification_settings_home' %}" role="menuitem" class="{% if url == 'notification_settings_home' %}is-active{% endif %}">Settings</a>
+                    {% endif %}
+                </div>
+            </div>
             {% endif %}
         </div>
 

@@ -5,6 +5,10 @@
 (function () {
     var STEPS = [13, 12.5, 12, 11.5, 11, 10.5, 10, 9.5, 9];
     var PAD_STEPS = [13, 12, 11, 10, 9, 8, 7, 6, 6];
+    // A nav item is either a plain link or a grouped dropdown button
+    // (.erp-topnav-group, e.g. "Offset"/"Admin Tools") — both fit/overflow
+    // as a single unit.
+    var ITEM_SELECTOR = 'a.erp-topnav-module[data-nav-key], .erp-topnav-group[data-nav-key]';
 
     // Every module this function has auto-relocated (out of its manually-set
     // row) is tagged data-auto-origin="row1"/"row2" with the container it
@@ -41,12 +45,12 @@
     // many further hops it takes later in this same pass.
     function overflowInto(container, target, originTag) {
         if (!target) return;
-        var items = container.querySelectorAll('a.erp-topnav-module[data-nav-key]');
+        var items = container.querySelectorAll(ITEM_SELECTOR);
         while (items.length > 1 && container.scrollWidth > container.clientWidth + 1) {
             var last = items[items.length - 1];
             if (!last.hasAttribute('data-auto-origin')) last.setAttribute('data-auto-origin', originTag);
             target.insertBefore(last, target.firstChild);
-            items = container.querySelectorAll('a.erp-topnav-module[data-nav-key]');
+            items = container.querySelectorAll(ITEM_SELECTOR);
         }
     }
 
