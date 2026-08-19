@@ -601,16 +601,26 @@
             <table>
                 <thead>
                     <tr>
-                        <th>JC</th><th>SKU</th><th>Job Name</th><th>Current Status</th><th>Requester</th><th>Justification</th><th class="erp-col-actions">Action</th>
+                        <th>JC</th><th>SKU</th><th>Job Name</th><th>Current Status</th><th>Production/Dispatch</th><th>Requester</th><th>Justification</th><th class="erp-col-actions">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                 {% for change in pending_wastage_machine_change_requests %}
+                    {% with jc=change.planning_job.job_card %}
                     <tr>
                         <td><strong><a href="{% url 'planning:job_detail' change.planning_job.id %}">{{ change.planning_job.jc_number }}</a></strong></td>
                         <td>{{ change.planning_job.sku|default:'-' }}</td>
                         <td>{{ change.planning_job.job_name|default:'-' }}</td>
                         <td><span class="erp-badge is-warning">{{ change.planning_job.status|title }}</span></td>
+                        <td>
+                            {% if jc and jc.total_printed_pcs > 0 or jc and jc.total_packed_pcs > 0 or jc and jc.total_dispatch > 0 %}
+                            <span class="erp-badge is-danger" title="This job already has production/dispatch recorded — reopening resets it to Draft.">
+                                {{ jc.total_printed_pcs }} printed / {{ jc.total_packed_pcs }} packed / {{ jc.total_dispatch }} dispatched
+                            </span>
+                            {% else %}
+                            <span class="erp-muted">&mdash;</span>
+                            {% endif %}
+                        </td>
                         <td class="erp-muted">
                             {{ change.requested_by.username }}
                             {% if change.requested_at %}<br><small>{{ change.requested_at|date:'d M Y H:i' }}</small>{% endif %}
@@ -631,7 +641,7 @@
                                 {% if change.is_cancellation %}
                                 <button type="submit" class="erp-btn erp-btn-danger" onclick="return confirm('Approve CANCELLATION of {{ change.planning_job.jc_number }}? The job will be closed permanently.');">Approve Cancel</button>
                                 {% else %}
-                                <button type="submit" class="erp-btn erp-btn-success" onclick="return confirm('Approve reopening {{ change.planning_job.jc_number }} to Draft?');">Approve Reopen</button>
+                                <button type="submit" class="erp-btn erp-btn-success" onclick="return confirm('Approve reopening {{ change.planning_job.jc_number }} to Draft?{% if jc and jc.total_printed_pcs > 0 or jc and jc.total_packed_pcs > 0 or jc and jc.total_dispatch > 0 %} This job already has {{ jc.total_printed_pcs }} pcs printed, {{ jc.total_packed_pcs }} pcs packed, {{ jc.total_dispatch }} pcs dispatched.{% endif %}');">Approve Reopen</button>
                                 {% endif %}
                             </form>
                             <form method="post" action="{% url 'planning:reject_change_request' change.id %}" class="m-0" style="display:inline-flex;">
@@ -644,8 +654,9 @@
                             {% endif %}
                         </td>
                     </tr>
+                    {% endwith %}
                 {% empty %}
-                    <tr><td colspan="7" style="padding:24px;text-align:center;color:#7a8fa6;">No pending reopen requests.</td></tr>
+                    <tr><td colspan="8" style="padding:24px;text-align:center;color:#7a8fa6;">No pending reopen requests.</td></tr>
                 {% endfor %}
                 </tbody>
             </table>

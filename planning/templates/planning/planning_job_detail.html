@@ -410,6 +410,15 @@
             {% endif %}
 
             {% if can_reopen_and_apply_master_sync %}
+            {% with jc=job.job_card %}
+            {% if jc and jc.total_printed_pcs > 0 or jc and jc.total_packed_pcs > 0 or jc and jc.total_dispatch > 0 %}
+            <div class="erp-alert erp-alert-warning" style="margin-bottom:12px; flex-basis:100%;">
+                <strong>This job already has recorded activity:</strong>
+                {{ jc.total_printed_pcs }} pcs printed, {{ jc.total_packed_pcs }} pcs packed,
+                {{ jc.total_dispatch }} pcs dispatched. Reopening resets it to Draft and it must be
+                re-approved through the full pipeline before this activity is resumable.
+            </div>
+            {% endif %}
             <form method="post" action="{% url 'planning:job_master_sync' job.id %}" class="m-0" style="display:flex; gap:8px; align-items:flex-end; flex-wrap:wrap;">
                 {% csrf_token %}
                 <input type="hidden" name="action" value="reopen_and_apply_master_sync">
@@ -417,8 +426,9 @@
                     <label for="reopen-sync-reason">Reopen reason</label>
                     <input id="reopen-sync-reason" type="text" name="reason" value="{{ job.master_sync_reason|default:'' }}" placeholder="SKU master UPS/sheet revised" class="erp-input" style="min-width:280px;">
                 </div>
-                <button type="submit" class="erp-btn erp-btn-warning" onclick="return confirm('Reopen {{ job.jc_number }} to draft, apply SKU master data, and refresh the job card? You will need to re-approve through QC.');">Reopen &amp; Apply Master Sync</button>
+                <button type="submit" class="erp-btn erp-btn-warning" onclick="return confirm('Reopen {{ job.jc_number }} to draft, apply SKU master data, and refresh the job card?{% if jc and jc.total_printed_pcs > 0 or jc and jc.total_packed_pcs > 0 or jc and jc.total_dispatch > 0 %} This job already has {{ jc.total_printed_pcs }} pcs printed, {{ jc.total_packed_pcs }} pcs packed, {{ jc.total_dispatch }} pcs dispatched.{% endif %} You will need to re-approve through QC.');">Reopen &amp; Apply Master Sync</button>
             </form>
+            {% endwith %}
             {% endif %}
 
             {% if can_apply_master_sync %}
@@ -453,6 +463,17 @@
                 <p class="erp-section-desc">Request to reopen this job card to Draft status to edit finalization fields. Requires Production Manager approval.</p>
             </div>
         </div>
+
+        {% with jc=job.job_card %}
+        {% if jc and jc.total_printed_pcs > 0 or jc and jc.total_packed_pcs > 0 or jc and jc.total_dispatch > 0 %}
+        <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">
+            <strong>This job already has recorded activity:</strong>
+            {{ jc.total_printed_pcs }} pcs printed, {{ jc.total_packed_pcs }} pcs packed,
+            {{ jc.total_dispatch }} pcs dispatched. Reopening resets it to Draft and it must be
+            re-approved through the full pipeline before this activity is resumable.
+        </div>
+        {% endif %}
+        {% endwith %}
 
         {% if pending_change_request %}
         <div class="erp-alert erp-alert-warning" style="margin-bottom:12px;">

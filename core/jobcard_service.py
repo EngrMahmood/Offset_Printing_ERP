@@ -347,6 +347,42 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
             extra_message=reason,
         )
 
+        # Reopening a job that already has production/dispatch recorded is a
+        # deliberate, permission-gated feature (planners can correct a
+        # mistake even mid-production) — but the reset itself is easy to
+        # miss unless someone happens to open this specific job's history.
+        # Proactively tell admin/manager whenever it happens on a job that
+        # already has real activity, regardless of which of the two reopen
+        # paths (JobCardChangeRequest approval, or "Reopen & Apply Master
+        # Sync") triggered it — both funnel through this one function.
+        if (
+            target_status == 'draft'
+            and before_status in {'released', 'in_production', 'completed', 'closed'}
+            and (job_card.total_printed_pcs > 0 or job_card.total_packed_pcs > 0)
+        ):
+            from django.urls import reverse
+
+            from core.notifications import notify_roles
+
+            try:
+                notify_roles(
+                    ['admin', 'manager'],
+                    event_type='job_card.reopened_with_production_history',
+                    title=f'{job_card.job_card_no} reopened to Draft after production had started',
+                    message=(
+                        f'{job_card.job_card_no} was at "{before_status}" with '
+                        f'{job_card.total_printed_pcs} pcs printed, {job_card.total_packed_pcs} pcs packed, '
+                        f'{job_card.total_dispatch} pcs dispatched, then reset to Draft. '
+                        f'Reason: {reason or "(none given)"}.'
+                    ),
+                    link=reverse('planning:job_detail', args=[job_card.planning_job_id]) if job_card.planning_job_id else '',
+                    entity_type='job_card',
+                    entity_id=job_card.pk,
+                    actor=actor,
+                )
+            except Exception:  # noqa: BLE001 - a notification failure must not block the reopen
+                pass
+
         # A job card that already has printing/packing entries recorded
         # (e.g. it was reopened for a data correction — machine/pass count/
         # etc — after production had genuinely started, then walked back

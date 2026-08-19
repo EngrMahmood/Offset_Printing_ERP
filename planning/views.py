@@ -2528,7 +2528,7 @@ def approval_queue(request):
     split_requests = _pending_po_split_requests()
     pending_wastage_machine_change_requests = JobCardChangeRequest.objects.filter(
         status='pending'
-    ).select_related('planning_job', 'requested_by').order_by('-requested_at')
+    ).select_related('planning_job', 'planning_job__job_card', 'requested_by').order_by('-requested_at')
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
