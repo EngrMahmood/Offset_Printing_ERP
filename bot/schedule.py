@@ -119,7 +119,10 @@ def is_due(bot, now=None) -> bool:
 
 def due_bots(now=None):
     """Active bots that should run on this tick."""
-    from bot.models import BotAutomation
+    from bot.models import BotAutomation, BotGlobalSettings
+
+    if not BotGlobalSettings.get_settings().automation_enabled:
+        return []
 
     now = timezone.localtime(now or timezone.now())
     return [bot for bot in BotAutomation.objects.filter(is_active=True) if is_due(bot, now)]

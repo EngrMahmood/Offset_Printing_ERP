@@ -41,6 +41,12 @@ TASK_REMINDER_INPROCESS_SCHEDULER = os.environ.get('TASK_REMINDER_INPROCESS_SCHE
 # passive. Without this, the standby's own web container independently fires
 # every due automation a second time.
 BOT_INPROCESS_SCHEDULER = os.environ.get('BOT_INPROCESS_SCHEDULER', 'True') == 'True'
+# Same per-server kill switch, for the backup scheduler (backup/scheduler.py).
+# Backups are also DB-driven (BackupSetting.backup_enabled) and that row is
+# part of the synced database too, so — same reasoning as the two above —
+# only an env var can durably keep the standby from taking its own redundant
+# backup runs regardless of what backup_enabled says in the synced copy.
+BACKUP_INPROCESS_SCHEDULER = os.environ.get('BACKUP_INPROCESS_SCHEDULER', 'True') == 'True'
 
 # Local LLM (LM Studio, OpenAI-compatible chat endpoint). Never hardcode the
 # endpoint elsewhere — everything routes through these settings so pointing

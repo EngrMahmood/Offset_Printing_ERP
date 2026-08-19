@@ -31,6 +31,15 @@ trap 'log "Standby sync FAILED - see output above this line in the log"' ERR
 log "Starting standby sync (cron, from primary)"
 cd "$REPO_DIR"
 
+# Code first, then data — new code sometimes expects a migration the fresh
+# data needs to run against. Without this step the standby only ever got
+# data; its code silently drifted commits behind primary until someone
+# happened to run update_standby_all.bat by hand (see git history for what
+# that staleness already caused once: a bot email sent from the standby
+# with pre-fix report logic because the standby's code was that far behind).
+log "Updating standby code from GitHub"
+ssh -i "$STANDBY_KEY" -o StrictHostKeyChecking=accept-new "$VM_USER@$STANDBY_HOST" "cd ~/offset-erp && git pull origin main && docker compose up -d --build web" >> "$LOG_FILE" 2>&1
+
 # Uses SQLite's online backup API (via a python one-liner inside the web
 # container) rather than a raw file copy -- the primary takes real live
 # writes (WAL mode), and a raw copy can grab a half-written page mid-write.

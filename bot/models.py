@@ -323,6 +323,41 @@ class BotAutomation(models.Model):
         return get_user_model().objects.filter(is_superuser=True, is_active=True).order_by('id').first()
 
 
+class BotGlobalSettings(models.Model):
+    """Single-row master switch for every bot automation on this server —
+    mirrors backup.models.BackupSetting.backup_enabled. Checked once at the
+    top of bot.schedule.due_bots() so flipping it off skips every automation
+    in one place, without touching each BotAutomation.is_active individually.
+
+    Deliberately DB-backed (a UI button), unlike the per-server
+    BOT_INPROCESS_SCHEDULER env var in settings.py: this is for day-to-day
+    pause/resume on a server that's supposed to be sending (the primary).
+    A server that must NEVER send (the DR standby) still needs the env var,
+    since this row is part of the database that gets synced from primary
+    twice daily and would otherwise flip back on at the next sync."""
+
+    automation_enabled = models.BooleanField(
+        default=True,
+        help_text='Master on/off switch for all bot automations. Turn off to pause every scheduled send without disabling each one individually.',
+    )
+    updated_at = models.DateTimeField(auto_now=True)
+    updated_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL,
+    )
+
+    class Meta:
+        verbose_name = 'Bot Global Settings'
+        verbose_name_plural = 'Bot Global Settings'
+
+    @classmethod
+    def get_settings(cls):
+        obj, _ = cls.objects.get_or_create(id=1)
+        return obj
+
+    def __str__(self):
+        return f"Bot Automations Globally {'Enabled' if self.automation_enabled else 'Disabled'}"
+
+
 class BotExecution(models.Model):
     """One attempt to run a bot. Stores the rendered email verbatim so the
     history screen can answer "what did they actually receive?" without

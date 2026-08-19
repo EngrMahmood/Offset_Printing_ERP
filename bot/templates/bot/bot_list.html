@@ -8,7 +8,11 @@
 
     <div class="erp-page-intro">
         <div>
-            <span class="erp-status-chip {% if active_count %}success{% else %}warning{% endif %}">
+            <span class="erp-status-chip {% if global_settings.automation_enabled %}success{% else %}warning{% endif %}">
+                <span class="erp-status-dot"></span>
+                Automations: {% if global_settings.automation_enabled %}On{% else %}Paused{% endif %}
+            </span>
+            <span class="erp-status-chip {% if active_count %}success{% else %}warning{% endif %}" style="margin-left: 8px;">
                 <span class="erp-status-dot"></span>
                 {{ active_count }} active automation{{ active_count|pluralize }}
             </span>
@@ -17,6 +21,12 @@
             </span>
         </div>
         <div class="erp-actions">
+            <form method="post" action="{% url 'bot:bot_global_toggle' %}" class="m-0" style="display:inline;" onsubmit="return confirm('{% if global_settings.automation_enabled %}Pause ALL bot automations? No scheduled email will send until this is turned back on.{% else %}Resume bot automations?{% endif %}');">
+                {% csrf_token %}
+                <button type="submit" class="erp-btn {% if global_settings.automation_enabled %}erp-btn-warning{% else %}erp-btn-success{% endif %}">
+                    <i class="fas fa-power-off"></i> {% if global_settings.automation_enabled %}Pause All{% else %}Resume All{% endif %}
+                </button>
+            </form>
             <a href="{% url 'bot:execution_list' %}" class="erp-btn erp-btn-secondary">
                 <i class="fas fa-history"></i> Execution History
             </a>

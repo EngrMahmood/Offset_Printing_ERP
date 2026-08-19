@@ -12,6 +12,7 @@ urlpatterns = [
     path('<int:pk>/test-send/', views.bot_test_send, name='bot_test_send'),
     path('<int:pk>/run-now/', views.bot_run_now, name='bot_run_now'),
     path('<int:pk>/toggle/', views.bot_toggle, name='bot_toggle'),
+    path('global-toggle/', views.bot_global_toggle, name='bot_global_toggle'),
     path('executions/', views.execution_list, name='execution_list'),
     path('executions/<int:pk>/', views.execution_detail, name='execution_detail'),
 ]

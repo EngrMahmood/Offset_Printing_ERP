@@ -5,7 +5,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from bot.forms import BotAutomationForm, TestSendForm
-from bot.models import EXECUTION_STATUS_CHOICES, BotAutomation, BotExecution
+from bot.models import EXECUTION_STATUS_CHOICES, BotAutomation, BotExecution, BotGlobalSettings
 from bot.services import (
     build_email_parts,
     refresh_next_run,
@@ -43,7 +43,26 @@ def bot_list(request):
         'bots': bots,
         'recent_executions': recent,
         'active_count': sum(1 for bot in bots if bot.is_active),
+        'global_settings': BotGlobalSettings.get_settings(),
     })
+
+
+@login_required
+@bot_admin_required
+def bot_global_toggle(request):
+    if request.method != 'POST':
+        return redirect('bot:bot_list')
+
+    settings_obj = BotGlobalSettings.get_settings()
+    settings_obj.automation_enabled = not settings_obj.automation_enabled
+    settings_obj.updated_by = request.user
+    settings_obj.save(update_fields=['automation_enabled', 'updated_by', 'updated_at'])
+
+    if settings_obj.automation_enabled:
+        messages.success(request, 'Bot automations resumed — active bots will fire on their next scheduled time.')
+    else:
+        messages.warning(request, 'Bot automations paused. No scheduled email will send until this is turned back on.')
+    return redirect('bot:bot_list')
 
 
 @login_required
