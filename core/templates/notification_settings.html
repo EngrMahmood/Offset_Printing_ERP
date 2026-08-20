@@ -299,7 +299,7 @@
     <!-- Tab: Roles & Access Control -->
     <div id="content-access-control" class="tab-content hidden space-y-6">
         {% if user.is_superuser %}
-        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
             <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex items-center justify-between">
                 <div>
                     <h3 class="font-bold text-slate-800 text-sm">User Accounts</h3>
@@ -307,6 +307,16 @@
                 </div>
                 <a href="{% url 'user_create' %}" class="shrink-0 bg-brand-600 hover:bg-brand-700 text-white font-medium py-2 px-4 rounded-lg shadow-sm flex items-center gap-2 text-sm transition-all">
                     <i class="fas fa-user-plus"></i><span>Create User</span>
+                </a>
+            </div>
+
+            <div class="bg-white rounded-xl shadow-sm border border-slate-100 p-4 flex items-center justify-between">
+                <div>
+                    <h3 class="font-bold text-slate-800 text-sm">Permission Audit</h3>
+                    <p class="text-xs text-slate-500 mt-0.5">Find screens missing from this page.</p>
+                </div>
+                <a href="{% url 'permission_audit_view' %}" class="shrink-0 bg-slate-700 hover:bg-slate-800 text-white font-medium py-2 px-4 rounded-lg shadow-sm flex items-center gap-2 text-sm transition-all">
+                    <i class="fas fa-magnifying-glass-chart"></i><span>Run Audit</span>
                 </a>
             </div>
 

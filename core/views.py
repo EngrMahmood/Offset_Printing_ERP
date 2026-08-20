@@ -2184,6 +2184,28 @@ def email_settings_edit(request):
 
 
 @login_required
+def permission_audit_view(request):
+    """Superuser-only: in-app view of `manage.py audit_view_permissions` —
+    which URL-routed views have no soft-coded permission gating yet, so a
+    newly added screen can't silently go missing from Roles & Access
+    Control without anyone noticing."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can view the permission audit.')
+        return redirect('notification_settings_home')
+
+    from core.permission_audit import run_permission_audit
+    result = run_permission_audit()
+
+    context = {
+        'unguarded': result['unguarded'],
+        'hardcoded': result['hardcoded'],
+        'configurable_count': result['configurable_count'],
+        'total': result['total'],
+    }
+    return render(request, 'permission_audit.html', context)
+
+
+@login_required
 @require_POST
 def ai_settings_edit(request):
     """Superuser-only: master + per-feature switches for the local LLM AI

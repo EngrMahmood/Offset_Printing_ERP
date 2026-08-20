@@ -6,6 +6,10 @@ Run it any time after adding new screens/URLs:
 
     python manage.py audit_view_permissions
 
+Same report is also available in-app at Settings -> Roles & Access Control
+-> Permission Audit (superuser only) — see core/permission_audit.py, which
+both share.
+
 Two tiers, reported separately:
   - UNGUARDED: no recognized access-control decorator at all (not even a
     hardcoded role check) — genuinely open to any logged-in user. Always
@@ -20,80 +24,30 @@ Two tiers, reported separately:
 
 This can only see which decorator was used, not judge whether it's correct.
 Class-based views and third-party/admin URLs are skipped rather than guessed
-at. See core/views.py (permission_required, require_role) for how the
-_rbac_configurable / _rbac_hardcoded markers get set.
+at.
 """
 from __future__ import annotations
 
 from django.core.management.base import BaseCommand
-from django.urls import URLPattern, URLResolver, get_resolver
 
-# URL names that are legitimately open to any authenticated user, or are the
-# login/logout/password-reset plumbing itself — not real gaps.
-EXEMPT_VIEW_NAMES = {
-    'login', 'logout', 'password_reset', 'password_reset_done',
-    'password_reset_confirm', 'password_reset_complete', 'home',
-}
-
-# Namespaces that are intentionally open to every authenticated user.
-EXEMPT_NAMESPACES = {'tasks', 'audit', 'chat', 'manual_working', 'floor_dashboard'}
-
-OWN_APP_PREFIXES = (
-    'core.', 'production.', 'planning.', 'qc.', 'dispatch.', 'supply_chain.',
-    'printing_plates.', 'job_summary.', 'maintenance.', 'reports.', 'migration.',
-)
-
-
-def _iter_view_funcs(patterns, namespace=None):
-    for pattern in patterns:
-        if isinstance(pattern, URLResolver):
-            yield from _iter_view_funcs(pattern.url_patterns, namespace=pattern.namespace or namespace)
-        elif isinstance(pattern, URLPattern):
-            yield namespace, pattern.name, pattern.callback
+from core.permission_audit import run_permission_audit
 
 
 class Command(BaseCommand):
     help = "Lists URL-routed views with no soft-coded (Roles & Access Control) permission gating."
 
     def handle(self, *args, **options):
-        unguarded = []
-        hardcoded = []
-        seen = set()
+        result = run_permission_audit()
 
-        for namespace, name, view_func in _iter_view_funcs(get_resolver().url_patterns):
-            if not name or name in EXEMPT_VIEW_NAMES or namespace in EXEMPT_NAMESPACES:
-                continue
-            module = getattr(view_func, '__module__', '') or ''
-            if not module.startswith(OWN_APP_PREFIXES) or module.endswith('.admin'):
-                continue
-            if getattr(view_func, 'view_class', None):
-                continue  # class-based view — not decorator-wrapped the same way, skip rather than guess
-
-            key = (namespace, name)
-            if key in seen:
-                continue
-            seen.add(key)
-
-            label = f"{namespace}:{name}" if namespace else name
-            if getattr(view_func, '_rbac_configurable', False):
-                continue
-            if getattr(view_func, '_rbac_hardcoded', False):
-                hardcoded.append(label)
-            else:
-                unguarded.append(label)
-
-        unguarded.sort()
-        hardcoded.sort()
-
-        self.stdout.write(self.style.ERROR(f"\nUNGUARDED ({len(unguarded)}) — no access-control decorator found:"))
-        for label in unguarded:
+        self.stdout.write(self.style.ERROR(f"\nUNGUARDED ({len(result['unguarded'])}) — no access-control decorator found:"))
+        for label in result['unguarded']:
             self.stdout.write(f"  {label}")
 
-        self.stdout.write(self.style.WARNING(f"\nHARDCODED, not UI-configurable ({len(hardcoded)}):"))
-        for label in hardcoded:
+        self.stdout.write(self.style.WARNING(f"\nHARDCODED, not UI-configurable ({len(result['hardcoded'])}):"))
+        for label in result['hardcoded']:
             self.stdout.write(f"  {label}")
 
         self.stdout.write(self.style.SUCCESS(
-            f"\n{len(seen) - len(unguarded) - len(hardcoded)} view(s) already configurable from "
+            f"\n{result['configurable_count']} view(s) already configurable from "
             f"Settings -> Roles & Access Control."
         ))
