@@ -14,6 +14,9 @@ def maintenance_required(view_func):
             raise PermissionDenied
         return view_func(request, *args, **kwargs)
 
+    # Gates on the soft-coded nav.maintenance Permission — configurable from
+    # Settings -> Roles & Access Control.
+    _wrapped._rbac_configurable = True
     return _wrapped
 
 
@@ -26,6 +29,9 @@ def maintenance_manager_required(view_func):
             raise PermissionDenied
         return view_func(request, *args, **kwargs)
 
+    # nav.maintenance is soft-coded, but the extra admin/manager check on top
+    # is hardcoded — not fully UI-configurable.
+    _wrapped._rbac_hardcoded = True
     return _wrapped
 
 
@@ -42,4 +48,5 @@ def maintenance_staff_required(view_func):
             raise PermissionDenied
         return view_func(request, *args, **kwargs)
 
+    _wrapped._rbac_hardcoded = True
     return _wrapped

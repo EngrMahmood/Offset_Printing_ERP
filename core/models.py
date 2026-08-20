@@ -1803,6 +1803,26 @@ class UserProfile(models.Model):
         """Can view financial/operational reports"""
         return self._has_permission('action.view_reports')
 
+    def can_view_production_wip(self):
+        """Can view the production work-in-progress board."""
+        return self._has_permission('action.view_production_wip')
+
+    def can_manage_production_wip_statuses(self):
+        """Can add new WIP status columns to the production board."""
+        return self._has_permission('action.manage_production_wip_statuses')
+
+    def can_finalize_job_card(self):
+        """Can manually close/reopen job cards stuck near completion."""
+        return self._has_permission('action.finalize_job_card')
+
+    def can_set_pass_override(self):
+        """Can override a job's planned print pass count."""
+        return self._has_permission('action.set_pass_override')
+
+    def can_view_released_jobs(self):
+        """Can view released jobs and request plate replacement."""
+        return self._has_permission('action.view_released_jobs')
+
 
 def notification_email(user):
     """The address automated notifications (task assignments/reminders, etc.)

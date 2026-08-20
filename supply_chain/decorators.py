@@ -14,6 +14,10 @@ def supply_chain_required(view_func):
             raise PermissionDenied
         return view_func(request, *args, **kwargs)
 
+    # Gates on the soft-coded nav.supply_chain Permission — configurable from
+    # Settings -> Roles & Access Control, so audit_view_permissions shouldn't
+    # flag views using this decorator as unguarded.
+    _wrapped._rbac_configurable = True
     return _wrapped
 
 
@@ -25,4 +29,5 @@ def item_request_access_required(view_func):
             raise PermissionDenied
         return view_func(request, *args, **kwargs)
 
+    _wrapped._rbac_configurable = True
     return _wrapped

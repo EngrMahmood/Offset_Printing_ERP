@@ -29,15 +29,10 @@ PAGE_SIZE = 50
 
 
 def user_can_request_plate_remake(user):
+    if getattr(user, 'is_superuser', False):
+        return True
     profile = getattr(user, 'profile', None)
-    if not profile:
-        return bool(getattr(user, 'is_superuser', False))
-    return (
-        profile.can_edit_production()
-        or profile.can_edit_jobcard()
-        or profile.normalized_role in {'graphics_designer', 'admin', 'manager'}
-        or getattr(user, 'is_superuser', False)
-    )
+    return bool(profile and profile.can_view_released_jobs())
 
 
 def _replacement_q():

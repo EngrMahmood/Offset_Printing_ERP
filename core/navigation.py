@@ -115,10 +115,15 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
             return 0
 
     can_review_overrides = is_authenticated and (is_staff or role in {'admin', 'manager', 'production_manager'})
-    # Who may set a per-job pass-count override (supervisory, includes production).
-    can_set_pass_override = is_authenticated and (
-        is_staff or role in {'admin', 'manager', 'production_manager', 'production'}
-    )
+    # Who may set a per-job pass-count override — soft-coded (Settings -> Roles &
+    # Access Control), mirrored by UserProfile.can_set_pass_override() at the view.
+    can_set_pass_override = False
+    if is_authenticated:
+        if is_staff:
+            can_set_pass_override = True
+        else:
+            from core.permissions import user_has_permission
+            can_set_pass_override = user_has_permission(request.user, 'action.set_pass_override')
 
     def _pending_override_reviews() -> int:
         if not can_review_overrides:

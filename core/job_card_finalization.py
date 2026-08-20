@@ -13,7 +13,7 @@ from django.views.decorators.http import require_POST
 from .jobcard_service import close_job_card_manually, job_card_completion_blockers, reopen_job_card_manually
 from .models import JobCard
 from .services import compute_job_card_wastage_metrics
-from .views import require_role
+from .views import permission_required
 
 DEFAULT_DISPATCH_FLOOR_PERCENT = 80
 STUCK_LIST_CAP = 500
@@ -63,7 +63,7 @@ def _matches_filters(row, search, min_wastage_pct, min_dispatch_pct, max_dispatc
 
 
 @login_required
-@require_role('admin', 'manager')
+@permission_required('can_finalize_job_card')
 def job_card_finalization_queue(request):
     search = (request.GET.get('q') or '').strip()
     min_wastage_pct = _to_float(request.GET.get('min_wastage_pct'))
@@ -126,7 +126,7 @@ def job_card_finalization_queue(request):
 
 
 @login_required
-@require_role('admin', 'manager')
+@permission_required('can_finalize_job_card')
 @require_POST
 def job_card_finalization_close(request):
     reason = (request.POST.get('reason') or '').strip()
@@ -160,7 +160,7 @@ def job_card_finalization_close(request):
 
 
 @login_required
-@require_role('admin', 'manager')
+@permission_required('can_finalize_job_card')
 @require_POST
 def job_card_finalization_reopen(request):
     reason = (request.POST.get('reason') or '').strip()

@@ -96,7 +96,17 @@ except ImportError:
 
 
 def require_role(*allowed_roles):
-    """Decorator to check if user has required role"""
+    """Decorator to check if user has required role.
+
+    Real access control, but the allowed-role list is hardcoded in Python —
+    unlike @permission_required, it can't be edited from Settings -> Roles &
+    Access Control. Appropriate for endpoints that manage the access-control
+    system itself (creating/deleting roles, etc.), where letting a role edit
+    its own access would be a privilege-escalation hole. See
+    `audit_view_permissions` (core/management/commands), which marks views
+    using this decorator as "hardcoded, not UI-configurable" rather than
+    flagging them as fully unguarded.
+    """
     def decorator(view_func):
         @wraps(view_func)
         def wrapped_view(request, *args, **kwargs):
@@ -112,12 +122,19 @@ def require_role(*allowed_roles):
                 add_unique_message(request, messages.ERROR, '⚠️ Your user profile is not configured. Contact admin.')
                 return redirect('login')
             return view_func(request, *args, **kwargs)
+        wrapped_view._rbac_hardcoded = True
         return wrapped_view
     return decorator
 
 
 def permission_required(permission_method):
-    """Decorator to check specific permission method on UserProfile"""
+    """Decorator to check specific permission method on UserProfile.
+
+    Sets a marker attribute (`functools.wraps` propagates it through any
+    further decorators via `__dict__`) so `manage.py audit_view_permissions`
+    (core/management/commands) can tell which URL-routed views are actually
+    configurable from Settings -> Roles & Access Control.
+    """
     def decorator(view_func):
         @wraps(view_func)
         def wrapped_view(request, *args, **kwargs):
@@ -132,6 +149,7 @@ def permission_required(permission_method):
                 add_unique_message(request, messages.ERROR, '⚠️ Permission check failed. Contact admin.')
                 return redirect('login')
             return view_func(request, *args, **kwargs)
+        wrapped_view._rbac_configurable = True
         return wrapped_view
     return decorator
 

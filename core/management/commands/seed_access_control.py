@@ -170,6 +170,26 @@ ACTION_PERMISSIONS = {
         'Manage Tasks & Teams', 'Can manage teams and edit/administer other users\' tasks', 'Tasks',
         {'admin', 'manager'},
     ),
+    'view_production_wip': (
+        'View Production WIP Board', 'Can view the production work-in-progress board', 'Production Actions',
+        {'admin', 'manager', 'planner', 'production_manager', 'production', 'operator', 'viewer'},
+    ),
+    'manage_production_wip_statuses': (
+        'Manage Production WIP Statuses', 'Can add new WIP status columns to the production board', 'Production Actions',
+        {'admin'},
+    ),
+    'finalize_job_card': (
+        'Finalize Job Cards', 'Can manually close/reopen job cards stuck near completion', 'Production Actions',
+        {'admin', 'manager'},
+    ),
+    'set_pass_override': (
+        'Set Print Pass Count Override', 'Can override a job\'s planned print pass count', 'Production Actions',
+        {'admin', 'manager', 'production_manager', 'production'},
+    ),
+    'view_released_jobs': (
+        'View Released Jobs (Plate Status)', 'Can view released jobs and request plate replacement', 'Production Actions',
+        {'admin', 'manager', 'planner', 'production_manager', 'production', 'operator', 'graphics_designer'},
+    ),
 }
 
 

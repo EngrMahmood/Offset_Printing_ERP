@@ -785,14 +785,13 @@ def production_records(request):
 def user_can_set_pass_override(user):
     """Supervisory roles allowed to set a per-job pass-count override.
 
-    Broader than the edit-lock override reviewers — includes the production
-    supervisor role — but mirrors the `nav.can_set_pass_override` gate.
+    Mirrors the `nav.can_set_pass_override` gate (core.navigation), both of
+    which defer to the same soft-coded action.set_pass_override permission.
     """
     if getattr(user, 'is_staff', False):
         return True
     profile = getattr(user, 'profile', None)
-    role = (getattr(profile, 'normalized_role', '') or '')
-    return role in {'admin', 'manager', 'production_manager', 'production'}
+    return bool(profile and profile.can_set_pass_override())
 
 
 @login_required
@@ -953,11 +952,8 @@ def production_data_anomalies(request):
 
 
 @login_required
+@permission_required('can_view_production_wip')
 def production_wip(request):
-    profile = getattr(request.user, 'profile', None)
-    if not profile or profile.normalized_role not in ('admin', 'manager', 'planner', 'production_manager', 'production', 'operator', 'viewer'):
-        messages.error(request, '❌ You do not have permission to access this feature.')
-        return redirect('planning:home')
 
     default_status_names = ['Printing', 'Printing Completed', 'Sorting / Packing', 'Ready for Dispatch', 'Partial Dispatch', 'Completed']
     for status_name in default_status_names:
@@ -969,7 +965,7 @@ def production_wip(request):
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
         if action == 'add_status':
-            if request.user.profile.role != 'admin':
+            if not request.user.profile.can_manage_production_wip_statuses():
                 add_unique_message(request, messages.ERROR, '❌ Only admin can add WIP statuses.')
                 return redirect('production_wip')
             new_status_name = (request.POST.get('status_name') or '').strip()
