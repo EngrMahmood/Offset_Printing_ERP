@@ -452,7 +452,7 @@
            class="erp-subnav-link {% if url == 'my_override_requests' %}is-active{% endif %}">
             My Requests{% if nav.my_override_actionable_count %}<span class="erp-nav-badge" title="{{ nav.my_override_actionable_count }} approved and ready to edit">{{ nav.my_override_actionable_count }}</span>{% endif %}
         </a>
-        {% if request.user.is_superuser or request.user.profile.role == 'admin' or request.user.profile.role == 'manager' %}
+        {% if request.user.is_superuser or request.user.profile.can_finalize_job_card %}
         <a href="{% url 'job_card_finalization_queue' %}"
            class="erp-subnav-link {% if url == 'job_card_finalization_queue' %}is-active{% endif %}">
             Job Card Finalization

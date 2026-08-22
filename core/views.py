@@ -2495,7 +2495,7 @@ def notification_settings_home(request):
         audits.append(audit)
 
     departments = Department.objects.all().order_by('name')
-    users = User.objects.filter(is_active=True).order_by('username')
+    users = User.objects.filter(is_active=True).select_related('profile').order_by('username')
     roles = UserProfile.ROLE_CHOICES
     all_users = User.objects.select_related('profile', 'profile__department').order_by('-is_active', 'username') if request.user.is_superuser else User.objects.none()
 
