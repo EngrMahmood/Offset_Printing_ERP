@@ -51,7 +51,14 @@
         <section class="erp-section-shell">
             <h3>Awaiting Triage</h3>
             <p>This complaint hasn't been classified yet. Review it and assign fault type, priority, and how it will be handled.</p>
-            <a href="{% url 'maintenance:record_triage' record.pk %}" class="erp-btn erp-btn-primary">Triage This Complaint</a>
+            <div style="display:flex; gap:16px; align-items:center;">
+                <a href="{% url 'maintenance:record_triage' record.pk %}" class="erp-btn erp-btn-primary">Triage This Complaint</a>
+                <form method="post" action="{% url 'maintenance:record_transition' record.pk %}" style="display:inline;" onsubmit="return confirm('Cancel this complaint? Use this only for duplicates or invalid reports.');">
+                    {% csrf_token %}
+                    <input type="hidden" name="to_status" value="CANCELLED">
+                    <button type="submit" class="erp-link-btn" style="background:none; border:none; color:var(--erp-text-muted, #6b7280); text-decoration:underline; cursor:pointer; font-size:0.9em;">Not a valid complaint? Cancel it</button>
+                </form>
+            </div>
         </section>
         {% else %}
         <section class="erp-section-shell">
@@ -59,9 +66,7 @@
             <p>Current: <strong>{{ record.get_status_display }}</strong> — a maintenance engineer will review this shortly.</p>
         </section>
         {% endif %}
-    {% endif %}
-
-    {% if can_work %}
+    {% elif can_work %}
     <section class="erp-section-shell">
         <h3>Status</h3>
         <p>Current: <strong>{{ record.get_status_display }}</strong></p>
@@ -90,7 +95,7 @@
         </form>
         {% endif %}
     </section>
-    {% elif not needs_triage %}
+    {% else %}
     <section class="erp-section-shell">
         <h3>Status</h3>
         <p>Current: <strong>{{ record.get_status_display }}</strong></p>
