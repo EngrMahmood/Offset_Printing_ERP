@@ -82,6 +82,10 @@
             <label for="min_wastage_pct">Min Wastage %</label>
             <input type="number" id="min_wastage_pct" name="min_wastage_pct" value="{{ filter_min_wastage_pct }}" step="0.1" min="0">
         </div>
+        <div class="filter-field">
+            <label for="max_wastage_pct">Max Wastage %</label>
+            <input type="number" id="max_wastage_pct" name="max_wastage_pct" value="{{ filter_max_wastage_pct }}" step="0.1" min="0">
+        </div>
         <button type="submit" class="btn">Apply</button>
         <a href="{% url 'job_card_finalization_queue' %}" class="btn btn-amber">Reset</a>
     </form>

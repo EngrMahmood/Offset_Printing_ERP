@@ -888,6 +888,8 @@ def dispatch_records(request):
     balance_status = (request.GET.get('balance_status') or '').strip().lower()
     date_from_raw = (request.GET.get('date_from') or '').strip()
     date_to_raw = (request.GET.get('date_to') or '').strip()
+    logged_from_raw = (request.GET.get('logged_from') or '').strip()
+    logged_to_raw = (request.GET.get('logged_to') or '').strip()
     sort = (request.GET.get('sort') or 'dispatch_date').strip()
     direction = (request.GET.get('dir') or 'desc').strip().lower()
     per_page = request.GET.get('per_page') or '50'
@@ -944,6 +946,27 @@ def dispatch_records(request):
 
     if date_from and date_to and date_from > date_to:
         add_unique_message(request, messages.ERROR, 'From date cannot be later than To date.')
+        records = records.none()
+
+    logged_from = None
+    logged_to = None
+    if logged_from_raw:
+        try:
+            logged_from = datetime.strptime(logged_from_raw, '%Y-%m-%d').date()
+            records = records.filter(created_at__date__gte=logged_from)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid Logged From date format. Use YYYY-MM-DD.')
+            logged_from_raw = ''
+    if logged_to_raw:
+        try:
+            logged_to = datetime.strptime(logged_to_raw, '%Y-%m-%d').date()
+            records = records.filter(created_at__date__lte=logged_to)
+        except ValueError:
+            add_unique_message(request, messages.ERROR, 'Invalid Logged To date format. Use YYYY-MM-DD.')
+            logged_to_raw = ''
+
+    if logged_from and logged_to and logged_from > logged_to:
+        add_unique_message(request, messages.ERROR, 'Logged From date cannot be later than Logged To date.')
         records = records.none()
 
     sortable_fields = {
@@ -1041,7 +1064,10 @@ def dispatch_records(request):
         'page_qty_total': page_qty_total,
         'page_complete_count': page_complete_count,
         'page_open_count': page_open_count,
-        'has_active_filters': bool(query or dc_filter or balance_status or date_from_raw or date_to_raw),
+        'has_active_filters': bool(
+            query or dc_filter or balance_status or date_from_raw or date_to_raw
+            or logged_from_raw or logged_to_raw
+        ),
         'q': query,
         'dc_no': dc_filter,
         'balance_status': balance_status,
@@ -1050,6 +1076,8 @@ def dispatch_records(request):
         'month_start': timezone.now().date().replace(day=1).isoformat(),
         'date_from': date_from_raw,
         'date_to': date_to_raw,
+        'logged_from': logged_from_raw,
+        'logged_to': logged_to_raw,
         'sort': sort,
         'dir': direction,
         'per_page': per_page,

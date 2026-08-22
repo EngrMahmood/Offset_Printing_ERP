@@ -375,6 +375,22 @@
 
                         <div class="erp-filter-group">
 
+                            <label for="logged_from" class="erp-field-label">Logged From</label>
+
+                            <input id="logged_from" type="date" name="logged_from" value="{{ logged_from }}" class="erp-input">
+
+                        </div>
+
+                        <div class="erp-filter-group">
+
+                            <label for="logged_to" class="erp-field-label">Logged To</label>
+
+                            <input id="logged_to" type="date" name="logged_to" value="{{ logged_to }}" class="erp-input">
+
+                        </div>
+
+                        <div class="erp-filter-group">
+
                             <span class="erp-field-label">Quick Dates</span>
 
                             <div class="dispatch-date-presets">
@@ -433,6 +449,10 @@
 
                         {% if date_to %}<span class="dispatch-filter-chip"><i class="fas fa-calendar"></i> To {{ date_to }}</span>{% endif %}
 
+                        {% if logged_from %}<span class="dispatch-filter-chip"><i class="fas fa-clock"></i> Logged from {{ logged_from }}</span>{% endif %}
+
+                        {% if logged_to %}<span class="dispatch-filter-chip"><i class="fas fa-clock"></i> Logged to {{ logged_to }}</span>{% endif %}
+
                     </div>
 
                     {% endif %}
@@ -479,21 +499,21 @@
 
                                     {% if user.is_superuser %}<th style="width:36px;"><input type="checkbox" id="select_all_dispatch" aria-label="Select all"></th>{% endif %}
 
-                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Date</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Date</a></th>
 
-                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Job Card</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Job Card</a></th>
 
-                                    <th class="col-sku"><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=sku&dir={% if sort == 'sku' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">SKU</a></th>
+                                    <th class="col-sku"><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=sku&dir={% if sort == 'sku' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">SKU</a></th>
 
                                     <th class="col-customer">Customer</th>
 
-                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=dc_no&dir={% if sort == 'dc_no' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">DC No</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=dc_no&dir={% if sort == 'dc_no' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">DC No</a></th>
 
-                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=qty&dir={% if sort == 'qty' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Dispatch Qty</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=qty&dir={% if sort == 'qty' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Dispatch Qty</a></th>
 
                                     <th>JC Balance</th>
 
-                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Added By</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Added By</a></th>
 
                                     <th class="erp-col-actions">Actions</th>
 
@@ -541,7 +561,10 @@
 
                                     </td>
 
-                                    <td>{{ row.created_by.username|default:'—' }}</td>
+                                    <td>
+                                        {{ row.created_by.username|default:'—' }}
+                                        {% if row.created_at %}<br><small class="erp-text-soft">{{ row.created_at|date:"d M Y, H:i" }}</small>{% endif %}
+                                    </td>
 
                                     <td class="records-actions-cell erp-col-actions">
 
@@ -656,13 +679,13 @@
 
                         {% if page_obj.has_previous %}
 
-                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
+                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
 
                         {% endif %}
 
                         {% if page_obj.has_next %}
 
-                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
+                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&dc_no={{ dc_no|urlencode }}&balance_status={{ balance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
 
                         {% endif %}
 

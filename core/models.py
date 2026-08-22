@@ -1388,6 +1388,8 @@ class Dispatch(models.Model):
         editable=False,
     )
 
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+
     is_active = models.BooleanField(default=True, db_index=True)
 
 

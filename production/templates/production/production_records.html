@@ -184,6 +184,16 @@
                                 <input id="date_to" type="date" name="date_to" value="{{ date_to }}" class="erp-input">
                             </div>
                         </div>
+                        <div class="production-filter-date-row">
+                            <div class="erp-filter-group">
+                                <label for="logged_from" class="erp-field-label">Logged From</label>
+                                <input id="logged_from" type="date" name="logged_from" value="{{ logged_from }}" class="erp-input">
+                            </div>
+                            <div class="erp-filter-group">
+                                <label for="logged_to" class="erp-field-label">Logged To</label>
+                                <input id="logged_to" type="date" name="logged_to" value="{{ logged_to }}" class="erp-input">
+                            </div>
+                        </div>
                         <div class="erp-filter-group">
                             <span class="erp-field-label">Quick Dates</span>
                             <div class="production-date-presets">
@@ -210,6 +220,8 @@
                         {% if performance_status %}<span class="production-filter-chip"><i class="fas fa-chart-line"></i> {{ performance_status|title }}</span>{% endif %}
                         {% if date_from %}<span class="production-filter-chip"><i class="fas fa-calendar"></i> From {{ date_from }}</span>{% endif %}
                         {% if date_to %}<span class="production-filter-chip"><i class="fas fa-calendar"></i> To {{ date_to }}</span>{% endif %}
+                        {% if logged_from %}<span class="production-filter-chip"><i class="fas fa-clock"></i> Logged from {{ logged_from }}</span>{% endif %}
+                        {% if logged_to %}<span class="production-filter-chip"><i class="fas fa-clock"></i> Logged to {{ logged_to }}</span>{% endif %}
                     </div>
                     {% endif %}
 
@@ -247,24 +259,24 @@
                             <thead>
                                 <tr>
                                     {% if user.is_superuser %}<th><input type="checkbox" id="select_all_production"></th>{% endif %}
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Date</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=date&dir={% if sort == 'date' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Date</a></th>
                                     <th>Type</th>
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Job Card</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=job_card&dir={% if sort == 'job_card' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Job Card</a></th>
                                     <th>SKU</th>
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=machine&dir={% if sort == 'machine' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Machine</a></th>
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=operator&dir={% if sort == 'operator' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Operator</a></th>
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=shift&dir={% if sort == 'shift' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Shift</a></th>
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=impressions&dir={% if sort == 'impressions' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Impressions</a></th>
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=output&dir={% if sort == 'output' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Output</a></th>
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=waste&dir={% if sort == 'waste' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Waste</a></th>
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=planned&dir={% if sort == 'planned' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Planned</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=machine&dir={% if sort == 'machine' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Machine</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=operator&dir={% if sort == 'operator' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Operator</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=shift&dir={% if sort == 'shift' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Shift</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=impressions&dir={% if sort == 'impressions' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Impressions</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=output&dir={% if sort == 'output' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Output</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=waste&dir={% if sort == 'waste' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Waste</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=planned&dir={% if sort == 'planned' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Planned</a></th>
                                     <th>Actual</th>
                                     <th>Downtime</th>
                                     <th>Variance</th>
                                     <th>Tolerance</th>
                                     <th>Op. Eff.</th>
                                     <th>OEE</th>
-                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Added By</a></th>
+                                    <th><a href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort=added_by&dir={% if sort == 'added_by' and dir == 'asc' %}desc{% else %}asc{% endif %}" class="erp-table-link">Added By</a></th>
                                     <th>Overrun</th>
                                     <th>Actions</th>
                                 </tr>
@@ -344,7 +356,10 @@
                                         <span class="production-metric-bad">{{ row.oee|floatformat:2 }}</span>
                                         {% endif %}
                                     </td>
-                                    <td>{{ row.created_by.username|default:'—' }}</td>
+                                    <td>
+                                        {{ row.created_by.username|default:'—' }}
+                                        {% if row.created_at %}<br><small class="erp-text-soft">{{ row.created_at|date:"d M Y, H:i" }}</small>{% endif %}
+                                    </td>
                                     {% if row.overrun_minutes > 0 %}
                                     <td class="production-metric-bad">+{{ row.overrun_minutes|floatformat:0 }}m</td>
                                     {% else %}
@@ -386,10 +401,10 @@
                     <div class="erp-pagination">
                         <span class="erp-table-meta-text">Page {{ page_obj.number }} of {{ page_obj.paginator.num_pages }}</span>
                         {% if page_obj.has_previous %}
-                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
+                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.previous_page_number }}">Prev</a>
                         {% endif %}
                         {% if page_obj.has_next %}
-                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
+                        <a class="erp-btn erp-btn-secondary" href="?q={{ q|urlencode }}&shift={{ shift }}&machine={{ machine }}&performance_status={{ performance_status }}&date_from={{ date_from }}&date_to={{ date_to }}&logged_from={{ logged_from }}&logged_to={{ logged_to }}&per_page={{ per_page }}&sort={{ sort }}&dir={{ dir }}&page={{ page_obj.next_page_number }}">Next</a>
                         {% endif %}
                     </div>
                     {% endif %}

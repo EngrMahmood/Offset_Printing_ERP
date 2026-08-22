@@ -44,7 +44,7 @@ def _to_float(raw_value, default=None):
         return default
 
 
-def _matches_filters(row, search, min_wastage_pct, min_dispatch_pct, max_dispatch_pct):
+def _matches_filters(row, search, min_wastage_pct, max_wastage_pct, min_dispatch_pct, max_dispatch_pct):
     if search:
         haystack = ' '.join([
             row['job_card'].job_card_no or '',
@@ -54,6 +54,8 @@ def _matches_filters(row, search, min_wastage_pct, min_dispatch_pct, max_dispatc
         if search.upper() not in haystack:
             return False
     if min_wastage_pct is not None and row['wastage']['total_wastage_pct'] < min_wastage_pct:
+        return False
+    if max_wastage_pct is not None and row['wastage']['total_wastage_pct'] > max_wastage_pct:
         return False
     if min_dispatch_pct is not None and row['dispatch_completion_percent'] < min_dispatch_pct:
         return False
@@ -67,6 +69,7 @@ def _matches_filters(row, search, min_wastage_pct, min_dispatch_pct, max_dispatc
 def job_card_finalization_queue(request):
     search = (request.GET.get('q') or '').strip()
     min_wastage_pct = _to_float(request.GET.get('min_wastage_pct'))
+    max_wastage_pct = _to_float(request.GET.get('max_wastage_pct'))
     min_dispatch_pct = _to_float(request.GET.get('min_dispatch_pct'), default=DEFAULT_DISPATCH_FLOOR_PERCENT)
     max_dispatch_pct = _to_float(request.GET.get('max_dispatch_pct'))
 
@@ -108,7 +111,7 @@ def job_card_finalization_queue(request):
     completed_rows = [_row(jc) for jc in completed_not_closed]
     closed_rows = [_row(jc) for jc in closed_jobs]
 
-    filter_args = (search, min_wastage_pct, min_dispatch_pct, max_dispatch_pct)
+    filter_args = (search, min_wastage_pct, max_wastage_pct, min_dispatch_pct, max_dispatch_pct)
     stuck_rows = [row for row in stuck_rows if _matches_filters(row, *filter_args)]
     completed_rows = [row for row in completed_rows if _matches_filters(row, *filter_args)]
 
@@ -119,6 +122,7 @@ def job_card_finalization_queue(request):
         'stuck_floor_percent': stuck_floor,
         'filter_q': search,
         'filter_min_wastage_pct': request.GET.get('min_wastage_pct', ''),
+        'filter_max_wastage_pct': request.GET.get('max_wastage_pct', ''),
         'filter_min_dispatch_pct': request.GET.get('min_dispatch_pct') or stuck_floor,
         'filter_max_dispatch_pct': request.GET.get('max_dispatch_pct', ''),
     }
