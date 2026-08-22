@@ -1,4 +1,5 @@
 {% extends 'theme/base.html' %}
+{% load maintenance_extras %}
 
 {% block title %}{{ record.record_no }}{% endblock %}
 {% block header_title %}{{ record.record_no }} — {{ record.machine }}{% endblock %}
@@ -11,6 +12,13 @@
 <div class="erp-page-stack">
     <section class="erp-section-shell">
         <h3>Fault Details</h3>
+        <p>
+            <span class="erp-badge {{ record.priority|priority_badge }}">{{ record.get_priority_display }}</span>
+            <span class="erp-badge {{ record.status|status_badge }}">{{ record.get_status_display }}</span>
+            {% if record.is_triage_overdue %}<span class="erp-badge erp-badge-rejected">Triage overdue</span>{% endif %}
+            {% if record.is_stale_in_progress %}<span class="erp-badge erp-badge-rejected">Stalled</span>{% endif %}
+            <span style="color:var(--erp-text-muted, #6b7280); font-size:0.9em;">Reported {{ record.created_at|timesince }} ago</span>
+        </p>
         {% if record.fault_types.all %}<p><strong>Fault types:</strong> {% for ft in record.fault_types.all %}{{ ft.name }}{% if not forloop.last %}, {% endif %}{% endfor %}</p>{% endif %}
         <p><strong>Description:</strong> {{ record.fault_description }}</p>
         {% if record.proposed_solution %}<p><strong>Proposed solution:</strong> {{ record.proposed_solution }}</p>{% endif %}

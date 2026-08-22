@@ -9,9 +9,24 @@
 
 {% block content %}
 <div class="erp-page-stack">
+    {% if duplicate_records %}
+    <section class="erp-section-shell" style="max-width:520px;">
+        <div class="erp-alert erp-alert-warning">
+            <strong>This machine already has an open complaint:</strong>
+            <ul style="margin:8px 0 0 18px;">
+                {% for dup in duplicate_records %}
+                <li><a href="{% url 'maintenance:record_detail' dup.pk %}">{{ dup.record_no }}</a> — {{ dup.get_status_display }}</li>
+                {% endfor %}
+            </ul>
+            <p style="margin-top:8px;">If this is the same issue, consider adding a comment there instead. Still want to report a separate complaint?</p>
+        </div>
+    </section>
+    {% endif %}
+
     <section class="erp-section-shell">
-        <form method="post" class="erp-form-grid" style="grid-template-columns:1fr; gap:20px; max-width:520px;">
+        <form method="post" enctype="multipart/form-data" class="erp-form-grid" style="grid-template-columns:1fr; gap:20px; max-width:520px;">
             {% csrf_token %}
+            {% if duplicate_records %}<input type="hidden" name="confirm_duplicate" value="1">{% endif %}
             <div class="erp-input-group">
                 <label class="erp-input-label" for="{{ form.machine.id_for_label }}" style="font-size:1.05rem;">{{ form.machine.label }}</label>
                 {{ form.machine }}
@@ -27,8 +42,13 @@
                 {{ form.fault_description }}
                 {% if form.fault_description.errors %}<div class="erp-alert erp-alert-danger">{{ form.fault_description.errors|striptags }}</div>{% endif %}
             </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label" for="{{ form.photo.id_for_label }}" style="font-size:1.05rem;">{{ form.photo.label }}</label>
+                {{ form.photo }}
+                {% if form.photo.errors %}<div class="erp-alert erp-alert-danger">{{ form.photo.errors|striptags }}</div>{% endif %}
+            </div>
             <div class="erp-actions">
-                <button type="submit" class="erp-btn erp-btn-primary" style="font-size:1.1rem; padding:14px 28px;">Report Complaint</button>
+                <button type="submit" class="erp-btn erp-btn-primary" style="font-size:1.1rem; padding:14px 28px;">{% if duplicate_records %}Submit Anyway{% else %}Report Complaint{% endif %}</button>
             </div>
         </form>
     </section>

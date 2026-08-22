@@ -1,4 +1,5 @@
 {% extends 'theme/base.html' %}
+{% load maintenance_extras %}
 
 {% block title %}Maintenance Records{% endblock %}
 {% block header_title %}Maintenance Records{% endblock %}
@@ -21,8 +22,12 @@
     </section>
 
     <section class="erp-section-shell">
-        <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(4,1fr); gap:12px; align-items:end;">
+        <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(5,1fr); gap:12px; align-items:end;">
             {% if view %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">Search</label>
+                <input type="text" name="q" class="erp-input" value="{{ q }}" placeholder="Record no., machine, description...">
+            </div>
             <div class="erp-input-group">
                 <label class="erp-input-label">Status</label>
                 <select name="status" class="erp-select">
@@ -89,8 +94,8 @@
                             <td>{{ record.machine }}</td>
                             <td>{{ record.reported_date }}</td>
                             <td>{{ record.get_maintenance_type_display }}</td>
-                            <td>{{ record.get_priority_display }}</td>
-                            <td>{{ record.get_status_display }}</td>
+                            <td><span class="erp-badge {{ record.priority|priority_badge }}">{{ record.get_priority_display }}</span></td>
+                            <td><span class="erp-badge {{ record.status|status_badge }}">{{ record.get_status_display }}</span></td>
                         </tr>
                         {% empty %}
                         <tr><td colspan="7">No maintenance records found.</td></tr>

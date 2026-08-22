@@ -1,4 +1,5 @@
 {% extends 'theme/base.html' %}
+{% load maintenance_extras %}
 
 {% block title %}Maintenance Dashboard{% endblock %}
 {% block header_title %}Maintenance Dashboard{% endblock %}
@@ -30,6 +31,7 @@
                         <th>Type</th>
                         <th>Priority</th>
                         <th>Status</th>
+                        <th>Age</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -38,11 +40,16 @@
                         <td><a href="{% url 'maintenance:record_detail' record.pk %}">{{ record.record_no }}</a></td>
                         <td>{{ record.machine }}</td>
                         <td>{{ record.get_maintenance_type_display }}</td>
-                        <td>{{ record.get_priority_display }}</td>
-                        <td>{{ record.get_status_display }}</td>
+                        <td><span class="erp-badge {{ record.priority|priority_badge }}">{{ record.get_priority_display }}</span></td>
+                        <td><span class="erp-badge {{ record.status|status_badge }}">{{ record.get_status_display }}</span></td>
+                        <td>
+                            {{ record.created_at|timesince }} ago
+                            {% if record.is_triage_overdue %}<span class="erp-badge erp-badge-rejected">Triage overdue</span>{% endif %}
+                            {% if record.is_stale_in_progress %}<span class="erp-badge erp-badge-rejected">Stalled</span>{% endif %}
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="5">No open maintenance records.</td></tr>
+                    <tr><td colspan="6">No open maintenance records.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

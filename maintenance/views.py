@@ -1,6 +1,6 @@
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.db.models import Avg, Sum
+from django.db.models import Avg, Case, IntegerField, Q, Sum, When
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
@@ -13,12 +13,21 @@ from .forms import (
     MaintenanceSparePartForm, PreventiveMaintenancePlanForm, TriageForm,
 )
 from .models import (
-    MachineDowntime, MaintenanceRecord, PreventiveMaintenancePlan,
+    MachineDowntime, MaintenanceAttachment, MaintenanceRecord, PreventiveMaintenancePlan,
 )
 from .services import (
     generate_record_no, log_activity, notify_complaint_raised, notify_status_update, notify_triaged,
     open_breakdown_downtime_if_needed, open_downtime, raise_service_demand, raise_spare_part_demand,
     soft_delete_record,
+)
+
+PRIORITY_RANK = Case(
+    When(priority='CRITICAL', then=0),
+    When(priority='MAJOR', then=1),
+    When(priority='MEDIUM', then=2),
+    When(priority='LOW', then=3),
+    default=4,
+    output_field=IntegerField(),
 )
 
 STAFF_ROLES = ('admin', 'manager', 'production_manager', 'maintenance_engineer')
@@ -48,6 +57,8 @@ def dashboard(request):
     open_records = (
         MaintenanceRecord.objects.filter(is_active=True, status__in=MaintenanceRecord.OPEN_STATUSES)
         .select_related('machine')
+        .annotate(priority_rank=PRIORITY_RANK)
+        .order_by('priority_rank', 'created_at')
     )
     machines_down = MachineDowntime.objects.filter(end_at__isnull=True).select_related('machine')
     context = {
@@ -73,6 +84,7 @@ def record_list(request):
     maintenance_type = request.GET.get('maintenance_type')
     priority = request.GET.get('priority')
     view = request.GET.get('view')
+    q = request.GET.get('q', '').strip()
 
     if machine:
         records = records.filter(machine_id=machine)
@@ -86,6 +98,10 @@ def record_list(request):
         records = records.filter(reported_by=request.user)
     elif view == 'assigned' and is_staff:
         records = records.filter(assigned_to=request.user)
+    if q:
+        records = records.filter(
+            Q(record_no__icontains=q) | Q(machine__name__icontains=q) | Q(fault_description__icontains=q)
+        )
 
     if request.GET.get('export') == 'xlsx':
         return _export_records_xlsx(records)
@@ -98,6 +114,7 @@ def record_list(request):
         'is_superuser': request.user.is_superuser,
         'is_staff': is_staff,
         'view': view or '',
+        'q': q,
     }
     return render(request, 'maintenance/record_list.html', context)
 
@@ -130,26 +147,37 @@ def _export_records_xlsx(records):
 def complaint_create(request):
     """The shop-floor screen: pick a machine, describe the problem. Nothing
     technical is asked — the engineer classifies it at triage."""
+    duplicate_records = None
     if request.method == 'POST':
-        form = ComplaintForm(request.POST)
+        form = ComplaintForm(request.POST, request.FILES)
         if form.is_valid():
-            stopped = form.cleaned_data['machine_stopped'] == 'no'
-            record = form.save(commit=False)
-            record.reported_by = request.user
-            record.reported_date = timezone.now().date()
-            record.status = 'REPORTED'
-            record.priority = 'CRITICAL' if stopped else 'MEDIUM'
-            record.save()
-            generate_record_no(record)
-            log_activity(record, request.user, 'Complaint raised', to_status=record.status)
-            if stopped:
-                open_downtime(record, reason='BREAKDOWN')
-            notify_complaint_raised(record, request.user)
-            messages.success(request, f'Complaint {record.record_no} reported. Maintenance has been notified.')
-            return redirect('maintenance:record_detail', pk=record.pk)
+            machine = form.cleaned_data['machine']
+            duplicate_records = MaintenanceRecord.objects.filter(
+                machine=machine, is_active=True, status__in=MaintenanceRecord.OPEN_STATUSES,
+            ).select_related('machine')
+            if duplicate_records.exists() and request.POST.get('confirm_duplicate') != '1':
+                pass  # fall through to re-render with the warning banner below
+            else:
+                stopped = form.cleaned_data['machine_stopped'] == 'no'
+                record = form.save(commit=False)
+                record.reported_by = request.user
+                record.reported_date = timezone.now().date()
+                record.status = 'REPORTED'
+                record.priority = 'CRITICAL' if stopped else 'MEDIUM'
+                record.save()
+                generate_record_no(record)
+                log_activity(record, request.user, 'Complaint raised', to_status=record.status)
+                if stopped:
+                    open_downtime(record, reason='BREAKDOWN')
+                photo = form.cleaned_data.get('photo')
+                if photo:
+                    MaintenanceAttachment.objects.create(record=record, file=photo, uploaded_by=request.user)
+                notify_complaint_raised(record, request.user)
+                messages.success(request, f'Complaint {record.record_no} reported. Maintenance has been notified.')
+                return redirect('maintenance:record_detail', pk=record.pk)
     else:
         form = ComplaintForm()
-    return render(request, 'maintenance/complaint_form.html', {'form': form})
+    return render(request, 'maintenance/complaint_form.html', {'form': form, 'duplicate_records': duplicate_records})
 
 
 @maintenance_staff_required

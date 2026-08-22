@@ -49,6 +49,10 @@ class ComplaintForm(forms.ModelForm):
         widget=forms.RadioSelect(attrs={'class': 'erp-radio-group'}),
         initial='yes',
     )
+    photo = forms.FileField(
+        required=False, label='Photo (optional)',
+        widget=forms.ClearableFileInput(attrs={'class': 'erp-input', 'accept': 'image/*'}),
+    )
 
     class Meta:
         model = MaintenanceRecord

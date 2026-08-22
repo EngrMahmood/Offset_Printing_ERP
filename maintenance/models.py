@@ -1,5 +1,11 @@
+from datetime import timedelta
+
 from django.conf import settings
 from django.db import models
+from django.utils import timezone
+
+TRIAGE_OVERDUE_AFTER = timedelta(hours=4)
+IN_PROGRESS_STALE_AFTER = timedelta(hours=24)
 
 
 class FaultCategory(models.Model):
@@ -114,6 +120,17 @@ class MaintenanceRecord(models.Model):
     @property
     def total_cost(self):
         return self.spares_cost + self.service_cost + self.labour_cost
+
+    @property
+    def is_triage_overdue(self):
+        return self.status == 'REPORTED' and timezone.now() - self.created_at > TRIAGE_OVERDUE_AFTER
+
+    @property
+    def is_stale_in_progress(self):
+        return (
+            self.status == 'IN_PROGRESS' and self.work_start_at is not None
+            and timezone.now() - self.work_start_at > IN_PROGRESS_STALE_AFTER
+        )
 
 
 class MaintenanceSparePart(models.Model):
