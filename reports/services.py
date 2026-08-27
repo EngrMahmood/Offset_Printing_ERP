@@ -1471,6 +1471,12 @@ def build_daily_production_context(request):
             output_sheets=Coalesce(Sum('output_sheets'), Value(0)),
             waste_sheets=Coalesce(Sum('waste_sheets'), Value(0)),
             downtime_minutes=Coalesce(Sum('downtime_minutes'), Value(0.0)),
+            # changeover_count must be annotated before make_ready_time below —
+            # otherwise Q(make_ready_time__gt=0) resolves against the
+            # Coalesce(Sum(...)) annotation instead of the raw column, wrapping
+            # an aggregate inside FILTER() and producing invalid SQL.
+            changeover_count=Count('id', filter=Q(make_ready_time__gt=0)),
+            make_ready_time=Coalesce(Sum('make_ready_time'), Value(0.0)),
             entries=Count('id'),
         )
         .order_by('-date')
@@ -1590,6 +1596,8 @@ def build_daily_production_context(request):
         'output_sheets': _total(printing_rows, 'output_sheets'),
         'printed_pcs': int(round(_total(printing_rows, 'output_pcs'))),
         'printing_waste': _total(printing_rows, 'waste_sheets'),
+        'changeover_count': _total(printing_rows, 'changeover_count'),
+        'make_ready_time': _total(printing_rows, 'make_ready_time'),
         'packing_qty': _total(packing_rows, 'packing_qty'),
         'packing_waste': _total(packing_rows, 'sorting_waste_qty'),
         'dispatch_qty': _total(dispatch_rows, 'dispatch_qty'),
@@ -1677,6 +1685,8 @@ def build_daily_production_context(request):
             impressions=Coalesce(Sum('impressions'), Value(0)),
             output_sheets=Coalesce(Sum('output_sheets'), Value(0)),
             waste_sheets=Coalesce(Sum('waste_sheets'), Value(0)),
+            changeover_count=Count('id', filter=Q(make_ready_time__gt=0)),
+            make_ready_time=Coalesce(Sum('make_ready_time'), Value(0.0)),
         )
         .order_by('-impressions')
     )
@@ -1690,6 +1700,8 @@ def build_daily_production_context(request):
             impressions=Coalesce(Sum('impressions'), Value(0)),
             output_sheets=Coalesce(Sum('output_sheets'), Value(0)),
             waste_sheets=Coalesce(Sum('waste_sheets'), Value(0)),
+            changeover_count=Count('id', filter=Q(make_ready_time__gt=0)),
+            make_ready_time=Coalesce(Sum('make_ready_time'), Value(0.0)),
             entries=Count('id'),
         )
         .order_by('shift')
@@ -1726,6 +1738,7 @@ def build_daily_production_context(request):
             ('date_label', 'Date'), ('entries', 'Entries'), ('impressions', 'Impressions'),
             ('output_sheets', 'Output Sheets'), ('waste_sheets', 'Waste Sheets'),
             ('waste_pct', 'Waste %'), ('downtime_minutes', 'Downtime (min)'),
+            ('changeover_count', 'Changeovers'), ('make_ready_time', 'Changeover Time (min)'),
             ('efficiency_pct', 'Efficiency %'),
         ]),
         'packing': (packing_rows, [

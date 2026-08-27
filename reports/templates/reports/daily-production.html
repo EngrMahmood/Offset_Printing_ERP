@@ -137,6 +137,11 @@
                 <div class="dp-card-sub">{{ data.totals.printed_pcs|intcomma }} pcs &middot; {{ data.totals.printing_waste|intcomma }} waste sheets</div>
             </div>
             <div class="dp-card">
+                <div class="dp-card-label">Changeovers</div>
+                <div class="dp-card-value">{{ data.totals.changeover_count|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.totals.make_ready_time|floatformat:0 }} min total</div>
+            </div>
+            <div class="dp-card">
                 <div class="dp-card-label">Packed Pcs</div>
                 <div class="dp-card-value">{{ data.totals.packing_qty|intcomma }}</div>
                 <div class="dp-card-sub">{{ data.totals.packing_waste|intcomma }} sorting waste</div>
@@ -315,6 +320,8 @@
                             <th class="dp-num">Waste Sheets</th>
                             <th class="dp-num">Waste %</th>
                             <th class="dp-num">Downtime (min)</th>
+                            <th class="dp-num">Changeovers</th>
+                            <th class="dp-num">Changeover Time (min)</th>
                             <th class="dp-num">Efficiency %</th>
                         </tr>
                     </thead>
@@ -328,10 +335,12 @@
                             <td class="dp-num">{{ row.waste_sheets|intcomma }}</td>
                             <td class="dp-num">{{ row.waste_pct }}%</td>
                             <td class="dp-num">{{ row.downtime_minutes|floatformat:0 }}</td>
+                            <td class="dp-num">{{ row.changeover_count }}</td>
+                            <td class="dp-num">{{ row.make_ready_time|floatformat:0 }}</td>
                             <td class="dp-num">{% if row.efficiency_pct is not None %}{{ row.efficiency_pct }}%{% else %}—{% endif %}</td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="8">No printing production recorded in this period.</td></tr>
+                        <tr><td colspan="10">No printing production recorded in this period.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -350,6 +359,8 @@
                             <th class="dp-num">Impressions</th>
                             <th class="dp-num">Output Sheets</th>
                             <th class="dp-num">Waste Sheets</th>
+                            <th class="dp-num">Changeovers</th>
+                            <th class="dp-num">Changeover Time (min)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -360,6 +371,8 @@
                             <td class="dp-num">{{ row.impressions|intcomma }}</td>
                             <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
                             <td class="dp-num">{{ row.waste_sheets|intcomma }}</td>
+                            <td class="dp-num">{{ row.changeover_count }}</td>
+                            <td class="dp-num">{{ row.make_ready_time|floatformat:0 }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -379,6 +392,8 @@
                             <th class="dp-num">Impressions</th>
                             <th class="dp-num">Output Sheets</th>
                             <th class="dp-num">Waste Sheets</th>
+                            <th class="dp-num">Changeovers</th>
+                            <th class="dp-num">Changeover Time (min)</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -388,6 +403,8 @@
                             <td class="dp-num">{{ row.impressions|intcomma }}</td>
                             <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
                             <td class="dp-num">{{ row.waste_sheets|intcomma }}</td>
+                            <td class="dp-num">{{ row.changeover_count }}</td>
+                            <td class="dp-num">{{ row.make_ready_time|floatformat:0 }}</td>
                         </tr>
                         {% endfor %}
                     </tbody>
