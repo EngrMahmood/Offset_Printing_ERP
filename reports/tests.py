@@ -254,6 +254,19 @@ class ReportsAppTests(TestCase):
             jc_number='JC-TEST-PRIORITY-CACHE-1', order_qty=10, status='draft',
             plan_date=datetime.date.today(), plan_month='July 2026', priority=1,
         )
+        # The view is gated on can_plan(), which resolves through the soft-coded
+        # access-control system (core/permissions.py). Role/Permission rows are
+        # created by the seed_access_control command, not by a migration, so a
+        # fresh test DB grants nothing — grant the permission this view needs
+        # explicitly, otherwise the request is redirected before it ever runs.
+        from core.models import Permission, UserPermissionOverride
+        permission, _ = Permission.objects.get_or_create(
+            code='action.plan', defaults={'name': 'Plan'},
+        )
+        UserPermissionOverride.objects.get_or_create(
+            user=self.user, permission=permission, defaults={'granted': True},
+        )
+
         self.client.login(username='report_user', password='pass12345')
         before = get_cache_version()
         response = self.client.post(reverse('planning:job_priority_update', args=[pj.id]), {'priority': 3})
@@ -876,12 +889,18 @@ class ReportsAppTests(TestCase):
         rows = payload_data['wastage_rows']
         self.assertEqual(len(rows), 1)
         
+        # The job card's created_at was backdated by a day above, so the report
+        # resolves plan_date to yesterday and derives plan_month from it. Both
+        # expectations are computed from that same date so they don't go stale
+        # as the calendar moves on.
+        expected_plan_date = datetime.date.today() - datetime.timedelta(days=1)
+
         row = rows[0]
         self.assertEqual(row['s_no'], 1)
         self.assertEqual(row['job_card_no'], 'JC-TEST-WASTE-1')
         self.assertEqual(row['sku'], 'SKU-TEST-1')
-        self.assertEqual(row['plan_date'], (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y-%m-%d'))
-        self.assertEqual(row['plan_month'], 'July')
+        self.assertEqual(row['plan_date'], expected_plan_date.strftime('%Y-%m-%d'))
+        self.assertEqual(row['plan_month'], expected_plan_date.strftime('%B'))
         self.assertEqual(row['plan_qty'], 1000) # total_sheet_quantity (500) * ups (2) = 1000
         self.assertEqual(row['dispatch_qty'], 750)
         self.assertEqual(row['printing_waste_sheets'], 50)
@@ -908,7 +927,7 @@ class ReportsAppTests(TestCase):
 
         # Test date range filter working correctly
         cache.clear()
-        yesterday_str = (datetime.date.today() - datetime.timedelta(days=1)).strftime('%Y-%m-%d')
+        yesterday_str = expected_plan_date.strftime('%Y-%m-%d')
         response_date_in = self.client.get(
             reverse('reports:reports_api:run_report', args=['wastage-report']),
             {
