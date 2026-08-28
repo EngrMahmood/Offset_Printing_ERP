@@ -6,6 +6,7 @@ allocate ups between them. No DB writes here so the logic stays unit testable.
 
 import math
 from dataclasses import dataclass
+from datetime import date
 from itertools import combinations
 
 
@@ -185,6 +186,27 @@ def _within_delivery_window(jobs, cfg):
     return (max(dates) - min(dates)).days <= cfg.delivery_window_days
 
 
+# Exhaustive combinations(bucket, size) is C(n, size) — fine for the handful of
+# jobs a signature usually collects, but a bucket that grows into the dozens
+# (a common size/material/colour combo just keeps matching new jobs) makes this
+# combinatorially explosive: C(58, 6) alone is 40M+ subsets, which is what made
+# /planning/merge/ hang. Cap how many jobs any one combinations() call ever sees
+# by chunking an oversized bucket into windows (sorted by delivery date, so jobs
+# likely to actually ship together stay grouped) instead of searching the whole
+# bucket at once. Buckets at or under this size (the overwhelming majority) are
+# untouched — one window covers the whole bucket, same as before.
+MAX_COMBINATION_WINDOW = 18
+
+
+def _bucket_windows(bucket, window_size):
+    if len(bucket) <= window_size:
+        yield bucket
+        return
+    ordered = sorted(bucket, key=lambda job: job.delivery_date or date.max)
+    for start in range(0, len(ordered), window_size):
+        yield ordered[start:start + window_size]
+
+
 def build_suggestions(jobs, cfg=None):
     """Return non-overlapping merge suggestions, best savings first."""
     cfg = cfg or MergeConfig()
@@ -192,22 +214,23 @@ def build_suggestions(jobs, cfg=None):
 
     for signature, bucket in candidate_buckets(jobs, cfg).items():
         sheet_ups = bucket[0].ups_value
-        max_size = min(cfg.max_group_size, len(bucket))
-        for size in range(max_size, 1, -1):
-            for subset in combinations(bucket, size):
-                if not _within_delivery_window(subset, cfg):
-                    continue
-                allocation = allocate_ups(list(subset), sheet_ups, cfg)
-                if not allocation:
-                    continue
-                suggestion = {
-                    'signature': signature,
-                    'jobs': list(subset),
-                    'job_ids': sorted(job.id for job in subset),
-                    'allocation': allocation,
-                    'savings': compute_savings(allocation, list(subset), cfg),
-                }
-                suggestions.append(suggestion)
+        for window in _bucket_windows(bucket, MAX_COMBINATION_WINDOW):
+            max_size = min(cfg.max_group_size, len(window))
+            for size in range(max_size, 1, -1):
+                for subset in combinations(window, size):
+                    if not _within_delivery_window(subset, cfg):
+                        continue
+                    allocation = allocate_ups(list(subset), sheet_ups, cfg)
+                    if not allocation:
+                        continue
+                    suggestion = {
+                        'signature': signature,
+                        'jobs': list(subset),
+                        'job_ids': sorted(job.id for job in subset),
+                        'allocation': allocation,
+                        'savings': compute_savings(allocation, list(subset), cfg),
+                    }
+                    suggestions.append(suggestion)
 
     suggestions.sort(
         key=lambda s: (

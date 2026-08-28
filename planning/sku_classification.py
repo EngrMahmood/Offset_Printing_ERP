@@ -43,12 +43,26 @@ LEGACY_BULK_CORE_FIELDS = (
 )
 
 
+BULK_LIKE_STATUSES = {'reviewed', 'approved'}
+
+
 def recipe_is_bulk_like(recipe) -> bool:
-    """Heuristic for Google Sheet / bulk-uploaded master rows."""
+    """Heuristic for Google Sheet / bulk-uploaded master rows.
+
+    The filled-field fallback below only counts as evidence once the recipe has
+    at least been reviewed — a draft/pending_review recipe just means someone
+    started filling in master data on a job that was later cancelled before
+    approval, not that this SKU has genuinely been produced before. Without
+    this gate, a cancelled job's leftover draft recipe could get a brand-new
+    job on the same SKU wrongly classified as "Repeat" (and then stuck, since
+    repeat_flag is forward-only once set — see is_job_repeat_classification_locked).
+    """
     if not recipe:
         return False
     if getattr(recipe, 'legacy_produced', False):
         return True
+    if (recipe.master_data_status or '') not in BULK_LIKE_STATUSES:
+        return False
     filled = sum(
         1
         for field in LEGACY_BULK_CORE_FIELDS
