@@ -1,0 +1,9 @@
+{% comment %}
+Job card number linked to its full history report PDF (plate requests,
+printing, packing and dispatch entries) — the same report the planning job
+detail page offers, reachable straight from any list showing a JC number.
+Falls back to plain text for a job card with no linked planning job, since
+the report is keyed on the planning job. Expects: job_card.
+{% endcomment %}{% if job_card.planning_job_id %}<a href="{% url 'planning:job_history_report_pdf' job_card.planning_job_id %}"
+   target="_blank" rel="noopener"
+   title="Open the full history report (PDF) for {{ job_card.job_card_no }} in a new tab">{{ job_card.job_card_no }}</a>{% else %}{{ job_card.job_card_no }}{% endif %}

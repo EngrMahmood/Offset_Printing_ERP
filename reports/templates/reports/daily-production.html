@@ -41,6 +41,9 @@
         margin-bottom: 18px;
     }
     .dp-num { text-align: right; font-variant-numeric: tabular-nums; }
+    /* Date cells drill through to the matching records ledger for that day. */
+    .dp-date-link { color: #1d4ed8; text-decoration: none; border-bottom: 1px dotted currentColor; }
+    .dp-date-link:hover { text-decoration: none; border-bottom-style: solid; }
 </style>
 {% endblock %}
 
@@ -227,7 +230,9 @@
                     <tbody>
                         {% for row in data.overview_rows %}
                         <tr>
-                            <td>{{ row.date_label }}</td>
+                            <td><a class="dp-date-link" target="_blank" rel="noopener"
+                                   href="{% url 'production_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}"
+                                   title="Open Production Records for {{ row.date_label }} in a new tab">{{ row.date_label }}</a></td>
                             <td class="dp-num">{{ row.released_count }}</td>
                             <td class="dp-num">{{ row.released_qty|intcomma }}</td>
                             <td class="dp-num">{{ row.impressions|intcomma }}</td>
@@ -289,7 +294,9 @@
                     <tbody>
                         {% for row in data.released_rows %}
                         <tr>
-                            <td>{{ row.date_label }}</td>
+                            <td><a class="dp-date-link" target="_blank" rel="noopener"
+                                   href="{% url 'production_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}"
+                                   title="Open Production Records for {{ row.date_label }} in a new tab">{{ row.date_label }}</a></td>
                             <td>{{ row.released_time }}</td>
                             <td>{{ row.job_card_no }}</td>
                             <td>{{ row.po_number }}</td>
@@ -328,7 +335,9 @@
                     <tbody>
                         {% for row in data.printing_rows %}
                         <tr>
-                            <td>{{ row.date_label }}</td>
+                            <td><a class="dp-date-link" target="_blank" rel="noopener"
+                                   href="{% url 'production_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}"
+                                   title="Open Printing Records for {{ row.date_label }} in a new tab">{{ row.date_label }}</a></td>
                             <td class="dp-num">{{ row.entries }}</td>
                             <td class="dp-num">{{ row.impressions|intcomma }}</td>
                             <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
@@ -430,7 +439,9 @@
                     <tbody>
                         {% for row in data.packing_rows %}
                         <tr>
-                            <td>{{ row.date_label }}</td>
+                            <td><a class="dp-date-link" target="_blank" rel="noopener"
+                                   href="{% url 'packing_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}"
+                                   title="Open Packing Records for {{ row.date_label }} in a new tab">{{ row.date_label }}</a></td>
                             <td class="dp-num">{{ row.entries }}</td>
                             <td class="dp-num">{{ row.packing_qty|intcomma }}</td>
                             <td class="dp-num">{{ row.sorting_waste_qty|intcomma }}</td>
@@ -488,7 +499,9 @@
                     <tbody>
                         {% for row in data.dispatch_rows %}
                         <tr>
-                            <td>{{ row.date_label }}</td>
+                            <td><a class="dp-date-link" target="_blank" rel="noopener"
+                                   href="{% url 'dispatch_records' %}?date_from={{ row.dispatch_date }}&amp;date_to={{ row.dispatch_date }}"
+                                   title="Open Dispatch Records for {{ row.date_label }} in a new tab">{{ row.date_label }}</a></td>
                             <td class="dp-num">{{ row.entries }}</td>
                             <td class="dp-num">{{ row.dc_count }}</td>
                             <td class="dp-num">{{ row.dispatch_qty|intcomma }}</td>
@@ -524,7 +537,9 @@
                     <tbody>
                         {% for row in data.process_wastage_rows %}
                         <tr>
-                            <td>{{ row.period_label }}</td>
+                            <td><a class="dp-date-link" target="_blank" rel="noopener"
+                                   href="{% url 'production_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}"
+                                   title="Open Production Records for {{ row.period_label }} in a new tab">{{ row.period_label }}</a></td>
                             <td class="dp-num">{{ row.process_wastage_pcs|intcomma }}</td>
                             <td class="dp-num">{{ row.process_wastage_pct }}%</td>
                         </tr>
@@ -550,7 +565,9 @@
                     <tbody>
                         {% for row in data.process_wastage_weekly %}
                         <tr>
-                            <td>{{ row.period_label }}</td>
+                            <td><a class="dp-date-link" target="_blank" rel="noopener"
+                                   href="{% url 'production_records' %}?date_from={{ row.week_start }}&amp;date_to={{ row.week_end }}"
+                                   title="Open Production Records for {{ row.period_label }} in a new tab">{{ row.period_label }}</a></td>
                             <td class="dp-num">{{ row.process_wastage_pcs|intcomma }}</td>
                             <td class="dp-num">{{ row.process_wastage_pct }}%</td>
                         </tr>

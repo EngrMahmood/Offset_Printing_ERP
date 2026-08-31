@@ -1654,7 +1654,13 @@ def build_daily_production_context(request):
     for week_start in sorted(weekly_bucket, reverse=True):
         week_end = week_start + timedelta(days=6)
         label = f"{week_start.strftime('%Y-%m-%d')} to {week_end.strftime('%Y-%m-%d')}"
-        process_wastage_weekly.append(_process_wastage_row(label, weekly_bucket[week_start]))
+        # Raw bounds alongside the label so the template can drill through to
+        # Production Records for the same week (the label itself is display-only).
+        process_wastage_weekly.append({
+            **_process_wastage_row(label, weekly_bucket[week_start]),
+            'week_start': week_start,
+            'week_end': week_end,
+        })
 
     totals['process_wastage_pcs'] = sum(b['waste_pcs'] for b in process_wastage_bucket.values())
     _process_gross = totals['process_wastage_pcs'] + sum(b['output_pcs'] for b in process_wastage_bucket.values())
