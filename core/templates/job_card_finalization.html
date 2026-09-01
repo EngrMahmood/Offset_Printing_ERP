@@ -52,6 +52,10 @@
         .gap-badge { color: #8a1c1c; font-weight: 600; }
         .blocker-row { background: #fff8f0; }
         .blocker-note { color: #8a4b00; font-size: 10px; max-width: 220px; white-space: normal; }
+        .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+        .export-actions { display: flex; gap: 8px; }
+        .btn-export { background: #fff; color: #33475f; border: 1px solid #c2ccd7; padding: 5px 10px; font-size: 11px; text-decoration: none; border-radius: 3px; font-weight: 600; }
+        .btn-export:hover { background: #eef2f7; border-color: #9fb0c2; }
     </style>
 {% endblock %}
 {% block header_title %}Job Card Finalization{% endblock %}
@@ -94,7 +98,13 @@
         {% csrf_token %}
     </form>
 
-    <h2 class="section-header">Stuck Near-Complete ({{ stuck_rows|length }})</h2>
+    <div class="section-bar">
+        <h2 class="section-header">Stuck Near-Complete ({{ stuck_rows|length }})</h2>
+        <div class="export-actions">
+            <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=stuck&amp;type=xlsx&amp;{{ export_qs }}">Export Excel</a>
+            <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=stuck&amp;type=pdf&amp;{{ export_qs }}">Export PDF</a>
+        </div>
+    </div>
     <p class="muted">In Production, dispatched &ge; {{ stuck_floor_percent }}% of order qty, but never reaches the 95% auto-complete threshold. The unshipped remainder becomes confirmed wastage once closed.</p>
     <div class="table-shell">
         <table>
@@ -150,7 +160,13 @@
         </table>
     </div>
 
-    <h2 class="section-header">Completed — Not Yet Closed ({{ completed_rows|length }})</h2>
+    <div class="section-bar">
+        <h2 class="section-header">Completed — Not Yet Closed ({{ completed_rows|length }})</h2>
+        <div class="export-actions">
+            <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=completed&amp;type=xlsx&amp;{{ export_qs }}">Export Excel</a>
+            <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=completed&amp;type=pdf&amp;{{ export_qs }}">Export PDF</a>
+        </div>
+    </div>
     <p class="muted">Already auto-completed (&ge;95% dispatched), but still shows up on WIP-style reports until closed.</p>
     <div class="table-shell">
         <table>
@@ -212,7 +228,13 @@
         <button type="submit" form="bulk_close_form" class="btn btn-green" id="close_submit_btn" disabled>Close Selected</button>
     </div>
 
-    <h2 class="section-header">Closed (Reopen)</h2>
+    <div class="section-bar">
+        <h2 class="section-header">Closed (Reopen)</h2>
+        <div class="export-actions">
+            <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=closed&amp;type=xlsx&amp;{{ export_qs }}">Export Excel</a>
+            <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=closed&amp;type=pdf&amp;{{ export_qs }}">Export PDF</a>
+        </div>
+    </div>
     <div class="table-shell">
         <table>
             <thead>

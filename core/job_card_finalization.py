@@ -64,9 +64,12 @@ def _matches_filters(row, search, min_wastage_pct, max_wastage_pct, min_dispatch
     return True
 
 
-@login_required
-@permission_required('can_finalize_job_card')
-def job_card_finalization_queue(request):
+def _build_filtered_sections(request):
+    """Rows for all three queue sections, honouring the request's filters.
+
+    Shared by the page and its exports so a download can never disagree with
+    what the planner is looking at on screen.
+    """
     search = (request.GET.get('q') or '').strip()
     min_wastage_pct = _to_float(request.GET.get('min_wastage_pct'))
     max_wastage_pct = _to_float(request.GET.get('max_wastage_pct'))
@@ -115,18 +118,137 @@ def job_card_finalization_queue(request):
     stuck_rows = [row for row in stuck_rows if _matches_filters(row, *filter_args)]
     completed_rows = [row for row in completed_rows if _matches_filters(row, *filter_args)]
 
-    context = {
+    return {
         'stuck_rows': stuck_rows,
         'completed_rows': completed_rows,
         'closed_rows': closed_rows,
+        'stuck_floor': stuck_floor,
+        'search': search,
+    }
+
+
+@login_required
+@permission_required('can_finalize_job_card')
+def job_card_finalization_queue(request):
+    sections = _build_filtered_sections(request)
+    stuck_floor = sections['stuck_floor']
+
+    context = {
+        'stuck_rows': sections['stuck_rows'],
+        'completed_rows': sections['completed_rows'],
+        'closed_rows': sections['closed_rows'],
         'stuck_floor_percent': stuck_floor,
-        'filter_q': search,
+        'filter_q': sections['search'],
         'filter_min_wastage_pct': request.GET.get('min_wastage_pct', ''),
         'filter_max_wastage_pct': request.GET.get('max_wastage_pct', ''),
         'filter_min_dispatch_pct': request.GET.get('min_dispatch_pct') or stuck_floor,
         'filter_max_dispatch_pct': request.GET.get('max_dispatch_pct', ''),
+        'export_qs': request.GET.urlencode(),
     }
     return render(request, 'job_card_finalization.html', context)
+
+
+# Section key -> (section label, context key, ordered export columns).
+# Closed job cards drop the printed/packed/gap columns the other two carry:
+# once closed the gap is already settled into confirmed wastage, so those
+# figures no longer describe an actionable shortfall.
+_EXPORT_COMMON_COLUMNS = [
+    ('job_card_no', 'Job Card'),
+    ('po_no', 'PO / WO No'),
+    ('sku', 'SKU'),
+    ('order_qty', 'Order Qty'),
+    ('dispatched', 'Dispatched'),
+    ('dispatch_pct', 'Dispatch %'),
+]
+_EXPORT_SECTIONS = {
+    'stuck': ('Stuck Near-Complete', 'stuck_rows', _EXPORT_COMMON_COLUMNS + [
+        ('printed', 'Printed'),
+        ('packed', 'Packed'),
+        ('wastage_pct', 'Wastage %'),
+        ('gap_qty', 'Gap (to Wastage)'),
+        ('close_status', 'Close Status'),
+    ]),
+    'completed': ('Completed - Not Yet Closed', 'completed_rows', _EXPORT_COMMON_COLUMNS + [
+        ('printed', 'Printed'),
+        ('packed', 'Packed'),
+        ('wastage_pct', 'Wastage %'),
+        ('gap_qty', 'Gap (to Wastage)'),
+        ('close_status', 'Close Status'),
+    ]),
+    'closed': ('Closed', 'closed_rows', _EXPORT_COMMON_COLUMNS + [
+        ('wastage_pct', 'Wastage %'),
+        ('wastage_status', 'Wastage Status'),
+    ]),
+}
+
+
+def _export_row(row):
+    """Flatten one queue row into the plain scalars the exporters render."""
+    job_card = row['job_card']
+    blockers = row.get('blockers') or []
+    return {
+        'job_card_no': job_card.job_card_no or '',
+        'po_no': job_card.PO_No or '',
+        'sku': job_card.SKU or '',
+        'order_qty': row['order_qty'] or 0,
+        'dispatched': row['total_dispatch'] or 0,
+        'dispatch_pct': row['dispatch_completion_percent'],
+        'printed': row['total_printed_pcs'] or 0,
+        'packed': row['total_packed_pcs'] or 0,
+        'wastage_pct': row['wastage']['total_wastage_pct'],
+        'gap_qty': row['gap_qty'] or 0,
+        'wastage_status': row['wastage'].get('wastage_status') or '',
+        'close_status': ' '.join(blockers) if blockers else 'Ready to close',
+    }
+
+
+@login_required
+@permission_required('can_finalize_job_card')
+def job_card_finalization_export(request):
+    """Excel/PDF of one queue section, filtered exactly as the page is.
+
+    Reuses the shared report exporters (reports.export.services) rather than
+    building a second spreadsheet/PDF writer — same branding and layout as
+    every other export in the ERP.
+    """
+    from django.http import HttpResponse
+    from django.utils import timezone
+
+    from reports.export.services import export_as_pdf, export_as_xlsx
+
+    section_key = (request.GET.get('section') or 'stuck').strip().lower()
+    if section_key not in _EXPORT_SECTIONS:
+        section_key = 'stuck'
+    section_label, context_key, columns = _EXPORT_SECTIONS[section_key]
+
+    sections = _build_filtered_sections(request)
+    rows = [_export_row(row) for row in sections[context_key]]
+
+    payload = {
+        'report': {'title': f'Job Card Finalization - {section_label}', 'slug': 'job-card-finalization'},
+        'generated_at': timezone.localtime().strftime('%Y-%m-%d %H:%M'),
+        'headers': [key for key, _label in columns],
+        'header_labels': {key: label for key, label in columns},
+        'data': {'export_rows': rows},
+    }
+
+    filename = f'job-card-finalization-{section_key}-{timezone.localdate():%Y%m%d}'
+    export_type = (request.GET.get('type') or 'xlsx').strip().lower()
+    try:
+        if export_type == 'pdf':
+            response = HttpResponse(export_as_pdf(payload), content_type='application/pdf')
+            response['Content-Disposition'] = f'attachment; filename="{filename}.pdf"'
+            return response
+        response = HttpResponse(
+            export_as_xlsx(payload),
+            content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        )
+        response['Content-Disposition'] = f'attachment; filename="{filename}.xlsx"'
+        return response
+    except RuntimeError as exc:
+        # openpyxl/reportlab missing — say so instead of a 500.
+        messages.error(request, str(exc))
+        return redirect('job_card_finalization_queue')
 
 
 @login_required
