@@ -58,6 +58,54 @@ def build_stub_request(user, filters: dict | None = None) -> StubRequest:
     return StubRequest(user, filters)
 
 
+def _as_number(value):
+    """Parse a report cell into a float, or None when it isn't numeric.
+
+    Report cells reach here already serialised to strings, and quantity
+    columns are commonly formatted with thousands separators, so strip those
+    before parsing or every such column would look non-numeric.
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return float(value)
+    text = str(value).strip().replace(',', '').replace('%', '')
+    if not text:
+        return None
+    try:
+        return float(text)
+    except ValueError:
+        return None
+
+
+def _numeric_column_totals(headers, labels, rows):
+    """Sum and average of every numeric column, computed over ALL rows.
+
+    Exists because the row list handed to the model is only a sample (see
+    build_narration_facts) — without real aggregates in front of it, a model
+    asked to summarise a 287-row report will happily invent a plausible-looking
+    total from the 25 rows it can see. Giving it the true figures is what keeps
+    the emailed narration honest; the prompt rule against inventing numbers is
+    a backstop, not a substitute.
+    """
+    totals = []
+    for header in headers:
+        numbers = [
+            number
+            for number in (_as_number(row.get(header)) for row in rows)
+            if number is not None
+        ]
+        # Mostly-numeric only: a column of job card numbers or PO refs must
+        # never be summed just because a few of them happen to parse.
+        if not numbers or len(numbers) < len(rows) * 0.6:
+            continue
+        label = labels.get(header, header)
+        total = sum(numbers)
+        average = total / len(numbers)
+        totals.append(f'{label}: total {total:,.0f} across {len(numbers)} record(s), average {average:,.1f}')
+    return totals
+
+
 def build_narration_facts(payload, headers, labels, rows, fallback_title='', max_rows=25) -> str:
     """Row-capped, LLM-prompt-ready facts block for a report payload. Shared
     by bot email narration (bot/services.py) and the chat AI assistant
@@ -65,12 +113,29 @@ def build_narration_facts(payload, headers, labels, rows, fallback_title='', max
     way. Capped — this is a slow, small-context local model; a 500-row table
     would blow the context window and response-time budget for no benefit
     (the full table is available elsewhere: the email attachment, or the
-    report screen itself)."""
+    report screen itself).
+
+    The row cap is why the totals block below is computed here in Python over
+    every row rather than left to the model to work out from the sample.
+    """
     sample = rows[:max_rows]
     lines = [
         f"Report: {report_title(payload) if payload else fallback_title}",
         f"Total records: {len(rows)}",
     ]
+
+    totals = _numeric_column_totals(headers, labels, rows)
+    if totals:
+        lines.append('')
+        lines.append('Verified totals for ALL records (use these exact figures for any total or average):')
+        lines.extend(f'- {line}' for line in totals)
+        lines.append('')
+
+    if sample:
+        lines.append(
+            f'Sample of {len(sample)} record(s) below'
+            + (' — NOT the full list, never add these up:' if len(rows) > len(sample) else ':')
+        )
     for row in sample:
         lines.append(', '.join(f'{labels.get(h, h)}: {row.get(h)}' for h in headers))
     if len(rows) > len(sample):

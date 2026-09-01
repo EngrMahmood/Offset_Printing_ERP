@@ -229,7 +229,7 @@
     </div>
 
     <div class="section-bar">
-        <h2 class="section-header">Closed (Reopen)</h2>
+        <h2 class="section-header">Closed (Reopen) ({{ closed_rows|length }})</h2>
         <div class="export-actions">
             <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=closed&amp;type=xlsx&amp;{{ export_qs }}">Export Excel</a>
             <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=closed&amp;type=pdf&amp;{{ export_qs }}">Export PDF</a>
