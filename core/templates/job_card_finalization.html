@@ -250,6 +250,7 @@
                     <th class="num">Dispatch %</th>
                     <th class="num">Wastage %</th>
                     <th>Wastage Status</th>
+                    <th>Closed By</th>
                     <th>Reopen</th>
                 </tr>
             </thead>
@@ -265,6 +266,13 @@
                     <td class="num">{{ row.wastage.total_wastage_pct }}%</td>
                     <td>{{ row.wastage.wastage_status }}</td>
                     <td>
+                        {% if row.closed_by or row.closed_at %}
+                            {{ row.closed_by|default:'—' }}
+                            {% if row.closed_at %}<br><small style="color:#64748b;">{{ row.closed_at|date:"d M Y, H:i" }}</small>{% endif %}
+                            {% if row.close_reason %}<br><small style="color:#8a4b00;white-space:normal;display:block;max-width:200px;">{{ row.close_reason }}</small>{% endif %}
+                        {% else %}—{% endif %}
+                    </td>
+                    <td>
                         <form method="POST" action="{% url 'job_card_finalization_reopen' %}" class="row-form" onsubmit="return confirm('Reopen {{ row.job_card.job_card_no|escapejs }} to In Production?');">
                             {% csrf_token %}
                             <input type="hidden" name="job_card_id" value="{{ row.job_card.id }}">
@@ -274,7 +282,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="9">No closed job cards.</td></tr>
+                <tr><td colspan="10">No closed job cards.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

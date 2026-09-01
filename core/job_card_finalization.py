@@ -9,6 +9,7 @@ from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
+from django.utils import timezone
 from django.views.decorators.http import require_POST
 
 from .jobcard_service import close_job_card_manually, job_card_completion_blockers, reopen_job_card_manually
@@ -41,6 +42,38 @@ def _row(job_card, *, with_blockers=True):
         # skips this — it is pure wasted work for a column it never renders.
         'blockers': job_card_completion_blockers(job_card) if with_blockers else [],
     }
+
+
+def _attach_close_attribution(rows):
+    """Add who closed each job card and when, in one query for the whole page.
+
+    Sourced from the ChangeLog rather than JobCard.short_close_closed_by/at:
+    those two are only written when the close confirmed a non-zero shortfall,
+    so they cover roughly a quarter of closed cards, whereas
+    transition_job_card_status logs a 'close' entry for every one of them.
+    A card can be closed, reopened and closed again, so the newest close wins.
+    """
+    if not rows:
+        return
+
+    from .models import ChangeLog
+
+    logs = (
+        ChangeLog.objects
+        .filter(entity_type='job_card', action='close', record_id__in=[row['job_card'].id for row in rows])
+        .select_related('changed_by')
+        .order_by('record_id', '-created_at')
+    )
+    latest_by_card = {}
+    for log in logs:
+        latest_by_card.setdefault(log.record_id, log)
+
+    for row in rows:
+        log = latest_by_card.get(row['job_card'].id)
+        actor = getattr(log, 'changed_by', None) if log else None
+        row['closed_by'] = (actor.get_full_name() or actor.username) if actor else ''
+        row['closed_at'] = log.created_at if log else None
+        row['close_reason'] = (getattr(log, 'change_reason', '') or '') if log else ''
 
 
 def _to_float(raw_value, default=None):
@@ -136,6 +169,7 @@ def _build_filtered_sections(request):
     stuck_rows = [_row(jc) for jc in stuck_jobs]
     completed_rows = [_row(jc) for jc in completed_not_closed]
     closed_rows = [_row(jc, with_blockers=False) for jc in closed_jobs]
+    _attach_close_attribution(closed_rows)
 
     filter_args = (search, min_wastage_pct, max_wastage_pct, min_dispatch_pct, max_dispatch_pct)
     stuck_rows = [row for row in stuck_rows if _matches_filters(row, *filter_args)]
@@ -205,6 +239,9 @@ _EXPORT_SECTIONS = {
     'closed': ('Closed', 'closed_rows', _EXPORT_COMMON_COLUMNS + [
         ('wastage_pct', 'Wastage %'),
         ('wastage_status', 'Wastage Status'),
+        ('closed_by', 'Closed By'),
+        ('closed_at', 'Closed At'),
+        ('close_reason', 'Close Reason'),
     ]),
 }
 
@@ -226,6 +263,10 @@ def _export_row(row):
         'gap_qty': row['gap_qty'] or 0,
         'wastage_status': row['wastage'].get('wastage_status') or '',
         'close_status': ' '.join(blockers) if blockers else 'Ready to close',
+        # Only populated on closed rows (see _attach_close_attribution).
+        'closed_by': row.get('closed_by') or '',
+        'closed_at': timezone.localtime(row['closed_at']).strftime('%Y-%m-%d %H:%M') if row.get('closed_at') else '',
+        'close_reason': row.get('close_reason') or '',
     }
 
 
@@ -239,7 +280,6 @@ def job_card_finalization_export(request):
     every other export in the ERP.
     """
     from django.http import HttpResponse
-    from django.utils import timezone
 
     from reports.export.services import export_as_pdf, export_as_xlsx
 

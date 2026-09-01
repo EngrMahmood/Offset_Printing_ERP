@@ -78,6 +78,18 @@ def _as_number(value):
         return None
 
 
+# Column labels holding a per-record age, where a sum across records has no
+# business meaning (see _numeric_column_totals). Deliberately narrow: an
+# accumulable quantity like "Downtime (min)" or "Run Hours" DOES have a
+# meaningful total, so only age-style columns belong here.
+_DURATION_LABEL_HINTS = ('day', 'age')
+
+
+def _is_duration_label(label) -> bool:
+    text = str(label or '').lower()
+    return any(hint in text for hint in _DURATION_LABEL_HINTS)
+
+
 def _numeric_column_totals(headers, labels, rows):
     """Sum and average of every numeric column, computed over ALL rows.
 
@@ -102,7 +114,14 @@ def _numeric_column_totals(headers, labels, rows):
         label = labels.get(header, header)
         total = sum(numbers)
         average = total / len(numbers)
-        totals.append(f'{label}: total {total:,.0f} across {len(numbers)} record(s), average {average:,.1f}')
+        # Summing an age/duration column is meaningless — "4,778 days stuck"
+        # across 281 jobs tells nobody anything, while "17 days on average"
+        # is the figure people actually act on. Offer only the average so the
+        # narration has no misleading total available to quote.
+        if _is_duration_label(label):
+            totals.append(f'{label}: average {average:,.1f} across {len(numbers)} record(s)')
+        else:
+            totals.append(f'{label}: total {total:,.0f} across {len(numbers)} record(s), average {average:,.1f}')
     return totals
 
 
