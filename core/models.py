@@ -1178,7 +1178,12 @@ class Production(models.Model):
         # Merge-derived entries are system-generated mirrors of the lead job's
         # run; they are validated by the lead entry, not against this SKU's own
         # standalone plan or release state.
-        if not self.merge_parent_id:
+        # Archiving is exempt too (is_active=False): these rules exist to keep
+        # bad data from going in, and a row that is already invalid — a sheet
+        # budget since exceeded, a rule added after it was written — must still
+        # be removable. Restoring flips is_active back to True and is validated
+        # again, so an invalid row can never be brought back silently.
+        if not self.merge_parent_id and self.is_active:
             self.full_clean()
 
         try:
