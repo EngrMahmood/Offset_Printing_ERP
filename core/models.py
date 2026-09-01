@@ -1059,8 +1059,11 @@ class Production(models.Model):
         # lead to enter against. Packing and dispatch stay per-job and are not
         # affected — only printing is shared across the combined sheet.
         # Deliberately after the merge_parent_id return above, so the system's
-        # own split entries are never blocked by this.
-        if self.entry_type == 'printing' and self.job_card and self.job_card.planning_job:
+        # own split entries are never blocked by this. Skipped for inactive
+        # rows too: this guards data going in, and must not stand in the way of
+        # archiving a bad entry that predates it (save() runs full_clean(), so
+        # without this the rule would make its own violations unfixable).
+        if self.entry_type == 'printing' and self.is_active and self.job_card and self.job_card.planning_job:
             planning_job = self.job_card.planning_job
             if planning_job.is_merge_member_follower:
                 group = planning_job.active_merge_group
