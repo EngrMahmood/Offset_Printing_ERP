@@ -7,6 +7,7 @@ See core.jobcard_service.close_job_card_manually / reopen_job_card_manually.
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Q
 from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.http import require_POST
 
@@ -17,9 +18,15 @@ from .views import permission_required
 
 DEFAULT_DISPATCH_FLOOR_PERCENT = 80
 STUCK_LIST_CAP = 500
+# The closed list is reopen-a-mistake history, not a working queue, and it is
+# the largest of the three sections (1000+ rows and growing) — every row costs
+# a prefetched productions/dispatch set to compute its wastage figures, which
+# dominated this page's load time. Keep the rendered slice small and let the
+# search box reach the rest at the database level instead.
+CLOSED_LIST_CAP = 100
 
 
-def _row(job_card):
+def _row(job_card, *, with_blockers=True):
     wastage = compute_job_card_wastage_metrics(job_card)
     return {
         'job_card': job_card,
@@ -30,7 +37,9 @@ def _row(job_card):
         'total_packed_pcs': job_card.total_packed_pcs,
         'gap_qty': max(job_card.order_qty - job_card.total_dispatch, 0),
         'wastage': wastage,
-        'blockers': job_card_completion_blockers(job_card),
+        # Only the two open sections offer a Close button, so the closed list
+        # skips this — it is pure wasted work for a column it never renders.
+        'blockers': job_card_completion_blockers(job_card) if with_blockers else [],
     }
 
 
@@ -103,16 +112,30 @@ def _build_filtered_sections(request):
         .order_by('-updated_at')[:STUCK_LIST_CAP]
     )
 
+    # Closed jobs are matched in the database rather than in Python: the list is
+    # far longer than the rendered slice, so an in-memory filter could only ever
+    # search the slice — a closed job outside it was unfindable. The numeric
+    # dispatch/wastage filters stay off this section deliberately; they triage
+    # the open queues, and applying the default 80% dispatch floor here would
+    # silently hide closed history the planner is looking for.
+    closed_qs = JobCard.objects.filter(is_active=True, status='closed')
+    if search:
+        closed_qs = closed_qs.filter(
+            Q(job_card_no__icontains=search)
+            | Q(SKU__icontains=search)
+            | Q(PO_No__icontains=search)
+        )
+    closed_total = closed_qs.count()
     closed_jobs = list(
-        JobCard.objects.filter(is_active=True, status='closed')
+        closed_qs
         .select_related(*related['select_related'])
         .prefetch_related(*related['prefetch_related'])
-        .order_by('-updated_at')[:STUCK_LIST_CAP]
+        .order_by('-updated_at')[:CLOSED_LIST_CAP]
     )
 
     stuck_rows = [_row(jc) for jc in stuck_jobs]
     completed_rows = [_row(jc) for jc in completed_not_closed]
-    closed_rows = [_row(jc) for jc in closed_jobs]
+    closed_rows = [_row(jc, with_blockers=False) for jc in closed_jobs]
 
     filter_args = (search, min_wastage_pct, max_wastage_pct, min_dispatch_pct, max_dispatch_pct)
     stuck_rows = [row for row in stuck_rows if _matches_filters(row, *filter_args)]
@@ -122,6 +145,8 @@ def _build_filtered_sections(request):
         'stuck_rows': stuck_rows,
         'completed_rows': completed_rows,
         'closed_rows': closed_rows,
+        'closed_total': closed_total,
+        'closed_truncated': closed_total > len(closed_rows),
         'stuck_floor': stuck_floor,
         'search': search,
     }
@@ -137,6 +162,8 @@ def job_card_finalization_queue(request):
         'stuck_rows': sections['stuck_rows'],
         'completed_rows': sections['completed_rows'],
         'closed_rows': sections['closed_rows'],
+        'closed_total': sections['closed_total'],
+        'closed_truncated': sections['closed_truncated'],
         'stuck_floor_percent': stuck_floor,
         'filter_q': sections['search'],
         'filter_min_wastage_pct': request.GET.get('min_wastage_pct', ''),

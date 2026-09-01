@@ -229,12 +229,15 @@
     </div>
 
     <div class="section-bar">
-        <h2 class="section-header">Closed (Reopen) ({{ closed_rows|length }})</h2>
+        <h2 class="section-header">Closed (Reopen) ({{ closed_total|intcomma }})</h2>
         <div class="export-actions">
             <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=closed&amp;type=xlsx&amp;{{ export_qs }}">Export Excel</a>
             <a class="btn-export" href="{% url 'job_card_finalization_export' %}?section=closed&amp;type=pdf&amp;{{ export_qs }}">Export PDF</a>
         </div>
     </div>
+    {% if closed_truncated %}
+    <p class="muted">Showing the {{ closed_rows|length }} most recently closed of {{ closed_total|intcomma }}. Use the search box above to find any other closed job card by JC, SKU or PO.</p>
+    {% endif %}
     <div class="table-shell">
         <table>
             <thead>

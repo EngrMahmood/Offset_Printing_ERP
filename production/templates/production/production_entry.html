@@ -47,7 +47,18 @@
                 <div class="erp-card-title-stack">
                     <div class="erp-eyebrow">Production Record #{{ edit_record.id }}</div>
                     <h2 class="erp-section-title">Printing Record Details</h2>
-                    <p class="erp-card-subtitle">Logged by {{ edit_record.created_by.get_full_name|default:edit_record.created_by.username }}</p>
+                    {# created_by is null on merge-split entries (written by the system from the
+                       lead's run, not by a person). Guard the whole expression: resolving
+                       .username on None as a filter ARGUMENT raises rather than rendering blank. #}
+                    <p class="erp-card-subtitle">
+                        {% if edit_record.created_by %}
+                            Logged by {{ edit_record.created_by.get_full_name|default:edit_record.created_by.username }}
+                        {% elif edit_record.merge_parent_id %}
+                            Filled in automatically from the lead job card's printing run (combined layout)
+                        {% else %}
+                            Logged automatically
+                        {% endif %}
+                    </p>
                 </div>
                 <a href="{% url 'production_records' %}" class="erp-btn erp-btn-secondary">Back to Records</a>
             </div>
@@ -81,7 +92,7 @@
                 <div><strong>Waste Reason</strong><div class="job-info-value">{{ edit_record.waste_reason|default:'-' }}</div></div>
                 <div><strong>Waste Reason (Other)</strong><div class="job-info-value">{{ edit_record.waste_reason_other|default:'-' }}</div></div>
                 <div><strong>Status</strong><div class="job-info-value"><span class="erp-badge">{{ edit_record.get_status_display }}</span></div></div>
-                <div><strong>Added By</strong><div class="job-info-value">{{ edit_record.created_by.username|default:'-' }}</div></div>
+                <div><strong>Added By</strong><div class="job-info-value">{% if edit_record.created_by %}{{ edit_record.created_by.username }}{% elif edit_record.merge_parent_id %}System (combined layout split){% else %}-{% endif %}</div></div>
 
                 <div style="grid-column: span 4;"><strong>Remarks</strong><div class="job-info-value" style="background:#f8fafc;padding:8px;border-radius:6px;border:1px solid #e2e8f0;margin-top:4px;">{{ edit_record.remark_notes|default:'No remarks.' }}</div></div>
             </div>

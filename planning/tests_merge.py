@@ -289,6 +289,76 @@ class MergeDownstreamTests(TestCase):
             follower_card = cards[item.planning_job_id]
             self.assertIn(follower_card.status, JOB_CARD_DISPATCHABLE_STATUSES)
 
+    def test_manual_printing_entry_on_follower_is_rejected(self):
+        """A follower is printed by the lead's run; hand-entering printing on it
+        would double-count the same sheets (which is how operators corrupted
+        JC-08-26-PP-1804's figures)."""
+        from django.core.exceptions import ValidationError
+        from core.models import Production
+        group, jobs = self._accept_group()
+        cards = {job.id: make_card(job) for job in jobs}
+        follower_item = group.items.filter(is_lead=False).first()
+        follower_card = cards[follower_item.planning_job_id]
+        follower_card.status = 'in_production'
+        follower_card.save(update_fields=['status'])
+
+        entry = Production(
+            job_card=follower_card,
+            entry_type='printing',
+            date='2026-07-21',
+            shift='A',
+            output_sheets=1000,
+        )
+        with self.assertRaises(ValidationError) as ctx:
+            entry.full_clean(exclude=['created_by'])
+        message = str(ctx.exception)
+        self.assertIn('combined layout', message)
+        self.assertIn(group.lead_job.jc_number, message)
+
+    def test_lead_printing_entry_still_allowed(self):
+        """The guard above must not catch the lead — it is the one card that
+        legitimately carries the combined run."""
+        from core.models import Production
+        group, jobs = self._accept_group()
+        cards = {job.id: make_card(job) for job in jobs}
+        lead_card = cards[group.lead_job.id]
+        lead_card.status = 'in_production'
+        lead_card.save(update_fields=['status'])
+        for item in group.items.filter(is_lead=False):
+            card = cards[item.planning_job_id]
+            card.status = 'in_production'
+            card.save(update_fields=['status'])
+
+        entry = Production(
+            job_card=lead_card, entry_type='printing',
+            date='2026-07-21', shift='A', output_sheets=1000,
+        )
+        entry.full_clean(exclude=['created_by'])  # must not raise
+
+    def test_follower_packing_entry_not_blocked_by_merge_guard(self):
+        """Only printing is shared across the combined sheet — packing stays
+        per-job, so the merge guard must never fire for it. Packing has its own
+        unrelated ceiling rule; this asserts only that whatever happens, it is
+        not the combined-layout rejection."""
+        from django.core.exceptions import ValidationError
+        from core.models import Production, Sorter
+        group, jobs = self._accept_group()
+        cards = {job.id: make_card(job) for job in jobs}
+        follower_item = group.items.filter(is_lead=False).first()
+        follower_card = cards[follower_item.planning_job_id]
+        follower_card.status = 'in_production'
+        follower_card.save(update_fields=['status'])
+        sorter = Sorter.objects.create(name='S1')
+
+        entry = Production(
+            job_card=follower_card, entry_type='packing',
+            date='2026-07-21', shift='A', packing_qty=10, sorter=sorter,
+        )
+        try:
+            entry.full_clean(exclude=['created_by'])
+        except ValidationError as exc:
+            self.assertNotIn('combined layout', str(exc))
+
     def test_split_does_not_recurse(self):
         from core.models import JobCard, Production
         group, jobs = self._accept_group()

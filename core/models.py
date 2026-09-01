@@ -1052,6 +1052,27 @@ class Production(models.Model):
                 raise ValidationError(errors)
             return
 
+        # A follower in a combined layout is printed by the lead's run, and its
+        # printing entry is written automatically as a split of that run (see
+        # _split_printing_to_merge_members). A hand-entered printing record here
+        # would double-count the same physical sheets, so refuse it and name the
+        # lead to enter against. Packing and dispatch stay per-job and are not
+        # affected — only printing is shared across the combined sheet.
+        # Deliberately after the merge_parent_id return above, so the system's
+        # own split entries are never blocked by this.
+        if self.entry_type == 'printing' and self.job_card and self.job_card.planning_job:
+            planning_job = self.job_card.planning_job
+            if planning_job.is_merge_member_follower:
+                group = planning_job.active_merge_group
+                lead_item = group.items.filter(is_lead=True).select_related('planning_job').first() if group else None
+                lead_number = lead_item.planning_job.jc_number if lead_item else 'the lead job card'
+                errors['job_card'] = (
+                    f'{planning_job.jc_number} is part of combined layout {group.code if group else ""} '
+                    f'and is not printed on its own. Record the printing entry on the lead job card '
+                    f'({lead_number}) — this job\'s printed quantity is filled in automatically from '
+                    f'that run. Packing and dispatch are still entered against this job card.'
+                ).replace('  ', ' ')
+
         # The lead of a merge group prints for every SKU on the combined sheet.
         # Recording that run before every follower card is released for
         # production would silently under-report their production, since the
