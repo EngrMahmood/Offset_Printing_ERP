@@ -4173,7 +4173,12 @@ def pending_sku_master_entry(request):
         po_number_val = ''
 
     job_obj = None
-    if po_number_val:
+    # `po_number_val` is a legitimate '' for a manually-added SKU that has no
+    # PO/WO yet (entered directly for urgency, WO to follow) — `if po_number_val:`
+    # treated that blank-but-real value as "no PO doc" and skipped the lookup
+    # entirely, so a job like that could never be found here. Gate on whether
+    # we're in a PO-document context at all instead.
+    if po_doc:
         job_obj = PlanningJob.objects.filter(po_number=po_number_val, sku__iexact=sku).first()
     if job_obj and not recipe:
         recipe = ensure_sku_recipe_for_planning_job(job_obj, actor=request.user)
@@ -4302,7 +4307,18 @@ def pending_sku_master_entry(request):
         if not (posted.get('application') or '').strip() and po_application:
             posted['application'] = po_application
         posted = merge_preserved_sku_recipe_fields(posted, recipe, request.user)
-        form = SkuRecipeForm(posted, instance=recipe)
+        # sku/job_name are disabled below for non-admin users (locked fields), which
+        # makes Django read their value from the form's *initial* data instead of
+        # from POST — that's the point of `disabled`, to stop a tampered value from
+        # being accepted. But `instance=recipe` is None on a SKU's first-ever save
+        # (nothing to enter yet, this being that first entry), so the disabled
+        # field's initial value is empty, and the required-field check fails even
+        # though `sku` was correctly set above. A throwaway unsaved instance
+        # carrying sku/job_name (never touched again — `obj.sku`/`obj.job_name`
+        # are set explicitly below regardless) gives the disabled field the
+        # initial value it needs without changing what happens for an existing
+        # recipe, where the real instance already provided it.
+        form = SkuRecipeForm(posted, instance=recipe or SkuRecipe(sku=sku, job_name=po_job_name))
         apply_sku_recipe_form_role_permissions(form, request.user, is_readonly=is_readonly, recipe=recipe)
         prepare_sku_recipe_form_for_master_entry(form, action=action)
         if form.is_valid():
