@@ -386,6 +386,78 @@ class JobCardFinalizationSetStockViewTests(TestCase):
         self.assertRedirects(response, reverse('job_card_finalization_queue'))
 
 
+class JobCardFinalizationReleasedStockTests(TestCase):
+    """Reproduces JC-08-26-PP-2015: an order fully covered by existing stock
+    never gets a printing or packing entry, so it never leaves 'released' —
+    and JOB_CARD_DISPATCHABLE_STATUSES excludes 'released', so it could never
+    even be found on the Dispatch Entry screen."""
+
+    def setUp(self):
+        self.machine = Machine.objects.create(name='Released Stock Test Machine')
+        self.user = get_user_model().objects.create_user(username='finalizer2', password='testpass123')
+        from core.models import Permission, UserPermissionOverride
+        permission, _ = Permission.objects.get_or_create(
+            code='action.finalize_job_card', defaults={'name': 'Finalize Job Card'},
+        )
+        UserPermissionOverride.objects.get_or_create(
+            user=self.user, permission=permission, defaults={'granted': True},
+        )
+        self.client.force_login(self.user)
+
+        self.planning_job = PlanningJob.objects.create(
+            jc_number='JC-RELSTOCK-0001', order_qty=6037, status='released',
+            plan_date=date.today(), plan_month='August 2026', sku='SKU-RELSTOCK-1',
+        )
+        self.job_card = JobCard.objects.create(
+            job_card_no='JC-RELSTOCK-0001', planning_job=self.planning_job, order_qty=6037,
+            SKU='SKU-RELSTOCK-1', ups=1, is_print_job=True, total_sheet_quantity=1,
+            total_colors=4, status='released', po_date=date(2026, 1, 1),
+            plate_set_no='PLATE-1', machine_name=self.machine, total_impressions_required=1,
+        )
+
+    def test_released_job_hidden_from_dispatch_before_stock_declared(self):
+        from core.models import JOB_CARD_DISPATCHABLE_STATUSES
+        self.assertNotIn(self.job_card.workflow_status, JOB_CARD_DISPATCHABLE_STATUSES)
+
+    def test_full_stock_qty_moves_released_job_to_in_production(self):
+        response = self.client.post(
+            reverse('job_card_finalization_set_stock'),
+            {'job_card_id': self.job_card.id, 'stock_qty': '6037'},
+        )
+        self.assertRedirects(response, reverse('job_card_finalization_queue'))
+        self.job_card.refresh_from_db()
+        self.assertEqual(self.job_card.workflow_status, 'in_production')
+
+    def test_full_stock_qty_job_becomes_dispatchable(self):
+        from core.models import JOB_CARD_DISPATCHABLE_STATUSES
+        self.client.post(
+            reverse('job_card_finalization_set_stock'),
+            {'job_card_id': self.job_card.id, 'stock_qty': '6037'},
+        )
+        self.job_card.refresh_from_db()
+        self.assertIn(self.job_card.workflow_status, JOB_CARD_DISPATCHABLE_STATUSES)
+
+    def test_partial_stock_qty_leaves_released_job_untouched(self):
+        """Only a full-order stock declaration skips production — a partial
+        one still needs real printing/packing, so it must not be nudged into
+        in_production on a shortfall the job hasn't actually produced."""
+        response = self.client.post(
+            reverse('job_card_finalization_set_stock'),
+            {'job_card_id': self.job_card.id, 'stock_qty': '3000'},
+        )
+        self.assertRedirects(response, reverse('job_card_finalization_queue'))
+        self.job_card.refresh_from_db()
+        self.assertEqual(self.job_card.workflow_status, 'released')
+
+    def test_released_job_findable_by_search_only(self):
+        response = self.client.get(reverse('job_card_finalization_queue'))
+        self.assertNotIn(self.job_card, [r['job_card'] for r in response.context['released_rows']])
+
+        response = self.client.get(reverse('job_card_finalization_queue'), {'q': 'RELSTOCK'})
+        found = [r['job_card'] for r in response.context['released_rows']]
+        self.assertIn(self.job_card, found)
+
+
 class DispatchFeatureTests(TestCase):
     def setUp(self):
         self.client = Client()

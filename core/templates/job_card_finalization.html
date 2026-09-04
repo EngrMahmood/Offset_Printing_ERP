@@ -100,6 +100,46 @@
         {% csrf_token %}
     </form>
 
+    {% if released_rows %}
+    <h2 class="section-header">Released — Not Yet Started ({{ released_rows|length }})</h2>
+    <p class="muted">Matches your search among job cards not yet in production. Not a working queue — shown only while searching. If a job's whole order is already covered by existing stock, declare it here: it skips printing/packing entirely and moves straight to In Production so it can be dispatched.</p>
+    <div class="table-shell">
+        <table>
+            <thead>
+                <tr>
+                    <th>Job Card</th>
+                    <th>PO / WO No</th>
+                    <th>SKU</th>
+                    <th class="num">Order Qty</th>
+                    <th>Declare Stock</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in released_rows %}
+                <tr>
+                    <td>{% include 'partials/_jc_history_link.html' with job_card=row.job_card %}</td>
+                    <td>{{ row.job_card.PO_No|default:'-' }}</td>
+                    <td>{{ row.job_card.SKU|default:'-' }}</td>
+                    <td class="num">{{ row.order_qty|intcomma }}</td>
+                    <td>
+                        {% if row.has_planning_job %}
+                        <form method="POST" action="{% url 'job_card_finalization_set_stock' %}" class="row-form stock-form" title="Enter the full stock qty on hand for this SKU to skip printing/packing and enable dispatch.">
+                            {% csrf_token %}
+                            <input type="hidden" name="job_card_id" value="{{ row.job_card.id }}">
+                            <input type="number" name="stock_qty" min="0" step="1" value="{{ row.stock_qty }}" placeholder="Stock qty">
+                            <button type="submit" class="btn btn-amber btn-sm">Set Stock</button>
+                        </form>
+                        {% else %}
+                        <span class="muted">No linked planning job.</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
     <div class="section-bar">
         <h2 class="section-header">Stuck Near-Complete ({{ stuck_rows|length }})</h2>
         <div class="export-actions">

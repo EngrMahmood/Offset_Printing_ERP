@@ -176,12 +176,38 @@ def _build_filtered_sections(request):
     stuck_rows = [row for row in stuck_rows if _matches_filters(row, *filter_args)]
     completed_rows = [row for row in completed_rows if _matches_filters(row, *filter_args)]
 
+    # Released job cards aren't a working queue here (nothing to close — they
+    # haven't started), so this only exists as a search result, not a default
+    # listing: a job fully covered by stock never gets a printing/packing
+    # entry, the two events that would normally move it out of 'released' and
+    # onto the Stuck queue above — so without this, there is nowhere at all
+    # to declare that stock and it stays permanently invisible to Dispatch
+    # Entry (JOB_CARD_DISPATCHABLE_STATUSES excludes 'released').
+    released_rows = []
+    if search:
+        released_qs = (
+            JobCard.objects.filter(is_active=True, status='released')
+            .filter(Q(job_card_no__icontains=search) | Q(SKU__icontains=search) | Q(PO_No__icontains=search))
+            .select_related('planning_job')
+            .order_by('-updated_at')[:50]
+        )
+        released_rows = [
+            {
+                'job_card': jc,
+                'order_qty': jc.order_qty,
+                'stock_qty': (jc.planning_job.stock_qty if jc.planning_job_id else None) or 0,
+                'has_planning_job': bool(jc.planning_job_id),
+            }
+            for jc in released_qs
+        ]
+
     return {
         'stuck_rows': stuck_rows,
         'completed_rows': completed_rows,
         'closed_rows': closed_rows,
         'closed_total': closed_total,
         'closed_truncated': closed_total > len(closed_rows),
+        'released_rows': released_rows,
         'stuck_floor': stuck_floor,
         'search': search,
     }
@@ -199,6 +225,7 @@ def job_card_finalization_queue(request):
         'closed_rows': sections['closed_rows'],
         'closed_total': sections['closed_total'],
         'closed_truncated': sections['closed_truncated'],
+        'released_rows': sections['released_rows'],
         'stuck_floor_percent': stuck_floor,
         'filter_q': sections['search'],
         'filter_min_wastage_pct': request.GET.get('min_wastage_pct', ''),
@@ -399,7 +426,35 @@ def job_card_finalization_set_stock(request):
             'stock_qty': {'label': 'Stock Qty (pcs)', 'from': str(previous or 0), 'to': str(stock_qty)},
         },
     )
-    messages.success(request, f'{job_card.job_card_no}: stock qty set to {stock_qty:,} pcs.')
+
+    # A job whose whole order is covered by stock never gets a printing or
+    # packing entry — the two events that would normally move it out of
+    # 'released' (see workflow.services.start_production, called from both
+    # entry screens). Left at 'released' it's invisible to Dispatch Entry
+    # (JOB_CARD_DISPATCHABLE_STATUSES excludes it), so nothing could ever be
+    # shipped against it. Move it along here instead, the same way a first
+    # printing/packing entry would, now that stock has taken production's
+    # place.
+    started_production = False
+    if job_card.workflow_status == 'released' and stock_qty >= job_card.order_qty:
+        from .jobcard_service import transition_job_card_status
+
+        transition_job_card_status(
+            job_card,
+            'in_production',
+            actor=request.user,
+            reason='Stock qty covers the full order — no printing/packing needed, ready to dispatch.',
+        )
+        started_production = True
+
+    if started_production:
+        messages.success(
+            request,
+            f'{job_card.job_card_no}: stock qty set to {stock_qty:,} pcs, which covers the full order. '
+            f'Moved to In Production — it can now be dispatched.',
+        )
+    else:
+        messages.success(request, f'{job_card.job_card_no}: stock qty set to {stock_qty:,} pcs.')
     return redirect('job_card_finalization_queue')
 
 
