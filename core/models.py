@@ -1198,13 +1198,24 @@ class Production(models.Model):
 
     def _sync_excess_production_to_stock(self):
         """Once packed qty reaches order qty, anything packed beyond it is
-        carried forward as stock for the next repeat run of this SKU."""
+        carried forward as stock for the next repeat run of this SKU.
+
+        Only ever raises stock_qty to a newly-detected excess — never lowers
+        it. This same field also holds stock an admin/manager records
+        manually to explain a shortfall on THIS job (see
+        core.job_card_finalization's "Set Stock" action, used when dispatch
+        outran what was printed/packed because part of it shipped from
+        existing warehouse stock). A packing entry that hasn't reached
+        order_qty yet says nothing about whether that manually-entered figure
+        is still accurate, so it must not get silently reset to 0 just
+        because this job's own packing hasn't caught up to its order.
+        """
         job_card = self.job_card
         planning_job = getattr(job_card, 'planning_job', None)
         if not planning_job or not job_card.order_qty:
             return
         excess = max(int(job_card.total_packed_pcs or 0) - int(job_card.order_qty), 0)
-        if int(planning_job.stock_qty or 0) != excess:
+        if excess > int(planning_job.stock_qty or 0):
             planning_job.stock_qty = excess
             planning_job.save(update_fields=['stock_qty', 'updated_at'])
 

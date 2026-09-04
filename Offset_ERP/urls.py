@@ -84,6 +84,7 @@ urlpatterns = [
     path('job-cards/finalize/close/', job_card_finalization.job_card_finalization_close, name='job_card_finalization_close'),
     path('job-cards/finalize/reopen/', job_card_finalization.job_card_finalization_reopen, name='job_card_finalization_reopen'),
     path('job-cards/finalize/export/', job_card_finalization.job_card_finalization_export, name='job_card_finalization_export'),
+    path('job-cards/finalize/set-stock/', job_card_finalization.job_card_finalization_set_stock, name='job_card_finalization_set_stock'),
     path('machine-master-tools/', views.machine_master_tools, name='machine_master_tools'),
     path('erp-readme/', views.erp_readme, name='erp_readme'),
     path('erp-readme/download/', views.download_erp_readme, name='download_erp_readme'),

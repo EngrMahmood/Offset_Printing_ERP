@@ -212,14 +212,19 @@ def job_card_completion_blockers(job_card):
     A repeat job fulfilled entirely from carried-forward stock
     (PlanningJob.stock_qty) can legitimately have zero *new* packing entries
     this cycle, so packed pcs and stock qty are counted together against
-    what's actually been dispatched, not checked as a bare "packed > 0".
+    what's actually been dispatched, not checked as a bare "packed > 0". The
+    same is true of printing: a job dispatched entirely out of stock never
+    needed a print run of its own, so "no printing logged" is only a real
+    blocker while packed + stock still falls short of what shipped.
     """
     reasons = []
-    if job_card.is_print_job and job_card.total_printed_pcs <= 0:
-        reasons.append('No printing entries have been logged for this job.')
 
     stock_qty = job_card.planning_job.stock_qty if job_card.planning_job_id else 0
     covered = job_card.total_packed_pcs + (stock_qty or 0)
+
+    if job_card.is_print_job and job_card.total_printed_pcs <= 0 and covered < job_card.total_dispatch:
+        reasons.append('No printing entries have been logged for this job.')
+
     if covered <= 0:
         reasons.append('No packing entries have been logged for this job.')
     elif covered < job_card.total_dispatch:

@@ -52,6 +52,8 @@
         .gap-badge { color: #8a1c1c; font-weight: 600; }
         .blocker-row { background: #fff8f0; }
         .blocker-note { color: #8a4b00; font-size: 10px; max-width: 220px; white-space: normal; }
+        .stock-form { margin-top: 6px; }
+        .stock-form input[type="number"] { width: 90px; padding: 5px 7px; border: 1px solid #c2ccd7; border-radius: 3px; font-size: 11px; }
         .section-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
         .export-actions { display: flex; gap: 8px; }
         .btn-export { background: #fff; color: #33475f; border: 1px solid #c2ccd7; padding: 5px 10px; font-size: 11px; text-decoration: none; border-radius: 3px; font-weight: 600; }
@@ -143,6 +145,14 @@
                     <td>
                         {% if row.blockers %}
                         <div class="blocker-note">{{ row.blockers|join:" " }}</div>
+                        {% if row.job_card.planning_job_id %}
+                        <form method="POST" action="{% url 'job_card_finalization_set_stock' %}" class="row-form stock-form" title="Stock already on hand for this SKU (e.g. from a physical count) — counted alongside packed pcs against what shipped.">
+                            {% csrf_token %}
+                            <input type="hidden" name="job_card_id" value="{{ row.job_card.id }}">
+                            <input type="number" name="stock_qty" min="0" step="1" value="{{ row.stock_qty }}" placeholder="Stock qty">
+                            <button type="submit" class="btn btn-amber btn-sm">Set Stock</button>
+                        </form>
+                        {% endif %}
                         {% else %}
                         <form method="POST" action="{% url 'job_card_finalization_close' %}" class="row-form">
                             {% csrf_token %}
@@ -205,6 +215,14 @@
                     <td>
                         {% if row.blockers %}
                         <div class="blocker-note">{{ row.blockers|join:" " }}</div>
+                        {% if row.job_card.planning_job_id %}
+                        <form method="POST" action="{% url 'job_card_finalization_set_stock' %}" class="row-form stock-form" title="Stock already on hand for this SKU (e.g. from a physical count) — counted alongside packed pcs against what shipped.">
+                            {% csrf_token %}
+                            <input type="hidden" name="job_card_id" value="{{ row.job_card.id }}">
+                            <input type="number" name="stock_qty" min="0" step="1" value="{{ row.stock_qty }}" placeholder="Stock qty">
+                            <button type="submit" class="btn btn-amber btn-sm">Set Stock</button>
+                        </form>
+                        {% endif %}
                         {% else %}
                         <form method="POST" action="{% url 'job_card_finalization_close' %}" class="row-form">
                             {% csrf_token %}

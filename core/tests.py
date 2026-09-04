@@ -231,6 +231,161 @@ class ExcessProductionToStockTests(TestCase):
         self.assertEqual(int(planning_job.stock_qty or 0), 15)
 
 
+class StockAwareCompletionBlockersTests(TestCase):
+    """Reproduces two real stuck-job patterns reported against the Job Card
+    Finalization queue: JC-08-26-PP-1683 (printing fell short of dispatch
+    because part of it was covered by existing stock) and the fully-stock
+    case where a job is dispatched entirely from stock with no printing or
+    packing entries of its own at all."""
+
+    def setUp(self):
+        self.machine = Machine.objects.create(name='Blocker Test Machine')
+
+    def _make_job_card(self, jc_number, order_qty, *, dispatched, printed, packed, stock_qty):
+        from core.jobcard_service import job_card_completion_blockers
+        self._blockers = job_card_completion_blockers  # exposed for readability below
+
+        planning_job = PlanningJob.objects.create(
+            jc_number=jc_number, order_qty=order_qty, status='in_production',
+            plan_date=date.today(), plan_month='August 2026', sku=f'SKU-{jc_number}',
+            stock_qty=stock_qty,
+        )
+        job_card = JobCard.objects.create(
+            job_card_no=jc_number, planning_job=planning_job, order_qty=order_qty,
+            SKU=f'SKU-{jc_number}', ups=1, is_print_job=True,
+            total_sheet_quantity=max(printed, 1), total_colors=4, status='in_production',
+            po_date=date(2026, 1, 1), plate_set_no='PLATE-1', machine_name=self.machine,
+            total_impressions_required=max(printed, 1),
+        )
+        if printed:
+            Production.objects.create(
+                job_card=job_card, entry_type='printing', date='2026-08-24', shift='A',
+                machine=self.machine, output_sheets=printed, waste_sheets=0,
+                impressions=printed, planned_time=60, run_time=60,
+            )
+        if packed:
+            from core.models import Sorter
+            sorter, _ = Sorter.objects.get_or_create(name='Blocker Test Sorter')
+            Production.objects.create(
+                job_card=job_card, entry_type='packing', date='2026-08-24', shift='A',
+                packing_qty=packed, sorting_waste_qty=0, sorter=sorter,
+            )
+        if dispatched:
+            Dispatch.objects.create(
+                job_card=job_card, dc_no=f'DC-{jc_number}', dispatch_date=date(2026, 8, 27),
+                dispatch_qty=dispatched,
+            )
+        return planning_job, job_card
+
+    def test_partial_stock_without_stock_qty_entered_stays_blocked(self):
+        """JC-1683 as found: printed/packed short of the full dispatch, and
+        nobody had told the system about the stock that covered the rest —
+        must stay blocked (this is not a blanket bypass)."""
+        from core.jobcard_service import job_card_completion_blockers
+        _planning_job, job_card = self._make_job_card(
+            'JC-BLOCK-1683', order_qty=3600, dispatched=3600, printed=2420, packed=2400, stock_qty=0,
+        )
+        blockers = job_card_completion_blockers(job_card)
+        self.assertEqual(len(blockers), 1)
+        self.assertIn('Packed + stock (2400) is less than dispatched (3600)', blockers[0])
+
+    def test_partial_stock_with_stock_qty_entered_clears(self):
+        """Same job as above, but with the actual stock on hand recorded —
+        matches what the Job Card Finalization 'Set Stock' action now writes."""
+        from core.jobcard_service import job_card_completion_blockers
+        _planning_job, job_card = self._make_job_card(
+            'JC-BLOCK-1683B', order_qty=3600, dispatched=3600, printed=2420, packed=2400, stock_qty=1200,
+        )
+        self.assertEqual(job_card_completion_blockers(job_card), [])
+
+    def test_fully_stock_fulfilled_job_needs_no_printing_or_packing(self):
+        """JC-2015-style: the whole order was already in stock, so nothing
+        was printed or packed for this run at all — only dispatch happened.
+        Before this fix, 'No printing entries logged' blocked closing even
+        though stock fully explained the shortfall."""
+        from core.jobcard_service import job_card_completion_blockers
+        _planning_job, job_card = self._make_job_card(
+            'JC-BLOCK-2015', order_qty=6037, dispatched=6037, printed=0, packed=0, stock_qty=6037,
+        )
+        self.assertEqual(job_card_completion_blockers(job_card), [])
+
+    def test_stock_short_of_dispatch_still_blocks_both_printing_and_packing(self):
+        from core.jobcard_service import job_card_completion_blockers
+        _planning_job, job_card = self._make_job_card(
+            'JC-BLOCK-2015B', order_qty=6037, dispatched=6037, printed=0, packed=0, stock_qty=6000,
+        )
+        blockers = job_card_completion_blockers(job_card)
+        self.assertEqual(len(blockers), 2)
+        self.assertTrue(any('No printing entries' in b for b in blockers))
+        self.assertTrue(any('Packed + stock (6000) is less than dispatched (6037)' in b for b in blockers))
+
+
+class JobCardFinalizationSetStockViewTests(TestCase):
+    def setUp(self):
+        self.machine = Machine.objects.create(name='Set Stock Test Machine')
+        self.user = get_user_model().objects.create_user(username='finalizer', password='testpass123')
+        from core.models import Permission, UserPermissionOverride
+        # The soft-coded access-control system (core/permissions.py) has no
+        # seed data in a fresh test DB (Role/Permission rows come from the
+        # seed_access_control management command, not a migration), so grant
+        # this test user the specific permission the view requires.
+        permission, _ = Permission.objects.get_or_create(
+            code='action.finalize_job_card', defaults={'name': 'Finalize Job Card'},
+        )
+        UserPermissionOverride.objects.get_or_create(
+            user=self.user, permission=permission, defaults={'granted': True},
+        )
+        self.client.force_login(self.user)
+
+        self.planning_job = PlanningJob.objects.create(
+            jc_number='JC-SETSTOCK-0001', order_qty=1000, status='in_production',
+            plan_date=date.today(), plan_month='August 2026', sku='SKU-SETSTOCK-1',
+        )
+        self.job_card = JobCard.objects.create(
+            job_card_no='JC-SETSTOCK-0001', planning_job=self.planning_job, order_qty=1000,
+            SKU='SKU-SETSTOCK-1', ups=1, is_print_job=True, total_sheet_quantity=1,
+            total_colors=4, status='in_production', po_date=date(2026, 1, 1),
+            plate_set_no='PLATE-1', machine_name=self.machine, total_impressions_required=1,
+        )
+
+    def test_set_stock_updates_planning_job_and_logs_change(self):
+        from core.models import ChangeLog
+        response = self.client.post(
+            reverse('job_card_finalization_set_stock'),
+            {'job_card_id': self.job_card.id, 'stock_qty': '1200'},
+        )
+        self.assertRedirects(response, reverse('job_card_finalization_queue'))
+        self.planning_job.refresh_from_db()
+        self.assertEqual(int(self.planning_job.stock_qty), 1200)
+        self.assertTrue(
+            ChangeLog.objects.filter(
+                entity_type='job_card', record_id=self.job_card.id, action='update',
+            ).exists()
+        )
+
+    def test_set_stock_rejects_negative_value(self):
+        response = self.client.post(
+            reverse('job_card_finalization_set_stock'),
+            {'job_card_id': self.job_card.id, 'stock_qty': '-5'},
+        )
+        self.assertRedirects(response, reverse('job_card_finalization_queue'))
+        self.planning_job.refresh_from_db()
+        self.assertIsNone(self.planning_job.stock_qty)
+
+    def test_set_stock_requires_planning_job(self):
+        orphan_card = JobCard.objects.create(
+            job_card_no='JC-SETSTOCK-ORPHAN', order_qty=100, SKU='SKU-ORPHAN', ups=1,
+            is_print_job=True, total_sheet_quantity=1, total_colors=4, status='in_production',
+            po_date=date(2026, 1, 1), plate_set_no='PLATE-1', machine_name=self.machine,
+            total_impressions_required=1,
+        )
+        response = self.client.post(
+            reverse('job_card_finalization_set_stock'),
+            {'job_card_id': orphan_card.id, 'stock_qty': '50'},
+        )
+        self.assertRedirects(response, reverse('job_card_finalization_queue'))
+
+
 class DispatchFeatureTests(TestCase):
     def setUp(self):
         self.client = Client()

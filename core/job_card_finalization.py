@@ -38,6 +38,7 @@ def _row(job_card, *, with_blockers=True):
         'total_packed_pcs': job_card.total_packed_pcs,
         'gap_qty': max(job_card.order_qty - job_card.total_dispatch, 0),
         'wastage': wastage,
+        'stock_qty': (job_card.planning_job.stock_qty if job_card.planning_job_id else None) or 0,
         # Only the two open sections offer a Close button, so the closed list
         # skips this — it is pure wasted work for a column it never renders.
         'blockers': job_card_completion_blockers(job_card) if with_blockers else [],
@@ -349,6 +350,56 @@ def job_card_finalization_close(request):
     for job_card_id, error in failed:
         messages.error(request, f'Job card #{job_card_id}: {error}')
 
+    return redirect('job_card_finalization_queue')
+
+
+@login_required
+@permission_required('can_finalize_job_card')
+@require_POST
+def job_card_finalization_set_stock(request):
+    """Set the stock qty that lets a stock-fulfilled job close without a full
+    reopen — see job_card_completion_blockers(). PlanningJob.stock_qty is
+    normally only editable from the Planning job-edit form, which locks once
+    a job leaves draft/QC; by the time a shortfall shows up here (in
+    production or beyond), that form is unreachable without reopening the
+    whole job. This is a narrower door to the same one field, for the
+    admin/manager audience this page is already restricted to.
+    """
+    job_card_id = request.POST.get('job_card_id')
+    stock_qty_raw = (request.POST.get('stock_qty') or '').strip()
+
+    job_card = get_object_or_404(JobCard, pk=job_card_id, is_active=True)
+    if not job_card.planning_job_id:
+        messages.error(request, f'{job_card.job_card_no} has no linked planning job to hold a stock qty.')
+        return redirect('job_card_finalization_queue')
+
+    try:
+        stock_qty = int(stock_qty_raw)
+        if stock_qty < 0:
+            raise ValueError
+    except ValueError:
+        messages.error(request, 'Enter a stock quantity of 0 or more.')
+        return redirect('job_card_finalization_queue')
+
+    planning_job = job_card.planning_job
+    previous = planning_job.stock_qty
+    planning_job.stock_qty = stock_qty
+    planning_job.save(update_fields=['stock_qty', 'updated_at'])
+
+    from .models import ChangeLog
+
+    ChangeLog.objects.create(
+        entity_type='job_card',
+        record_id=job_card.pk,
+        record_label=str(job_card),
+        action='update',
+        changed_by=request.user,
+        change_reason='Stock qty set from Job Card Finalization',
+        field_changes={
+            'stock_qty': {'label': 'Stock Qty (pcs)', 'from': str(previous or 0), 'to': str(stock_qty)},
+        },
+    )
+    messages.success(request, f'{job_card.job_card_no}: stock qty set to {stock_qty:,} pcs.')
     return redirect('job_card_finalization_queue')
 
 
