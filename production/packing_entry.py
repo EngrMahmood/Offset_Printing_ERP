@@ -251,6 +251,15 @@ def packing_production_entry(request):
             messages.error(request, f'Error saving packing data: {str(e)}')
 
     job_cards = list(_packing_eligible_job_cards_queryset(edit_record).order_by('-created_at')[:200])
+
+    prefill_job_card_id = '' if edit_record else (request.GET.get('job_card') or '').strip()
+    if prefill_job_card_id and not any(str(jc.id) == prefill_job_card_id for jc in job_cards):
+        prefilled_jc = _packing_eligible_job_cards_queryset().filter(pk=prefill_job_card_id).first()
+        if prefilled_jc:
+            job_cards.insert(0, prefilled_jc)
+        else:
+            prefill_job_card_id = ''
+
     sorters = Sorter.objects.filter(is_active=True).order_by('name')
     info_map = _build_packing_job_info_map(job_cards)
     context = {
@@ -263,6 +272,7 @@ def packing_production_entry(request):
         'edit_lock_applies': bool(edit_record and record_is_time_locked('production', edit_record)),
         'is_view_mode': is_view_mode,
         'current_user_display': request.user.get_full_name() or request.user.username,
+        'prefill_job_card_id': prefill_job_card_id,
     }
     return render(request, 'production/packing_entry.html', context)
 

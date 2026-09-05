@@ -543,6 +543,23 @@ def _dispatch_remaining_badge(order_qty, total_dispatch):
 
 
 @login_required
+def qr_redirect_printing(request, job_card_id):
+    """Short-path QR target — keeps the printed QR code small/dense enough to
+    scan reliably, then forwards to the real prefilled entry form."""
+    return redirect(f"{reverse('printing_production_entry')}?job_card={job_card_id}")
+
+
+@login_required
+def qr_redirect_packing(request, job_card_id):
+    return redirect(f"{reverse('packing_production_entry')}?job_card={job_card_id}")
+
+
+@login_required
+def qr_redirect_dispatch(request, job_card_id):
+    return redirect(f"{reverse('dispatch_entry')}?job_card={job_card_id}")
+
+
+@login_required
 @permission_required('can_approve_dispatch')
 def dispatch_entry(request):
     """Dispatch entry form"""
@@ -604,16 +621,22 @@ def dispatch_entry(request):
         except Exception as e:
             messages.error(request, f'Error saving dispatch: {str(e)}')
 
-    dispatch_jobs = _dispatchable_job_cards_queryset(edit_record).order_by('-created_at')[:200]
+    dispatch_jobs = list(_dispatchable_job_cards_queryset(edit_record).order_by('-created_at')[:200])
+
+    prefill_job_card_id = (request.GET.get('job_card') or '').strip()
+    if edit_record:
+        prefill_job_card_id = str(edit_record.job_card_id)
+    if prefill_job_card_id and not any(str(jc.id) == prefill_job_card_id for jc in dispatch_jobs):
+        prefilled_jc = _dispatchable_job_cards_queryset(edit_record).filter(pk=prefill_job_card_id).first()
+        if prefilled_jc:
+            dispatch_jobs.insert(0, prefilled_jc)
+        elif not edit_record:
+            prefill_job_card_id = ''
 
     job_card_info_map = {}
     edit_record_id = edit_record.id if edit_record else None
     for job_card in dispatch_jobs:
         job_card_info_map[str(job_card.id)] = _build_dispatch_job_card_info(job_card, edit_record_id)
-
-    prefill_job_card_id = (request.GET.get('job_card') or '').strip()
-    if edit_record:
-        prefill_job_card_id = str(edit_record.job_card_id)
     prefill_dc_no = (request.GET.get('dc_no') or '').strip()
     if edit_record and not prefill_dc_no:
         prefill_dc_no = edit_record.dc_no or ''

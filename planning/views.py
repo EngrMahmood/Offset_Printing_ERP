@@ -22,6 +22,29 @@ def _build_qr_image_base64(data):
     img = qr.make_image(fill_color='black', back_color='white')
     img.save(buffer, format='PNG')
     return base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+
+def _build_job_card_action_qr_codes(request, job_card):
+    """QR codes that deep-link a scanning phone straight to this job card's
+    Printing / Packing / Dispatch entry form, pre-selected.
+
+    These go through the short /q/p|k|d/<id>/ redirect views (rather than
+    encoding the full form URL + query string) purely to keep the QR payload
+    short — fewer characters means fewer QR modules, which matters a lot
+    here since these codes are printed quite small on the job card."""
+    if not job_card:
+        return {}
+    links = {
+        'printing_qr_data_uri': 'qr_redirect_printing',
+        'packing_qr_data_uri': 'qr_redirect_packing',
+        'dispatch_qr_data_uri': 'qr_redirect_dispatch',
+    }
+    out = {}
+    for context_key, url_name in links.items():
+        full_url = request.build_absolute_uri(reverse(url_name, kwargs={'job_card_id': job_card.id}))
+        b64 = _build_qr_image_base64(full_url)
+        out[context_key] = f'data:image/png;base64,{b64}' if b64 else None
+    return out
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 
@@ -2405,30 +2428,34 @@ def planning_job_card_print(request, job_id):
     job_scan_url = request.build_absolute_uri(reverse('planning:job_card_print', kwargs={'job_id': job.id}))
     qr_base64 = _build_qr_image_base64(job_scan_url)
     job_qr_data_uri = f'data:image/png;base64,{qr_base64}' if qr_base64 else None
+    action_qr_codes = _build_job_card_action_qr_codes(request, job_card)
     pdf_filename = _pdf_filename(job.jc_number)
+
+    context = {
+        'job': job,
+        'recipe': recipe,
+        'merge': build_job_card_merge_context(job),
+        'job_scan_url': job_scan_url,
+        'job_qr_data_uri': job_qr_data_uri,
+        'production_type_tag': production_type_tag,
+        'plan_date': job.plan_date,
+        'po_approval_date_display': po_approval_date,
+        'material_type_clean': material_type_clean,
+        'color_spec_clean': color_spec_clean,
+        'size_w_mm_int': _mm_int_string(job.size_w_mm_display),
+        'size_h_mm_int': _mm_int_string(job.size_h_mm_display),
+        'special_instructions_text': special_instructions_text,
+        'prepared_by_display': prepared_by_display,
+        'checked_by_display': checked_by_display,
+        'approved_by_display': approved_by_display,
+        'pdf_filename': pdf_filename,
+    }
+    context.update(action_qr_codes)
 
     return render(
         request,
         'Job Card.html',
-        {
-            'job': job,
-            'recipe': recipe,
-            'merge': build_job_card_merge_context(job),
-            'job_scan_url': job_scan_url,
-            'job_qr_data_uri': job_qr_data_uri,
-            'production_type_tag': production_type_tag,
-            'plan_date': job.plan_date,
-            'po_approval_date_display': po_approval_date,
-            'material_type_clean': material_type_clean,
-            'color_spec_clean': color_spec_clean,
-            'size_w_mm_int': _mm_int_string(job.size_w_mm_display),
-            'size_h_mm_int': _mm_int_string(job.size_h_mm_display),
-            'special_instructions_text': special_instructions_text,
-            'prepared_by_display': prepared_by_display,
-            'checked_by_display': checked_by_display,
-            'approved_by_display': approved_by_display,
-            'pdf_filename': pdf_filename,
-        },
+        context,
     )
 
 

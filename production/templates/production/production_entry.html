@@ -181,7 +181,7 @@
                         <select id="job_card" name="job_card" class="erp-select" required style="display:none;" {% if is_view_mode %}disabled{% endif %}>
                             <option value="">Select job card</option>
                             {% for card in job_cards %}
-                            <option value="{{ card.id }}" {% if edit_record and edit_record.job_card_id == card.id %}selected{% endif %}>
+                            <option value="{{ card.id }}" {% if edit_record and edit_record.job_card_id == card.id %}selected{% elif not edit_record and prefill_job_card_id == card.id|stringformat:"s" %}selected{% endif %}>
                                 {{ card.job_card_no }} - {{ card.SKU }}
                             </option>
                             {% endfor %}

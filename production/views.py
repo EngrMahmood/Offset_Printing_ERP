@@ -508,6 +508,15 @@ def printing_production_entry(request):
         edited_jc = JobCard.objects.filter(pk=edit_record.job_card_id).first()
         if edited_jc:
             job_cards.insert(0, edited_jc)
+
+    prefill_job_card_id = '' if edit_record else (request.GET.get('job_card') or '').strip()
+    if prefill_job_card_id and not any(str(jc.id) == prefill_job_card_id for jc in job_cards):
+        prefilled_jc = JobCard.objects.filter(pk=prefill_job_card_id).first()
+        if prefilled_jc:
+            job_cards.insert(0, prefilled_jc)
+        else:
+            prefill_job_card_id = ''
+
     machines = Machine.objects.filter(is_active=True)
     operators = Operator.objects.all()
     supervisors = Supervisor.objects.filter(is_active=True).order_by('name')
@@ -539,6 +548,7 @@ def printing_production_entry(request):
         'edit_lock_applies': bool(edit_record and record_is_time_locked('production', edit_record)),
         'is_view_mode': is_view_mode,
         'max_print_passes': get_max_print_passes(),
+        'prefill_job_card_id': prefill_job_card_id,
     }
 
     return render(request, 'production/production_entry.html', context)
