@@ -22,6 +22,8 @@ diagnostics/
 *.png
 !core/static/core/pwa/*.png
 *.jpg
+!core/static/core/image/logo.jpg
+!planning/static/planning/job_card/logo.jpg
 *.jpeg
 *.xls*
 *.htm
