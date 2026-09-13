@@ -94,6 +94,11 @@
                 <div class="dp-card-value">{{ data.summary.not_released_pcs|intcomma }}</div>
                 <div class="dp-card-sub">{{ data.summary.not_released_jobs }} job{{ data.summary.not_released_jobs|pluralize }} still in planning</div>
             </div>
+            <div class="dp-card pw-card-link" onclick="window.erpActivateTabByName('plates')">
+                <div class="dp-card-label">Plates Pending</div>
+                <div class="dp-card-value">{{ data.summary.plates_jobs|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.summary.plates_jobs }} open with graphics/vendor</div>
+            </div>
         </div>
 
         <div class="pw-export-links">
@@ -115,6 +120,9 @@
             </button>
             <button type="button" class="erp-tab-btn" data-target="pw-tab-not-released" data-tab-name="not_released">
                 <i class="fa fa-hourglass-half"></i> Not Yet Released <span class="erp-tab-count">{{ data.summary.not_released_jobs }}</span>
+            </button>
+            <button type="button" class="erp-tab-btn" data-target="pw-tab-plates" data-tab-name="plates">
+                <i class="fa fa-layer-group"></i> Plates Pending <span class="erp-tab-count">{{ data.summary.plates_jobs }}</span>
             </button>
         </div>
 
@@ -267,6 +275,47 @@
                         </tr>
                         {% empty %}
                         <tr><td colspan="7">Nothing waiting on release.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div id="pw-tab-plates" class="erp-tab-content" style="display:none;">
+            <div class="pw-section-header">
+                <h3 class="erp-section-title">Plates Pending</h3>
+                <div class="pw-export-links">
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=xlsx&stage=plates&{{ qs }}" class="erp-btn erp-btn-secondary sm">Excel</a>
+                    <a href="{% url 'reports:reports_api:export_report' 'pending-work' %}?type=pdf&stage=plates&{{ qs }}" class="erp-btn erp-btn-secondary sm">PDF</a>
+                </div>
+            </div>
+            <p class="erp-muted" style="margin-top:-6px; margin-bottom:12px;">
+                Open plate requests (draft, sent to vendor, or received but not yet available for production) —
+                a point-in-time snapshot, not filtered by the period above.
+            </p>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead>
+                        <tr>
+                            <th>Job Card</th><th>PO/WO</th><th>SKU</th><th>Job Name</th><th>Status</th>
+                            <th>Vendor</th><th>Machine</th><th>Requested On</th><th class="dp-num">Days Pending</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in data.plates_pending_rows %}
+                        <tr>
+                            <td>{{ row.job_card_no|default:'—' }}</td>
+                            <td>{{ row.po_number|default:'—' }}</td>
+                            <td>{{ row.sku }}</td>
+                            <td>{{ row.job_name }}</td>
+                            <td>{{ row.status }}</td>
+                            <td>{{ row.vendor }}</td>
+                            <td>{{ row.machine|default:'—' }}</td>
+                            <td>{{ row.requested_on }}</td>
+                            <td class="dp-num {% if row.days_pending|default:0 > 7 %}pw-days-old{% endif %}">{{ row.days_pending }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr><td colspan="9">No plate requests pending.</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

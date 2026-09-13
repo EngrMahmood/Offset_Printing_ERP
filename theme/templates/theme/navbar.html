@@ -262,10 +262,6 @@
            class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'stock-report' %}is-active{% endif %}">
             Stock Report
         </a>
-        <a href="{% url 'reports:detail' 'plates-pending' %}"
-           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'plates-pending' %}is-active{% endif %}">
-            Plates Pending
-        </a>
         <a href="{% url 'reports:detail' 'kpi-scorecard' %}"
            class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'kpi-scorecard' %}is-active{% endif %}">
             KPI Scorecard

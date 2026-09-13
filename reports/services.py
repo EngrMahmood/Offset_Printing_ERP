@@ -2400,6 +2400,12 @@ def build_pending_work_context(request):
     dispatch_rows.sort(key=lambda r: r['pending_qty'], reverse=True)
     not_released_rows.sort(key=lambda r: r['order_qty_pcs'], reverse=True)
 
+    # Plates pending is a point-in-time snapshot (no date filter), shown as its
+    # own tab alongside the process backlog rather than mixed into "all", the
+    # same way "Not Yet Released" is kept separate — its rows have a completely
+    # different shape (vendor/status, not qty/pending_qty).
+    plates_pending_rows = _build_plates_pending_rows()
+
     summary = {
         'printing_jobs': len(printing_rows),
         'printing_pcs': sum(r['pending_qty'] for r in printing_rows),
@@ -2409,12 +2415,14 @@ def build_pending_work_context(request):
         'dispatch_pcs': sum(r['pending_qty'] for r in dispatch_rows),
         'not_released_jobs': len(not_released_rows),
         'not_released_pcs': sum(r['order_qty_pcs'] for r in not_released_rows),
+        'plates_jobs': len(plates_pending_rows),
     }
 
     # `stage` selects which table an export link downloads — each of the three
-    # process tables, the not-yet-released list, or "all" (every job, tagged
-    # with its stage) when no stage is given. Part of the cache key (see
-    # reports/filters/universal.py) so per-stage exports never collide.
+    # process tables, the not-yet-released list, the plates-pending list, or
+    # "all" (every job, tagged with its stage) when no stage is given. Part of
+    # the cache key (see reports/filters/universal.py) so per-stage exports
+    # never collide.
     stage = (request.GET.get('stage') or '').strip().lower()
     if stage == 'printing':
         export_rows = printing_rows
@@ -2424,6 +2432,8 @@ def build_pending_work_context(request):
         export_rows = dispatch_rows
     elif stage == 'not_released':
         export_rows = not_released_rows
+    elif stage == 'plates':
+        export_rows = plates_pending_rows
     else:
         export_rows = [
             {'stage': stage_name, **row}
@@ -2435,6 +2445,8 @@ def build_pending_work_context(request):
 
     if stage == 'not_released':
         headers = ['job_card_no', 'po_number', 'sku', 'status', 'planning_stage', 'order_qty_pcs', 'days_pending']
+    elif stage == 'plates':
+        headers = PLATES_PENDING_HEADERS
     elif stage in ('printing', 'packing', 'dispatch'):
         headers = ['job_card_no', 'po_number', 'sku', 'machine', 'status', 'supervisor_status',
                    'order_qty_pcs', 'printed_pcs', 'packed_pcs', 'dispatched_pcs', 'pending_qty', 'days_pending']
@@ -2448,6 +2460,8 @@ def build_pending_work_context(request):
         'packed_pcs': 'Packed (Pcs)', 'dispatched_pcs': 'Dispatched (Pcs)', 'pending_qty': 'Pending (Pcs)',
         'days_pending': 'Days Stuck',
     }
+    if stage == 'plates':
+        header_labels = {**header_labels, **PLATES_PENDING_HEADER_LABELS}
 
     return {
         'report': next(item for item in REPORT_CATALOG if item['key'] == 'pending-work'),
@@ -2463,6 +2477,7 @@ def build_pending_work_context(request):
         'summary': summary,
         'printing_rows': printing_rows,
         'packing_rows': packing_rows,
+        'plates_pending_rows': plates_pending_rows,
         'dispatch_rows': dispatch_rows,
         'not_released_rows': not_released_rows,
         'export_rows': export_rows,
@@ -2509,10 +2524,20 @@ def build_stock_report_context(request):
     }
 
 
-def build_plates_pending_context(request):
-    """Open plate requests (draft / sent to vendor / received from vendor) —
-    the plate-making equivalent of build_pending_work_context, so overdue
-    plates get chased the same way overdue printing/packing/dispatch does.
+PLATES_PENDING_HEADERS = ['job_card_no', 'po_number', 'sku', 'job_name', 'status', 'vendor', 'machine', 'requested_on', 'days_pending']
+PLATES_PENDING_HEADER_LABELS = {
+    'job_card_no': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'job_name': 'Job Name',
+    'status': 'Status', 'vendor': 'Vendor', 'machine': 'Machine',
+    'requested_on': 'Requested On', 'days_pending': 'Days Pending',
+}
+
+
+def _build_plates_pending_rows():
+    """Open plate requests (draft / sent to vendor / received from vendor) as
+    plain row dicts — the plate-making equivalent of the printing/packing/
+    dispatch backlog rows in build_pending_work_context. Shared by the
+    standalone 'plates-pending' report (used by the bot email) and the
+    "Plates Pending" tab embedded in Pending Work.
     """
     from printing_plates.services import plate_request_active_queryset
 
@@ -2546,23 +2571,25 @@ def build_plates_pending_context(request):
         })
 
     rows.sort(key=lambda r: r['days_pending'], reverse=True)
+    return rows
+
+
+def build_plates_pending_context(request):
+    """Standalone 'plates-pending' report — used by the Plates Pending bot
+    email. Not linked from the Reports nav; the same rows are also shown as
+    a tab inside Pending Work (see build_pending_work_context).
+    """
+    rows = _build_plates_pending_rows()
 
     summary = {
         'plate_count': len(rows),
         'unassigned_vendor_count': sum(1 for r in rows if r['vendor'] == 'Not Assigned'),
     }
 
-    headers = ['job_card_no', 'po_number', 'sku', 'job_name', 'status', 'vendor', 'machine', 'requested_on', 'days_pending']
-    header_labels = {
-        'job_card_no': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'job_name': 'Job Name',
-        'status': 'Status', 'vendor': 'Vendor', 'machine': 'Machine',
-        'requested_on': 'Requested On', 'days_pending': 'Days Pending',
-    }
-
     return {
         'report': next(item for item in REPORT_CATALOG if item['key'] == 'plates-pending'),
-        'headers': headers,
-        'header_labels': header_labels,
+        'headers': PLATES_PENDING_HEADERS,
+        'header_labels': PLATES_PENDING_HEADER_LABELS,
         'filters': {},
         'summary': summary,
         'rows': rows,
