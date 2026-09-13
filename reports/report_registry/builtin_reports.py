@@ -7,6 +7,7 @@ from reports.services import (
     build_job_planning_context,
     build_machine_planning_context,
     build_pending_work_context,
+    build_plates_pending_context,
     build_plates_planning_context,
     build_production_insights_context,
     build_qc_approvals_context,
@@ -60,6 +61,10 @@ def _pending_work_executor(request, filters):
 
 def _stock_report_executor(request, filters):
     return build_stock_report_context(request)
+
+
+def _plates_pending_executor(request, filters):
+    return build_plates_pending_context(request)
 
 
 def _kpi_scorecard_executor(request, filters):
@@ -272,6 +277,25 @@ registry.register(
         category='planning',
         navigation_group='operations',
         executor=_stock_report_executor,
+    )
+)
+
+registry.register(
+    ReportDefinition(
+        slug='plates-pending',
+        title='Plates Pending',
+        description='Open plate requests (draft / sent to vendor / received) with vendor name and days pending.',
+        department='printing_plates',
+        permissions=('core.view_reports',),
+        filters=(),
+        supported_exports=('csv', 'xlsx', 'pdf'),
+        supported_charts=(),
+        drilldown_support=False,
+        cache_timeout=120,
+        icon='fa-layer-group',
+        category='planning',
+        navigation_group='operations',
+        executor=_plates_pending_executor,
     )
 )
 

@@ -28,6 +28,7 @@ from core.models import (
     ProductionDowntime,
 )
 from planning.models import PlanningJob, PoDocument, SkuRecipe
+from printing_plates.models import PlateRequest
 
 PLANNING_NOT_RELEASED_STATUSES = ('draft', 'pending_qc', 'qc_approved')
 PRODUCTION_WIP_STATUSES = ('released', 'in_production')
@@ -98,6 +99,12 @@ REPORT_CATALOG = [
         'key': 'stock-report',
         'title': 'Stock Report',
         'description': 'Finished-goods excess stock currently on hand per SKU/job, carried forward from over-packed runs.',
+        'focus': 'Planning',
+    },
+    {
+        'key': 'plates-pending',
+        'title': 'Plates Pending',
+        'description': 'Open plate requests (draft / sent to vendor / received) with vendor name and days pending, so overdue plates get chased.',
         'focus': 'Planning',
     },
 ]
@@ -2502,6 +2509,67 @@ def build_stock_report_context(request):
     }
 
 
+def build_plates_pending_context(request):
+    """Open plate requests (draft / sent to vendor / received from vendor) —
+    the plate-making equivalent of build_pending_work_context, so overdue
+    plates get chased the same way overdue printing/packing/dispatch does.
+    """
+    from printing_plates.services import plate_request_active_queryset
+
+    today = timezone.localdate()
+
+    plate_requests = plate_request_active_queryset().filter(
+        status__in=PlateRequest.OPEN_STATUSES,
+    ).select_related(
+        'planning_job', 'job_card', 'job_card__planning_job', 'sku_recipe', 'machine', 'department',
+    ).order_by('requested_at', 'created_at')
+
+    rows = []
+    for plate_request in plate_requests:
+        job_card = plate_request.job_card
+        planning_job = plate_request.planning_job
+        po_number = (job_card.PO_No if job_card else '') or (planning_job.po_number if planning_job else '') or ''
+        reference_date = (
+            plate_request.requested_at.date() if plate_request.requested_at
+            else plate_request.created_at.date()
+        )
+        rows.append({
+            'job_card_no': plate_request.jc_number or '',
+            'po_number': po_number,
+            'sku': plate_request.sku or '',
+            'job_name': plate_request.job_name or '',
+            'status': plate_request.status_label_display,
+            'vendor': plate_request.vendor or 'Not Assigned',
+            'machine': plate_request.machine_display or '',
+            'requested_on': reference_date.strftime('%d-%m-%Y'),
+            'days_pending': (today - reference_date).days,
+        })
+
+    rows.sort(key=lambda r: r['days_pending'], reverse=True)
+
+    summary = {
+        'plate_count': len(rows),
+        'unassigned_vendor_count': sum(1 for r in rows if r['vendor'] == 'Not Assigned'),
+    }
+
+    headers = ['job_card_no', 'po_number', 'sku', 'job_name', 'status', 'vendor', 'machine', 'requested_on', 'days_pending']
+    header_labels = {
+        'job_card_no': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'job_name': 'Job Name',
+        'status': 'Status', 'vendor': 'Vendor', 'machine': 'Machine',
+        'requested_on': 'Requested On', 'days_pending': 'Days Pending',
+    }
+
+    return {
+        'report': next(item for item in REPORT_CATALOG if item['key'] == 'plates-pending'),
+        'headers': headers,
+        'header_labels': header_labels,
+        'filters': {},
+        'summary': summary,
+        'rows': rows,
+        'export_rows': rows,
+    }
+
+
 def build_report_context(report_type, request):
     builders = {
         'machine-planning': build_machine_planning_context,
@@ -2514,6 +2582,7 @@ def build_report_context(report_type, request):
         'wastage-report': build_wastage_report_context,
         'pending-work': build_pending_work_context,
         'stock-report': build_stock_report_context,
+        'plates-pending': build_plates_pending_context,
     }
     builder = builders.get(report_type)
     if builder is None:

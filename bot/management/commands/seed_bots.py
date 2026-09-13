@@ -22,6 +22,7 @@ from core import navigation as nav
 BOT_001_CODE = 'PENDING_PRODUCTION_RELEASE'
 DAILY_PRODUCTION_CODE = 'DAILY_PRODUCTION_REPORT'
 STOCK_REPORT_CODE = 'STOCK_REPORT_EXCESS_INVENTORY'
+PLATES_PENDING_CODE = 'PLATES_PENDING'
 
 STOCK_REPORT_BODY = """<p>Dear Planning Team,</p>
 
@@ -32,6 +33,20 @@ check. Carried forward automatically the next time each SKU is planned.</p>
 {{report_table}}
 
 <p>Total SKUs/jobs holding stock: {{total_records}}</p>
+
+<p>Regards,<br>
+Production Printing</p>
+"""
+
+PLATES_PENDING_BODY = """<p>Dear Graphics/Planning Team,</p>
+
+<p>Below are the plate requests still open (draft, sent to vendor, or received
+but not yet available for production) as of {{date}}, with vendor name and
+days pending so overdue plates can be chased.</p>
+
+{{report_table}}
+
+<p>Total open plate requests: {{total_records}}</p>
 
 <p>Regards,<br>
 Production Printing</p>
@@ -103,6 +118,7 @@ class Command(BaseCommand):
             self._seed_stage_bot(spec)
         self._seed_daily_production()
         self._seed_stock_report()
+        self._seed_plates_pending()
         self.stdout.write(self.style.SUCCESS('Bot seed complete.'))
 
     def _seed_permission(self):
@@ -211,6 +227,35 @@ class Command(BaseCommand):
             send_time=datetime.time(7, 30),
             subject_template='Stock Report - Excess Inventory - {{date}}',
             body_template=STOCK_REPORT_BODY,
+            attach_report=True,
+            attachment_format='xlsx',
+            send_when_empty=False,
+        )
+        self.stdout.write(self.style.SUCCESS(f'Created bot: {bot}'))
+        self.stdout.write('  Inactive, no recipients — add recipients in /bot/ then activate.')
+
+    def _seed_plates_pending(self):
+        if BotAutomation.objects.filter(code=PLATES_PENDING_CODE).exists():
+            self.stdout.write(f'{PLATES_PENDING_CODE} already exists — left untouched.')
+            return
+
+        bot = BotAutomation.objects.create(
+            code=PLATES_PENDING_CODE,
+            name='Plates Pending',
+            description=(
+                'Daily email listing open plate requests (draft / sent to vendor / '
+                'received but not yet available for production), with vendor name '
+                'and days pending, so overdue plates get chased.'
+            ),
+            is_active=False,
+            report_slug='plates-pending',
+            # Point-in-time snapshot query — the report ignores date filters.
+            report_filters={},
+            report_period='',
+            frequency='DAILY',
+            send_time=datetime.time(8, 30),
+            subject_template='Plates Pending - {{date}}',
+            body_template=PLATES_PENDING_BODY,
             attach_report=True,
             attachment_format='xlsx',
             send_when_empty=False,
