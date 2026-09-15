@@ -168,6 +168,40 @@ def ensure_job_card_from_planning_job(planning_job, actor=None):
         return job_card, created
 
 
+def sync_job_card_process_type(planning_job):
+    """Keep an already-released JobCard's is_print_job in step with a
+    post-release correction to the SKU master's Job Process.
+
+    ensure_job_card_from_planning_job() only re-syncs fields while the job
+    card is still in a planning-editable status — once released, a
+    print/cut-pack misclassification fixed on the SKU master (or the
+    planning job) never reaches the job card, so it stays permanently
+    invisible to the wrong entry screen (e.g. JC-09-26-PP-2377).
+
+    Only applied when nothing has been logged against the job card yet, so
+    a job already mid-production under the old classification is never
+    silently reclassified underneath real printing/packing/dispatch data.
+    """
+    job_card = getattr(planning_job, 'job_card', None)
+    if not job_card:
+        return False
+
+    correct_is_print_job = not planning_job.is_cut_and_pack()
+    if job_card.is_print_job == correct_is_print_job:
+        return False
+
+    has_activity = (
+        job_card.productions.filter(is_active=True).exists()
+        or job_card.dispatch_set.filter(is_active=True).exists()
+    )
+    if has_activity:
+        return False
+
+    job_card.is_print_job = correct_is_print_job
+    job_card.save(update_fields=['is_print_job', 'updated_at'])
+    return True
+
+
 def ensure_job_card_from_pending_qc_planning_job(planning_job, actor=None):
     job_card, created = ensure_job_card_from_planning_job(planning_job, actor=actor)
     if planning_job.workflow_status == 'pending_qc' and job_card.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES:

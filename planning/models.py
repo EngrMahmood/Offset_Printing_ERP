@@ -854,7 +854,8 @@ class PlanningJob(models.Model):
                 update_fields.add('color_spec')
                 update_fields.add('total_colors')
 
-        if self.sync_job_process_type_from_sku_master():
+        job_process_type_changed = self.sync_job_process_type_from_sku_master()
+        if job_process_type_changed:
             if update_fields is not None:
                 update_fields.add('job_process_type')
 
@@ -902,6 +903,11 @@ class PlanningJob(models.Model):
         if update_fields is not None:
             kwargs['update_fields'] = list(update_fields)
         result = super().save(*args, **kwargs)
+
+        if job_process_type_changed:
+            from core.jobcard_service import sync_job_card_process_type
+
+            sync_job_card_process_type(self)
 
         return result
 
