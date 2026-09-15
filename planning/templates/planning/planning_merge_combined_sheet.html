@@ -32,7 +32,8 @@
     <div class="meta">
       Combined artwork: {{ group.artwork_code|default:"—" }}<br>
       Print sheet: {{ group.print_sheet_size|default:"—" }}
-      &nbsp;·&nbsp; Run: {{ group.run_sheets }} sheets &times; {{ group.total_sheet_ups }} ups
+      &nbsp;·&nbsp; Run: {{ group.run_sheets }} sheets{% if group.combined_wastage_sheets %} + {{ group.combined_wastage_sheets }} wastage{% endif %} &times; {{ group.total_sheet_ups }} ups
+      &nbsp;·&nbsp; <strong>Total run sheets: {{ group.total_run_sheets }}</strong>
       &nbsp;·&nbsp; {{ group.total_colors|default:"—" }} colours
       &nbsp;·&nbsp; One make-ready, one plate set for all {{ group.items.count }} SKUs
       {% if group.material %}&nbsp;·&nbsp; Material: {{ group.material }}{% endif %}

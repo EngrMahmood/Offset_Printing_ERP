@@ -1266,6 +1266,13 @@ class MergeGroup(models.Model):
             passes = self.lead_job.print_passes
         return (self.run_sheets or 0) * passes
 
+    @property
+    def total_run_sheets(self):
+        """Sheets to actually purchase/feed for this run: required run sheets
+        plus the combined wastage allowance — what the Combined Layout Sheet's
+        'Run' figure alone doesn't capture."""
+        return (self.run_sheets or 0) + (self.combined_wastage_sheets or 0)
+
     @classmethod
     def next_code(cls):
         from django.utils import timezone

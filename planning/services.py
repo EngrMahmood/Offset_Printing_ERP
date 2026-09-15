@@ -2252,12 +2252,23 @@ def _sync_repeat_jobs_from_po(po_doc, actor=None, bypass_recipe_check=False):
     # brand-new repeat job can be seeded with it automatically. Only the most
     # recently updated prior job per SKU is used — the leftover is
     # transferred (zeroed on the source), not duplicated, once consumed below.
+    #
+    # Only raid stock from a job whose own production is finished (job card
+    # completed/closed) — a job still in draft/released/in_production may
+    # have that stock_qty manually declared to cover its OWN dispatch (e.g.
+    # a fully-stock-fulfilled job set up to skip printing/packing), and must
+    # not have it silently zeroed out from under it by a later repeat job's
+    # intake. See JC-09-26-PP-2155: its declared stock was wiped the moment
+    # JC-09-26-PP-2362 (same SKU) came in, before 2155 ever used it.
     prior_stock_by_sku = {}
     if item_sku_keys:
         stock_query = Q()
         for sku_key in item_sku_keys:
             stock_query |= Q(sku__iexact=sku_key)
-        prior_stock_candidates = PlanningJob.objects.filter(stock_query, stock_qty__gt=0, is_active=True)
+        prior_stock_candidates = PlanningJob.objects.filter(
+            stock_query, stock_qty__gt=0, is_active=True,
+            job_card__status__in=('completed', 'closed'),
+        )
         if po_number:
             prior_stock_candidates = prior_stock_candidates.exclude(po_number=po_number)
         for job in prior_stock_candidates.order_by('-updated_at'):

@@ -30,13 +30,19 @@ def get_system_calculated_status_name(job_card):
     if packing_records.exists():
         return 'Sorting / Packing'
 
-    # 3. Printing check
+    # 3. Cut & Pack jobs skip printing entirely — cutting is their first stage.
+    if not job_card.is_print_job:
+        if job_card.workflow_status in ('released', 'in_production'):
+            return 'Cutting'
+        return 'Not Set'
+
+    # 4. Printing check
     printing_records = Production.objects.filter(job_card=job_card, is_active=True, entry_type='printing')
-    
+
     from production.printing_pass_helpers import get_job_card_pass_count
     total_passes = get_job_card_pass_count(job_card)
     final_pass_exists = printing_records.filter(print_pass_number=total_passes, output_sheets__gt=0).exists()
-    
+
     if final_pass_exists:
         return 'Printing Completed'
 
