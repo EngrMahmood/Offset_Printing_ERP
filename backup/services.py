@@ -223,9 +223,14 @@ def create_backup(backup_type='AUTO', user=None):
         file_size = os.path.getsize(zip_filepath)
         checksum = calculate_sha256(zip_filepath)
         
-        # Copy to cloud synchronization folders if defined
+        # Copy to cloud synchronization folders if defined. A failure here
+        # (bad path, unconfigured rclone remote, etc.) must NOT be silently
+        # swallowed — a backup that never leaves this VM defeats the whole
+        # point of an off-site copy, so it has to show up as a real failure
+        # on the dashboard, not a quiet log line under a green "SUCCESS".
         locations = [zip_filepath]
-        
+        cloud_errors = []
+
         if effective_onedrive:
             try:
                 od_path = copy_to_cloud_folder(zip_filepath, effective_onedrive)
@@ -233,6 +238,7 @@ def create_backup(backup_type='AUTO', user=None):
                 logger.info(f"Successfully copied backup to OneDrive: {od_path}")
             except Exception as e:
                 logger.error(f"Failed to copy to OneDrive folder: {str(e)}")
+                cloud_errors.append(f"OneDrive: {str(e)}")
 
         if effective_gdrive:
             try:
@@ -241,6 +247,7 @@ def create_backup(backup_type='AUTO', user=None):
                 logger.info(f"Successfully copied backup to Google Drive: {gd_path}")
             except Exception as e:
                 logger.error(f"Failed to copy to Google Drive folder: {str(e)}")
+                cloud_errors.append(f"Google Drive: {str(e)}")
 
         # Media routed to its own destination instead of bundled into the zip above
         if separate_media and hasattr(settings, 'MEDIA_ROOT') and settings.MEDIA_ROOT and os.path.exists(settings.MEDIA_ROOT):
@@ -259,17 +266,25 @@ def create_backup(backup_type='AUTO', user=None):
                 logger.info(f"Successfully copied media backup to: {media_location}")
             except Exception as e:
                 logger.error(f"Failed to create/copy separate media backup: {str(e)}")
+                cloud_errors.append(f"Media: {str(e)}")
 
         # Finalize history record
         finish_time = timezone.now()
         duration = int((finish_time - history.start_time).total_seconds())
-        
+
         history.finish_time = finish_time
         history.duration_seconds = max(1, duration)
         history.file_name = zip_filename
         history.file_size = file_size
         history.backup_location = ", ".join(locations)
-        history.status = 'SUCCESS'
+        if cloud_errors:
+            history.status = 'FAILED'
+            history.error_message = (
+                'Local backup succeeded, but cloud sync failed — '
+                + '; '.join(cloud_errors)
+            )
+        else:
+            history.status = 'SUCCESS'
         history.sha256_checksum = checksum
         history.save()
         
