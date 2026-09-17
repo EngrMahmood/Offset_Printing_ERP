@@ -1,0 +1,60 @@
+{% extends 'theme/base.html' %}
+{% block title %}{{ template.code }}{% endblock %}
+{% block header_title %}{{ template.name }}{% endblock %}
+{% block header_subtitle %}{{ template.code }} — {{ template.get_status_display }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'bom:template_edit' template.pk %}" class="erp-btn erp-btn-secondary">Edit</a>
+    {% if template.status == 'draft' %}
+    <a href="{% url 'bom:template_submit' template.pk %}" class="erp-btn erp-btn-secondary">Submit for Review</a>
+    {% endif %}
+    {% if template.status != 'approved' %}
+    <a href="{% url 'bom:template_approve' template.pk %}" class="erp-btn erp-btn-primary">Approve</a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <h3>Match Conditions</h3>
+        <table class="erp-table">
+            <thead><tr><th>Attribute</th><th>Operator</th><th>Value</th></tr></thead>
+            <tbody>
+            {% for c in conditions %}
+                <tr><td>{{ c.attribute.label }}</td><td>{{ c.get_operator_display }}</td>
+                    <td>{{ c.value_text }}{{ c.value_min }}{% if c.value_min %} – {{ c.value_max }}{% endif %}{{ c.value_list }}</td></tr>
+            {% empty %}
+                <tr><td colspan="3">No conditions — matches every SKU on this production line.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+    <section class="erp-section-shell">
+        <h3>Lines</h3>
+        <table class="erp-table">
+            <thead><tr><th>#</th><th>Line</th><th>Step</th><th>Category</th><th>Resolution</th><th>Item / Role</th><th>Entry</th><th>Qty</th><th>Wastage</th></tr></thead>
+            <tbody>
+            {% for l in lines %}
+                <tr>
+                    <td>{{ l.sequence }}</td>
+                    <td>{{ l.line_code }}</td>
+                    <td>{{ l.process_step.label }}</td>
+                    <td>{{ l.bom_item_type.name }}</td>
+                    <td>{{ l.get_resolution_mode_display }}</td>
+                    <td>{% if l.raw_item %}{{ l.raw_item.item_code }}{% else %}{{ l.item_role }}{% endif %}</td>
+                    <td>{{ l.get_entry_mode_display }}</td>
+                    {% if l.entry_mode == 'simple' %}
+                        <td>{{ l.fixed_qty }}</td>
+                        <td>{{ l.fixed_wastage_percent }}</td>
+                    {% else %}
+                        <td><code>{{ l.qty_expression }}</code></td>
+                        <td><code>{{ l.wastage_expression }}</code></td>
+                    {% endif %}
+                </tr>
+            {% empty %}
+                <tr><td colspan="9">No lines yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

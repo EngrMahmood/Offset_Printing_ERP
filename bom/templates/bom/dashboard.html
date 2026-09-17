@@ -1,0 +1,19 @@
+{% extends 'theme/base.html' %}
+{% block title %}BOM{% endblock %}
+{% block header_title %}Bill of Materials{% endblock %}
+{% block header_subtitle %}Raw materials, spec-matched recipe templates and generated BOMs.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+            <a class="erp-btn erp-btn-secondary" href="{% url 'bom:raw_item_list' %}">Raw Items ({{ raw_item_count }})</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'bom:spec_attribute_list' %}">Spec Attributes</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'bom:template_list' %}">Templates ({{ template_count }})</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'bom:test_match' %}">Test Match</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'bom:bom_list' %}">BOMs — Draft ({{ draft_bom_count }}) / Approved ({{ approved_bom_count }})</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'bom:requirements_report' %}">Requirements Report</a>
+        </div>
+    </section>
+</div>
+{% endblock %}

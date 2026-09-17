@@ -1,0 +1,33 @@
+{% extends 'theme/base.html' %}
+{% block title %}Requirements{% endblock %}
+{% block header_title %}Material Requirements{% endblock %}
+{% block header_subtitle %}Approved BOMs exploded against open planned jobs.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'bom:raise_item_requests' %}" class="erp-btn erp-btn-primary">Raise Item Requests</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <table class="erp-table">
+            <thead><tr><th>Item</th><th>Required</th><th>On Hand</th><th>Safety Stock</th><th>Shortfall</th><th>Unit Cost</th><th>Extended Cost</th><th>Suggested Order</th></tr></thead>
+            <tbody>
+            {% for row in rows %}
+                <tr {% if row.shortfall %}style="background:#fff3f3;"{% endif %}>
+                    <td>{{ row.raw_item.item_code }} — {{ row.raw_item.name }}</td>
+                    <td>{{ row.required_qty|floatformat:4 }}</td>
+                    <td>{% if row.on_hand is not None %}{{ row.on_hand|floatformat:2 }}{% else %}—{% endif %}</td>
+                    <td>{{ row.safety_stock }}</td>
+                    <td>{% if row.shortfall is not None %}{{ row.shortfall|floatformat:4 }}{% else %}unknown{% endif %}</td>
+                    <td>{{ row.unit_cost }}</td>
+                    <td>{{ row.extended_cost|floatformat:2 }}</td>
+                    <td>{{ row.suggested_order_qty|default_if_none:"—" }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8">No requirements — no open jobs have an approved BOM yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

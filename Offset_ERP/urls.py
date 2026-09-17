@@ -48,6 +48,7 @@ urlpatterns = [
     path('floor-dashboard/', include('floor_dashboard.urls', namespace='floor_dashboard')),
     path('chat/', include('chat.urls', namespace='chat')),
     path('api/chat/', include('chat.api_urls')),
+    path('bom/', include('bom.urls', namespace='bom')),
 
     path('bulk-upload-jobcards/', views.bulk_upload_jobcards, name='bulk_upload_jobcards'),
 

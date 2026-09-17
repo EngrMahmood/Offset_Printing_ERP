@@ -1,0 +1,83 @@
+{% extends 'theme/base.html' %}
+{% block title %}Recipe Wizard{% endblock %}
+{% block header_title %}Recipe Wizard{% endblock %}
+{% block header_subtitle %}Pick the spec, step by step, and get the BOM for that combination — or build it if it doesn't exist yet.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'bom:spec_attribute_create' %}?next={{ request.get_full_path|urlencode }}" class="erp-btn erp-btn-secondary">+ Add attribute</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+
+    {% if not steps %}
+    <section class="erp-section-shell">
+        <div class="erp-alert erp-alert-danger">
+            No match-key spec attributes are configured yet. Run <code>seed_bom_masters</code>, or add one with
+            "+ Add attribute" above, to start the wizard.
+        </div>
+    </section>
+    {% else %}
+
+    {% if selected_pairs %}
+    <section class="erp-section-shell">
+        <h3>Combination so far</h3>
+        <table class="erp-table">
+            <tbody>
+            {% for pair in selected_pairs %}
+                <tr>
+                    <th>{{ pair.attribute.label }}</th>
+                    <td>{{ pair.value }}</td>
+                    <td><a class="erp-btn erp-btn-secondary" href="?{{ pair.remove_qs }}">Change</a></td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <a href="{% url 'bom:recipe_wizard' %}" class="erp-btn erp-btn-secondary">Start over</a>
+    </section>
+    {% endif %}
+
+    {% if current_step %}
+    <section class="erp-section-shell">
+        <h3>Step {{ selected_pairs|length|add:1 }} of {{ steps|length }}: {{ current_step.label }}</h3>
+        {% if option_links %}
+        <div class="erp-actions" style="flex-wrap:wrap; gap:8px;">
+            {% for opt in option_links %}
+                <a class="erp-btn erp-btn-secondary" href="?{{ opt.qs }}">{{ opt.value }}</a>
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="erp-alert">No SKUs yet resolve a value for "{{ current_step.label }}" under the combination chosen so far.</div>
+        {% endif %}
+        <form method="get" class="erp-form-grid" style="grid-template-columns:3fr 1fr; gap:12px; align-items:end; margin-top:12px;">
+            {% for pair in selected_pairs %}
+            <input type="hidden" name="{{ pair.attribute.code }}" value="{{ pair.value }}">
+            {% endfor %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">Or type a value for {{ current_step.label }}</label>
+                <input type="text" name="{{ current_step.code }}" class="erp-input">
+            </div>
+            <div class="erp-actions"><button type="submit" class="erp-btn erp-btn-primary">Next</button></div>
+        </form>
+    </section>
+    {% endif %}
+
+    {% if spec %}
+    <section class="erp-section-shell">
+        <h3>Result</h3>
+        {% if result.template %}
+            <div class="erp-alert erp-alert-success">
+                Matched recipe: <strong>{{ result.template.name }}</strong> ({{ result.template.code }})
+                {% if result.is_ambiguous %} — multiple templates tied; this one was picked arbitrarily.{% endif %}
+            </div>
+            {% include 'bom/_template_lines_preview.html' with lines=result.template.ordered_lines %}
+            <a class="erp-btn erp-btn-secondary" href="{% url 'bom:template_detail' result.template.pk %}">Open recipe</a>
+        {% else %}
+            <div class="erp-alert">No recipe yet for this exact combination.</div>
+            <a class="erp-btn erp-btn-primary" href="{{ condition_prefill_url }}">Create recipe from this combination</a>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    {% endif %}
+</div>
+{% endblock %}

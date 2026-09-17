@@ -1,0 +1,32 @@
+{% extends 'theme/base.html' %}
+{% block title %}Spec Attributes{% endblock %}
+{% block header_title %}Spec Attributes (Match Keys){% endblock %}
+{% block header_subtitle %}Soft-coded signature used to match a SKU against BOM templates — add a key here, no code change needed.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'bom:spec_attribute_create' %}" class="erp-btn erp-btn-primary">New Attribute</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <table class="erp-table">
+            <thead><tr><th>Label</th><th>Code</th><th>Source</th><th>Match Key?</th><th>Wizard Step?</th><th>Active</th><th></th></tr></thead>
+            <tbody>
+            {% for a in attributes %}
+                <tr>
+                    <td>{{ a.label }}</td>
+                    <td>{{ a.code }}</td>
+                    <td>{{ a.get_source_kind_display }}{% if a.source_field %} ({{ a.source_field }}){% endif %}{% if a.derived_key %} ({{ a.derived_key }}){% endif %}</td>
+                    <td>{{ a.is_match_key|yesno:"Yes,No" }}</td>
+                    <td>{{ a.is_wizard_step|yesno:"Yes,No" }}</td>
+                    <td>{{ a.is_active|yesno:"Yes,No" }}</td>
+                    <td><a href="{% url 'bom:spec_attribute_edit' a.pk %}" class="erp-btn erp-btn-secondary">Edit</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">No spec attributes yet — run seed_bom_masters.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends 'theme/base.html' %}
+{% block title %}Raise Item Requests{% endblock %}
+{% block header_title %}Raise Item Requests from Shortfalls{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <form method="post">
+        {% csrf_token %}
+        <section class="erp-section-shell">
+            <div class="erp-form-grid" style="grid-template-columns:repeat(2,1fr); gap:12px;">
+                <div class="erp-input-group"><label class="erp-input-label">{{ form.request_type.label }}</label>{{ form.request_type }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">{{ form.department.label }}</label>{{ form.department }}</div>
+            </div>
+        </section>
+        <section class="erp-section-shell">
+            <table class="erp-table">
+                <thead><tr><th></th><th>Item</th><th>Shortfall</th><th>Suggested Order</th><th>Est. Cost</th></tr></thead>
+                <tbody>
+                {% for row in rows %}
+                    <tr>
+                        <td><input type="checkbox" name="raw_item_id" value="{{ row.raw_item.pk }}"></td>
+                        <td>{{ row.raw_item.item_code }} — {{ row.raw_item.name }}</td>
+                        <td>{{ row.shortfall|floatformat:4 }}</td>
+                        <td>{{ row.suggested_order_qty|default_if_none:"—" }}</td>
+                        <td>{{ row.extended_cost|floatformat:2 }}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="5">No shortfalls right now.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </section>
+        <div class="erp-actions">
+            <button type="submit" class="erp-btn erp-btn-primary">Raise Selected</button>
+            <a href="{% url 'bom:requirements_report' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,31 @@
+{% extends 'theme/base.html' %}
+{% block title %}BOM Templates{% endblock %}
+{% block header_title %}BOM Templates{% endblock %}
+{% block header_subtitle %}Spec-matched recipe rules used to auto-generate a SKU's BOM.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'bom:template_create' %}" class="erp-btn erp-btn-primary">New Template</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <table class="erp-table">
+            <thead><tr><th>Code</th><th>Name</th><th>Line</th><th>Priority</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            {% for t in templates %}
+                <tr>
+                    <td>{{ t.code }}</td>
+                    <td>{{ t.name }}</td>
+                    <td>{{ t.get_production_line_display }}</td>
+                    <td>{{ t.priority }}</td>
+                    <td><span class="erp-badge">{{ t.get_status_display }}</span></td>
+                    <td><a href="{% url 'bom:template_detail' t.pk %}" class="erp-btn erp-btn-secondary">View</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6">No templates yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

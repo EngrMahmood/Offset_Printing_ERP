@@ -1,0 +1,46 @@
+{% extends 'theme/base.html' %}
+{% block title %}{{ bom.sku_recipe.sku }} BOM{% endblock %}
+{% block header_title %}{{ bom.sku_recipe.sku }} — v{{ bom.version }}{% endblock %}
+{% block header_subtitle %}{{ bom.get_status_display }} · {{ bom.get_generation_mode_display }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'bom:bom_regenerate' bom.pk %}" class="erp-btn erp-btn-secondary">Regenerate</a>
+    {% if bom.status == 'draft' %}<a href="{% url 'bom:bom_submit' bom.pk %}" class="erp-btn erp-btn-secondary">Submit</a>{% endif %}
+    {% if bom.status == 'pending_review' %}<a href="{% url 'bom:bom_review' bom.pk %}" class="erp-btn erp-btn-secondary">Mark Reviewed</a>{% endif %}
+    {% if bom.status != 'approved' %}<a href="{% url 'bom:bom_approve' bom.pk %}" class="erp-btn erp-btn-primary">Approve</a>{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    {% if bom.warnings %}
+    <section class="erp-section-shell">
+        <div class="erp-alert erp-alert-danger">
+            <strong>Warnings</strong>
+            <ul>{% for w in bom.warnings %}<li>{{ w }}</li>{% endfor %}</ul>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <table class="erp-table">
+            <thead><tr><th>Step</th><th>Item</th><th>UOM</th><th>Qty/Unit</th><th>Wastage</th><th>Gross Qty</th><th>Unit Cost</th><th>Line Cost</th></tr></thead>
+            <tbody>
+            {% for l in lines %}
+                <tr>
+                    <td>{{ l.process_step.label }}</td>
+                    <td>{{ l.raw_item.item_code }} — {{ l.raw_item.name }}</td>
+                    <td>{{ l.uom_code }}</td>
+                    <td>{{ l.qty_per_unit }}</td>
+                    <td>{{ l.wastage_percent }}</td>
+                    <td>{{ l.gross_qty }}</td>
+                    <td>{{ l.unit_cost_snapshot }}</td>
+                    <td>{{ l.line_cost }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8">No lines.</td></tr>
+            {% endfor %}
+            </tbody>
+            <tfoot><tr><th colspan="7">Total</th><th>{{ bom.total_material_cost }}</th></tr></tfoot>
+        </table>
+    </section>
+</div>
+{% endblock %}
