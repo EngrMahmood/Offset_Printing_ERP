@@ -7,6 +7,8 @@ class BackupSettingForm(forms.ModelForm):
         fields = [
             'backup_enabled',
             'backup_time',
+            'onedrive_backup_time',
+            'gdrive_backup_time',
             'frequency',
             'local_backup_folder',
             'cloud_onedrive_folder',
@@ -25,6 +27,8 @@ class BackupSettingForm(forms.ModelForm):
         widgets = {
             'notify_email': forms.TextInput(attrs={'class': 'erp-input', 'placeholder': 'name@example.com, other@example.com'}),
             'backup_time': forms.TimeInput(attrs={'type': 'time', 'class': 'erp-input'}),
+            'onedrive_backup_time': forms.TimeInput(attrs={'type': 'time', 'class': 'erp-input'}),
+            'gdrive_backup_time': forms.TimeInput(attrs={'type': 'time', 'class': 'erp-input'}),
             'frequency': forms.Select(attrs={'class': 'erp-select'}),
             'local_backup_folder': forms.TextInput(attrs={'class': 'erp-input'}),
             'cloud_onedrive_folder': forms.TextInput(attrs={'class': 'erp-input'}),

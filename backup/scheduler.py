@@ -30,77 +30,97 @@ class BackupSchedulerThread(threading.Thread):
             try:
                 # Close old connections to avoid database pool problems on tick
                 connection.close_if_unusable_or_obsolete()
-                
-                if self.is_backup_due():
-                    logger.info("Scheduler detected that a backup is due. Starting backup thread...")
+
+                for label, targets in self.due_jobs():
+                    logger.info(f"Scheduler detected that a backup is due ({label}). Starting backup thread...")
                     # Run backup in a separate worker thread so scheduler doesn't lock up
-                    worker = threading.Thread(target=self.trigger_backup, name="BackupWorker")
+                    worker = threading.Thread(
+                        target=self.trigger_backup, args=(targets,), name=f"BackupWorker-{label}",
+                    )
                     worker.start()
             except Exception as e:
                 logger.error(f"Error in backup scheduler tick: {str(e)}")
-            
+
             # Tick every 60 seconds
             time.sleep(60)
 
-    def is_backup_due(self):
-        from backup.models import BackupSetting, BackupHistory
-        
-        # Guard clause: check if settings table exists yet
+    def _frequency_ok(self, now, settings_obj):
+        if settings_obj.frequency == 'WEEKLY':
+            # Sunday is 6 (Monday is 0, Sunday is 6)
+            return now.weekday() == 6
+        if settings_obj.frequency == 'MONTHLY':
+            return now.day == 1
+        return True
+
+    def _already_handled(self, now, targets_label):
+        """True if a run covering this exact target set already succeeded
+        today, is currently in progress, or failed within the last 15 minutes
+        (retry cooldown -- prevents a persistent failure from spawning a new
+        backup on every 60s tick)."""
+        from backup.models import BackupHistory
+
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+
+        if BackupHistory.objects.filter(
+            status='SUCCESS', backup_type='AUTO', targets=targets_label, start_time__gte=today_start,
+        ).exists():
+            return True
+
+        if BackupHistory.objects.filter(
+            status='PENDING', backup_type='AUTO', targets=targets_label, start_time__gte=today_start,
+        ).exists():
+            return True
+
+        cooldown_start = now - datetime.timedelta(minutes=15)
+        if BackupHistory.objects.filter(
+            backup_type='AUTO', targets=targets_label, start_time__gte=cooldown_start,
+        ).exists():
+            return True
+
+        return False
+
+    def due_jobs(self):
+        """Returns a list of (label, targets) jobs due on this tick.
+        `targets` is None for the combined legacy run (both destinations
+        together), or a set like {'onedrive'} / {'gdrive'} when the two
+        clouds are on separate schedules."""
+        from backup.models import BackupSetting
+
         try:
             settings_obj = BackupSetting.get_settings()
         except Exception:
-            return False
+            return []
 
         if not settings_obj.backup_enabled:
-            return False
-            
+            return []
+
         now = timezone.localtime(timezone.now())
-        scheduled_time = settings_obj.backup_time
-        
-        # Ensure we are past the scheduled time today
-        if now.time() < scheduled_time:
-            return False
-            
-        # Frequency checks
-        if settings_obj.frequency == 'WEEKLY':
-            # Sunday is 6 (Monday is 0, Sunday is 6)
-            if now.weekday() != 6:
-                return False
-        elif settings_obj.frequency == 'MONTHLY':
-            if now.day != 1:
-                return False
-                
-        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if not self._frequency_ok(now, settings_obj):
+            return []
 
-        # Already completed successfully today? Nothing more to do this window.
-        if BackupHistory.objects.filter(
-            status='SUCCESS', backup_type='AUTO', start_time__gte=today_start,
-        ).exists():
-            return False
+        split_mode = bool(settings_obj.onedrive_backup_time or settings_obj.gdrive_backup_time)
+        jobs = []
 
-        # A run is already in progress? Don't launch a second one.
-        if BackupHistory.objects.filter(
-            status='PENDING', backup_type='AUTO', start_time__gte=today_start,
-        ).exists():
-            return False
+        if not split_mode:
+            if now.time() >= settings_obj.backup_time and not self._already_handled(now, 'both'):
+                jobs.append(('both', None))
+            return jobs
 
-        # Cooldown after a failed/partial attempt: wait before retrying so a
-        # persistent failure can't spawn a new backup on every 60s tick (the
-        # "retry storm"). Failures are retried at most every 15 minutes; the
-        # first SUCCESS above stops retries for the rest of the day.
-        cooldown_start = now - datetime.timedelta(minutes=15)
-        if BackupHistory.objects.filter(
-            backup_type='AUTO', start_time__gte=cooldown_start,
-        ).exists():
-            return False
+        if settings_obj.onedrive_backup_time and now.time() >= settings_obj.onedrive_backup_time \
+                and not self._already_handled(now, 'onedrive'):
+            jobs.append(('onedrive', {'onedrive'}))
 
-        return True
+        if settings_obj.gdrive_backup_time and now.time() >= settings_obj.gdrive_backup_time \
+                and not self._already_handled(now, 'gdrive'):
+            jobs.append(('gdrive', {'gdrive'}))
 
-    def trigger_backup(self):
+        return jobs
+
+    def trigger_backup(self, targets=None):
         from backup.services import create_backup
         try:
             # Run the backup service
-            create_backup(backup_type='AUTO', user=None)
+            create_backup(backup_type='AUTO', user=None, targets=targets)
         except Exception as e:
             logger.error(f"Error executing backup task: {str(e)}")
 

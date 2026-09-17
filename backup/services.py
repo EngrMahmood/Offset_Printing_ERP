@@ -131,16 +131,23 @@ def _setting(env_name, db_value):
     """
     return os.environ.get(env_name) or db_value
 
-def create_backup(backup_type='AUTO', user=None):
+def create_backup(backup_type='AUTO', user=None, targets=None):
     """
     Creates a database backup, archives it, syncs to cloud folders, and enforces retention.
     Returns the created BackupHistory instance.
+
+    `targets`: None (default) backs up to both OneDrive and Google Drive, as
+    always. Pass {'onedrive'} or {'gdrive'} to run a backup that only syncs to
+    that one destination -- used when the two clouds run on separate
+    schedules (BackupSetting.onedrive_backup_time / gdrive_backup_time).
     """
     settings_obj = BackupSetting.get_settings()
+    targets_label = 'both' if targets is None else ','.join(sorted(targets)) or 'both'
 
     # Create a new history entry
     history = BackupHistory.objects.create(
         backup_type=backup_type,
+        targets=targets_label,
         start_time=timezone.now(),
         status='PENDING',
         created_by=user
@@ -184,10 +191,29 @@ def create_backup(backup_type='AUTO', user=None):
         zip_filepath = os.path.join(local_dir, zip_filename)
         
         # Effective values: env override (immune to db-sync overwrites) wins
-        # over the DB-stored setting when present.
+        # over the DB-stored setting when present. When `targets` restricts
+        # this run to one destination (split-schedule mode), the other
+        # destination is treated as unset for this run only.
         effective_onedrive = _setting('BACKUP_ONEDRIVE_FOLDER_OVERRIDE', settings_obj.cloud_onedrive_folder)
         effective_gdrive = _setting('BACKUP_GDRIVE_FOLDER_OVERRIDE', settings_obj.cloud_gdrive_folder)
+        if targets is not None:
+            if 'onedrive' not in targets:
+                effective_onedrive = None
+            if 'gdrive' not in targets:
+                effective_gdrive = None
         effective_media_folder = _setting('BACKUP_MEDIA_FOLDER_OVERRIDE', settings_obj.media_cloud_folder)
+        # Media rides along with whichever run actually covers its own
+        # destination remote -- in split mode, a gdrive: media folder only
+        # backs up during the gdrive run, not the onedrive one (and vice
+        # versa), so it isn't silently skipped or duplicated across both.
+        if targets is not None and effective_media_folder:
+            media_target = (
+                'onedrive' if effective_media_folder.startswith('onedrive:')
+                else 'gdrive' if effective_media_folder.startswith('gdrive:')
+                else None
+            )
+            if media_target and media_target not in targets:
+                effective_media_folder = None
         effective_include_media = os.environ.get('BACKUP_INCLUDE_MEDIA_OVERRIDE')
         effective_include_media = (
             effective_include_media == 'True' if effective_include_media is not None
@@ -377,11 +403,15 @@ def send_backup_notification(history, settings_obj):
                 pass
 
         instance_label = getattr(settings, 'BACKUP_INSTANCE_LABEL', '') or 'ERP'
-        subject = f"[{history.status}] {instance_label} Backup - {history.file_name or history.start_time.strftime('%Y-%m-%d %H:%M')}"
+        scope_label = {
+            'onedrive': ' (OneDrive only)', 'gdrive': ' (Google Drive only)',
+        }.get(history.targets, '')
+        subject = f"[{history.status}] {instance_label} Backup{scope_label} - {history.file_name or history.start_time.strftime('%Y-%m-%d %H:%M')}"
 
         body = render_to_string('backup/email_notification.html', {
             'history': history,
             'instance_label': instance_label,
+            'scope_label': scope_label,
             'onedrive': onedrive,
             'gdrive': gdrive,
             'time_gap_seconds': time_gap_seconds,

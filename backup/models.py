@@ -13,7 +13,9 @@ class BackupSetting(models.Model):
     ]
 
     backup_enabled = models.BooleanField(default=True, help_text="Enable or disable automated backups.")
-    backup_time = models.TimeField(default=datetime.time(20, 5), help_text="Time of day when the backup should run.")
+    backup_time = models.TimeField(default=datetime.time(20, 5), help_text="Time of day when the backup should run. Used for BOTH destinations together, unless the two override times below are set.")
+    onedrive_backup_time = models.TimeField(null=True, blank=True, help_text="Optional: run the OneDrive sync at its own time, separate from Google Drive. Leave this AND the Google Drive time below blank to back up both together at 'Backup Run Time' above.")
+    gdrive_backup_time = models.TimeField(null=True, blank=True, help_text="Optional: run the Google Drive sync at its own time, separate from OneDrive. Leave this AND the OneDrive time above blank to back up both together at 'Backup Run Time' above.")
     frequency = models.CharField(max_length=10, choices=FREQUENCY_CHOICES, default='DAILY', help_text="How often backups should run.")
     local_backup_folder = models.CharField(max_length=255, default='backups', help_text="Local directory where backups will be stored.")
     
@@ -59,6 +61,11 @@ class BackupHistory(models.Model):
     ]
 
     backup_type = models.CharField(max_length=10, choices=TYPE_CHOICES, default='AUTO')
+    targets = models.CharField(
+        max_length=20, default='both',
+        help_text="Which cloud destination(s) this run covered: both/onedrive/gdrive. "
+                  "Set when OneDrive and Google Drive run on separate schedules.",
+    )
     start_time = models.DateTimeField(default=timezone.now)
     finish_time = models.DateTimeField(null=True, blank=True)
     duration_seconds = models.IntegerField(null=True, blank=True, help_text="Duration of the backup operation in seconds.")

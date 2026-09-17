@@ -1,6 +1,6 @@
 <div style="font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #222; max-width: 620px;">
     <h2 style="margin: 0 0 12px; font-size: 16px; color: {% if history.status == 'SUCCESS' %}#1b5e20{% else %}#b71c1c{% endif %};">
-        {{ instance_label }} Backup {{ history.status }}
+        {{ instance_label }} Backup {{ history.status }}{{ scope_label }}
     </h2>
 
     <table style="border-collapse: collapse; width: 100%; margin-bottom: 16px;">

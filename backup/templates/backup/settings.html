@@ -44,7 +44,21 @@
             <div>
                 <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">Backup Run Time</label>
                 {{ form.backup_time }}
-                <span style="font-size: 11px; color: var(--erp-text-muted);">Exact daily time (e.g. 20:05 / 08:05 PM).</span>
+                <span style="font-size: 11px; color: var(--erp-text-muted);">Exact daily time (e.g. 20:05 / 08:05 PM). Used for BOTH clouds together, unless separate times are set below.</span>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+            <div>
+                <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">OneDrive Run Time (optional)</label>
+                {{ form.onedrive_backup_time }}
+                <span style="font-size: 11px; color: var(--erp-text-muted);">Run OneDrive on its own schedule, e.g. 13:15. Leave both this and Google Drive's time below blank to back up both together at "Backup Run Time" above.</span>
+            </div>
+
+            <div>
+                <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">Google Drive Run Time (optional)</label>
+                {{ form.gdrive_backup_time }}
+                <span style="font-size: 11px; color: var(--erp-text-muted);">Run Google Drive on its own schedule, e.g. 20:15. Leave both this and OneDrive's time above blank to back up both together at "Backup Run Time" above.</span>
             </div>
         </div>
 
