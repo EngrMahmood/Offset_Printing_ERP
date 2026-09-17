@@ -992,6 +992,10 @@ class PlanningJob(models.Model):
 
             sync_job_card_process_type(self)
 
+        from core.jobcard_service import sync_job_card_impression_ceiling
+
+        sync_job_card_impression_ceiling(self)
+
         return result
 
 

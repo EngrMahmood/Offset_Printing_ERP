@@ -210,6 +210,39 @@ def sync_job_card_process_type(planning_job):
     return True
 
 
+def sync_job_card_impression_ceiling(planning_job):
+    """Keep an already-released JobCard's total_impressions_required (and the
+    tolerance ceiling built from it, total_impressions_allowed_with_tolerance)
+    in step with the planning job.
+
+    ensure_job_card_from_planning_job() only re-syncs fields while the job
+    card is still planning-editable, so a post-release correction to
+    anything feeding resolve_total_impressions_required (most commonly
+    print_passes) never reaches the job card — it keeps the ceiling sized
+    for the old figure. E.g. JC-09-26-PP-2377: planning_job.print_passes was
+    corrected to 2, so planned_total_impressions correctly recalculated to
+    16896 (8448 sheets x 2 passes), but the job card's own
+    total_impressions_required stayed at the stale 8448, capping the
+    tolerance ceiling at ~8870 instead of ~17741 and making one legitimate
+    Pass-1 entry look like it had already exhausted the whole job.
+
+    Safe to apply unconditionally, unlike sync_job_card_process_type — this
+    only changes how much MORE can be entered going forward; it never
+    invalidates impressions already logged.
+    """
+    job_card = getattr(planning_job, 'job_card', None)
+    if not job_card:
+        return False
+
+    correct_value = resolve_total_impressions_required(planning_job)
+    if job_card.total_impressions_required == correct_value:
+        return False
+
+    job_card.total_impressions_required = correct_value
+    job_card.save(update_fields=['total_impressions_required', 'updated_at'])
+    return True
+
+
 def ensure_job_card_from_pending_qc_planning_job(planning_job, actor=None):
     job_card, created = ensure_job_card_from_planning_job(planning_job, actor=actor)
     if planning_job.workflow_status == 'pending_qc' and job_card.workflow_status in JOB_CARD_PLANNING_EDITABLE_STATUSES:
