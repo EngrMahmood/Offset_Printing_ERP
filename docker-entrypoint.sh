@@ -6,6 +6,9 @@ python manage.py seed_access_control || true
 python manage.py seed_chat_permissions || true
 python manage.py seed_viewer_role || true
 python manage.py seed_bots || true
+python manage.py seed_bom_masters || true
+python manage.py seed_bom_permissions || true
+python manage.py backfill_raw_items_from_rm_skus || true
 
 # staticfiles is a named Docker volume mounted over /app/staticfiles, so the
 # image's build-time `collectstatic` output never reaches it after the first
