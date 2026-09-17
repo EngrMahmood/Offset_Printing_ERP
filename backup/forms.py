@@ -18,10 +18,12 @@ class BackupSettingForm(forms.ModelForm):
             'media_cloud_folder',
             'include_logs',
             'enable_notifications',
+            'notify_email',
             'enable_encryption',
             'encryption_password',
         ]
         widgets = {
+            'notify_email': forms.TextInput(attrs={'class': 'erp-input', 'placeholder': 'name@example.com, other@example.com'}),
             'backup_time': forms.TimeInput(attrs={'type': 'time', 'class': 'erp-input'}),
             'frequency': forms.Select(attrs={'class': 'erp-select'}),
             'local_backup_folder': forms.TextInput(attrs={'class': 'erp-input'}),

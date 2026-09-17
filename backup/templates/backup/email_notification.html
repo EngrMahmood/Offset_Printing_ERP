@@ -1,0 +1,65 @@
+<div style="font-family: Arial, Helvetica, sans-serif; font-size: 13px; color: #222; max-width: 620px;">
+    <h2 style="margin: 0 0 12px; font-size: 16px; color: {% if history.status == 'SUCCESS' %}#1b5e20{% else %}#b71c1c{% endif %};">
+        {{ instance_label }} Backup {{ history.status }}
+    </h2>
+
+    <table style="border-collapse: collapse; width: 100%; margin-bottom: 16px;">
+        <tr>
+            <td style="padding: 4px 8px; color: #666;">Started</td>
+            <td style="padding: 4px 8px;">{{ history.start_time|date:"Y-m-d H:i:s" }} UTC</td>
+        </tr>
+        {% if history.finish_time %}
+        <tr>
+            <td style="padding: 4px 8px; color: #666;">Finished</td>
+            <td style="padding: 4px 8px;">{{ history.finish_time|date:"Y-m-d H:i:s" }} UTC ({{ history.duration_seconds }}s)</td>
+        </tr>
+        {% endif %}
+        <tr>
+            <td style="padding: 4px 8px; color: #666;">Type</td>
+            <td style="padding: 4px 8px;">{{ history.get_backup_type_display }}</td>
+        </tr>
+        {% if history.file_name %}
+        <tr>
+            <td style="padding: 4px 8px; color: #666;">File</td>
+            <td style="padding: 4px 8px;">{{ history.file_name }}{% if history.file_size %} ({{ history.file_size|filesizeformat }}){% endif %}</td>
+        </tr>
+        {% endif %}
+    </table>
+
+    <h3 style="margin: 0 0 8px; font-size: 14px;">Cloud Sync</h3>
+    <table style="border-collapse: collapse; width: 100%; margin-bottom: 16px;">
+        <tr>
+            <td style="padding: 4px 8px; color: #666; width: 110px;">OneDrive</td>
+            <td style="padding: 4px 8px;">
+                {% if onedrive %}
+                    Synced {{ onedrive.synced_at }}<br>
+                    {% if onedrive.link %}<a href="{{ onedrive.link }}">{{ onedrive.link }}</a>{% else %}<span style="color:#666;">(no shareable link — {{ onedrive.path }})</span>{% endif %}
+                {% else %}
+                    <span style="color: #b71c1c;">Not synced this run</span>
+                {% endif %}
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 4px 8px; color: #666;">Google Drive</td>
+            <td style="padding: 4px 8px;">
+                {% if gdrive %}
+                    Synced {{ gdrive.synced_at }}<br>
+                    {% if gdrive.link %}<a href="{{ gdrive.link }}">{{ gdrive.link }}</a>{% else %}<span style="color:#666;">(no shareable link — {{ gdrive.path }})</span>{% endif %}
+                {% else %}
+                    <span style="color: #b71c1c;">Not synced this run</span>
+                {% endif %}
+            </td>
+        </tr>
+        {% if time_gap_seconds %}
+        <tr>
+            <td style="padding: 4px 8px; color: #666;">Time gap</td>
+            <td style="padding: 4px 8px;">{{ time_gap_seconds|floatformat:1 }}s between the two destinations finishing</td>
+        </tr>
+        {% endif %}
+    </table>
+
+    {% if history.error_message %}
+    <h3 style="margin: 0 0 8px; font-size: 14px; color: #b71c1c;">Error</h3>
+    <p style="background: #fdecea; padding: 10px; border-radius: 4px; white-space: pre-wrap;">{{ history.error_message }}</p>
+    {% endif %}
+</div>

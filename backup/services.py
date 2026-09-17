@@ -26,6 +26,23 @@ def is_rclone_remote(destination):
     rather than a local filesystem path (e.g. "C:\\folder" or "/mnt/folder")."""
     return bool(RCLONE_REMOTE_RE.match(destination)) and shutil.which('rclone') is not None
 
+def get_share_link(remote_file_path):
+    """Best-effort public/shareable link for a file already uploaded to an
+    rclone remote (e.g. "onedrive:ERP_Backups/CloudVM_A1/backup.zip"). Returns
+    None on any failure -- a missing link must never fail the backup itself,
+    it just means the notification email won't have a clickable link for
+    that destination."""
+    try:
+        result = subprocess.run(
+            ['rclone', 'link', remote_file_path],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            return result.stdout.strip() or None
+    except Exception as e:
+        logger.warning(f"Could not generate share link for {remote_file_path}: {str(e)}")
+    return None
+
 def copy_to_cloud_folder(file_path, destination):
     """Copies file_path to destination, which is either a plain local/synced
     folder path (Windows OneDrive/GDrive desktop client folder — copied with
@@ -230,12 +247,18 @@ def create_backup(backup_type='AUTO', user=None):
         # on the dashboard, not a quiet log line under a green "SUCCESS".
         locations = [zip_filepath]
         cloud_errors = []
+        cloud_sync_details = {}
 
         if effective_onedrive:
             try:
                 od_path = copy_to_cloud_folder(zip_filepath, effective_onedrive)
                 locations.append(od_path)
                 logger.info(f"Successfully copied backup to OneDrive: {od_path}")
+                cloud_sync_details['onedrive'] = {
+                    'path': od_path,
+                    'link': get_share_link(od_path) if is_rclone_remote(effective_onedrive) else None,
+                    'synced_at': timezone.now().isoformat(),
+                }
             except Exception as e:
                 logger.error(f"Failed to copy to OneDrive folder: {str(e)}")
                 cloud_errors.append(f"OneDrive: {str(e)}")
@@ -245,6 +268,11 @@ def create_backup(backup_type='AUTO', user=None):
                 gd_path = copy_to_cloud_folder(zip_filepath, effective_gdrive)
                 locations.append(gd_path)
                 logger.info(f"Successfully copied backup to Google Drive: {gd_path}")
+                cloud_sync_details['gdrive'] = {
+                    'path': gd_path,
+                    'link': get_share_link(gd_path) if is_rclone_remote(effective_gdrive) else None,
+                    'synced_at': timezone.now().isoformat(),
+                }
             except Exception as e:
                 logger.error(f"Failed to copy to Google Drive folder: {str(e)}")
                 cloud_errors.append(f"Google Drive: {str(e)}")
@@ -277,6 +305,7 @@ def create_backup(backup_type='AUTO', user=None):
         history.file_name = zip_filename
         history.file_size = file_size
         history.backup_location = ", ".join(locations)
+        history.cloud_sync_details = cloud_sync_details
         if cloud_errors:
             history.status = 'FAILED'
             history.error_message = (
@@ -287,22 +316,25 @@ def create_backup(backup_type='AUTO', user=None):
             history.status = 'SUCCESS'
         history.sha256_checksum = checksum
         history.save()
-        
+
         logger.info(f"Backup created successfully: {zip_filename}")
-        
+
         # Run retention cleanup
         run_retention_cleanup(settings_obj)
-        
+
+        send_backup_notification(history, settings_obj)
+
         return history
-        
+
     except Exception as e:
         logger.exception("Backup failed due to exception:")
         history.finish_time = timezone.now()
         history.status = 'FAILED'
         history.error_message = str(e)
         history.save()
-        
-        # Log to notification or system logs
+
+        send_backup_notification(history, settings_obj)
+
         return history
         
     finally:
@@ -313,6 +345,61 @@ def create_backup(backup_type='AUTO', user=None):
                     os.remove(f)
                 except Exception as ex:
                     logger.error(f"Could not clean up temp file {f}: {str(ex)}")
+
+def send_backup_notification(history, settings_obj):
+    """Emails the outcome of one backup run -- success or failure -- with a
+    separate link and sync time for OneDrive and Google Drive, so a real gap
+    between the two (a stuck/slow remote, one destination failing silently in
+    the past, etc.) is visible at a glance instead of buried in the dashboard.
+    Never raises -- a notification failure must not turn a good backup into a
+    reported failure."""
+    if not settings_obj.enable_notifications:
+        return
+    recipients = [addr.strip() for addr in (settings_obj.notify_email or '').replace(';', ',').split(',') if addr.strip()]
+    if not recipients:
+        return
+
+    try:
+        from django.core.mail import send_mail
+        from django.template.loader import render_to_string
+
+        details = history.cloud_sync_details or {}
+        onedrive = details.get('onedrive')
+        gdrive = details.get('gdrive')
+
+        time_gap_seconds = None
+        if onedrive and gdrive and onedrive.get('synced_at') and gdrive.get('synced_at'):
+            try:
+                t1 = datetime.datetime.fromisoformat(onedrive['synced_at'])
+                t2 = datetime.datetime.fromisoformat(gdrive['synced_at'])
+                time_gap_seconds = abs((t2 - t1).total_seconds())
+            except Exception:
+                pass
+
+        instance_label = getattr(settings, 'BACKUP_INSTANCE_LABEL', '') or 'ERP'
+        subject = f"[{history.status}] {instance_label} Backup - {history.file_name or history.start_time.strftime('%Y-%m-%d %H:%M')}"
+
+        body = render_to_string('backup/email_notification.html', {
+            'history': history,
+            'instance_label': instance_label,
+            'onedrive': onedrive,
+            'gdrive': gdrive,
+            'time_gap_seconds': time_gap_seconds,
+        })
+
+        send_mail(
+            subject=subject,
+            message=body,
+            from_email=None,
+            recipient_list=recipients,
+            html_message=body,
+            fail_silently=True,
+        )
+        history.notification_sent = True
+        history.save(update_fields=['notification_sent'])
+    except Exception:
+        logger.exception("Failed to send backup notification email")
+
 
 def run_retention_cleanup(settings_obj):
     """Deletes old backups according to the retention settings."""

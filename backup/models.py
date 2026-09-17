@@ -28,6 +28,7 @@ class BackupSetting(models.Model):
     media_cloud_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Optional: send media to a DIFFERENT destination than the database backup (local path or rclone remote, e.g. gdrive:ERP_Backups/CloudVM). Only used when 'Include media' is on. Leave blank to bundle media into the same zip as the database, sent to both OneDrive/Google Drive folders above as usual.")
     include_logs = models.BooleanField(default=False, help_text="Include system logs inside the backup archive.")
     enable_notifications = models.BooleanField(default=True, help_text="Enable notifications on backup success/failure.")
+    notify_email = models.CharField(max_length=255, blank=True, default='mahmood.hassan@utopia.pk', help_text="Comma-separated address(es) emailed after every backup run (success or failure) when notifications are enabled.")
     enable_encryption = models.BooleanField(default=False, help_text="Enable ZIP password encryption.")
     encryption_password = models.CharField(max_length=128, blank=True, null=True, help_text="ZIP protection password.")
 
@@ -68,6 +69,11 @@ class BackupHistory(models.Model):
     error_message = models.TextField(blank=True, null=True)
     sha256_checksum = models.CharField(max_length=64, blank=True, null=True, help_text="SHA-256 hash of the generated backup zip file.")
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, help_text="User who initiated manual backup (null for automatic).")
+    cloud_sync_details = models.JSONField(
+        default=dict, blank=True,
+        help_text="Per-destination sync result, e.g. {'onedrive': {'link': ..., 'synced_at': iso, 'duration_seconds': n}, 'gdrive': {...}}.",
+    )
+    notification_sent = models.BooleanField(default=False, help_text="Whether the success/failure email for this run was sent.")
 
     class Meta:
         verbose_name = "Backup History"

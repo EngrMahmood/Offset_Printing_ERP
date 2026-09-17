@@ -133,6 +133,11 @@
                     {{ form.enable_notifications }}
                     <span>Enable email/ERP fail alerts</span>
                 </label>
+                <div style="margin-top: 4px;">
+                    <label class="erp-eyebrow" style="margin-bottom: 4px; display: block; font-size: 9px;">Notify Email(s)</label>
+                    {{ form.notify_email }}
+                    <span style="font-size: 11px; color: var(--erp-text-muted);">Sent after every backup run (success or failure) with OneDrive/Google Drive links and sync times.</span>
+                </div>
             </div>
 
             <div>
