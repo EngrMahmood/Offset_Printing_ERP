@@ -77,6 +77,15 @@ def _planned_purchase_sheet_qty(job_card):
     return planned_press
 
 
+def _planned_pkt_rim_qty(job_card, sheet_qty_pcs):
+    """Rim-equivalent of `sheet_qty_pcs` for rim-unit job cards; 0 otherwise
+    (pcs-unit jobs don't track a rim figure)."""
+    if job_card.unit_type != 'rim' or sheet_qty_pcs <= 0:
+        return 0
+    pcs_per_unit = job_card.pcs_per_unit or 1
+    return sheet_qty_pcs // pcs_per_unit
+
+
 @transaction.atomic
 def sync_issuance_for_job_card_single(job_card):
     """Maintain a single issuance row per job card.
@@ -139,7 +148,7 @@ def sync_issuance_for_job_card_single(job_card):
             'date': issue_date,
             'gin_jc': job_card.job_card_no,
             'sheet_qty_pcs': planned_qty,
-            'pkt_rim_qty': 0,
+            'pkt_rim_qty': _planned_pkt_rim_qty(job_card, planned_qty),
             'is_approved': is_approved,
         },
     )

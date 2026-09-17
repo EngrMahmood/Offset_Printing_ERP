@@ -121,6 +121,10 @@ def ensure_job_card_from_planning_job(planning_job, actor=None):
         machine = _resolve_by_name(Machine, getattr(planning_job, 'machine_name', ''))
         department = _resolve_by_name(Department, getattr(planning_job, 'department', ''))
 
+        parent_job_card = None
+        if planning_job.parent_planning_job_id:
+            parent_job_card = getattr(planning_job.parent_planning_job, 'job_card', None)
+
         defaults = {
             'planning_job': planning_job,
             'job_card_no': planning_job.jc_number,
@@ -149,6 +153,10 @@ def ensure_job_card_from_planning_job(planning_job, actor=None):
             'is_print_job': not planning_job.is_cut_and_pack(),
             'created_by': planning_job.created_by or actor,
             'status': 'pending_data',
+            'parent_job_card': parent_job_card,
+            'form_label': planning_job.form_label or '',
+            'unit_type': planning_job.unit_type or 'pcs',
+            'pcs_per_unit': planning_job.pcs_per_unit or 1,
         }
 
         if job_card is None:

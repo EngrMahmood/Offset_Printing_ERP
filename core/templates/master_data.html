@@ -525,12 +525,24 @@
         </div>
 
         <h2 class="section-header">Product Types</h2>
+        <p class="erp-help-text" style="margin:0 0 10px;">
+            Order Unit / Pcs per Unit set here apply to every SKU under that product type automatically
+            (e.g. A4 Rim -&gt; Rim / 500, so a rim-based SKU never needs a planner to declare that separately).
+            Leave Pcs per Unit blank when it varies per SKU (e.g. Report Books' page count) — each SKU's own
+            master record then sets its own value.
+        </p>
         {% if is_admin_user %}
-        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;">
+        <form method="POST" style="display:flex;gap:8px;align-items:center;margin-bottom:10px;flex-wrap:wrap;">
             {% csrf_token %}
             <input type="hidden" name="entity_type" value="product_type">
             <input type="hidden" name="action" value="create_master">
             <input type="text" name="new_name" placeholder="New product type name" required>
+            <select name="default_unit_type" class="erp-select">
+                {% for code, label in unit_type_choices %}
+                <option value="{{ code }}">{{ label }}</option>
+                {% endfor %}
+            </select>
+            <input type="number" name="default_pcs_per_unit" placeholder="Pcs per unit (optional)" min="1">
             <button type="submit" class="btn btn-green">Add Product Type</button>
         </form>
         {% endif %}
@@ -540,6 +552,8 @@
                 <tr>
                     <th>ID</th>
                     <th>Product Type Name</th>
+                    <th>Order Unit</th>
+                    <th>Pcs per Unit</th>
                     <th>Active Planning Jobs</th>
                     <th>Active SKU Recipes</th>
                     <th>Actions</th>
@@ -551,18 +565,26 @@
                     <td>{{ row.record.id }}</td>
                     <td>
                         {% if is_admin_user %}
-                        <form method="POST" style="display:flex;gap:8px;align-items:center;">
+                        <form method="POST" style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
                             {% csrf_token %}
                             <input type="hidden" name="entity_type" value="product_type">
                             <input type="hidden" name="action" value="edit_master">
                             <input type="hidden" name="record_id" value="{{ row.record.id }}">
-                            <input type="text" name="new_name" value="{{ row.record.name }}" required>
+                            <input type="text" name="new_name" value="{{ row.record.name }}" required style="width:140px;">
+                            <select name="default_unit_type" class="erp-select">
+                                {% for code, label in unit_type_choices %}
+                                <option value="{{ code }}" {% if row.record.default_unit_type == code %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                            <input type="number" name="default_pcs_per_unit" value="{{ row.record.default_pcs_per_unit|default_if_none:'' }}" min="1" style="width:110px;" placeholder="varies per SKU">
                             <button type="submit" class="btn btn-green">Edit</button>
                         </form>
                         {% else %}
                         {{ row.record.name }}
                         {% endif %}
                     </td>
+                    <td>{{ row.record.get_default_unit_type_display }}</td>
+                    <td>{{ row.record.default_pcs_per_unit|default:"varies per SKU" }}</td>
                     <td>{{ row.planning_job_count }}</td>
                     <td>{{ row.sku_recipe_count }}</td>
                     <td>
@@ -580,7 +602,7 @@
                     </td>
                 </tr>
                 {% empty %}
-                <tr><td colspan="5">No product types found.</td></tr>
+                <tr><td colspan="7">No product types found.</td></tr>
                 {% endfor %}
             </tbody>
         </table>

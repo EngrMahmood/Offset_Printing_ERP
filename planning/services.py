@@ -21,7 +21,7 @@ from .models import (
     SkuRecipe,
 )
 from workflow.services import _append_unique_note_line, _parse_iso_date, _format_display_qty, _build_cost_mismatch_note, _normalize_status, _to_int, _to_decimal, SKU_MASTER_APPROVAL_REQUIRED_FIELDS, _warning_master_fields
-from core.jc_numbering import allocate_next_jc_number
+from core.jc_numbering import allocate_next_jc_number, allocate_child_jc_number
 
 try:
     from reportlab.lib import colors as _rl_colors
@@ -179,6 +179,9 @@ SKU_RECIPE_PLANNER_FIELDS = [
     'application',
     'machine_name',
     'product_type',
+    'unit_type',
+    'pcs_per_unit',
+    'default_form_labels',
     'default_unit_cost',
     'daily_demand',
     'notes',
@@ -1107,7 +1110,141 @@ def ensure_draft_planning_job_for_po_sku(po_doc, sku, *, actor=None, recipe=None
     )
     if recipe:
         sync_planning_job_fields_to_sku_recipe(job, recipe)
+        create_sibling_forms_from_sku_master(job, recipe, actor=actor)
     return job
+
+
+def parse_form_labels(raw_value):
+    """Parse a SKU master's `default_form_labels` text into [(label, pcs_per_unit), ...].
+
+    Two forms of entry, both comma-separated:
+    - 'White,Pink,Yellow' — a uniform multi-form book (NCR plies): every form
+      carries the same page count, so pcs_per_unit is None per label and each
+      sibling inherits the SKU master's own pcs_per_unit.
+    - 'Cover:2,Inner:10' — a heterogeneous multi-form book (e.g. a booklet
+      whose cover and inner pages are different stock/press runs with
+      DIFFERENT page counts): 'Label:pages' sets that form's own pcs_per_unit,
+      overriding the SKU master's figure for just that form.
+    Both styles can be mixed on the same SKU, form by form.
+    """
+    parsed = []
+    for chunk in (raw_value or '').split(','):
+        chunk = chunk.strip()
+        if not chunk:
+            continue
+        if ':' in chunk:
+            label, _, count_raw = chunk.partition(':')
+            label = label.strip()
+            count_raw = count_raw.strip()
+            pcs_per_unit = int(count_raw) if count_raw.isdigit() else None
+        else:
+            label, pcs_per_unit = chunk, None
+        parsed.append((label, pcs_per_unit))
+    return parsed
+
+
+def create_sibling_forms_from_sku_master(base_job, recipe, *, actor=None):
+    """Auto-raise the sibling ply/form jobs for a multi-form book SKU.
+
+    This is how the system knows a book SKU needs more than one job card even
+    though the PO only states one quantity: the SKU master (`recipe`) is
+    marked once with `default_form_labels` (e.g. 'White,Pink,Yellow' for a
+    triplicate NCR book, or 'Cover:2,Inner:10' for a booklet whose cover and
+    inner pages are different stock with different page counts), and every
+    time a job is raised for that SKU this creates one sibling per extra
+    label — mirroring the CSV pattern of `JC-...-1585`, `.1`, `.2` sharing
+    one PO/SKU/quantity. See `parse_form_labels` for the two label styles.
+
+    No-op for a plain SKU (blank `default_form_labels`) or when siblings for
+    this base job already exist (idempotent re-runs, e.g. re-syncing a PO).
+    """
+    labels = parse_form_labels(recipe.default_form_labels)
+    if len(labels) < 2:
+        return []
+    if base_job.child_forms.exists():
+        return []
+
+    first_label, first_pcs_per_unit = labels[0]
+    update_fields = []
+    if not base_job.form_label:
+        base_job.form_label = first_label
+        update_fields.append('form_label')
+    if first_pcs_per_unit is not None and base_job.pcs_per_unit != first_pcs_per_unit:
+        base_job.pcs_per_unit = first_pcs_per_unit
+        update_fields.append('pcs_per_unit')
+    if update_fields:
+        base_job.save(update_fields=update_fields)
+
+    return [
+        create_sibling_form_planning_job(base_job, form_label=label, pcs_per_unit=pcs_per_unit, actor=actor)
+        for label, pcs_per_unit in labels[1:]
+    ]
+
+
+SIBLING_FORM_COPIED_FIELDS = [
+    'plan_month', 'plan_date', 'po_approval_date', 'delivery_date',
+    'po_number', 'sku', 'job_name', 'repeat_flag',
+    'application',
+    'size_w_mm', 'size_h_mm', 'size_w_inch', 'size_h_inch',
+    'order_qty', 'print_pcs',
+    'print_sheet_size', 'wastage_sheets',
+    'purchase_sheet_size',
+    'requirement', 'destination',
+    'front_colors', 'back_colors', 'total_colors', 'total_mr_time_minutes',
+    'front_pass', 'back_pass', 'job_process_type', 'print_passes',
+    'department', 'purchase_material_origin',
+    'unit_type', 'pcs_per_unit',
+]
+
+
+def create_sibling_form_planning_job(source_job, *, material='', form_label='', ups=None,
+                                      purchase_sheet_ups=None, pcs_per_unit=None, actor=None):
+    """Create a new PlanningJob that is another form/ply of `source_job`'s book.
+
+    Covers two different real cases the same way:
+    - NCR plies (White/Pink/Yellow): same content, same page count per form,
+      only the paper colour differs — leave `pcs_per_unit` unset and every
+      sibling shares the SKU master's own figure.
+    - A heterogeneous book (e.g. a booklet's Cover vs its Inner pages): each
+      form is different content on different stock with a DIFFERENT page
+      count — pass `material` and `pcs_per_unit` explicitly per form (a cover
+      might be 2 pages/book, the inner pages 10).
+
+    Clones the shared descriptive fields (SKU, job name, PO, size, requirement,
+    colours/passes, etc.) from `source_job` and lets the caller set the fields
+    that differ per form — material, ups, purchase_sheet_ups, pcs_per_unit,
+    form_label. Order qty (the book count) is copied as-is: each form
+    independently needs one instance per book, regardless of how many pages
+    that particular form contributes.
+
+    The new job's `parent_planning_job` always points to the group's root (the
+    first job card raised for this book), even when `source_job` is itself a
+    child form, so groups stay one level deep and JC numbers stay flat
+    (`...-1115`, `...-1115.1`, `...-1115.2`, never `...-1115.1.1`).
+    """
+    root_job = source_job.parent_planning_job or source_job
+    base_jc_number = re.sub(r'\.\d+$', '', root_job.jc_number)
+
+    defaults = {field: getattr(source_job, field) for field in SIBLING_FORM_COPIED_FIELDS}
+    defaults['material'] = material or source_job.material
+    defaults['color_spec'] = source_job.color_spec
+    defaults['ups'] = ups if ups is not None else source_job.ups
+    defaults['purchase_sheet_ups'] = (
+        purchase_sheet_ups if purchase_sheet_ups is not None else source_job.purchase_sheet_ups
+    )
+    defaults['pcs_per_unit'] = pcs_per_unit if pcs_per_unit is not None else source_job.pcs_per_unit
+    defaults['parent_planning_job'] = root_job
+    defaults['form_label'] = form_label
+    defaults['status'] = 'draft'
+    if actor:
+        defaults['created_by'] = actor
+
+    with transaction.atomic():
+        sibling = PlanningJob.objects.create(
+            jc_number=allocate_child_jc_number(base_jc_number),
+            **defaults,
+        )
+    return sibling
 
 
 def _planning_status_filter_values(status):

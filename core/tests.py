@@ -958,3 +958,180 @@ class MachineRoutingTests(TestCase):
         self.assertNotIn('GTO 1B', [m.name for m in gto1_pool.members])
         self.assertIn('GTO 1B', [m.name for m in gto1_pool.maintenance_members])
 
+
+class MultiFormAndRimJobTests(TestCase):
+    """Sibling-job-card multi-form books and rim-unit cut & pack jobs."""
+
+    def setUp(self):
+        self.user = get_user_model().objects.create_user(username='rimtester', password='testpass')
+        self.machine = Machine.objects.create(name='Rim Test Machine')
+
+    def _make_job_card(self, **overrides):
+        defaults = dict(
+            SKU='SKU-TEST',
+            order_qty=1000,
+            status='in_production',
+            po_date=date(2026, 1, 1),
+            total_sheet_quantity=10,
+            total_colors=1,
+            machine_name=self.machine,
+        )
+        defaults.update(overrides)
+        return JobCard.objects.create(**defaults)
+
+    def test_allocate_child_jc_number_sequences_dotted_suffixes(self):
+        from .jc_numbering import allocate_child_jc_number
+
+        SequenceCounter.objects.all().delete()
+        base = allocate_next_jc_number(date(2026, 2, 6))
+        parent = self._make_job_card(job_card_no=base, order_qty=25000)
+
+        first_child = allocate_child_jc_number(base)
+        self.assertEqual(first_child, f'{base}.1')
+        self._make_job_card(job_card_no=first_child, order_qty=25000, parent_job_card=parent)
+
+        second_child = allocate_child_jc_number(base)
+        self.assertEqual(second_child, f'{base}.2')
+
+    def test_allocate_child_jc_number_respects_existing_imported_rows(self):
+        from .jc_numbering import allocate_child_jc_number
+
+        SequenceCounter.objects.all().delete()
+        base = 'JC-02-26-1585'
+        parent = self._make_job_card(job_card_no=base, order_qty=25000)
+        self._make_job_card(job_card_no=f'{base}.1', order_qty=25000, parent_job_card=parent)
+        self._make_job_card(job_card_no=f'{base}.2', order_qty=25000, parent_job_card=parent)
+
+        # Rows above were inserted directly (as a data import would), bypassing
+        # the counter — the next allocation must still continue past them.
+        self.assertEqual(allocate_child_jc_number(base), f'{base}.3')
+
+    def test_sibling_forms_groups_parent_and_children(self):
+        base = self._make_job_card(job_card_no='JC-03-26-0100', order_qty=5000)
+        child1 = self._make_job_card(
+            job_card_no='JC-03-26-0100.1', order_qty=5000,
+            parent_job_card=base, form_label='Pink',
+        )
+        child2 = self._make_job_card(
+            job_card_no='JC-03-26-0100.2', order_qty=5000,
+            parent_job_card=base, form_label='Yellow',
+        )
+
+        self.assertEqual(base.sibling_forms, [base, child1, child2])
+        self.assertEqual(child1.sibling_forms, [base, child1, child2])
+
+    def test_standalone_job_card_has_no_sibling_forms(self):
+        job_card = self._make_job_card(job_card_no='JC-03-26-0200')
+        self.assertEqual(job_card.sibling_forms, [])
+
+    def test_rim_job_order_qty_and_dispatch_track_in_rims_not_pcs(self):
+        # order_qty is entered in the SAME unit as the WO/PO — 50 rims here,
+        # not 25,000 pcs. pcs_per_unit (500) is used only to derive pcs for
+        # internal press/packing planning (order_qty_pcs, packing_limit_pcs).
+        job_card = self._make_job_card(
+            job_card_no='JC-04-26-0300',
+            SKU='A4 PAPER RIM',
+            order_qty=50,
+            is_print_job=False,
+            unit_type='rim',
+            pcs_per_unit=500,
+            total_sheet_quantity=0,
+            total_colors=0,
+        )
+        self.assertEqual(job_card.order_qty_pcs, 25000)
+        self.assertEqual(job_card.packing_limit_pcs, 25000)
+
+        # Packing still happens in pcs and must round to whole rims.
+        bad_packing = Production(
+            job_card=job_card, entry_type='packing', date='2026-04-01', shift='A',
+            packing_qty=750, sorting_waste_qty=0, sorter=self._ensure_sorter(),
+        )
+        with self.assertRaises(ValidationError):
+            bad_packing.save()
+        Production.objects.create(
+            job_card=job_card, entry_type='packing', date='2026-04-01', shift='A',
+            packing_qty=1000, sorting_waste_qty=0, sorter=self._ensure_sorter(),
+        )
+
+        # Dispatch is entered directly in rims — matching the WO/PO — not pcs.
+        dispatch = Dispatch(
+            job_card=job_card, dc_no='DC-RIM-002', dispatch_date='2026-04-01',
+            dispatch_qty=2, created_by=self.user,
+        )
+        dispatch.save()
+        self.assertEqual(job_card.total_dispatch, 2)
+        self.assertEqual(job_card.balance_qty, 48)
+
+    def _ensure_sorter(self):
+        from core.models import Sorter
+        sorter, _ = Sorter.objects.get_or_create(name='Rim Test Sorter')
+        return sorter
+
+    def test_rim_job_dispatch_cannot_exceed_order_qty_in_rims(self):
+        job_card = self._make_job_card(
+            job_card_no='JC-04-26-0301',
+            SKU='A4 PAPER RIM',
+            order_qty=1,
+            is_print_job=False,
+            unit_type='rim',
+            pcs_per_unit=500,
+            total_sheet_quantity=0,
+            total_colors=0,
+        )
+        over_dispatch = Dispatch(
+            job_card=job_card, dc_no='DC-RIM-003', dispatch_date='2026-04-01',
+            dispatch_qty=2, created_by=self.user,
+        )
+        with self.assertRaises(ValidationError):
+            over_dispatch.save()
+
+    def test_pcs_job_dispatch_unaffected_by_unit_pivot(self):
+        """Default (unit_type='pcs', pcs_per_unit=1) job cards keep today's
+        pcs-for-pcs dispatch behaviour exactly."""
+        job_card = self._make_job_card(
+            job_card_no='JC-04-26-0302', order_qty=777, is_print_job=False, total_colors=0,
+        )
+        self.assertEqual(job_card.order_qty_pcs, 777)
+        dispatch = Dispatch(
+            job_card=job_card, dc_no='DC-PLAIN-001', dispatch_date='2026-04-01',
+            dispatch_qty=777, created_by=self.user,
+        )
+        dispatch.save()
+        self.assertEqual(job_card.total_dispatch, 777)
+
+    def test_sibling_form_job_card_cannot_be_dispatched_directly(self):
+        base = self._make_job_card(job_card_no='JC-04-26-0400', order_qty=500)
+        child = self._make_job_card(
+            job_card_no='JC-04-26-0400.1', order_qty=500,
+            parent_job_card=base, form_label='Pink',
+        )
+        dispatch = Dispatch(
+            job_card=child, dc_no='DC-FORM-001', dispatch_date='2026-04-01',
+            dispatch_qty=500, created_by=self.user,
+        )
+        with self.assertRaises(ValidationError):
+            dispatch.save()
+
+        # The base/root job card dispatches fine — it's the actual deliverable.
+        root_dispatch = Dispatch(
+            job_card=base, dc_no='DC-FORM-002', dispatch_date='2026-04-01',
+            dispatch_qty=500, created_by=self.user,
+        )
+        root_dispatch.save()
+        self.assertEqual(base.total_dispatch, 500)
+
+
+class JcSyncRimQtyTests(TestCase):
+    def test_planned_pkt_rim_qty_derives_from_pcs_per_unit_for_rim_jobs(self):
+        from supply_chain.jc_sync import _planned_pkt_rim_qty
+
+        rim_job = JobCard(unit_type='rim', pcs_per_unit=500)
+        self.assertEqual(_planned_pkt_rim_qty(rim_job, 25000), 50)
+        self.assertEqual(_planned_pkt_rim_qty(rim_job, 0), 0)
+
+    def test_planned_pkt_rim_qty_zero_for_pcs_jobs(self):
+        from supply_chain.jc_sync import _planned_pkt_rim_qty
+
+        pcs_job = JobCard(unit_type='pcs', pcs_per_unit=1)
+        self.assertEqual(_planned_pkt_rim_qty(pcs_job, 5000), 0)
+

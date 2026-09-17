@@ -71,6 +71,10 @@
 </div>
 {% endwith %}
 
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.unit_type label='Order Unit' help_text='Auto-filled from Product Type when left at Pieces (e.g. A4 Rim -> Rim). Override only for a SKU that genuinely differs from its category.' %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.pcs_per_unit label='Pieces per Order Unit' help_text='500 for a rim; pages-per-book for a book SKU (e.g. 50 for one ply of a triplicate NCR book, 100 for a plain single-ply book). 1 for plain pcs SKUs.' %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.default_form_labels label='Multi-Form Book Labels' full_width=True help_text="Leave blank for a normal single-form SKU. Two styles: White,Pink,Yellow for a uniform book where every form has the same page count (e.g. an NCR triplicate — count taken from Pieces per Order Unit above); Cover:2,Inner:10 for a book whose forms are different content/stock with DIFFERENT page counts each (e.g. a booklet's cover vs its inner pages) — creating the first job card for this SKU then auto-raises one sibling job card per extra form, each with its own page count." %}
+
 {% with field=form.machine_name.field %}
 <div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">
     <span class="sku-recipe-field__badge{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">{{ field.sku_role_label }}</span>

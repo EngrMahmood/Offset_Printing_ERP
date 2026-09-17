@@ -1693,6 +1693,13 @@ def master_data(request):
             elif entity_type in {'operator', 'supervisor'}:
                 employee_code = (request.POST.get('employee_code') or '').strip() or None
                 create_kwargs['employee_code'] = employee_code
+            elif entity_type == 'product_type':
+                default_unit_type = (request.POST.get('default_unit_type') or 'pcs').strip()
+                if default_unit_type not in dict(ProductType.UNIT_TYPE_CHOICES):
+                    default_unit_type = 'pcs'
+                create_kwargs['default_unit_type'] = default_unit_type
+                pcs_per_unit_raw = (request.POST.get('default_pcs_per_unit') or '').strip()
+                create_kwargs['default_pcs_per_unit'] = int(pcs_per_unit_raw) if pcs_per_unit_raw.isdigit() else None
 
             model.objects.create(**create_kwargs)
             messages.success(request, f'{label} "{new_name}" added.')
@@ -1806,6 +1813,20 @@ def master_data(request):
                     if record.max_print_width_mm != new_max_w:
                         record.max_print_width_mm = new_max_w
                         changed_fields.append('max_print_width_mm')
+
+                if entity_type == 'product_type':
+                    new_unit_type = (request.POST.get('default_unit_type') or 'pcs').strip()
+                    if new_unit_type not in dict(ProductType.UNIT_TYPE_CHOICES):
+                        new_unit_type = 'pcs'
+                    pcs_per_unit_raw = (request.POST.get('default_pcs_per_unit') or '').strip()
+                    new_pcs_per_unit = int(pcs_per_unit_raw) if pcs_per_unit_raw.isdigit() else None
+
+                    if record.default_unit_type != new_unit_type:
+                        record.default_unit_type = new_unit_type
+                        changed_fields.append('default_unit_type')
+                    if record.default_pcs_per_unit != new_pcs_per_unit:
+                        record.default_pcs_per_unit = new_pcs_per_unit
+                        changed_fields.append('default_pcs_per_unit')
 
                 if changed_fields:
                     record.save(update_fields=changed_fields)
@@ -2078,6 +2099,7 @@ def master_data(request):
         'department_rows': department_rows,
         'delivery_location_rows': delivery_location_rows,
         'product_type_rows': product_type_rows,
+        'unit_type_choices': ProductType.UNIT_TYPE_CHOICES,
         'application_type_rows': application_type_rows,
         'vendor_rows': vendor_rows,
         'print_color_rows': print_color_rows,

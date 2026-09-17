@@ -61,3 +61,53 @@ def allocate_next_jc_number(for_date=None):
     date_value = for_date or timezone.localdate()
     suffix = 'PP-'
     return f"JC-{date_value:%m}-{date_value:%y}-{suffix}{counter.last_value:04d}"
+
+
+def _max_child_suffix(base_jc_number):
+    pattern = re.compile(r'^' + re.escape(base_jc_number) + r'\.(\d+)$')
+    max_suffix = 0
+
+    for number in JobCard.objects.filter(
+        job_card_no__startswith=f'{base_jc_number}.'
+    ).values_list('job_card_no', flat=True):
+        match = pattern.match(str(number).strip())
+        if match:
+            max_suffix = max(max_suffix, int(match.group(1)))
+
+    try:
+        PlanningJob = apps.get_model('planning', 'PlanningJob')
+        for number in PlanningJob.objects.filter(
+            jc_number__startswith=f'{base_jc_number}.'
+        ).values_list('jc_number', flat=True):
+            match = pattern.match(str(number).strip())
+            if match:
+                max_suffix = max(max_suffix, int(match.group(1)))
+    except LookupError:
+        pass
+
+    return max_suffix
+
+
+@transaction.atomic
+def allocate_child_jc_number(base_jc_number):
+    """Allocate the next dotted-suffix JC number for a sibling form under
+    `base_jc_number` (e.g. 'JC-01-26-1115' -> 'JC-01-26-1115.1', then '.2', ...).
+
+    `base_jc_number` must be the root JC number of the group — callers should
+    never pass an already-suffixed number, so siblings stay one level deep
+    (no 'JC-...-1115.1.1').
+    """
+    counter_key = f'jc_child:{base_jc_number}'
+    counter, _ = SequenceCounter.objects.select_for_update().get_or_create(
+        key=counter_key,
+        defaults={'last_value': 0},
+    )
+
+    max_existing = _max_child_suffix(base_jc_number)
+    if max_existing > counter.last_value:
+        counter.last_value = max_existing
+
+    counter.last_value += 1
+    counter.save(update_fields=['last_value', 'updated_at'])
+
+    return f'{base_jc_number}.{counter.last_value}'

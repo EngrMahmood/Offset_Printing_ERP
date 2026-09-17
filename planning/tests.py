@@ -2423,3 +2423,188 @@ class PlanningJobCancellationTests(TestCase):
 		self.job.refresh_from_db()
 		self.assertTrue(self.job.is_cancelled)
 		self.assertFalse(self.job.is_active)
+
+
+class SkuMasterUnitTypeAndMultiFormTests(TestCase):
+	"""A PO/WO only ever states a plain quantity — these tests confirm the
+	system tells pcs jobs, rim jobs, and multi-form book jobs apart using the
+	SKU master (SkuRecipe), the same mechanism already used for job_process_type."""
+
+	def setUp(self):
+		self.user = get_user_model().objects.create_user(username='sku_unit_user', password='pass')
+
+	def test_new_job_inherits_rim_unit_type_from_sku_master(self):
+		SkuRecipe.objects.create(
+			sku='A4 PAPER RIM', job_process_type='cut_and_pack',
+			unit_type='rim', pcs_per_unit=500,
+		)
+		job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-001', sku='A4 PAPER RIM', order_qty=25000,
+			status='draft', created_by=self.user,
+		)
+		self.assertEqual(job.unit_type, 'rim')
+		self.assertEqual(job.pcs_per_unit, 500)
+		self.assertTrue(job.is_cut_and_pack())
+
+	def test_plain_sku_defaults_to_pcs_unit_type(self):
+		job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-002', sku='SKU-WITH-NO-MASTER', order_qty=1000,
+			status='draft', created_by=self.user,
+		)
+		self.assertEqual(job.unit_type, 'pcs')
+		self.assertEqual(job.pcs_per_unit, 1)
+
+	def test_rim_unit_type_frozen_after_qc_approval(self):
+		recipe = SkuRecipe.objects.create(
+			sku='A4 PAPER RIM 2', job_process_type='cut_and_pack',
+			unit_type='rim', pcs_per_unit=500,
+		)
+		job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-003', sku='A4 PAPER RIM 2', order_qty=10000,
+			status='draft', created_by=self.user,
+		)
+		self.assertEqual(job.unit_type, 'rim')
+
+		job.status = 'released'
+		job.save()
+		self.assertEqual(job.unit_type, 'rim')
+
+		# Master later reverts to a plain pcs SKU — an in-flight job must not
+		# have its units silently rewritten under it.
+		recipe.unit_type = 'pcs'
+		recipe.pcs_per_unit = 1
+		recipe.save()
+		job.order_qty = 10500
+		job.save()
+		self.assertEqual(job.unit_type, 'rim')
+		self.assertEqual(job.pcs_per_unit, 500)
+
+	def test_multi_form_sku_auto_creates_sibling_jobs(self):
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='NCR TRIPLICATE BOOK', job_process_type='print_and_pack',
+			default_form_labels='White,Pink,Yellow', ups=2,
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-004', sku='NCR TRIPLICATE BOOK', order_qty=25000,
+			status='draft', created_by=self.user,
+		)
+
+		created = create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+
+		self.assertEqual(len(created), 2)
+		base_job.refresh_from_db()
+		self.assertEqual(base_job.form_label, 'White')
+		sibling_labels = sorted(s.form_label for s in created)
+		self.assertEqual(sibling_labels, ['Pink', 'Yellow'])
+		for sibling in created:
+			self.assertEqual(sibling.parent_planning_job_id, base_job.id)
+			self.assertEqual(sibling.order_qty, base_job.order_qty)
+			self.assertTrue(sibling.jc_number.startswith(f'{base_job.jc_number}.'))
+
+	def test_heterogeneous_multi_form_book_gets_per_form_page_counts(self):
+		"""A booklet whose Cover and Inner pages are different stock/press runs
+		with DIFFERENT page counts each — e.g. the babysling instruction
+		booklet — uses the 'Label:pages' syntax so each form gets its own
+		pcs_per_unit, not one shared figure like the NCR case."""
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='BABYSLING BOOKLET', job_process_type='print_and_pack',
+			default_form_labels='Cover:2,Inner:10', pcs_per_unit=1,
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-007', sku='BABYSLING BOOKLET', order_qty=30000,
+			status='draft', created_by=self.user,
+		)
+
+		created = create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		base_job.refresh_from_db()
+
+		self.assertEqual(len(created), 1)
+		self.assertEqual(base_job.form_label, 'Cover')
+		self.assertEqual(base_job.pcs_per_unit, 2)
+		self.assertEqual(base_job.order_qty_pcs, 60000)
+
+		inner = created[0]
+		self.assertEqual(inner.form_label, 'Inner')
+		self.assertEqual(inner.pcs_per_unit, 10)
+		self.assertEqual(inner.order_qty, 30000)
+		self.assertEqual(inner.order_qty_pcs, 300000)
+
+	def test_multi_form_sync_is_idempotent(self):
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='NCR DUPLICATE BOOK', job_process_type='print_and_pack',
+			default_form_labels='White,Yellow',
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-005', sku='NCR DUPLICATE BOOK', order_qty=5000,
+			status='draft', created_by=self.user,
+		)
+		first_run = create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		second_run = create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+
+		self.assertEqual(len(first_run), 1)
+		self.assertEqual(second_run, [])
+		self.assertEqual(base_job.child_forms.count(), 1)
+
+	def test_plain_sku_creates_no_siblings(self):
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(sku='PLAIN SKU NO FORMS', job_process_type='print_and_pack')
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-006', sku='PLAIN SKU NO FORMS', order_qty=1000,
+			status='draft', created_by=self.user,
+		)
+		created = create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		self.assertEqual(created, [])
+		self.assertEqual(base_job.child_forms.count(), 0)
+
+
+class ProductTypeUnitDefaultsTests(TestCase):
+	"""SKUs are already classified into a Product Type from a fixed master-data
+	dropdown (A4 Rim, Report Books, Insert Card, ...) when created — this is
+	the real trigger that tells the system a SKU is rim/book-based, so a
+	planner doesn't separately declare unit_type per SKU on top of it."""
+
+	def setUp(self):
+		from core.models import ProductType
+		self.rim_type = ProductType.objects.create(
+			name='Test A4 Rim', default_unit_type='rim', default_pcs_per_unit=500,
+		)
+		self.book_type = ProductType.objects.create(
+			name='Test Report Books', default_unit_type='book',
+		)
+		ProductType.objects.get_or_create(name='Test Insert Card')
+
+	def test_new_sku_inherits_unit_type_from_its_product_type(self):
+		recipe = SkuRecipe.objects.create(sku='TEST-A4-001', product_type='Test A4 Rim')
+		self.assertEqual(recipe.unit_type, 'rim')
+		self.assertEqual(recipe.pcs_per_unit, 500)
+
+	def test_book_product_type_sets_unit_type_but_not_pcs_per_unit(self):
+		"""Report Books has no fixed pcs_per_unit (page count varies per SKU) —
+		only unit_type is inherited; pcs_per_unit is left for the SKU record itself."""
+		recipe = SkuRecipe.objects.create(sku='TEST-BOOK-001', product_type='Test Report Books')
+		self.assertEqual(recipe.unit_type, 'book')
+		self.assertEqual(recipe.pcs_per_unit, 1)
+
+	def test_plain_product_type_leaves_pcs_defaults(self):
+		recipe = SkuRecipe.objects.create(sku='TEST-CARD-001', product_type='Test Insert Card')
+		self.assertEqual(recipe.unit_type, 'pcs')
+		self.assertEqual(recipe.pcs_per_unit, 1)
+
+	def test_manual_override_is_never_clobbered_by_product_type(self):
+		"""A planner who already set a custom unit_type/pcs_per_unit (e.g. a
+		non-standard rim size) keeps it even if product_type is re-saved."""
+		recipe = SkuRecipe.objects.create(
+			sku='TEST-A4-002', product_type='Test A4 Rim', unit_type='rim', pcs_per_unit=250,
+		)
+		self.assertEqual(recipe.pcs_per_unit, 250)
+		recipe.job_name = 'touched'
+		recipe.save()
+		recipe.refresh_from_db()
+		self.assertEqual(recipe.pcs_per_unit, 250)

@@ -100,6 +100,34 @@ class PlanningJob(models.Model):
     purchase_sheet_ups = models.IntegerField(null=True, blank=True)
     purchase_sheet_required = models.PositiveIntegerField(null=True, blank=True)
 
+    parent_planning_job = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='child_forms',
+        help_text=(
+            "Set when this planning job is one form/ply of a multi-form book job "
+            "(e.g. an NCR ply). Points to the group's root planning job."
+        ),
+    )
+    form_label = models.CharField(
+        max_length=50,
+        blank=True,
+        help_text="Name of this form/ply within its group, e.g. 'White', 'Pink', 'Cover'.",
+    )
+    UNIT_TYPE_CHOICES = [
+        ('pcs', 'Pieces'),
+        ('rim', 'Rims'),
+        ('book', 'Books'),
+        ('box', 'Boxes'),
+    ]
+    unit_type = models.CharField(max_length=10, choices=UNIT_TYPE_CHOICES, default='pcs')
+    pcs_per_unit = models.PositiveIntegerField(
+        default=1,
+        help_text="Pieces per order unit — 500 for a rim, pages-per-book for a book SKU, etc; 1 for standard pcs jobs.",
+    )
+
     pkt_value = models.DecimalField(max_digits=12, decimal_places=2, null=True, blank=True)
     remarks = models.TextField(blank=True)
     requirement = models.TextField(blank=True)
@@ -401,12 +429,23 @@ class PlanningJob(models.Model):
         return self.plan_date
 
     @property
-    def net_print_qty(self):
-        """Net production qty after stock absorption; negative values are clamped to zero."""
+    def order_qty_pcs(self):
+        """order_qty converted to pieces for press-sheet/ups planning only.
+        order_qty itself stays in the SAME unit as the customer's WO/PO
+        (pcs/rim/book/box) — see core.JobCard.order_qty_pcs, which this
+        mirrors on the planning side."""
         if self.order_qty is None:
             return None
+        return int(self.order_qty) * int(self.pcs_per_unit or 1)
+
+    @property
+    def net_print_qty(self):
+        """Net production qty (in pcs) after stock absorption; negative values are clamped to zero."""
+        order_qty_pcs = self.order_qty_pcs
+        if order_qty_pcs is None:
+            return None
         stock_consumption = int(self.stock_qty or 0)
-        return max((self.order_qty or 0) - stock_consumption, 0)
+        return max(order_qty_pcs - stock_consumption, 0)
 
     @property
     def ups_value(self):
@@ -772,6 +811,46 @@ class PlanningJob(models.Model):
         self.job_process_type = process
         return True
 
+    def sync_unit_type_from_sku_master(self):
+        """Copy unit_type/pcs_per_unit from the SKU master onto this job.
+
+        This is how the system knows a PO line quantity — always a plain
+        number — should be read as rims (e.g. A4 paper) rather than pieces:
+        the SKU itself is marked 'rim' once on its master record, the same
+        way job_process_type marks a SKU as Cut & Pack. Every job raised for
+        that SKU then inherits it automatically; frozen after QC approval so
+        an in-flight job's units can't shift under it.
+        """
+        if self._print_passes_frozen():
+            return False
+
+        recipe = self.approved_sku_recipe or self.sku_recipe
+        if not recipe and (self.sku or '').strip():
+            from planning.services import get_best_sku_recipe_for_sku
+            recipe = get_best_sku_recipe_for_sku(self.sku)
+        if not recipe:
+            return False
+
+        recipe_unit_type = recipe.unit_type or 'pcs'
+        changed = False
+        if self.unit_type != recipe_unit_type:
+            self.unit_type = recipe_unit_type
+            changed = True
+
+        # pcs_per_unit varies per form on a heterogeneous multi-form book
+        # (e.g. a booklet's Cover vs Inner pages have different page counts)
+        # — once this job carries its own form_label it's a member of a form
+        # group and its pcs_per_unit is per-form data, not something to keep
+        # re-syncing from the shared SKU master on every save. unit_type
+        # still syncs (the whole group shares one unit), just not the count.
+        if not self.form_label:
+            recipe_pcs_per_unit = recipe.pcs_per_unit or 1
+            if self.pcs_per_unit != recipe_pcs_per_unit:
+                self.pcs_per_unit = recipe_pcs_per_unit
+                changed = True
+
+        return changed
+
     def _print_passes_frozen(self):
         return (self.workflow_status or '').strip().lower() in {
             'qc_approved',
@@ -862,6 +941,10 @@ class PlanningJob(models.Model):
         if self.sync_print_passes_from_sku_master():
             if update_fields is not None:
                 update_fields.add('print_passes')
+
+        if self.sync_unit_type_from_sku_master():
+            if update_fields is not None:
+                update_fields.update({'unit_type', 'pcs_per_unit'})
 
         calculated_total_sheet_quantity = self.calculated_sheets_required
         if calculated_total_sheet_quantity is not None:
@@ -1008,6 +1091,44 @@ class SkuRecipe(models.Model):
     )
     plate_set_no = models.CharField(max_length=120, blank=True)
 
+    UNIT_TYPE_CHOICES = [
+        ('pcs', 'Pieces'),
+        ('rim', 'Rims'),
+        ('book', 'Books'),
+        ('box', 'Boxes'),
+    ]
+    unit_type = models.CharField(
+        max_length=10,
+        choices=UNIT_TYPE_CHOICES,
+        default='pcs',
+        help_text=(
+            "Order-qty unit for jobs using this SKU, matching the unit the "
+            "customer's WO/PO actually orders in for this SKU (their PO's own "
+            "unit label can't be trusted — it's often just 'PIECE' regardless "
+            "of whether the real unit is a sheet, a rim, or a book). Declared "
+            "once here; every job for this SKU then inherits it."
+        ),
+    )
+    pcs_per_unit = models.PositiveIntegerField(
+        default=1,
+        help_text="Pieces per order unit when unit_type='rim' (500 for 1 rim = 500 pcs). Ignored for 'pcs'.",
+    )
+    default_form_labels = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=(
+            "Comma-separated form names for a multi-form book SKU. Leave blank "
+            "for a normal single-form job; creating a job for this SKU then "
+            "also creates one sibling job card per extra label. Two styles: "
+            "'White,Pink,Yellow' for a uniform book (e.g. an NCR triplicate — "
+            "every ply has the same page count, taken from Pieces per Order "
+            "Unit above); 'Cover:2,Inner:10' for a book whose forms are "
+            "different content/stock with DIFFERENT page counts each (e.g. a "
+            "booklet's cover vs its inner pages) — the number after the colon "
+            "overrides Pieces per Order Unit for just that one form."
+        ),
+    )
+
     size_w_mm = models.IntegerField(null=True, blank=True)
     size_h_mm = models.IntegerField(null=True, blank=True)
     ups = models.IntegerField(null=True, blank=True)
@@ -1079,6 +1200,36 @@ class SkuRecipe(models.Model):
 
     def __str__(self):
         return self.sku
+
+    def sync_unit_defaults_from_product_type(self):
+        """Fill unit_type/pcs_per_unit from the chosen Product Type's own
+        defaults (e.g. 'A4 Rim' -> rim/500) the first time this SKU picks
+        that category — so a planner doesn't have to separately declare
+        'this SKU is a rim job' on top of the Product Type they already pick
+        from the master-data dropdown. Never overwrites a value the SKU
+        master has already been customised away from the pcs/1 default, so
+        a deliberate per-SKU override (e.g. a page count Product Type can't
+        know) always wins.
+        """
+        product_type_name = (self.product_type or '').strip()
+        if not product_type_name:
+            return False
+        if self.unit_type != 'pcs' or self.pcs_per_unit != 1:
+            return False
+
+        from core.models import ProductType
+        product_type = ProductType.objects.filter(name__iexact=product_type_name).first()
+        if not product_type or product_type.default_unit_type == 'pcs':
+            return False
+
+        self.unit_type = product_type.default_unit_type
+        if product_type.default_pcs_per_unit:
+            self.pcs_per_unit = product_type.default_pcs_per_unit
+        return True
+
+    def save(self, *args, **kwargs):
+        self.sync_unit_defaults_from_product_type()
+        super().save(*args, **kwargs)
 
     def get_next_notification_roles(self):
         status = (self.master_data_status or '').strip().lower()
