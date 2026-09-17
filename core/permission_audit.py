@@ -23,6 +23,7 @@ EXEMPT_NAMESPACES = {'tasks', 'audit', 'chat', 'manual_working', 'floor_dashboar
 OWN_APP_PREFIXES = (
     'core.', 'production.', 'planning.', 'qc.', 'dispatch.', 'supply_chain.',
     'printing_plates.', 'job_summary.', 'maintenance.', 'reports.', 'migration.',
+    'bom.',
 )
 
 

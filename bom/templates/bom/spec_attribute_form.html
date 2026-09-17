@@ -1,0 +1,29 @@
+{% extends 'theme/base.html' %}
+{% block title %}Spec Attribute{% endblock %}
+{% block header_title %}{% if instance %}Edit{% else %}New{% endif %} Spec Attribute{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="post" class="erp-form-grid" style="grid-template-columns:repeat(2,1fr); gap:12px;">
+            {% csrf_token %}
+            {% if next_url %}<input type="hidden" name="next" value="{{ next_url }}">{% endif %}
+            {% for field in form %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">{{ field.label }}</label>
+                {{ field }}
+                {% for error in field.errors %}<div class="erp-alert erp-alert-danger">{{ error }}</div>{% endfor %}
+            </div>
+            {% endfor %}
+            <div class="erp-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Save</button>
+                {% if next_url %}
+                <a href="{{ next_url }}" class="erp-btn erp-btn-secondary">Cancel</a>
+                {% else %}
+                <a href="{% url 'bom:spec_attribute_list' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+                {% endif %}
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

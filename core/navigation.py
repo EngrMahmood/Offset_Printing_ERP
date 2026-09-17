@@ -23,6 +23,7 @@ NAV_PERMISSION_CODES = {
     'maintenance': 'nav.maintenance',
     'chat': 'nav.chat',
     'bot': 'nav.bot',
+    'bom': 'nav.bom',
 }
 
 PLANNING_NAV_ROLES = {'admin', 'manager', 'planner'}
@@ -54,6 +55,10 @@ CHAT_NAV_ROLES = {
 # with the roles who own that decision (see bot.management.commands.seed_bots,
 # which owns the actual Permission/Role grant).
 BOT_NAV_ROLES = {'admin', 'manager'}
+# BOM masters/templates and generated BOMs — planners and production
+# management build recipes, supply chain acts on the requirement report (see
+# bom.management.commands.seed_bom_permissions, which owns the actual grant).
+BOM_NAV_ROLES = {'admin', 'manager', 'planner', 'production_manager', 'supply_chain'}
 
 
 def _role_from_request(request: Any) -> str:
@@ -171,6 +176,7 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_access_audit': _allow('audit'),
         'can_access_item_request': _allow('item_request'),
         'can_access_maintenance': _allow('maintenance'),
+        'can_access_bom': _allow('bom'),
         'can_access_chat': _allow('chat'),
         'can_access_bot': _allow('bot'),
         'can_access_tasks': is_authenticated,

@@ -1,0 +1,56 @@
+{% extends 'theme/base.html' %}
+{% block title %}Test Match{% endblock %}
+{% block header_title %}Test Match{% endblock %}
+{% block header_subtitle %}Pick a SKU to see which templates match, which wins, and the resulting spec.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="post" class="erp-form-grid" style="grid-template-columns:3fr 1fr; gap:12px; align-items:end;">
+            {% csrf_token %}
+            <div class="erp-input-group"><label class="erp-input-label">{{ form.sku.label }}</label>{{ form.sku }}</div>
+            <div class="erp-actions"><button type="submit" class="erp-btn erp-btn-primary">Test</button></div>
+        </form>
+    </section>
+
+    {% if spec %}
+    <section class="erp-section-shell">
+        <h3>Resolved Spec</h3>
+        <table class="erp-table">
+            <tbody>
+            {% for key, value in spec.items %}
+                <tr><th>{{ key }}</th><td>{{ value }}</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Matching Templates</h3>
+        {% if matches %}
+        <table class="erp-table">
+            <thead><tr><th>Code</th><th>Name</th><th>Priority</th><th>Winner?</th></tr></thead>
+            <tbody>
+            {% for t in matches %}
+                <tr>
+                    <td>{{ t.code }}</td><td>{{ t.name }}</td><td>{{ t.priority }}</td>
+                    <td>{% if result.template.pk == t.pk %}✅{% if result.is_ambiguous %} (ambiguous tie){% endif %}{% endif %}</td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="erp-alert">No approved template matches this SKU's spec.</div>
+        {% endif %}
+    </section>
+
+    {% if result.template %}
+    <section class="erp-section-shell">
+        <h3>Preview Lines ({{ result.template.code }})</h3>
+        {% include 'bom/_template_lines_preview.html' with lines=result.template.ordered_lines %}
+        <a class="erp-btn erp-btn-secondary" href="{% url 'bom:template_detail' result.template.pk %}">Open Template</a>
+    </section>
+    {% endif %}
+    {% endif %}
+</div>
+{% endblock %}

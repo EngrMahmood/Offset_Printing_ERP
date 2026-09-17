@@ -34,6 +34,12 @@
                 Maintenance
             </a>
             {% endif %}
+            {% if nav.can_access_bom %}
+            <a href="{% url 'bom:dashboard' %}" data-nav-key="bom" data-nav-label="BOM"
+               class="erp-topnav-module {% if app == 'bom' %}is-active{% endif %}">
+                BOM
+            </a>
+            {% endif %}
             {% if nav.can_access_planning or nav.can_access_production or nav.can_access_job_summary or nav.can_access_migration or nav.can_access_printing_plates %}
             <div class="erp-topnav-group" data-nav-key="offset" data-nav-label="Offset">
                 <button type="button" class="erp-topnav-group-btn {% if app == 'planning' or app == 'job_summary' or app == 'migration' or app == 'printing_plates' or url == 'production_dashboard' or url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'production_wip' or url == 'production_records' or url == 'packing_records' or url == 'production_data_anomalies' or url == 'override_requests' or url == 'review_override_request' or url == 'my_override_requests' or url == 'released_jobs' or url == 'request_plate_remake' or url == 'job_card_finalization_queue' or url == 'manual_working_list' %}is-active{% endif %}">
@@ -377,6 +383,42 @@
         <a href="{% url 'maintenance:reports' %}"
            class="erp-subnav-link {% if url == 'reports' %}is-active{% endif %}">
             Reports
+        </a>
+    </div>
+
+    {% elif app == 'bom' and nav.can_access_bom %}
+    <div class="erp-subnav">
+        <a href="{% url 'bom:dashboard' %}"
+           class="erp-subnav-link {% if url == 'dashboard' %}is-active{% endif %}">
+            Dashboard
+        </a>
+        <a href="{% url 'bom:recipe_wizard' %}"
+           class="erp-subnav-link {% if url == 'recipe_wizard' %}is-active{% endif %}">
+            Recipe Wizard
+        </a>
+        <a href="{% url 'bom:raw_item_list' %}"
+           class="erp-subnav-link {% if url == 'raw_item_list' %}is-active{% endif %}">
+            Raw Items
+        </a>
+        <a href="{% url 'bom:spec_attribute_list' %}"
+           class="erp-subnav-link {% if url == 'spec_attribute_list' %}is-active{% endif %}">
+            Spec Attributes
+        </a>
+        <a href="{% url 'bom:template_list' %}"
+           class="erp-subnav-link {% if url == 'template_list' %}is-active{% endif %}">
+            Templates
+        </a>
+        <a href="{% url 'bom:test_match' %}"
+           class="erp-subnav-link {% if url == 'test_match' %}is-active{% endif %}">
+            Test Match
+        </a>
+        <a href="{% url 'bom:bom_list' %}"
+           class="erp-subnav-link {% if url == 'bom_list' %}is-active{% endif %}">
+            BOMs
+        </a>
+        <a href="{% url 'bom:requirements_report' %}"
+           class="erp-subnav-link {% if url == 'requirements_report' %}is-active{% endif %}">
+            Requirements
         </a>
     </div>
 

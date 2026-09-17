@@ -140,6 +140,7 @@ INSTALLED_APPS = [
     'floor_dashboard',
     'chat',
     'bot',
+    'bom',
 ]
 
 MIDDLEWARE = [
@@ -311,6 +312,10 @@ BACKUP_INSTANCE_LABEL = os.environ.get('BACKUP_INSTANCE_LABEL', '')
 
 # Lock older operational records from edit for non-managerial roles.
 ERP_RECORD_EDIT_LOCK_DAYS = 2
+
+# BOM module: auto-generate a draft BOM when a SKU master is saved and it has
+# no current BOM yet. Kill switch for staged rollout / debugging.
+BOM_AUTO_GENERATE = True
 
 # Chat module
 CHAT_ICE_SERVERS = [

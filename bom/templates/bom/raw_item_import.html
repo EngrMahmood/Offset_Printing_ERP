@@ -1,0 +1,26 @@
+{% extends 'theme/base.html' %}
+{% block title %}Import Raw Items{% endblock %}
+{% block header_title %}Import Raw Items{% endblock %}
+{% block header_subtitle %}Upload a filled copy of the raw items template.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'bom:raw_item_template_download' %}" class="erp-btn erp-btn-secondary">Download Template</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="post" enctype="multipart/form-data" class="erp-form-grid" style="gap:12px;">
+            {% csrf_token %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">{{ form.upload.label }}</label>
+                {{ form.upload }}
+                {% for error in form.upload.errors %}<div class="erp-alert erp-alert-danger">{{ error }}</div>{% endfor %}
+            </div>
+            <div class="erp-actions">
+                <button type="submit" class="erp-btn erp-btn-primary">Import</button>
+                <a href="{% url 'bom:raw_item_list' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

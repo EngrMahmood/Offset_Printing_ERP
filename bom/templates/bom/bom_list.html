@@ -1,0 +1,30 @@
+{% extends 'theme/base.html' %}
+{% block title %}BOMs{% endblock %}
+{% block header_title %}Generated BOMs{% endblock %}
+{% block header_actions %}
+    <a href="?{{ request.GET.urlencode }}&export=xlsx" class="erp-btn erp-btn-secondary">Export Excel</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <table class="erp-table">
+            <thead><tr><th>SKU</th><th>Version</th><th>Template</th><th>Status</th><th>Cost</th><th></th></tr></thead>
+            <tbody>
+            {% for bom in boms %}
+                <tr>
+                    <td>{{ bom.sku_recipe.sku }}</td>
+                    <td>v{{ bom.version }}</td>
+                    <td>{{ bom.source_template.code|default:"—" }}</td>
+                    <td><span class="erp-badge">{{ bom.get_status_display }}</span>{% if bom.needs_regeneration %} <span class="erp-badge erp-badge-warning">Spec changed</span>{% endif %}</td>
+                    <td>{{ bom.total_material_cost }}</td>
+                    <td><a href="{% url 'bom:bom_detail' bom.pk %}" class="erp-btn erp-btn-secondary">View</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6">No BOMs yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

@@ -1,0 +1,53 @@
+{% extends 'theme/base.html' %}
+{% block title %}Raw Items{% endblock %}
+{% block header_title %}Raw Items & Consumables{% endblock %}
+{% block header_subtitle %}Unified material master — paper bridges to Supply Chain stock.{% endblock %}
+{% block header_actions %}
+    <a href="?{{ request.GET.urlencode }}&export=xlsx" class="erp-btn erp-btn-secondary">Export Excel</a>
+    <a href="{% url 'bom:raw_item_template_download' %}" class="erp-btn erp-btn-secondary">Download Template</a>
+    <a href="{% url 'bom:raw_item_import' %}" class="erp-btn erp-btn-secondary">Import</a>
+    <a href="{% url 'bom:raw_item_create' %}" class="erp-btn erp-btn-primary">New Raw Item</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:12px; align-items:end;">
+            <div class="erp-input-group">
+                <label class="erp-input-label">Search</label>
+                <input type="text" name="q" class="erp-input" value="{{ request.GET.q }}">
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Category</label>
+                <select name="category" class="erp-select">
+                    <option value="">All</option>
+                    {% for c in categories %}
+                    <option value="{{ c.pk }}" {% if request.GET.category == c.pk|stringformat:"s" %}selected{% endif %}>{{ c.name }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-actions"><button type="submit" class="erp-btn erp-btn-secondary">Filter</button></div>
+        </form>
+    </section>
+    <section class="erp-section-shell">
+        <table class="erp-table">
+            <thead><tr><th>Code</th><th>Name</th><th>Category</th><th>UOM</th><th>Role</th><th>Unit Cost</th><th></th></tr></thead>
+            <tbody>
+            {% for item in items %}
+                <tr>
+                    <td>{{ item.item_code }}</td>
+                    <td>{{ item.name }}</td>
+                    <td>{{ item.category.name }}</td>
+                    <td>{{ item.uom.code }}</td>
+                    <td>{{ item.item_role }}</td>
+                    <td>{{ item.unit_cost }}</td>
+                    <td><a href="{% url 'bom:raw_item_edit' item.pk %}" class="erp-btn erp-btn-secondary">Edit</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">No raw items yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

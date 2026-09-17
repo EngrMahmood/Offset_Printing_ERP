@@ -1,0 +1,25 @@
+<table class="erp-table">
+    <thead><tr><th>Line</th><th>Item</th><th>Entry</th><th>Qty / Formula</th><th>Wastage</th></tr></thead>
+    <tbody>
+    {% for l in lines %}
+        <tr>
+            <td>{{ l.line_code }}</td>
+            <td>
+                {% if l.resolution_mode == 'fixed' %}{{ l.raw_item }}
+                {% elif l.resolution_mode == 'by_selector' %}role: {{ l.item_role }}
+                {% else %}SKU's own substrate{% endif %}
+            </td>
+            <td>{{ l.get_entry_mode_display }}</td>
+            {% if l.entry_mode == 'simple' %}
+                <td>{{ l.fixed_qty }}</td>
+                <td>{{ l.fixed_wastage_percent }}</td>
+            {% else %}
+                <td><code>{{ l.qty_expression }}</code></td>
+                <td><code>{{ l.wastage_expression }}</code></td>
+            {% endif %}
+        </tr>
+    {% empty %}
+        <tr><td colspan="5">No lines on this template yet.</td></tr>
+    {% endfor %}
+    </tbody>
+</table>
