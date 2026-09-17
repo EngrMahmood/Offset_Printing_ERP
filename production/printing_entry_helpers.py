@@ -3,18 +3,18 @@
 from __future__ import annotations
 
 import math
-import re
 
 from django.db.models import Prefetch, Q, Sum
 
 from core.machine_routing import color_class
-from core.models import JOB_CARD_PRODUCTION_CONTINUE_STATUSES, JobCard, Machine, Production
+from core.models import JOB_CARD_PRODUCTION_CONTINUE_STATUSES, JobCard, Production
 from core.services import compute_planned_minutes
 from production.printing_pass_helpers import (
     build_pass_tracking_info,
     effective_print_pass_number,
     get_job_card_pass_count,
     get_max_print_passes,
+    resolve_related_machine,
 )
 from printing_plates.services import job_is_waiting_for_plates
 
@@ -45,27 +45,6 @@ def get_degraded_machine_pass_hint(job_card, machine, planned_passes):
         'colors_per_pass': colors_per_pass,
         'suggested_passes': suggested,
     }
-
-
-def resolve_related_machine(job_card):
-    if job_card.machine_name_id:
-        return job_card.machine_name
-
-    display_name = (job_card.machine_name_display or '').strip()
-    if not display_name:
-        return None
-
-    for lookup in ('iexact', 'istartswith', 'icontains'):
-        machine = Machine.objects.filter(**{f'name__{lookup}': display_name}).first()
-        if machine:
-            return machine
-
-    normalized = re.sub(r'[^A-Za-z0-9 ]+', ' ', display_name).strip()
-    if normalized and normalized != display_name:
-        machine = Machine.objects.filter(name__icontains=normalized).first()
-        if machine:
-            return machine
-    return None
 
 
 def get_effective_job_card_plan(job_card):

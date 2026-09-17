@@ -97,6 +97,35 @@ class DeliveryLocation(models.Model):
 class ProductType(models.Model):
     name = models.CharField(max_length=100, unique=True)
 
+    UNIT_TYPE_CHOICES = [
+        ('pcs', 'Pieces'),
+        ('rim', 'Rims'),
+        ('book', 'Books'),
+        ('box', 'Boxes'),
+    ]
+    default_unit_type = models.CharField(
+        max_length=10,
+        choices=UNIT_TYPE_CHOICES,
+        default='pcs',
+        help_text=(
+            "Order-qty unit every SKU of this product type uses, regardless of what "
+            "the WO/PO's own unit column happens to say (that text is unreliable — "
+            "'PIECE' is used for plain pcs, rims, and books alike). E.g. 'A4 Rim' "
+            "product type -> rim, so any SKU classified under it is a rim job "
+            "without a planner having to set that per SKU."
+        ),
+    )
+    default_pcs_per_unit = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=(
+            "Pieces per order unit for this product type, when it's fixed across "
+            "the category (e.g. 500 for 'A4 Rim' — every rim is 500 sheets). Leave "
+            "blank when it varies per SKU (e.g. 'Report Books' — page count differs "
+            "per document) so each SKU's master record sets its own."
+        ),
+    )
+
     class Meta:
         ordering = ['name']
         verbose_name = 'Product Type'
@@ -360,6 +389,41 @@ class JobCard(models.Model):
     purchase_sheet_size = models.CharField(max_length=50, null=True, blank=True)
     purchase_sheet_ups = models.IntegerField(null=True, blank=True)
 
+    parent_job_card = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='child_forms',
+        help_text=(
+            "Set when this job card is one form/ply of a multi-form book job "
+            "(e.g. an NCR ply). Points to the base job card of the group; always "
+            "points to the group's root, never to another child."
+        ),
+    )
+    form_label = models.CharField(
+        max_length=50,
+        null=True,
+        blank=True,
+        help_text="Name of this form/ply within its group, e.g. 'White', 'Pink', 'Cover'.",
+    )
+
+    UNIT_TYPE_CHOICES = [
+        ('pcs', 'Pieces'),
+        ('rim', 'Rims'),
+        ('book', 'Books'),
+        ('box', 'Boxes'),
+    ]
+    unit_type = models.CharField(max_length=10, choices=UNIT_TYPE_CHOICES, default='pcs')
+    pcs_per_unit = models.PositiveIntegerField(
+        default=1,
+        help_text=(
+            "Pieces per order unit — 500 for a rim, pages-per-book for a book "
+            "SKU, etc. Used only for internal press-sheet/ups planning; 1 for "
+            "standard pcs jobs."
+        ),
+    )
+
     remarks = models.TextField(null=True, blank=True)
 
     destination = models.CharField(max_length=100, null=True, blank=True)
@@ -608,9 +672,34 @@ class JobCard(models.Model):
     # ===== ERP PROPERTIES =====
 
     @property
+    def order_qty_pcs(self):
+        """order_qty converted to pieces, for internal press-sheet/ups planning
+        only. order_qty itself is entered and tracked in the SAME unit and
+        quantity stated on the customer's WO/PO (pieces, rims, books, boxes,
+        ...) — dispatch must match that unit and number exactly, so order_qty
+        is never silently rewritten into pcs. pcs_per_unit is the SKU's known
+        pieces-per-unit conversion (e.g. 500 for a rim, or pages-per-book for
+        a book SKU), declared once on the SKU master — the same place that
+        already distinguishes SKUs whose PO line just says a plain 'PIECE'."""
+        return int(self.order_qty or 0) * int(self.pcs_per_unit or 1)
+
+    @property
+    def sibling_forms(self):
+        """All job cards in this multi-form group (self included), ordered by
+        JC number suffix. Empty list for a standalone (non-multi-form) job card
+        that has no parent and no children."""
+        root = self.parent_job_card or self
+        if root.pk is None:
+            return []
+        children = list(root.child_forms.order_by('job_card_no'))
+        if root.pk == self.pk and not children:
+            return []
+        return [root] + children
+
+    @property
     def required_sheets(self):
         if self.ups:
-            return self.order_qty / self.ups
+            return self.order_qty_pcs / self.ups
         return 0
     
     @property
@@ -629,28 +718,23 @@ class JobCard(models.Model):
 
     @property
     def impression_pass_multiplier(self):
-        """Compute the number of passes that should be applied when calculating impressions."""
+        """Compute the number of passes that should be applied when calculating impressions.
+
+        When planning has an explicit pass count, `total_impressions_required`
+        already bakes it in (see resolve_total_impressions_required), so the
+        multiplier here must stay 1 to avoid double-counting. Otherwise this
+        defers to the same shop-rule/legacy pass inference that drives the
+        Production Entry UI (production.printing_pass_helpers), so the
+        impression ceiling always agrees with the pass count actually shown
+        and used there — previously this used a separate, narrower calculation
+        (front/back pass fields or a bare colour-count regex) that could
+        disagree with the UI's inferred pass count and under-size the ceiling.
+        """
         if self.planning_job and self.planning_job.print_passes:
             return 1
 
-        if self.planning_job:
-            front_pass = int(self.planning_job.front_pass or 0)
-            back_pass = int(self.planning_job.back_pass or 0)
-            if front_pass > 0 or back_pass > 0:
-                return max(1, front_pass + back_pass)
-
-        colour = (self.colour or '').strip().lower()
-        if colour:
-            match = re.fullmatch(r'(\d+)\s*\+\s*(\d+)', colour)
-            if match:
-                front = int(match.group(1))
-                back = int(match.group(2))
-                return max(1, front + back)
-            match = re.search(r'(\d+)', colour)
-            if match:
-                return max(1, int(match.group(1)))
-
-        return 1
+        from production.printing_pass_helpers import get_planned_pass_count
+        return max(1, get_planned_pass_count(self))
 
     @property
     def planned_pass_baseline(self):
@@ -735,7 +819,7 @@ class JobCard(models.Model):
     def packing_limit_pcs(self):
         if self.is_print_job:
             return int(self.total_printed_pcs or 0)
-        return int(self.order_qty or 0)
+        return self.order_qty_pcs
 
     @property
     def remaining_packing_allowance_pcs(self):
@@ -747,6 +831,9 @@ class JobCard(models.Model):
 
     @property
     def total_dispatch(self):
+        """Sum of Dispatch.dispatch_qty — tracked in the SAME unit as
+        order_qty (pcs, rims, books, ...), matching the customer's WO/PO, not
+        converted to pcs."""
         if self._is_prefetched('dispatch_set'):
             return sum((d.dispatch_qty or 0) for d in self.dispatch_set.all() if d.is_active)
         return self.dispatch_set.filter(is_active=True).aggregate(total=Sum('dispatch_qty'))['total'] or 0
@@ -1020,6 +1107,16 @@ class Production(models.Model):
                 errors['packing_qty'] = 'Packing and sorting waste quantities cannot be negative.'
             if packing_qty == 0 and sorting_waste == 0:
                 errors['packing_qty'] = 'Enter packing qty and/or sorting waste qty.'
+            # Packing is where loose printed/cut pieces get bundled into the
+            # job's own order unit (a rim of 500, a book of N pages, ...), so
+            # the packed pcs must round to a whole unit for any SKU whose
+            # pcs_per_unit isn't 1 — not just rim-labelled jobs.
+            if self.job_card and (self.job_card.pcs_per_unit or 1) > 1 and packing_qty:
+                pcs_per_unit = self.job_card.pcs_per_unit
+                if packing_qty % pcs_per_unit != 0:
+                    errors['packing_qty'] = (
+                        f'Packing qty must be in whole units (multiples of {pcs_per_unit} pcs) for this job.'
+                    )
             if not self.sorter_id:
                 errors['sorter'] = 'Sorter is required for packing entry.'
             if not self.shift:
@@ -1465,6 +1562,17 @@ class Dispatch(models.Model):
         if self.dispatch_qty <= 0:
             errors['dispatch_qty'] = "Dispatch must be greater than 0"
 
+        # A ply/form job card (part of a multi-form book) is not itself the
+        # deliverable — the finished, collated book is. Dispatch is recorded
+        # once, against the group's base job card, in the book's own unit.
+        if self.job_card and self.job_card.parent_job_card_id:
+            root = self.job_card.parent_job_card
+            errors['job_card'] = (
+                f'{self.job_card.job_card_no} is one form of a multi-form job and is not '
+                f'dispatched on its own. Record the dispatch against the base job card '
+                f'({root.job_card_no if root else "the group root"}) instead.'
+            )
+
         existing_dispatch = Dispatch.objects.filter(job_card=self.job_card, is_active=True)\
             .exclude(id=self.id)\
             .aggregate(total=Sum('dispatch_qty'))['total'] or 0
@@ -1474,8 +1582,10 @@ class Dispatch(models.Model):
         # Dispatch is bound to order qty — an operator's under-logged
         # production entry must not block a dispatch that is otherwise valid.
         # Packed/produced qty is checked only as a soft warning (surfaced by
-        # the entry form's UI), never a hard block.
-        if total_after > self.job_card.order_qty:
+        # the entry form's UI), never a hard block. Both order_qty and
+        # dispatch_qty are tracked in the SAME unit — the one stated on the
+        # customer's WO/PO — so this is a direct comparison, no conversion.
+        if self.job_card and total_after > self.job_card.order_qty:
             errors['dispatch_qty'] = (
                 f"Dispatch ({total_after}) cannot exceed order qty ({self.job_card.order_qty})!"
             )

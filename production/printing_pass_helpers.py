@@ -2,14 +2,36 @@
 
 from __future__ import annotations
 
+import math
 import re
 
 from django.db.models import Sum
 
-from core.models import JobCard
+from core.models import JobCard, Machine
 
 MAX_PRINT_PASSES = 4  # fallback ceiling if the Print Passes master list is empty/misconfigured
 INFERENCE_RATIO_TOLERANCE = 0.18
+
+
+def resolve_related_machine(job_card):
+    if job_card.machine_name_id:
+        return job_card.machine_name
+
+    display_name = (job_card.machine_name_display or '').strip()
+    if not display_name:
+        return None
+
+    for lookup in ('iexact', 'istartswith', 'icontains'):
+        machine = Machine.objects.filter(**{f'name__{lookup}': display_name}).first()
+        if machine:
+            return machine
+
+    normalized = re.sub(r'[^A-Za-z0-9 ]+', ' ', display_name).strip()
+    if normalized and normalized != display_name:
+        machine = Machine.objects.filter(name__icontains=normalized).first()
+        if machine:
+            return machine
+    return None
 
 
 def get_max_print_passes():
@@ -58,17 +80,34 @@ def infer_pass_count_from_one_plus_one_colour(job_card):
 
 
 def infer_pass_count_from_machine_rules(job_card):
-    """Machine + colour shop rules — lowest legacy priority."""
-    machine = normalize_machine_name(job_card)
-    color_count = get_color_count(job_card)
+    """Machine colour-unit capacity vs. job colour count — lowest legacy priority.
 
-    if 'GTO' in machine:
+    A press with N colour units needs ceil(colors / N) passes to lay down every
+    colour (e.g. a 2-unit GTO2 press running a 4-colour job needs 2 passes; the
+    same 4-colour job on a 1-unit GTO1 press needs 4). Prefers the machine's own
+    `default_colors` when configured (Machine master data); falls back to the
+    older hardcoded GTO/SM74 name rules for machines without it set, so legacy
+    jobs and tests keep their existing inferred pass count.
+    """
+    color_count = get_color_count(job_card)
+    if not color_count:
+        return None, ''
+
+    machine = resolve_related_machine(job_card)
+    default_colors = int(getattr(machine, 'default_colors', 0) or 0) if machine else 0
+    if machine and default_colors > 0:
+        passes = max(1, math.ceil(color_count / default_colors))
+        passes = min(passes, get_max_print_passes())
+        return passes, f'{machine.name} ({default_colors}-color units) with {color_count} colors'
+
+    machine_name = normalize_machine_name(job_card)
+    if 'GTO' in machine_name:
         if color_count in {3, 4}:
             return 2, 'GTO with 3-4 colors'
         if color_count in {1, 2}:
             return 1, 'GTO with 1-2 colors'
 
-    if 'SM74' in machine and color_count == 4:
+    if 'SM74' in machine_name and color_count == 4:
         return 1, 'SM74 with 4 colors'
 
     return None, ''
@@ -96,9 +135,16 @@ def infer_pass_count_from_impressions(job_card):
     return None
 
 
-def resolve_pass_inference(job_card):
-    """Return pass count plus how it was determined."""
-    override = getattr(job_card, 'pass_count_override', None)
+def resolve_pass_inference(job_card, include_override=True):
+    """Return pass count plus how it was determined.
+
+    ``include_override=False`` skips the supervisor override and returns the
+    *planned* pass count underneath it — used for the impression-ceiling
+    baseline (JobCard.planned_pass_baseline), which must stay the un-overridden
+    figure so the ceiling can still scale proportionally when an override is
+    active (see JobCard.total_impressions_allowed_with_tolerance).
+    """
+    override = getattr(job_card, 'pass_count_override', None) if include_override else None
     if override:
         return {
             'passes': int(override),
@@ -173,6 +219,17 @@ def resolve_pass_inference(job_card):
 
 def get_job_card_pass_count(job_card):
     return resolve_pass_inference(job_card)['passes']
+
+
+def get_planned_pass_count(job_card):
+    """Pass count the job was planned for, ignoring any supervisor override.
+
+    Used by JobCard.impression_pass_multiplier so the impression ceiling is
+    based on the same shop-rule/legacy inference that drives the Production
+    Entry UI (get_job_card_pass_count), instead of a separate, narrower
+    calculation that could disagree with it.
+    """
+    return resolve_pass_inference(job_card, include_override=False)['passes']
 
 
 def passes_are_inferred(job_card):
