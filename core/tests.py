@@ -319,6 +319,54 @@ class StockAwareCompletionBlockersTests(TestCase):
         self.assertTrue(any('No printing entries' in b for b in blockers))
         self.assertTrue(any('Packed + stock (6000) is less than dispatched (6037)' in b for b in blockers))
 
+    def test_release_of_fully_stock_covered_job_cascades_to_in_production(self):
+        """JC-09-26-PP-2362-style: an order fully covered by carried-forward
+        stock will never get a printing/packing entry of its own, so nothing
+        would otherwise ever move it off 'released' — it would sit invisible
+        to Dispatch Entry (JOB_CARD_DISPATCHABLE_STATUSES excludes
+        'released') and show an incorrect 'Printing' WIP status forever."""
+        from core.jobcard_service import transition_job_card_status
+
+        planning_job = PlanningJob.objects.create(
+            jc_number='JC-STOCK-RELEASE', order_qty=1000, status='qc_approved',
+            plan_date=date.today(), plan_month='August 2026', sku='SKU-STOCK-RELEASE',
+            stock_qty=1000,
+        )
+        job_card = JobCard.objects.create(
+            job_card_no='JC-STOCK-RELEASE', planning_job=planning_job, order_qty=1000,
+            SKU='SKU-STOCK-RELEASE', ups=1, is_print_job=True,
+            total_sheet_quantity=1000, total_colors=4, status='production_approved',
+            po_date=date(2026, 1, 1), plate_set_no='PLATE-1', machine_name=self.machine,
+            total_impressions_required=1000,
+        )
+
+        transition_job_card_status(job_card, 'released', reason='test release')
+
+        self.assertEqual(job_card.workflow_status, 'in_production')
+
+    def test_release_of_partially_stock_covered_job_stays_released(self):
+        """Same setup, but stock only covers part of the order — printing is
+        still genuinely needed, so the release must NOT cascade past
+        'released' just because some stock exists."""
+        from core.jobcard_service import transition_job_card_status
+
+        planning_job = PlanningJob.objects.create(
+            jc_number='JC-STOCK-RELEASE-PARTIAL', order_qty=1000, status='qc_approved',
+            plan_date=date.today(), plan_month='August 2026', sku='SKU-STOCK-RELEASE-PARTIAL',
+            stock_qty=400,
+        )
+        job_card = JobCard.objects.create(
+            job_card_no='JC-STOCK-RELEASE-PARTIAL', planning_job=planning_job, order_qty=1000,
+            SKU='SKU-STOCK-RELEASE-PARTIAL', ups=1, is_print_job=True,
+            total_sheet_quantity=1000, total_colors=4, status='production_approved',
+            po_date=date(2026, 1, 1), plate_set_no='PLATE-2', machine_name=self.machine,
+            total_impressions_required=1000,
+        )
+
+        transition_job_card_status(job_card, 'released', reason='test release')
+
+        self.assertEqual(job_card.workflow_status, 'released')
+
 
 class JobCardFinalizationSetStockViewTests(TestCase):
     def setUp(self):

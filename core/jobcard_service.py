@@ -294,8 +294,7 @@ def job_card_completion_blockers(job_card):
     """
     reasons = []
 
-    stock_qty = job_card.planning_job.stock_qty if job_card.planning_job_id else 0
-    covered = job_card.total_packed_pcs + (stock_qty or 0)
+    covered = job_card.stock_covered_qty
 
     if job_card.is_print_job and job_card.total_printed_pcs <= 0 and covered < job_card.total_dispatch:
         reasons.append('No printing entries have been logged for this job.')
@@ -475,12 +474,27 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         # both call start_production() there) — here it's the reverse case,
         # where the production record already existed before 'released' was
         # (re-)reached.
-        if target_status == 'released' and (job_card.total_printed_pcs > 0 or job_card.total_packed_pcs > 0):
+        #
+        # Same cascade also covers a job fulfilled entirely from carried-
+        # forward stock (PlanningJob.stock_qty >= order_qty): it will never
+        # get a printing or packing entry of its own (there's nothing left
+        # to produce), so start_production() never runs for it either — it
+        # would otherwise sit at 'released' forever, showing an incorrect
+        # "Printing" WIP status (production.wip_service falls through to the
+        # printing branch whenever workflow_status == 'released') and never
+        # becoming visible to Dispatch Entry. stock_covered_qty already
+        # folds stock into the same "what's actually available" figure used
+        # by job_card_completion_blockers.
+        if target_status == 'released' and (
+            job_card.total_printed_pcs > 0
+            or job_card.total_packed_pcs > 0
+            or (job_card.order_qty > 0 and job_card.stock_covered_qty >= job_card.order_qty)
+        ):
             transition_job_card_status(
                 job_card,
                 'in_production',
                 actor=actor,
-                reason='System: production already recorded before this release — resuming In Production',
+                reason='System: production already recorded (or stock fully covers the order) before this release — resuming In Production',
             )
 
     return job_card

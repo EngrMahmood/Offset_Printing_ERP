@@ -22,10 +22,14 @@ def get_system_calculated_status_name(job_card):
     if total_dispatched > 0:
         return 'Partial Dispatch'
 
-    # 2. Packing check
+    # 2. Packing check — packed pcs plus any carried-forward stock the job is
+    # declared to have (JobCard.stock_covered_qty) counts the same way
+    # job_card_completion_blockers treats it: a job fulfilled entirely from
+    # stock never gets a packing entry (or a printing entry — see step 4
+    # below) of its own, so it must not fall through to "Printing"/"Cutting"
+    # just because no production has been logged.
     packing_records = Production.objects.filter(job_card=job_card, is_active=True, entry_type='packing')
-    total_packed = packing_records.aggregate(total=Sum('packing_qty'))['total'] or 0
-    if total_packed >= job_card.order_qty and job_card.order_qty > 0:
+    if job_card.order_qty > 0 and job_card.stock_covered_qty >= job_card.order_qty:
         return 'Ready for Dispatch'
     if packing_records.exists():
         return 'Sorting / Packing'

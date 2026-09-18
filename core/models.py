@@ -830,6 +830,19 @@ class JobCard(models.Model):
         return 'Print + Pack' if self.is_print_job else 'Cut & Pack'
 
     @property
+    def stock_covered_qty(self):
+        """Packed pcs plus any carried-forward stock the planning job is
+        declared to have (PlanningJob.stock_qty). A repeat job fulfilled
+        entirely from stock never needs a packing/printing entry of its own,
+        so this combined figure — not bare total_packed_pcs — is what's
+        actually available to dispatch. Shared by
+        core.jobcard_service.job_card_completion_blockers,
+        transition_job_card_status's released->in_production cascade, and
+        production.wip_service.get_system_calculated_status_name."""
+        stock_qty = self.planning_job.stock_qty if self.planning_job_id else 0
+        return int(self.total_packed_pcs or 0) + int(stock_qty or 0)
+
+    @property
     def total_dispatch(self):
         """Sum of Dispatch.dispatch_qty — tracked in the SAME unit as
         order_qty (pcs, rims, books, ...), matching the customer's WO/PO, not

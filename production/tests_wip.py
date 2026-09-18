@@ -84,6 +84,24 @@ class WipAutomationTests(TestCase):
         # But system calculated status still correctly reflects 'Printing' based on actual logs
         self.assertEqual(get_system_calculated_status_name(self.job_card), 'Printing')
 
+    def test_stock_fully_covered_job_shows_ready_for_dispatch(self):
+        """A print job with zero printing/packing activity but stock_qty
+        covering the whole order must not fall through to 'Printing' just
+        because workflow_status is 'released' — see JC-09-26-PP-2362."""
+        self.planning_job.stock_qty = 1000
+        self.planning_job.save(update_fields=['stock_qty'])
+
+        self.assertEqual(self.job_card.stock_covered_qty, 1000)
+        self.assertEqual(get_system_calculated_status_name(self.job_card), 'Ready for Dispatch')
+
+    def test_stock_partially_covering_job_still_shows_printing(self):
+        """Partial stock coverage (less than order_qty) must not short-circuit
+        the normal Printing status — only full coverage does."""
+        self.planning_job.stock_qty = 400
+        self.planning_job.save(update_fields=['stock_qty'])
+
+        self.assertEqual(get_system_calculated_status_name(self.job_card), 'Printing')
+
     def test_printing_production_transition(self):
         """Creating an intermediate printing production record transitions WIP status to Printing."""
         # Setup multi-pass
