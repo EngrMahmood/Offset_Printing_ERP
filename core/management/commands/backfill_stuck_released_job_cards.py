@@ -72,6 +72,15 @@ class Command(BaseCommand):
             )
             if apply:
                 transition_job_card_status(card, 'in_production', reason=reason)
+                # This command jumps straight to 'in_production' (it isn't
+                # re-releasing, so transition_job_card_status's own
+                # released->in_production cascade never runs, and its WIP
+                # status refresh along with it) — refresh the stored WIP
+                # status here directly so it stops showing stale "Printing"
+                # for a job that will never get a printing/packing entry.
+                from production.wip_service import evaluate_and_update_job_wip_status
+
+                evaluate_and_update_job_wip_status(card)
 
         self.stdout.write(self.style.SUCCESS(
             f'{"Resumed" if apply else "Would resume"} {touched} card(s).'

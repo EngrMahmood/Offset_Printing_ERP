@@ -497,6 +497,20 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
                 reason='System: production already recorded (or stock fully covers the order) before this release — resuming In Production',
             )
 
+            # The workflow-status cascade above doesn't itself touch
+            # JobCardWipStatus — that's a separate stored row, normally
+            # refreshed only when a Production/Dispatch record is saved
+            # (core.models.Production/Dispatch.save, core.services) or when a
+            # job card with no WIP row yet is first viewed on the WIP
+            # dashboard (production/views.py). A stock-fully-covered job will
+            # never get a Production record, so without this call its stored
+            # WIP status would stay wrong (e.g. stuck on "Printing") even
+            # though the live-calculated status and workflow status are now
+            # both correct.
+            from production.wip_service import evaluate_and_update_job_wip_status
+
+            evaluate_and_update_job_wip_status(job_card, user=actor)
+
     return job_card
 
 

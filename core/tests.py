@@ -344,6 +344,11 @@ class StockAwareCompletionBlockersTests(TestCase):
 
         self.assertEqual(job_card.workflow_status, 'in_production')
 
+        from core.models import JobCardWipStatus
+        wip_status = JobCardWipStatus.objects.get(job_card=job_card)
+        self.assertEqual(wip_status.status.name, 'Ready for Dispatch')
+        self.assertFalse(wip_status.is_manual)
+
     def test_release_of_partially_stock_covered_job_stays_released(self):
         """Same setup, but stock only covers part of the order — printing is
         still genuinely needed, so the release must NOT cascade past
@@ -366,6 +371,30 @@ class StockAwareCompletionBlockersTests(TestCase):
         transition_job_card_status(job_card, 'released', reason='test release')
 
         self.assertEqual(job_card.workflow_status, 'released')
+
+    def test_backfill_command_resumes_already_stuck_stock_covered_job(self):
+        """A job that got stuck at 'released' before this fix existed (no
+        printed/packed pcs, stock fully covering the order) must be resumed
+        AND have its stored WIP status refreshed by the one-off backfill —
+        not just future releases via transition_job_card_status."""
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from core.models import JobCardWipStatus
+
+        _planning_job, job_card = self._make_job_card(
+            'JC-STOCK-BACKFILL', order_qty=1000, dispatched=0, printed=0, packed=0, stock_qty=1000,
+        )
+        job_card.status = 'released'
+        job_card.save(update_fields=['status'])
+
+        call_command('backfill_stuck_released_job_cards', '--apply', stdout=StringIO())
+
+        job_card.refresh_from_db()
+        self.assertEqual(job_card.workflow_status, 'in_production')
+        wip_status = JobCardWipStatus.objects.get(job_card=job_card)
+        self.assertEqual(wip_status.status.name, 'Ready for Dispatch')
 
 
 class JobCardFinalizationSetStockViewTests(TestCase):
