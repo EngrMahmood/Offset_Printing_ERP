@@ -1212,3 +1212,118 @@ class JcSyncRimQtyTests(TestCase):
         pcs_job = JobCard(unit_type='pcs', pcs_per_unit=1)
         self.assertEqual(_planned_pkt_rim_qty(pcs_job, 5000), 0)
 
+
+
+class UserManagementActionsTests(TestCase):
+    """Edit and Delete actions on the Users table (Settings -> Roles &
+    Access Control), added alongside the existing Disable and password-
+    reset actions."""
+
+    def setUp(self):
+        from core.models import Role, UserProfile
+
+        User = get_user_model()
+        Role.objects.get_or_create(slug='operator', defaults={'display_name': 'Operator'})
+        Role.objects.get_or_create(slug='admin', defaults={'display_name': 'Admin'})
+
+        self.superuser = User.objects.create_user(
+            username='super_admin', password='pass12345', is_superuser=True, is_staff=True,
+        )
+        self.target = User.objects.create_user(username='target_user', password='pass12345', email='target@example.com')
+        UserProfile.objects.get_or_create(user=self.target, defaults={'role': 'operator'})
+
+        self.client.login(username='super_admin', password='pass12345')
+
+    def test_edit_user_updates_fields_and_role(self):
+        response = self.client.post(reverse('user_edit', args=[self.target.id]), {
+            'username': 'target_user', 'email': 'renamed@example.com',
+            'official_email': 'official@example.com', 'first_name': 'Target',
+            'last_name': 'User', 'role': 'admin', 'department': '',
+        })
+        self.assertRedirects(response, '/settings/#access-control', fetch_redirect_response=False)
+
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.email, 'renamed@example.com')
+        self.assertEqual(self.target.first_name, 'Target')
+        self.assertEqual(self.target.profile.role, 'admin')
+        self.assertEqual(self.target.profile.official_email, 'official@example.com')
+
+    def test_edit_user_blocks_duplicate_username(self):
+        User = get_user_model()
+        User.objects.create_user(username='someone_else', password='pass12345')
+
+        response = self.client.post(reverse('user_edit', args=[self.target.id]), {
+            'username': 'someone_else', 'email': 'target@example.com',
+            'official_email': '', 'first_name': '', 'last_name': '',
+            'role': 'operator', 'department': '',
+        })
+        self.assertEqual(response.status_code, 200)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.username, 'target_user')
+
+    def test_non_superuser_cannot_edit_user(self):
+        User = get_user_model()
+        plain_user = User.objects.create_user(username='plain_user', password='pass12345')
+        self.client.logout()
+        self.client.login(username='plain_user', password='pass12345')
+
+        response = self.client.post(reverse('user_edit', args=[self.target.id]), {
+            'username': 'hijacked', 'email': 'x@example.com', 'official_email': '',
+            'first_name': '', 'last_name': '', 'role': 'admin', 'department': '',
+        })
+        self.assertRedirects(response, reverse('notification_settings_home'), fetch_redirect_response=False)
+        self.target.refresh_from_db()
+        self.assertEqual(self.target.username, 'target_user')
+
+    def test_delete_user_succeeds_when_unreferenced(self):
+        User = get_user_model()
+        target_id = self.target.id
+
+        response = self.client.post(reverse('access_user_delete'), {'user_id': target_id})
+        self.assertRedirects(response, '/settings/#access-control', fetch_redirect_response=False)
+        self.assertFalse(User.objects.filter(id=target_id).exists())
+
+    def test_delete_user_blocked_when_they_created_tasks(self):
+        from tasks.models import Task
+
+        Task.objects.create(title='Do the thing', created_by=self.target, description='x', due_date=date.today())
+
+        response = self.client.post(reverse('access_user_delete'), {'user_id': self.target.id})
+        self.assertRedirects(response, '/settings/#access-control', fetch_redirect_response=False)
+
+        User = get_user_model()
+        self.assertTrue(User.objects.filter(id=self.target.id).exists())
+        self.assertTrue(Task.objects.filter(created_by=self.target).exists())
+
+    def test_delete_user_blocked_when_they_raised_item_requests(self):
+        from supply_chain.models import ItemRequest, ItemRequestDepartment, ItemRequestType
+
+        req_type, _ = ItemRequestType.objects.get_or_create(name='Consumables', defaults={'code': 'CON'})
+        dept, _ = ItemRequestDepartment.objects.get_or_create(name='Production')
+        ItemRequest.objects.create(
+            raised_by=self.target, request_type=req_type, department=dept,
+            item_title='Ink cartridges', uom='pcs', specifications='Black ink, 5 units',
+        )
+
+        response = self.client.post(reverse('access_user_delete'), {'user_id': self.target.id})
+        self.assertRedirects(response, '/settings/#access-control', fetch_redirect_response=False)
+
+        User = get_user_model()
+        self.assertTrue(User.objects.filter(id=self.target.id).exists())
+
+    def test_cannot_delete_own_account(self):
+        response = self.client.post(reverse('access_user_delete'), {'user_id': self.superuser.id})
+        self.assertRedirects(response, '/settings/#access-control', fetch_redirect_response=False)
+
+        User = get_user_model()
+        self.assertTrue(User.objects.filter(id=self.superuser.id).exists())
+
+    def test_non_superuser_cannot_delete_user(self):
+        User = get_user_model()
+        plain_user = User.objects.create_user(username='plain_user2', password='pass12345')
+        self.client.logout()
+        self.client.login(username='plain_user2', password='pass12345')
+
+        response = self.client.post(reverse('access_user_delete'), {'user_id': self.target.id})
+        self.assertRedirects(response, reverse('notification_settings_home'), fetch_redirect_response=False)
+        self.assertTrue(User.objects.filter(id=self.target.id).exists())

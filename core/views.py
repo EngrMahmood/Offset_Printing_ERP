@@ -2943,6 +2943,158 @@ def access_user_toggle_active(request):
 
 
 @login_required
+def user_edit(request, user_id):
+    """Superuser-only: edit an existing user's account fields. Reuses the
+    same field set as user_create (username/email/official email/name/
+    role/department) — role and official email already have their own
+    quick-edit controls in the Users table, but this covers everything in
+    one place including username/email/name, which don't."""
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can edit user accounts.')
+        return redirect('notification_settings_home')
+
+    from django.contrib.auth import get_user_model
+    from core.models import Role, Department, AccessControlAuditLog
+
+    User = get_user_model()
+    target_user = get_object_or_404(User, id=user_id)
+    role_choices = list(Role.objects.order_by('display_name').values_list('slug', 'display_name'))
+    departments = Department.objects.all().order_by('name')
+
+    if request.method == 'POST':
+        username = (request.POST.get('username') or '').strip()
+        email = (request.POST.get('email') or '').strip()
+        official_email = (request.POST.get('official_email') or '').strip()
+        first_name = (request.POST.get('first_name') or '').strip()
+        last_name = (request.POST.get('last_name') or '').strip()
+        role = (request.POST.get('role') or '').strip()
+        department_id = request.POST.get('department') or None
+
+        if not username or not email or not role:
+            messages.error(request, 'Username, email, and role are required.')
+        elif User.objects.filter(username__iexact=username).exclude(pk=target_user.pk).exists():
+            messages.error(request, f"A user named '{username}' already exists.")
+        else:
+            profile = target_user.profile
+            old_values = {
+                'username': target_user.username, 'email': target_user.email,
+                'first_name': target_user.first_name, 'last_name': target_user.last_name,
+                'role': profile.role,
+                'department': profile.department.name if profile.department_id else '',
+                'official_email': profile.official_email,
+            }
+
+            target_user.username = username
+            target_user.email = email
+            target_user.first_name = first_name
+            target_user.last_name = last_name
+            target_user.save(update_fields=['username', 'email', 'first_name', 'last_name'])
+
+            old_role = profile.role
+            profile.role = role
+            profile.department_id = department_id
+            profile.official_email = official_email
+            profile.save()
+            if old_role != role:
+                sync_viewer_django_group(target_user, role)
+
+            new_department = departments.filter(pk=department_id).first() if department_id else None
+            AccessControlAuditLog.objects.create(
+                changed_by=request.user, action='update', target_type='user_edited',
+                target_label=username,
+                old_values=old_values,
+                new_values={
+                    'username': username, 'email': email, 'first_name': first_name,
+                    'last_name': last_name, 'role': role,
+                    'department': new_department.name if new_department else '',
+                    'official_email': official_email,
+                },
+            )
+            messages.success(request, f"{username}'s account updated.")
+            return redirect('/settings/#access-control')
+
+    context = {
+        'target_user': target_user,
+        'role_choices': role_choices,
+        'departments': departments,
+    }
+    return render(request, 'user_edit.html', context)
+
+
+@login_required
+@require_POST
+def access_user_delete(request):
+    """Superuser-only: permanently delete a user account.
+
+    Unlike every other user action here (all soft: deactivate, role change,
+    password reset), this is a real .delete() — but only when it's actually
+    safe. auth.User has on_delete=CASCADE from several models carrying real
+    business state (tasks they created, item requests they raised/approved,
+    supply chain change requests, edit override requests) — deleting the
+    user would silently destroy all of that too. Block instead, the same
+    way core.views.master_data's delete_master guards linked master-data
+    records, and point the admin at Deactivate as the safe alternative.
+    Incidental personal artifacts (notifications, permission overrides,
+    task comments, chat activity) are allowed to cascade away — losing
+    those is expected account-deletion behaviour, not data loss.
+    """
+    if not request.user.is_superuser:
+        add_unique_message(request, messages.ERROR, '❌ Only a superuser can delete user accounts.')
+        return redirect('notification_settings_home')
+
+    from django.contrib.auth import get_user_model
+    from core.models import AccessControlAuditLog, EditOverrideRequest
+    from tasks.models import Task
+    from supply_chain.models import ChangeRequest, ItemRequest, ItemRequestApproval
+
+    User = get_user_model()
+    target_user = get_object_or_404(User, id=request.POST.get('user_id'))
+
+    if target_user.id == request.user.id:
+        messages.error(request, "You can't delete your own account.")
+        return redirect('/settings/#access-control')
+
+    blockers = []
+    created_tasks = Task.objects.filter(created_by=target_user).count()
+    if created_tasks:
+        blockers.append(f'{created_tasks} task(s) created')
+    item_requests = ItemRequest.objects.filter(raised_by=target_user).count()
+    if item_requests:
+        blockers.append(f'{item_requests} item request(s) raised')
+    item_approvals = ItemRequestApproval.objects.filter(actor=target_user).count()
+    if item_approvals:
+        blockers.append(f'{item_approvals} item request approval(s)')
+    change_requests = ChangeRequest.objects.filter(requested_by=target_user).count()
+    if change_requests:
+        blockers.append(f'{change_requests} supply chain change request(s)')
+    edit_override_requests = EditOverrideRequest.objects.filter(requested_by=target_user).count()
+    if edit_override_requests:
+        blockers.append(f'{edit_override_requests} edit override request(s)')
+
+    if blockers:
+        messages.error(
+            request,
+            f"Cannot delete {target_user.username}: they have {', '.join(blockers)} tied to their account. "
+            "Reassign or remove those first, or Deactivate the account instead to keep history intact."
+        )
+        return redirect('/settings/#access-control')
+
+    username = target_user.username
+    AccessControlAuditLog.objects.create(
+        changed_by=request.user, action='delete', target_type='user_deleted',
+        target_label=username,
+        old_values={
+            'username': username, 'email': target_user.email,
+            'role': getattr(target_user.profile, 'role', ''),
+        },
+        new_values={},
+    )
+    target_user.delete()
+    messages.success(request, f"{username} was permanently deleted.")
+    return redirect('/settings/#access-control')
+
+
+@login_required
 @require_POST
 def notification_rule_add(request):
     """

@@ -464,6 +464,9 @@
                             </td>
                             <td class="px-4 py-2.5">
                                 <div class="flex items-center justify-end gap-2">
+                                    <a href="{% url 'user_edit' u.id %}" title="Edit user" class="text-slate-500 hover:text-slate-700 bg-slate-50 hover:bg-slate-100/70 p-1.5 rounded-lg transition-all text-xs">
+                                        <i class="fas fa-pen"></i>
+                                    </a>
                                     <form method="post" action="{% url 'access_user_password_reset' %}" onsubmit="return confirm('Send a password reset link to {{ u.email|default:u.username }}?');">
                                         {% csrf_token %}
                                         <input type="hidden" name="user_id" value="{{ u.id }}">
@@ -477,6 +480,13 @@
                                         <input type="hidden" name="user_id" value="{{ u.id }}">
                                         <button type="submit" title="{% if u.is_active %}Deactivate{% else %}Activate{% endif %}" class="{% if u.is_active %}text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100/70{% else %}text-emerald-600 hover:text-emerald-700 bg-emerald-50 hover:bg-emerald-100/70{% endif %} p-1.5 rounded-lg transition-all text-xs">
                                             <i class="fas {% if u.is_active %}fa-user-slash{% else %}fa-user-check{% endif %}"></i>
+                                        </button>
+                                    </form>
+                                    <form method="post" action="{% url 'access_user_delete' %}" onsubmit="return confirm('Permanently delete {{ u.username }}? This cannot be undone. Deactivate instead if you just want to revoke their login.');">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="user_id" value="{{ u.id }}">
+                                        <button type="submit" title="Delete user permanently" class="text-red-600 hover:text-red-800 bg-red-50 hover:bg-red-100/70 p-1.5 rounded-lg transition-all text-xs">
+                                            <i class="fas fa-trash"></i>
                                         </button>
                                     </form>
                                     {% endif %}

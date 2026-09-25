@@ -77,3 +77,65 @@ class TaskScoringTests(TestCase):
         
         self.assertEqual(task.assigned_team.name, "QC Team")
         self.assertIn(self.user, task.assigned_team.members.all())
+
+
+class TeamEditTests(TestCase):
+    """edit_team view — teams_list's own POST handler only ever creates a
+    new Team, with no way to update one after creation."""
+
+    def setUp(self):
+        from django.urls import reverse
+        from core.models import Permission, Role, UserPermissionOverride, UserProfile
+
+        self.reverse = reverse
+        Role.objects.get_or_create(slug='operator', defaults={'display_name': 'Operator'})
+
+        self.manager = User.objects.create_user(username='team_manager', password='pass12345')
+        profile, _ = UserProfile.objects.get_or_create(user=self.manager, defaults={'role': 'operator'})
+        permission, _ = Permission.objects.get_or_create(
+            code='action.manage_tasks', defaults={'name': 'Manage Tasks'},
+        )
+        UserPermissionOverride.objects.get_or_create(
+            user=self.manager, permission=permission, defaults={'granted': True},
+        )
+
+        self.plain_user = User.objects.create_user(username='plain_employee', password='pass12345')
+        self.member_a = User.objects.create_user(username='member_a', password='pass12345')
+        self.member_b = User.objects.create_user(username='member_b', password='pass12345')
+
+        self.team = Team.objects.create(name='Original Team', description='Original description')
+        self.team.members.add(self.member_a)
+
+    def test_manager_can_edit_team_name_description_and_members(self):
+        self.client.login(username='team_manager', password='pass12345')
+
+        response = self.client.post(self.reverse('tasks:team_edit', args=[self.team.pk]), {
+            'name': 'Renamed Team',
+            'description': 'Updated description',
+            'members': [self.member_b.id],
+        })
+
+        self.assertRedirects(response, self.reverse('tasks:teams'))
+        self.team.refresh_from_db()
+        self.assertEqual(self.team.name, 'Renamed Team')
+        self.assertEqual(self.team.description, 'Updated description')
+        self.assertEqual(list(self.team.members.all()), [self.member_b])
+
+    def test_get_edit_team_prefills_form(self):
+        self.client.login(username='team_manager', password='pass12345')
+
+        response = self.client.get(self.reverse('tasks:team_edit', args=[self.team.pk]))
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Original Team')
+
+    def test_non_manager_cannot_edit_team(self):
+        self.client.login(username='plain_employee', password='pass12345')
+
+        response = self.client.post(self.reverse('tasks:team_edit', args=[self.team.pk]), {
+            'name': 'Hijacked Name', 'description': '', 'members': [],
+        })
+
+        self.assertRedirects(response, self.reverse('tasks:teams'))
+        self.team.refresh_from_db()
+        self.assertEqual(self.team.name, 'Original Team')

@@ -41,8 +41,15 @@
                                 {% endfor %}
                             </div>
                         </div>
-                        <div class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider self-end sm:self-start">
-                            Created: {{ team.created_at|date:"d M Y" }}
+                        <div class="flex flex-col items-end gap-2 self-end sm:self-start">
+                            <div class="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">
+                                Created: {{ team.created_at|date:"d M Y" }}
+                            </div>
+                            {% if is_manager %}
+                            <a href="{% url 'tasks:team_edit' team.pk %}" class="erp-btn erp-btn-secondary text-[10px] px-2 py-1">
+                                <i class="fas fa-pen mr-1"></i>Edit
+                            </a>
+                            {% endif %}
                         </div>
                     </div>
                     {% empty %}

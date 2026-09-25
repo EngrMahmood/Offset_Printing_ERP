@@ -236,6 +236,29 @@ def teams_list(request):
 
 
 @login_required
+def edit_team(request, pk):
+    """Edit an existing team's name/description/members. teams_list's POST
+    handler only ever creates a new Team (no pk lookup at all) — there was
+    no way to update one after creation."""
+    team = get_object_or_404(Team, pk=pk)
+
+    if not is_manager_or_admin(request.user):
+        messages.error(request, "Only managers or admins can edit teams.")
+        return redirect('tasks:teams')
+
+    if request.method == 'POST':
+        form = TeamForm(request.POST, instance=team)
+        if form.is_valid():
+            form.save()
+            messages.success(request, f"Team '{team.name}' updated successfully!")
+            return redirect('tasks:teams')
+    else:
+        form = TeamForm(instance=team)
+
+    return render(request, 'tasks/team_edit.html', {'form': form, 'team': team})
+
+
+@login_required
 def automation(request):
     """Global assignment/reminder-email defaults + the notification activity
     log — manager/admin only, same gate as edit/delete/grade elsewhere in
