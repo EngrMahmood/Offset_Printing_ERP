@@ -2608,3 +2608,54 @@ class ProductTypeUnitDefaultsTests(TestCase):
 		recipe.save()
 		recipe.refresh_from_db()
 		self.assertEqual(recipe.pcs_per_unit, 250)
+
+
+class JobHistoryReportPdfTests(TestCase):
+	"""build_job_history_report_pdf_bytes must not crash for a normal open
+	job, and must include the new Planning Calculations / Job Finalization
+	sections added on top of the pre-existing report."""
+
+	def setUp(self):
+		from core.models import Machine
+
+		self.user = get_user_model().objects.create_user(username='jhr_user', password='pass')
+		self.machine = Machine.objects.create(name='JHR Machine')
+
+	def _make_planning_job_and_card(self, jc_number, *, order_qty=1000, ups=2, print_passes=2, status='in_production'):
+		planning_job = PlanningJob.objects.create(
+			jc_number=jc_number, sku=f'SKU-{jc_number}', order_qty=order_qty, ups=ups,
+			wastage_sheets=10, print_passes=print_passes, status=status,
+			plan_date=date.today(), plan_month='September 2026', created_by=self.user,
+		)
+		job_card = JobCard.objects.create(
+			job_card_no=jc_number, planning_job=planning_job, order_qty=order_qty, ups=ups,
+			SKU=f'SKU-{jc_number}', is_print_job=True, total_sheet_quantity=order_qty,
+			total_colors=4, status=status, po_date=date(2026, 1, 1),
+			plate_set_no='PLATE-JHR', machine_name=self.machine,
+			total_impressions_required=order_qty,
+		)
+		return planning_job, job_card
+
+	def test_report_generates_for_open_job_with_planning_calculations(self):
+		from planning.services import build_job_history_report_pdf_bytes
+
+		planning_job, _job_card = self._make_planning_job_and_card('JC-JHR-OPEN')
+
+		pdf_bytes = build_job_history_report_pdf_bytes(planning_job)
+		self.assertTrue(pdf_bytes.startswith(b'%PDF'))
+
+	def test_report_includes_finalization_section_for_closed_job(self):
+		from core.models import ChangeLog
+		from planning.services import build_job_history_report_pdf_bytes
+
+		planning_job, job_card = self._make_planning_job_and_card('JC-JHR-CLOSED', status='closed')
+		job_card.short_close_closed_qty = 50
+		job_card.short_close_wastage_qty = 50
+		job_card.save(update_fields=['short_close_closed_qty', 'short_close_wastage_qty'])
+		ChangeLog.objects.create(
+			entity_type='job_card', record_id=job_card.pk, record_label=job_card.job_card_no,
+			action='close', changed_by=self.user, change_reason='Short-closed for test',
+		)
+
+		pdf_bytes = build_job_history_report_pdf_bytes(planning_job)
+		self.assertTrue(pdf_bytes.startswith(b'%PDF'))

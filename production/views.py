@@ -1068,7 +1068,10 @@ def production_wip(request):
         if calculated_status_filter and calc_status != calculated_status_filter:
             continue
 
-        is_manual = getattr(job.production_wip_status, 'is_manual', False)
+        try:
+            is_manual = job.production_wip_status.is_manual
+        except JobCardWipStatus.DoesNotExist:
+            is_manual = False
         if wip_mode_filter == 'manual' and not is_manual:
             continue
         if wip_mode_filter == 'auto' and is_manual:

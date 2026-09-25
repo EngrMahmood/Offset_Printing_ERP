@@ -40,15 +40,23 @@ def get_system_calculated_status_name(job_card):
             return 'Cutting'
         return 'Not Set'
 
-    # 4. Printing check
+    # 4. Printing check — a Production row logged on the final pass only means
+    # that pass has STARTED producing good sheets, not that the run is done:
+    # an operator can log the final pass in several partial entries before
+    # the order quantity is actually met. "Printing Completed" requires the
+    # produced pcs to actually reach order_qty, the same threshold the
+    # packing check above uses; short of that it's 'Partial Printing', not
+    # complete.
     printing_records = Production.objects.filter(job_card=job_card, is_active=True, entry_type='printing')
 
     from production.printing_pass_helpers import get_job_card_pass_count
     total_passes = get_job_card_pass_count(job_card)
-    final_pass_exists = printing_records.filter(print_pass_number=total_passes, output_sheets__gt=0).exists()
+    final_pass_started = printing_records.filter(print_pass_number=total_passes, output_sheets__gt=0).exists()
 
-    if final_pass_exists:
-        return 'Printing Completed'
+    if final_pass_started:
+        if job_card.order_qty > 0 and job_card.total_printed_pcs >= job_card.order_qty:
+            return 'Printing Completed'
+        return 'Partial Printing'
 
     if printing_records.exists() or job_card.workflow_status == 'released':
         return 'Printing'

@@ -1726,6 +1726,24 @@ def build_job_history_report_pdf_bytes(job):
         story.append(_grid_table(recipe_rows, [30 * mm, 60 * mm, 30 * mm, 60 * mm]))
         story.append(_RLSpacer(1, 10))
 
+    # --- Planning calculations ---
+    # The derived sheet/impression figures planning actually released the job
+    # on (core.jobcard_service.resolve_total_impressions_required reads these
+    # same properties) — distinct from the raw order_qty/wastage_sheets shown
+    # in PO Intake above, and previously invisible on this report.
+    story.append(_RLParagraph('PLANNING CALCULATIONS', section_style))
+    calc_rows = [
+        [_p('Net Print Qty (pcs)', label_style), _p(job.net_print_qty, cell_style),
+         _p('UPS Used', label_style), _p(job.ups_value, cell_style)],
+        [_p('Calculated Sheets Required', label_style), _p(job.calculated_sheets_required, cell_style),
+         _p('Calculated Purchase Sheets', label_style), _p(job.calculated_purchase_sheet_required, cell_style)],
+        [_p('Effective Print Passes', label_style), _p(job.effective_print_passes, cell_style),
+         _p('Calculated Planned Impressions', label_style), _p(job.calculated_planned_total_impressions, cell_style)],
+        [_p('Planned Total Impressions (stored)', label_style), _p(job.planned_total_impressions, cell_style), '', ''],
+    ]
+    story.append(_grid_table(calc_rows, [45 * mm, 45 * mm, 45 * mm, 45 * mm]))
+    story.append(_RLSpacer(1, 10))
+
     # --- Plate requests ---
     plate_requests = list(job.plate_requests.select_related('requested_by').order_by('requested_at', 'created_at'))
     story.append(_RLParagraph(f'PLATE REQUESTS ({len(plate_requests)})', section_style))
@@ -1864,6 +1882,38 @@ def build_job_history_report_pdf_bytes(job):
     else:
         story.append(_RLParagraph('No dispatch entries on file.', cell_style))
     story.append(_RLSpacer(1, 10))
+
+    # --- Job finalization (from planning's Job Card Finalization queue) ---
+    # short_close_* on JobCard is only populated when a close confirmed a
+    # non-zero dispatch gap (core.jobcard_service.close_job_card_manually),
+    # so "closed by/at/reason" is sourced from the ChangeLog instead — it
+    # logs a 'close' entry for every close regardless of gap size. Same
+    # pattern as core.job_card_finalization._attach_close_attribution, done
+    # here for a single job card rather than a whole queue page.
+    if job_card and job_card.workflow_status in ('completed', 'closed'):
+        from core.models import ChangeLog
+
+        close_log = (
+            ChangeLog.objects
+            .filter(entity_type='job_card', action='close', record_id=job_card.id)
+            .select_related('changed_by')
+            .order_by('-created_at')
+            .first()
+        )
+        closed_by = ''
+        if close_log and close_log.changed_by:
+            closed_by = close_log.changed_by.get_full_name() or close_log.changed_by.username
+
+        story.append(_RLParagraph('JOB FINALIZATION', section_style))
+        final_rows = [
+            [_p('Closed By', label_style), _p(closed_by, cell_style),
+             _p('Closed At', label_style), _p(close_log.created_at if close_log else None, cell_style)],
+            [_p('Close Reason', label_style), _p(close_log.change_reason if close_log else None, cell_style), '', ''],
+            [_p('Short-Close Qty (pcs)', label_style), _p(job_card.short_close_closed_qty, cell_style),
+             _p('Short-Close Wastage (pcs)', label_style), _p(job_card.short_close_wastage_qty, cell_style)],
+        ]
+        story.append(_grid_table(final_rows, [40 * mm, 50 * mm, 40 * mm, 50 * mm]))
+        story.append(_RLSpacer(1, 10))
 
     # --- Summary ---
     story.append(_RLParagraph('SUMMARY', section_style))

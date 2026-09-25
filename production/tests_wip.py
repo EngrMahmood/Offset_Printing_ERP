@@ -166,6 +166,43 @@ class WipAutomationTests(TestCase):
         )
         self.assertEqual(get_system_calculated_status_name(self.job_card), 'Printing Completed')
 
+    def test_final_pass_started_but_short_of_order_qty_is_partial_printing(self):
+        """Logging SOME output on the final pass doesn't mean the run is
+        done — an operator can log a partial entry on the final pass before
+        reaching the order quantity. Must show 'Partial Printing', not
+        'Printing Completed', until produced pcs actually reach order_qty."""
+        self.planning_job.print_passes = 2
+        self.planning_job.save()
+        self.job_card.total_impressions_required = 2000
+        self.job_card.save()
+
+        Production.objects.create(
+            entry_type='printing',
+            job_card=self.job_card,
+            machine=self.machine,
+            operator=self.operator,
+            shift='A',
+            date=date(2026, 1, 1),
+            impressions=1000,
+            output_sheets=0,
+            print_pass_number=1,
+            created_by=self.user
+        )
+        # Final pass started, but only 400 of the 1000-pcs order produced so far.
+        Production.objects.create(
+            entry_type='printing',
+            job_card=self.job_card,
+            machine=self.machine,
+            operator=self.operator,
+            shift='A',
+            date=date(2026, 1, 1),
+            impressions=400,
+            output_sheets=400,
+            print_pass_number=2,
+            created_by=self.user
+        )
+        self.assertEqual(get_system_calculated_status_name(self.job_card), 'Partial Printing')
+
     def test_packing_production_transition(self):
         """Creating a packing record transitions WIP to Sorting / Packing."""
         # Print first (1 pass is final, output_sheets > 0 is allowed)
@@ -282,3 +319,102 @@ class WipAutomationTests(TestCase):
         )
         wip_status.refresh_from_db()
         self.assertEqual(wip_status.status.name, 'Completed')
+
+
+class ProductionWipPageRenderTests(TestCase):
+    """Exercises the actual /production-wip/ view+template (not just
+    wip_service in isolation) to verify the Supervisor Status dash-unless-
+    manual behaviour, the Partial Printing badge, and the JC hyperlink."""
+
+    def setUp(self):
+        from core.models import Permission, UserPermissionOverride
+
+        User = get_user_model()
+        self.user = User.objects.create_user(username='wip_page_user', password='pass')
+        self.profile, _ = UserProfile.objects.get_or_create(user=self.user)
+        self.profile.role = 'admin'
+        self.profile.save(update_fields=['role'])
+        # Fresh test DB has no seeded Role/Permission rows (they come from
+        # the seed_access_control management command, not a migration) —
+        # grant the one permission this view needs directly, same pattern
+        # as core.tests.JobCardFinalizationSetStockViewTests.
+        permission, _ = Permission.objects.get_or_create(
+            code='action.view_production_wip', defaults={'name': 'View Production WIP'},
+        )
+        UserPermissionOverride.objects.get_or_create(
+            user=self.user, permission=permission, defaults={'granted': True},
+        )
+        self.client.force_login(self.user)
+
+        self.machine = Machine.objects.create(name='WIP Page Test Machine')
+        self.planning_job = PlanningJob.objects.create(
+            jc_number='JC-WIPPAGE-001', order_qty=1000, ups=1, status='in_production',
+            plan_date=date(2026, 1, 1), plan_month='January 2026', print_passes=2,
+        )
+        self.job_card = JobCard.objects.create(
+            job_card_no='JC-WIPPAGE-001', planning_job=self.planning_job, order_qty=1000, ups=1,
+            SKU='SKU-WIPPAGE-001', is_print_job=True, total_sheet_quantity=1000, total_colors=4,
+            status='in_production', po_date=date(2026, 1, 1), total_impressions_required=2000,
+            machine_name=self.machine,
+        )
+
+    def test_supervisor_status_blank_when_auto_manual_when_overridden(self):
+        # Give the job SOME loggable activity so a WIP status row actually
+        # gets auto-created on first render (a job with nothing logged yet
+        # computes 'Not Set', which never gets a stored row at all — see
+        # evaluate_and_update_job_wip_status).
+        Production.objects.create(
+            entry_type='printing', job_card=self.job_card, machine=self.machine,
+            date=date(2026, 1, 1), shift='A', impressions=100, output_sheets=0,
+            print_pass_number=1, created_by=self.user,
+        )
+
+        # Auto (never manually touched) — should render as a dash, not "Printing".
+        response = self.client.get('/production-wip/')
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn('JC-WIPPAGE-001', html)
+
+        wip_status = JobCardWipStatus.objects.get(job_card=self.job_card)
+        self.assertFalse(wip_status.is_manual)
+
+        # Manual override — should now show the status name + "Manual" badge.
+        update_wip_status_for_job(self.job_card, 'Ready for Dispatch', user=self.user, is_manual=True)
+        response = self.client.get('/production-wip/')
+        html = response.content.decode()
+        self.assertIn('Manual', html)
+
+    def test_page_does_not_crash_for_job_with_no_wip_status_row_at_all(self):
+        """Regression: a job card with nothing logged yet computes 'Not Set',
+        which never gets a JobCardWipStatus row created (see
+        evaluate_and_update_job_wip_status). The view used to crash on such
+        a row with `getattr(job.production_wip_status, 'is_manual', False)`
+        — that only catches AttributeError, not Django's
+        RelatedObjectDoesNotExist raised by a missing reverse OneToOne."""
+        self.assertFalse(JobCardWipStatus.objects.filter(job_card=self.job_card).exists())
+
+        response = self.client.get('/production-wip/')
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn('JC-WIPPAGE-001', html)
+
+    def test_jc_number_links_to_history_report(self):
+        response = self.client.get('/production-wip/')
+        html = response.content.decode()
+        self.assertIn(f'/planning/job/{self.planning_job.id}/history-report/pdf/', html)
+
+    def test_partial_printing_badge_renders(self):
+        Production.objects.create(
+            entry_type='printing', job_card=self.job_card, machine=self.machine,
+            date=date(2026, 1, 1), shift='A', impressions=1000, output_sheets=0,
+            print_pass_number=1, created_by=self.user,
+        )
+        Production.objects.create(
+            entry_type='printing', job_card=self.job_card, machine=self.machine,
+            date=date(2026, 1, 1), shift='A', impressions=400, output_sheets=400,
+            print_pass_number=2, created_by=self.user,
+        )
+        response = self.client.get('/production-wip/')
+        html = response.content.decode()
+        self.assertIn('Partial Printing', html)

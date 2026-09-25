@@ -86,6 +86,7 @@
                         <select id="calculated_status" name="calculated_status" class="erp-select">
                             <option value="">All Calculated Statuses</option>
                             <option value="Printing" {% if calculated_status_filter == 'Printing' %}selected{% endif %}>Printing</option>
+                            <option value="Partial Printing" {% if calculated_status_filter == 'Partial Printing' %}selected{% endif %}>Partial Printing</option>
                             <option value="Cutting" {% if calculated_status_filter == 'Cutting' %}selected{% endif %}>Cutting</option>
                             <option value="Printing Completed" {% if calculated_status_filter == 'Printing Completed' %}selected{% endif %}>Printing Completed</option>
                             <option value="Sorting / Packing" {% if calculated_status_filter == 'Sorting / Packing' %}selected{% endif %}>Sorting / Packing</option>
@@ -146,7 +147,7 @@
                         <tbody>
                             {% for job in job_cards %}
                             <tr>
-                                <td>{{ job.job_card_no }}</td>
+                                <td>{% include 'partials/_jc_history_link.html' with job_card=job %}</td>
                                 <td>{{ job.PO_No|default:'-' }}</td>
                                 <td class="col-sku" title="{{ job.SKU }}">{{ job.SKU }}</td>
                                 <td class="col-job-name" title="{{ job.planning_job.job_name|default:'-' }}">{{ job.planning_job.job_name|default:'-' }}</td>
@@ -154,18 +155,18 @@
                                 <td>{{ job.order_qty }}</td>
                                 <td>{{ job.workflow_status_label }}</td>
                                 <td>
-                                    {{ job.wip_status_name }}
-                                    {% if job.production_wip_status %}
-                                        {% if job.production_wip_status.is_manual %}
-                                            <span class="erp-badge erp-badge-warning" style="margin-left: 6px; font-size: 0.75rem; padding: 2px 6px;">Manual</span>
-                                        {% else %}
-                                            <span class="erp-badge erp-badge-info" style="margin-left: 6px; font-size: 0.75rem; padding: 2px 6px;">Auto</span>
-                                        {% endif %}
+                                    {% if job.production_wip_status and job.production_wip_status.is_manual %}
+                                        {{ job.wip_status_name }}
+                                        <span class="erp-badge erp-badge-warning" style="margin-left: 6px; font-size: 0.75rem; padding: 2px 6px;">Manual</span>
+                                    {% else %}
+                                        <span class="erp-table-meta-text">&mdash;</span>
                                     {% endif %}
                                 </td>
                                 <td>
                                     {% if job.calculated_status == 'Printing' %}
                                         <span class="erp-badge" style="background-color: #e3f2fd; color: #0d47a1;">Printing</span>
+                                    {% elif job.calculated_status == 'Partial Printing' %}
+                                        <span class="erp-badge" style="background-color: #fff8e1; color: #e65100;">Partial Printing</span>
                                     {% elif job.calculated_status == 'Cutting' %}
                                         <span class="erp-badge" style="background-color: #fce4ec; color: #880e4f;">Cutting</span>
                                     {% elif job.calculated_status == 'Printing Completed' %}

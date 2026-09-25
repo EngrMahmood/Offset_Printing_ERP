@@ -2290,6 +2290,8 @@ def build_pending_work_context(request):
     Pending Dispatch = packed pcs - dispatched pcs.
     Each is clamped at 0 — a job that ran ahead of its own stage isn't "negative pending".
     """
+    from production.wip_service import get_system_calculated_status_name
+
     start, end, period, period_label, date_from, date_to = _parse_period_filter(request, default_period='month')
 
     job_cards = JobCard.objects.filter(is_active=True).exclude(status__in=('completed', 'closed'))
@@ -2381,6 +2383,7 @@ def build_pending_work_context(request):
             'machine': job.machine_name_display,
             'status': job.workflow_status_label,
             'supervisor_status': job.wip_status_name or 'Not Set',
+            'calculated_status': get_system_calculated_status_name(job),
             'order_qty_pcs': order_qty_pcs,
             'printed_pcs': printed_pcs,
             'packed_pcs': packed_pcs,
@@ -2448,14 +2451,15 @@ def build_pending_work_context(request):
     elif stage == 'plates':
         headers = PLATES_PENDING_HEADERS
     elif stage in ('printing', 'packing', 'dispatch'):
-        headers = ['job_card_no', 'po_number', 'sku', 'machine', 'status', 'supervisor_status',
+        headers = ['job_card_no', 'po_number', 'sku', 'machine', 'status', 'supervisor_status', 'calculated_status',
                    'order_qty_pcs', 'printed_pcs', 'packed_pcs', 'dispatched_pcs', 'pending_qty', 'days_pending']
     else:
-        headers = ['stage', 'job_card_no', 'po_number', 'sku', 'machine', 'status', 'supervisor_status',
+        headers = ['stage', 'job_card_no', 'po_number', 'sku', 'machine', 'status', 'supervisor_status', 'calculated_status',
                    'order_qty_pcs', 'printed_pcs', 'packed_pcs', 'dispatched_pcs', 'pending_qty', 'days_pending']
     header_labels = {
         'stage': 'Stage', 'job_card_no': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'machine': 'Machine',
         'status': 'Status', 'planning_stage': 'Stage', 'supervisor_status': 'Supervisor Status',
+        'calculated_status': 'Calculated Status',
         'order_qty_pcs': 'Order Qty (Pcs)', 'printed_pcs': 'Printed (Pcs)',
         'packed_pcs': 'Packed (Pcs)', 'dispatched_pcs': 'Dispatched (Pcs)', 'pending_qty': 'Pending (Pcs)',
         'days_pending': 'Days Stuck',
