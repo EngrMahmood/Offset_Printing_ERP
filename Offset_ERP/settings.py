@@ -141,6 +141,7 @@ INSTALLED_APPS = [
     'chat',
     'bot',
     'bom',
+    'flexo',
 ]
 
 MIDDLEWARE = [

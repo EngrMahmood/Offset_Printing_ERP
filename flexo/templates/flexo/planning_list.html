@@ -1,0 +1,57 @@
+{% extends 'theme/base.html' %}
+{% block title %}{{ family_label }}{% endblock %}
+{% block header_title %}{{ family_label }} Planning{% endblock %}
+{% block header_subtitle %}Order-level roll planning and delivery tracking.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'flexo:planning_create' family=family %}" class="erp-btn erp-btn-primary">New Planning Job</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:12px; align-items:end;">
+            <div class="erp-input-group">
+                <label class="erp-input-label">Search (SKU / JC / PO)</label>
+                <input type="text" name="q" class="erp-input" value="{{ request.GET.q }}">
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Status</label>
+                <select name="status" class="erp-select">
+                    <option value="">All</option>
+                    {% for value, label in status_choices %}
+                    <option value="{{ value }}" {% if request.GET.status == value %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="erp-actions"><button type="submit" class="erp-btn erp-btn-secondary">Filter</button></div>
+        </form>
+    </section>
+    <section class="erp-section-shell">
+        <table class="erp-table">
+            <thead>
+                <tr>
+                    <th>JC Number</th><th>PO Number</th><th>SKU</th><th>Order Qty</th>
+                    <th>Roll Size</th><th>Machine</th><th>Status</th><th>Balance</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for job in jobs %}
+                <tr>
+                    <td><a href="{% url 'flexo:planning_detail' job.pk %}">{{ job.jc_number }}</a></td>
+                    <td>{{ job.po_number|default:'-' }}</td>
+                    <td>{{ job.sku|default:'-' }}</td>
+                    <td>{{ job.order_qty|default:'-' }}</td>
+                    <td>{{ job.roll_size|default:'-' }}</td>
+                    <td>{{ job.machine_name|default:'-' }}</td>
+                    <td>{{ job.get_status_display }}</td>
+                    <td>{{ job.balance_qty|default:'-' }}</td>
+                    <td><a href="{% url 'flexo:planning_edit' job.pk %}" class="erp-btn erp-btn-secondary">Edit</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="9">No {{ family_label }} planning jobs yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

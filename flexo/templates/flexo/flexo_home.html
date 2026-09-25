@@ -1,0 +1,17 @@
+{% extends 'theme/base.html' %}
+{% block title %}Flexo{% endblock %}
+{% block header_title %}Flexo Printing{% endblock %}
+{% block header_subtitle %}Planning and Job Cards for FL (labels) and SATIN (ribbon) printing.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div style="display:flex; gap:16px; flex-wrap:wrap;">
+            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:planning_list' family='fl' %}">FL Planning ({{ fl_count }})</a>
+            <a class="erp-btn erp-btn-primary" href="{% url 'flexo:planning_create' family='fl' %}">New FL Job</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:planning_list' family='satin' %}">SATIN Planning ({{ satin_count }})</a>
+            <a class="erp-btn erp-btn-primary" href="{% url 'flexo:planning_create' family='satin' %}">New SATIN Job</a>
+        </div>
+    </section>
+</div>
+{% endblock %}

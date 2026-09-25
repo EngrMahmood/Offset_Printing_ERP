@@ -1,0 +1,172 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flexo Job Card {{ card.job_card_no }}</title>
+    <style>
+        @page { size: A4 portrait; margin: 4mm; }
+        * { box-sizing: border-box; }
+        html, body { width: 100%; min-height: 100%; }
+        body { font-family: Arial, sans-serif; color: #111; font-size: 9px; line-height: 1.35; margin: 0; background: #fff; }
+        .page { width: 100%; padding: 4mm; }
+        .card { width: 100%; margin: 0 auto; background: #fff; border: 1px solid #333; padding: 8px; overflow: visible; }
+        .card-header { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 10px; }
+        .brand { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+        .brand-mark { width: 54px; height: 54px; flex: 0 0 54px; object-fit: contain; }
+        .brand-copy { min-width: 0; }
+        .header-label { font-size: 10px; color: #555; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 2px; }
+        .header-title { font-size: 18px; font-weight: 700; letter-spacing: 0.08em; margin-bottom: 3px; }
+        .header-system { font-size: 11px; font-weight: 700; color: #0f5132; text-transform: uppercase; letter-spacing: 0.12em; margin-bottom: 2px; }
+        .header-subtitle { font-size: 11px; color: #333; margin-bottom: 2px; overflow-wrap: anywhere; word-break: break-word; }
+        .header-meta { text-align: right; font-size: 8px; color: #444; min-width: 90px; }
+        .header-meta .meta-row { margin-bottom: 4px; }
+        .section-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+        .section-block { border: 1px solid #ccc; padding: 8px; min-width: 0; overflow: visible; }
+        .section-block.full-width { grid-column: span 2; }
+        .section-title { font-size: 10px; font-weight: 700; background: #f3f4f6; color: #111; padding: 6px 8px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.08em; }
+        .field-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid #e5e7eb; min-width: 0; }
+        .field-row:last-child { border-bottom: none; }
+        .field-label { font-weight: 700; color: #222; width: 45%; flex: 0 0 45%; }
+        .field-value { flex: 1; min-width: 0; text-align: right; }
+        .field-row > span:not(.field-label), .wrap-value { min-width: 0; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
+        .table-wrap { width: 100%; overflow: visible; }
+        .table-row { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); border-bottom: 1px solid #e5e7eb; }
+        .table-row span { min-width: 0; padding: 3px 4px; overflow-wrap: anywhere; word-break: break-word; white-space: normal; }
+        .table-header { font-weight: 700; background: #f8fafc; }
+        .notes { min-height: 30px; white-space: pre-wrap; padding: 8px; background: #fbfbfb; border: 1px solid #e5e7eb; }
+        .signature-row { display: flex; justify-content: space-between; gap: 10px; padding: 8px 0; }
+        .signature-row span { width: 48%; border-bottom: 1px solid #333; padding-bottom: 4px; }
+        .blank-row span { min-height: 18px; }
+        .footer-note { margin-top: 12px; font-size: 8px; color: #555; }
+        .no-print { margin-top: 10px; }
+        .button-primary { padding: 6px 10px; border: 1px solid #333; background: #fff; cursor: pointer; font-size: 9px; }
+        @media print { .page { padding: 0; } .no-print { display: none; } .card { border: none; padding: 0; } }
+    </style>
+</head>
+<body>
+<div class="page">
+    <div class="card">
+        <div class="card-header">
+            <div class="brand">
+                <img src="{% static 'core/image/logo.jpg' %}" alt="Utopia logo" class="brand-mark">
+                <div class="brand-copy">
+                    <div class="header-label">Utopia Printing &amp; Packaging</div>
+                    <div class="header-title">Flexo Job Card</div>
+                    <div class="header-system">Offset ERP &mdash; Flexo Module</div>
+                    <div class="header-subtitle">{{ card.job_card_no }} | {{ card.sku|default:'-' }}</div>
+                </div>
+            </div>
+            <div class="header-meta">
+                <div class="meta-row"><strong>Family:</strong> {{ card.get_material_family_display }}</div>
+                <div class="meta-row"><strong>Rev Date:</strong> {{ card.updated_at|date:'d M Y' }}</div>
+            </div>
+        </div>
+
+        <section class="section-grid">
+            <div class="section-block">
+                <div class="section-title">Order Information</div>
+                <div class="field-row"><span class="field-label">SKU</span><span class="field-value wrap-value">{{ card.sku|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">PO#</span><span>{{ card.po_number|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Order Qty</span><span>{{ card.order_qty|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Job Name</span><span class="field-value wrap-value">{{ card.job_name|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">PO Received Date</span><span>{{ card.po_received_date|date:'d M Y'|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Delivery Location</span><span>{{ card.delivery_location|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Department</span><span>{{ card.department|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Days Plan</span><span>{{ card.days_plan|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Daily Demand</span><span>{{ card.daily_demand|default:'-' }}</span></div>
+            </div>
+            <div class="section-block">
+                <div class="section-title">Material and Work Process</div>
+                <div class="field-row"><span class="field-label">Material Type</span><span>{{ card.material_type|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Print Roll Size</span><span>{{ card.print_roll_size|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Size W / H</span><span>{{ card.size_w_mm|default:'-' }} / {% if card.is_satin %}{{ card.size_h_inches|default:'-' }} in{% else %}{{ card.size_h_mm|default:'-' }} mm{% endif %}</span></div>
+                <div class="field-row"><span class="field-label"># of Ups</span><span>{{ card.ups|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Machine</span><span>{{ card.machine|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Color</span><span>{{ card.color|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Wastage</span><span>{{ card.wastage|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">MTR Per Roll</span><span>{{ card.mtr_per_roll|default:'-' }}</span></div>
+                {% if card.is_satin %}
+                <div class="field-row"><span class="field-label">AWC. No</span><span>{{ card.awc_no|default:'-' }}</span></div>
+                <div class="field-row"><span class="field-label">Printing Cylinder</span><span>{{ card.printing_cylinder|default:'-' }}</span></div>
+                {% else %}
+                <div class="field-row"><span class="field-label">Die Code</span><span>{{ card.die_code|default:'-' }}</span></div>
+                {% endif %}
+            </div>
+        </section>
+
+        <section class="section-block full-width">
+            <div class="section-title">Special Instructions</div>
+            <div class="notes">{{ card.special_instructions|default:'-' }}</div>
+        </section>
+
+        <section class="section-grid">
+            <div class="section-block">
+                <div class="section-title">Sign-off</div>
+                <div class="signature-row"><span>Prepared By: {{ card.prepared_by|default:'' }}</span></div>
+                {% if card.is_satin %}
+                <div class="signature-row"><span>Check By: {{ card.checked_by|default:'' }}</span></div>
+                <div class="signature-row"><span>Artwork Developed By: {{ card.artwork_developed_by|default:'' }}</span></div>
+                {% endif %}
+                <div class="signature-row"><span>Approved By: {{ card.approved_by|default:'' }}</span></div>
+            </div>
+            <div class="section-block">
+                <div class="section-title">Status</div>
+                <div class="field-row"><span class="field-label">Current Status</span><span>{{ card.get_status_display }}</span></div>
+            </div>
+        </section>
+
+        <section class="section-block full-width">
+            <div class="section-title">Printing</div>
+            <div class="table-wrap">
+                <div class="table-row table-header">
+                    <span>Date</span><span>Machine</span><span>Operator</span><span>Shift A/B</span>
+                    {% if card.is_satin %}<span>Given Meter Qty</span><span>Finished Meter Qty</span>
+                    {% else %}<span>Jumbo Roll Qty</span><span>Baby Roll Qty</span>{% endif %}
+                </div>
+                {% for entry in printing_entries %}
+                <div class="table-row">
+                    <span>{{ entry.date|date:'d M Y'|default:'-' }}</span><span>{{ entry.machine|default:'-' }}</span>
+                    <span>{{ entry.operator|default:'-' }}</span><span>{{ entry.shift|default:'-' }}</span>
+                    {% if card.is_satin %}<span>{{ entry.given_meter_qty|default:'-' }}</span><span>{{ entry.finished_meter_qty|default:'-' }}</span>
+                    {% else %}<span>{{ entry.jumbo_roll_qty|default:'-' }}</span><span>{{ entry.baby_roll_qty|default:'-' }}</span>{% endif %}
+                </div>
+                {% endfor %}
+                {% for _ in '123456' %}
+                    {% if forloop.counter > printing_entries.count %}
+                <div class="table-row blank-row"><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span></div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </section>
+
+        {% if card.is_satin %}
+        <section class="section-block full-width">
+            <div class="section-title">Slitting / Cutting</div>
+            <div class="table-wrap">
+                <div class="table-row table-header"><span>Date</span><span>Operator</span><span>Cut Qty</span><span>Cut Length (m)</span><span>Wastage</span><span>Signature</span></div>
+                {% for entry in slitting_entries %}
+                <div class="table-row">
+                    <span>{{ entry.date|date:'d M Y'|default:'-' }}</span><span>{{ entry.operator|default:'-' }}</span>
+                    <span>{{ entry.cut_qty|default:'-' }}</span><span>{{ entry.cut_length_m|default:'-' }}</span>
+                    <span>{{ entry.wastage|default:'-' }}</span><span>{{ entry.signature_name|default:'-' }}</span>
+                </div>
+                {% endfor %}
+                {% for _ in '1234' %}
+                    {% if forloop.counter > slitting_entries.count %}
+                <div class="table-row blank-row"><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span><span>&nbsp;</span></div>
+                    {% endif %}
+                {% endfor %}
+            </div>
+        </section>
+        {% endif %}
+
+        <div class="footer-note">Flexo Job Card print | {{ card.job_card_no }}</div>
+        <div class="no-print">
+            <button class="button-primary" onclick="window.print()">Print A4</button>
+        </div>
+    </div>
+</div>
+</body>
+</html>

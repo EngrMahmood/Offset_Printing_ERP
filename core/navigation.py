@@ -24,6 +24,7 @@ NAV_PERMISSION_CODES = {
     'chat': 'nav.chat',
     'bot': 'nav.bot',
     'bom': 'nav.bom',
+    'flexo': 'nav.flexo',
 }
 
 PLANNING_NAV_ROLES = {'admin', 'manager', 'planner'}
@@ -59,6 +60,10 @@ BOT_NAV_ROLES = {'admin', 'manager'}
 # management build recipes, supply chain acts on the requirement report (see
 # bom.management.commands.seed_bom_permissions, which owns the actual grant).
 BOM_NAV_ROLES = {'admin', 'manager', 'planner', 'production_manager', 'supply_chain'}
+# Flexo Planning + Job Card — same audience as offset Planning/Production
+# (see flexo.management.commands.seed_flexo_permissions, which owns the
+# actual Permission/Role grant).
+FLEXO_NAV_ROLES = {'admin', 'manager', 'planner', 'production_manager', 'production'}
 
 
 def _role_from_request(request: Any) -> str:
@@ -177,6 +182,7 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_access_item_request': _allow('item_request'),
         'can_access_maintenance': _allow('maintenance'),
         'can_access_bom': _allow('bom'),
+        'can_access_flexo': _allow('flexo'),
         'can_access_chat': _allow('chat'),
         'can_access_bot': _allow('bot'),
         'can_access_tasks': is_authenticated,

@@ -1,0 +1,58 @@
+{% extends 'theme/base.html' %}
+{% block title %}{{ job.jc_number }}{% endblock %}
+{% block header_title %}{{ job.jc_number }}{% endblock %}
+{% block header_subtitle %}{{ family_label }} &middot; {{ job.sku }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'flexo:planning_edit' job.pk %}" class="erp-btn erp-btn-secondary">Edit</a>
+    {% if job.job_card %}
+    <a href="{% url 'flexo:job_card_detail' job.job_card.pk %}" class="erp-btn erp-btn-primary">View Job Card</a>
+    {% else %}
+    <a href="{% url 'flexo:job_card_create' job.pk %}" class="erp-btn erp-btn-primary">Create Job Card</a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:8px;">
+            <div><strong>PO Number:</strong> {{ job.po_number|default:'-' }}</div>
+            <div><strong>PO Received:</strong> {{ job.po_received_date|default:'-' }}</div>
+            <div><strong>Status:</strong> {{ job.get_status_display }}</div>
+            <div><strong>Job Name:</strong> {{ job.job_name|default:'-' }}</div>
+            <div><strong>Repeat:</strong> {{ job.repeat_flag|default:'-' }}</div>
+            <div><strong>Material:</strong> {{ job.material|default:'-' }}</div>
+            <div><strong>Color:</strong> {{ job.color_spec|default:'-' }}</div>
+            <div><strong>Size:</strong> {{ job.size_w_mm|default:'-' }} x {% if job.is_fl %}{{ job.size_h_mm|default:'-' }} mm{% else %}{{ job.size_h_inches|default:'-' }} in{% endif %}</div>
+            <div><strong>{% if job.is_fl %}Die Code{% else %}AWC No. / Cylinder{% endif %}:</strong> {% if job.is_fl %}{{ job.die_code|default:'-' }}{% else %}{{ job.awc_no|default:'-' }} / {{ job.printing_cylinder|default:'-' }}{% endif %}</div>
+            <div><strong>Order Qty:</strong> {{ job.order_qty|default:'-' }}</div>
+            <div><strong>Ups:</strong> {{ job.ups|default:'-' }}</div>
+            <div><strong>Roll Size:</strong> {{ job.roll_size|default:'-' }}</div>
+            <div><strong>Meter Per Roll:</strong> {{ job.meter_per_roll|default:'-' }}</div>
+            <div><strong>Roll Qty (Meter):</strong> {{ job.roll_qty_meter|default:'-' }}</div>
+            <div><strong>Wastage Qty (Meter):</strong> {{ job.wastage_qty_meter|default:'-' }}</div>
+            <div><strong>Machine:</strong> {{ job.machine_name|default:'-' }}</div>
+            <div><strong>Department:</strong> {{ job.department|default:'-' }}</div>
+            <div><strong>Destination:</strong> {{ job.destination|default:'-' }}</div>
+            <div><strong>Purchase Material:</strong> {{ job.get_purchase_material_origin_display|default:'-' }}</div>
+            <div><strong>Daily Demand:</strong> {{ job.daily_demand|default:'-' }}</div>
+            <div><strong>Balance:</strong> {{ job.balance_qty|default:'-' }}</div>
+            <div><strong>Total Dispatched:</strong> {{ job.total_dispatched }}</div>
+        </div>
+        {% if job.remarks %}<p style="margin-top:10px;"><strong>Remarks:</strong> {{ job.remarks }}</p>{% endif %}
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Delivery Runs</h3>
+        <table class="erp-table">
+            <thead><tr><th>#</th><th>Delivery Date</th><th>DC No.</th><th>Delivered Qty</th></tr></thead>
+            <tbody>
+            {% for run in dispatch_runs %}
+                <tr><td>{{ run.dispatch_index }}</td><td>{{ run.delivery_date|default:'-' }}</td><td>{{ run.dc_no|default:'-' }}</td><td>{{ run.delivered_qty|default:'-' }}</td></tr>
+            {% empty %}
+                <tr><td colspan="4">No delivery runs recorded yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

@@ -67,10 +67,12 @@
                 </div>
             </div>
             {% endif %}
-            <a href="{% url 'flexo_placeholder' %}" data-nav-key="flexo" data-nav-label="Flexo"
-               class="erp-topnav-module {% if url == 'flexo_placeholder' %}is-active{% endif %}">
+            {% if nav.can_access_flexo %}
+            <a href="{% url 'flexo:home' %}" data-nav-key="flexo" data-nav-label="Flexo"
+               class="erp-topnav-module {% if app == 'flexo' %}is-active{% endif %}">
                 Flexo
             </a>
+            {% endif %}
             <a href="{% url 'sublimation_placeholder' %}" data-nav-key="sublimation" data-nav-label="Sublimation"
                class="erp-topnav-module {% if url == 'sublimation_placeholder' %}is-active{% endif %}">
                 Sublimation
@@ -419,6 +421,22 @@
         <a href="{% url 'bom:requirements_report' %}"
            class="erp-subnav-link {% if url == 'requirements_report' %}is-active{% endif %}">
             Requirements
+        </a>
+    </div>
+
+    {% elif app == 'flexo' and nav.can_access_flexo %}
+    <div class="erp-subnav">
+        <a href="{% url 'flexo:home' %}"
+           class="erp-subnav-link {% if url == 'home' %}is-active{% endif %}">
+            Overview
+        </a>
+        <a href="{% url 'flexo:planning_list' family='fl' %}"
+           class="erp-subnav-link {% if url == 'planning_list' and request.resolver_match.kwargs.family == 'fl' %}is-active{% endif %}">
+            FL Planning
+        </a>
+        <a href="{% url 'flexo:planning_list' family='satin' %}"
+           class="erp-subnav-link {% if url == 'planning_list' and request.resolver_match.kwargs.family == 'satin' %}is-active{% endif %}">
+            SATIN Planning
         </a>
     </div>
 

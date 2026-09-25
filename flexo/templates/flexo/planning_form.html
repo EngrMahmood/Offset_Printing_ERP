@@ -1,0 +1,91 @@
+{% extends 'theme/base.html' %}
+{% block title %}{{ family_label }} Planning{% endblock %}
+{% block header_title %}{% if is_new %}New{% else %}Edit{% endif %} {{ family_label }} Planning Job{% endblock %}
+{% block header_subtitle %}{% if job %}{{ job.jc_number }}{% else %}JC number is allocated on save.{% endif %}{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="post">
+            {% csrf_token %}
+            <div class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:12px;">
+                <div class="erp-input-group"><label class="erp-input-label">PO Number</label>{{ form.po_number }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">PO Received Date</label>{{ form.po_received_date }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Month</label>{{ form.plan_month }}</div>
+
+                <div class="erp-input-group"><label class="erp-input-label">SKU</label>{{ form.sku }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Job Name</label>{{ form.job_name }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Repeat</label>{{ form.repeat_flag }}</div>
+
+                <div class="erp-input-group"><label class="erp-input-label">Material</label>{{ form.material }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Color</label>{{ form.color_spec }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Ups</label>{{ form.ups }}</div>
+
+                <div class="erp-input-group"><label class="erp-input-label">Size W (mm)</label>{{ form.size_w_mm }}</div>
+                {% if family == 'fl' %}
+                <div class="erp-input-group"><label class="erp-input-label">Size H (mm)</label>{{ form.size_h_mm }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Die Code</label>{{ form.die_code }}</div>
+                {% else %}
+                <div class="erp-input-group"><label class="erp-input-label">Size H (inches)</label>{{ form.size_h_inches }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">AWC No.</label>{{ form.awc_no }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Teeth</label>{{ form.teeth }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Printing Cylinder</label>{{ form.printing_cylinder }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Order Roll Qty</label>{{ form.order_roll_qty }}</div>
+                {% endif %}
+
+                <div class="erp-input-group"><label class="erp-input-label">Order Qty</label>{{ form.order_qty }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Roll Size</label>{{ form.roll_size }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Meter Per Roll</label>{{ form.meter_per_roll }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Roll Qty (Meter)</label>{{ form.roll_qty_meter }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Wastage Qty (Meter)</label>{{ form.wastage_qty_meter }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Actual Roll Qty (Meter)</label>{{ form.actual_roll_qty_meter }}</div>
+
+                <div class="erp-input-group"><label class="erp-input-label">Roll Qty Received</label>{{ form.roll_qty_received }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Actual Wastage (MTR)</label>{{ form.actual_wastage_mtr }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Received Qty (MTR)</label>{{ form.received_qty_mtr }}</div>
+
+                <div class="erp-input-group"><label class="erp-input-label">Status</label>{{ form.status }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Rejected Qty</label>{{ form.rejected_qty }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Balance Qty</label>{{ form.balance_qty }}</div>
+
+                <div class="erp-input-group"><label class="erp-input-label">Destination</label>{{ form.destination }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Cost</label>{{ form.cost }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Amount</label>{{ form.amount }}</div>
+
+                <div class="erp-input-group"><label class="erp-input-label">Machine</label>{{ form.machine_name }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Purchase Material</label>{{ form.purchase_material_origin }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Stock</label>{{ form.stock_qty }}</div>
+
+                <div class="erp-input-group"><label class="erp-input-label">Daily Demand</label>{{ form.daily_demand }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Department</label>{{ form.department }}</div>
+                <div class="erp-input-group" style="grid-column: span 3;"><label class="erp-input-label">Remarks</label>{{ form.remarks }}</div>
+            </div>
+
+            {% if formset %}
+            <h3 style="margin-top:20px;">Delivery Runs</h3>
+            {{ formset.management_form }}
+            <table class="erp-table">
+                <thead><tr><th>#</th><th>Delivery Date</th><th>DC No.</th><th>Delivered Qty</th><th>Delete</th></tr></thead>
+                <tbody>
+                {% for run_form in formset %}
+                    <tr>
+                        {% for hidden in run_form.hidden_fields %}{{ hidden }}{% endfor %}
+                        <td>{{ run_form.dispatch_index }}</td>
+                        <td>{{ run_form.delivery_date }}</td>
+                        <td>{{ run_form.dc_no }}</td>
+                        <td>{{ run_form.delivered_qty }}</td>
+                        <td>{% if run_form.instance.pk %}{{ run_form.DELETE }}{% endif %}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% endif %}
+
+            <div class="erp-actions" style="margin-top:16px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Save</button>
+                {% if job %}<a href="{% url 'flexo:planning_detail' job.pk %}" class="erp-btn erp-btn-secondary">Cancel</a>{% endif %}
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

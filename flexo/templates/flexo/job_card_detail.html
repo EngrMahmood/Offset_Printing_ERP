@@ -1,0 +1,145 @@
+{% extends 'theme/base.html' %}
+{% block title %}{{ card.job_card_no }}{% endblock %}
+{% block header_title %}Job Card {{ card.job_card_no }}{% endblock %}
+{% block header_subtitle %}{{ card.get_material_family_display }} &middot; {{ card.sku }}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'flexo:planning_detail' card.planning_job.pk %}" class="erp-btn erp-btn-secondary">Planning Job</a>
+    <a href="{% url 'flexo:job_card_print' card.pk %}" class="erp-btn erp-btn-primary" target="_blank">Print</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <h3>Material and Work Process</h3>
+        <form method="post">
+            {% csrf_token %}
+            <div class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:12px;">
+                <div class="erp-input-group"><label class="erp-input-label">Delivery Location</label>{{ form.delivery_location }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Department</label>{{ form.department }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Days Plan</label>{{ form.days_plan }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Daily Demand</label>{{ form.daily_demand }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Material Type</label>{{ form.material_type }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Size W (mm)</label>{{ form.size_w_mm }}</div>
+                {% if card.is_satin %}
+                <div class="erp-input-group"><label class="erp-input-label">Size H (inches)</label>{{ form.size_h_inches }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">AWC No.</label>{{ form.awc_no }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Printing Cylinder</label>{{ form.printing_cylinder }}</div>
+                {% else %}
+                <div class="erp-input-group"><label class="erp-input-label">Size H (mm)</label>{{ form.size_h_mm }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Die Code</label>{{ form.die_code }}</div>
+                {% endif %}
+                <div class="erp-input-group"><label class="erp-input-label">Print Roll Size</label>{{ form.print_roll_size }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Roll Meter Qty</label>{{ form.roll_meter_qty }}</div>
+                <div class="erp-input-group"><label class="erp-input-label"># of Ups</label>{{ form.ups }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Machine</label>{{ form.machine }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Wastage</label>{{ form.wastage }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Color</label>{{ form.color }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">MTR Per Roll</label>{{ form.mtr_per_roll }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Status</label>{{ form.status }}</div>
+                <div class="erp-input-group" style="grid-column: span 3;"><label class="erp-input-label">Special Instructions</label>{{ form.special_instructions }}</div>
+            </div>
+
+            <h4 style="margin-top:16px;">Sign-off</h4>
+            <div class="erp-form-grid" style="grid-template-columns:repeat(4,1fr); gap:12px;">
+                <div class="erp-input-group"><label class="erp-input-label">Prepared By</label>{{ form.prepared_by }}</div>
+                {% if card.is_satin %}
+                <div class="erp-input-group"><label class="erp-input-label">Check By</label>{{ form.checked_by }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Artwork Developed By</label>{{ form.artwork_developed_by }}</div>
+                {% endif %}
+                <div class="erp-input-group"><label class="erp-input-label">Approved By</label>{{ form.approved_by }}</div>
+            </div>
+
+            <div class="erp-actions" style="margin-top:16px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Save</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Printing Log</h3>
+        <table class="erp-table">
+            <thead>
+                <tr>
+                    <th>Date</th><th>Machine</th><th>Operator</th><th>Shift</th>
+                    {% if card.is_satin %}<th>Given Meter Qty</th><th>Finished Meter Qty</th>
+                    {% else %}<th>Jumbo Roll Qty</th><th>Baby Roll Qty</th>{% endif %}
+                    <th>Wastage</th><th>Signature</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for entry in printing_entries %}
+                <tr>
+                    <td>{{ entry.date|default:'-' }}</td>
+                    <td>{{ entry.machine|default:'-' }}</td>
+                    <td>{{ entry.operator|default:'-' }}</td>
+                    <td>{{ entry.shift|default:'-' }}</td>
+                    {% if card.is_satin %}
+                    <td>{{ entry.given_meter_qty|default:'-' }}</td><td>{{ entry.finished_meter_qty|default:'-' }}</td>
+                    {% else %}
+                    <td>{{ entry.jumbo_roll_qty|default:'-' }}</td><td>{{ entry.baby_roll_qty|default:'-' }}</td>
+                    {% endif %}
+                    <td>{{ entry.wastage|default:'-' }}</td>
+                    <td>{{ entry.signature_name|default:'-' }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="8">No printing log entries yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <form method="post" action="{% url 'flexo:job_card_add_printing_entry' card.pk %}" style="margin-top:12px;">
+            {% csrf_token %}
+            <div class="erp-form-grid" style="grid-template-columns:repeat(4,1fr); gap:12px;">
+                <div class="erp-input-group"><label class="erp-input-label">Date</label>{{ printing_form.date }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Machine</label>{{ printing_form.machine }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Operator</label>{{ printing_form.operator }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Shift</label>{{ printing_form.shift }}</div>
+                {% if card.is_satin %}
+                <div class="erp-input-group"><label class="erp-input-label">Given Meter Qty</label>{{ printing_form.given_meter_qty }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Finished Meter Qty</label>{{ printing_form.finished_meter_qty }}</div>
+                {% else %}
+                <div class="erp-input-group"><label class="erp-input-label">Jumbo Roll Qty</label>{{ printing_form.jumbo_roll_qty }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Baby Roll Qty</label>{{ printing_form.baby_roll_qty }}</div>
+                {% endif %}
+                <div class="erp-input-group"><label class="erp-input-label">Wastage</label>{{ printing_form.wastage }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Signature</label>{{ printing_form.signature_name }}</div>
+            </div>
+            <div class="erp-actions" style="margin-top:8px;"><button type="submit" class="erp-btn erp-btn-secondary">Add Printing Entry</button></div>
+        </form>
+    </section>
+
+    {% if card.is_satin %}
+    <section class="erp-section-shell">
+        <h3>Slitting / Cutting Log</h3>
+        <table class="erp-table">
+            <thead><tr><th>Date</th><th>Operator</th><th>Cut Qty</th><th>Cut Length (m)</th><th>Wastage</th><th>Signature</th></tr></thead>
+            <tbody>
+            {% for entry in slitting_entries %}
+                <tr>
+                    <td>{{ entry.date|default:'-' }}</td>
+                    <td>{{ entry.operator|default:'-' }}</td>
+                    <td>{{ entry.cut_qty|default:'-' }}</td>
+                    <td>{{ entry.cut_length_m|default:'-' }}</td>
+                    <td>{{ entry.wastage|default:'-' }}</td>
+                    <td>{{ entry.signature_name|default:'-' }}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="6">No slitting/cutting log entries yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <form method="post" action="{% url 'flexo:job_card_add_slitting_entry' card.pk %}" style="margin-top:12px;">
+            {% csrf_token %}
+            <div class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:12px;">
+                <div class="erp-input-group"><label class="erp-input-label">Date</label>{{ slitting_form.date }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Operator</label>{{ slitting_form.operator }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Cut Qty</label>{{ slitting_form.cut_qty }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Cut Length (m)</label>{{ slitting_form.cut_length_m }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Wastage</label>{{ slitting_form.wastage }}</div>
+                <div class="erp-input-group"><label class="erp-input-label">Signature</label>{{ slitting_form.signature_name }}</div>
+            </div>
+            <div class="erp-actions" style="margin-top:8px;"><button type="submit" class="erp-btn erp-btn-secondary">Add Slitting/Cutting Entry</button></div>
+        </form>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}
