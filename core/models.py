@@ -17,6 +17,7 @@ class Machine(models.Model):
     MACHINE_TYPE_CHOICES = [
         ('offset_printing', 'Offset Printing'),
         ('digital_printing', 'Digital Printing'),
+        ('flexo_printing', 'Flexo Printing'),
         ('cutting', 'Cutting'),
         ('other', 'Other'),
     ]
@@ -608,6 +609,20 @@ class JobCard(models.Model):
         if hasattr(self, 'production_wip_status') and self.production_wip_status.status:
             return self.production_wip_status.status.name
         return 'Not Set'
+
+    @property
+    def supervisor_status_display(self):
+        """Manual-override-only Supervisor Status — blank unless a supervisor
+        has explicitly set it, matching the Production WIP page's display rule.
+        `wip_status_name` above shows the stored status regardless of manual
+        flag and is used elsewhere for the general shop-floor stage."""
+        if (
+            hasattr(self, 'production_wip_status')
+            and self.production_wip_status.is_manual
+            and self.production_wip_status.status
+        ):
+            return self.production_wip_status.status.name
+        return None
 
     def planning_validation_errors(self):
         missing_fields = self.planning_missing_fields()

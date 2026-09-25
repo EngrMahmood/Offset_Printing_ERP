@@ -2382,7 +2382,7 @@ def build_pending_work_context(request):
             'sku': job.SKU,
             'machine': job.machine_name_display,
             'status': job.workflow_status_label,
-            'supervisor_status': job.wip_status_name or 'Not Set',
+            'supervisor_status': job.supervisor_status_display,
             'calculated_status': get_system_calculated_status_name(job),
             'order_qty_pcs': order_qty_pcs,
             'printed_pcs': printed_pcs,

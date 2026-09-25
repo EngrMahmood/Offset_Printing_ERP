@@ -418,3 +418,15 @@ class ProductionWipPageRenderTests(TestCase):
         response = self.client.get('/production-wip/')
         html = response.content.decode()
         self.assertIn('Partial Printing', html)
+
+    def test_partial_printing_is_a_selectable_manual_status(self):
+        """Regression: 'Partial Printing' was added as a calculated-status
+        value but the master ProductionWipStatus list (which drives the
+        Supervisor Status filter and the per-row manual override dropdown)
+        was never given a matching entry, so supervisors had no way to
+        manually set a job to it."""
+        response = self.client.get('/production-wip/')
+        self.assertEqual(response.status_code, 200)
+        status = ProductionWipStatus.objects.get(name='Partial Printing')
+        html = response.content.decode()
+        self.assertIn(f'<option value="{status.id}"', html)

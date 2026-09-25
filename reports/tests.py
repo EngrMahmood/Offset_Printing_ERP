@@ -1324,6 +1324,29 @@ class PendingWorkReportTests(TestCase):
         self.assertIn('JC-PW-B', dispatch_jcs)
         self.assertEqual(dispatch_jcs['JC-PW-B']['pending_qty'], 500)
 
+    def test_supervisor_status_blank_unless_manually_overridden(self):
+        """JC-09-26-PP-2282 bug: the auto (non-manual) stored WIP status name
+        used to leak into the report/email's Supervisor Status column even
+        though the Production WIP page itself shows a dash for it. Only a
+        supervisor's manual override should ever populate this field."""
+        from core.models import ProductionWipStatus, JobCardWipStatus
+
+        status = ProductionWipStatus.objects.create(name='Printing Completed', created_by=self.user)
+        JobCardWipStatus.objects.update_or_create(
+            job_card=self.jc_a, defaults={'status': status, 'is_manual': False},
+        )
+
+        data = self._run()
+        packing_jcs = {r['job_card_no']: r for r in data['packing_rows']}
+        self.assertIsNone(packing_jcs['JC-PW-A']['supervisor_status'])
+
+        from django.core.cache import cache
+        cache.clear()
+        JobCardWipStatus.objects.filter(job_card=self.jc_a).update(is_manual=True)
+        data = self._run()
+        packing_jcs = {r['job_card_no']: r for r in data['packing_rows']}
+        self.assertEqual(packing_jcs['JC-PW-A']['supervisor_status'], 'Printing Completed')
+
     def test_completed_job_excluded_entirely(self):
         data = self._run()
         all_jcs = (

@@ -991,7 +991,7 @@ def production_data_anomalies(request):
 @permission_required('can_view_production_wip')
 def production_wip(request):
 
-    default_status_names = ['Printing', 'Printing Completed', 'Sorting / Packing', 'Ready for Dispatch', 'Partial Dispatch', 'Completed']
+    default_status_names = ['Printing', 'Partial Printing', 'Printing Completed', 'Sorting / Packing', 'Ready for Dispatch', 'Partial Dispatch', 'Completed']
     for status_name in default_status_names:
         ProductionWipStatus.objects.get_or_create(
             name=status_name,
