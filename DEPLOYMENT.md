@@ -1,153 +1,99 @@
-# Deploying the Chat Module to Production (E:\Offset_Printing_ERP)
+# Deploying Offset ERP to Production
 
-Context for whoever (or whichever Claude Code session) is running this on the
-production machine: the `chat` app (real-time messaging, attachments, WebRTC
-calling, docked popup windows) was added on the dev machine and pushed to
-`origin/main`. It introduces new runtime infrastructure that the production
-server doesn't have yet. This doc is the one-time deployment checklist.
+Two Oracle Cloud VMs run identical Docker Compose stacks — a **primary** and
+a **standby**. Both need to be updated on every deploy; they run separate
+databases (not a live replica pair), so deploying to one does not touch the
+other.
 
-## What's new and why it matters here
+The old Windows LAN server (192.168.88.30) this doc used to describe is
+**retired**. These two Oracle VMs are the only production targets.
 
-- **Django Channels + Daphne**: `manage.py runserver` now needs `daphne` in
-  `INSTALLED_APPS` (already committed) to serve WebSockets — no script change
-  needed for this part, `runserver` picks it up automatically.
-- **Redis**: required for both the Channels layer (`CHANNEL_LAYERS`) and the
-  cache backend (`CACHES`), both in `Offset_ERP/settings.py`. **Not yet
-  installed on production** as of this writing.
-- **New Python packages**: `channels`, `channels-redis`, `daphne`,
-  `djangorestframework`, `redis`, `Pillow` — see `requirements.txt`.
-- **New migrations + permission seed commands** for the `chat` app and the
-  RBAC system that shipped alongside it.
+## Servers
 
-## Step-by-step
+| Role | Host | SSH user | SSH key (on this dev machine) | Arch / hostname |
+|---|---|---|---|---|
+| Primary | `offseterp.duckdns.org` | `ubuntu` | `C:\Users\Universal Engr\.ssh\offset-erp-oracle-a1` (ED25519) | ARM64, `offset-erp-a1` |
+| Standby | `offseterpbackup.duckdns.org` | `ubuntu` | `C:\Users\Universal Engr\.ssh\offset-erp-oracle.key` (RSA) | x86_64, `offset-erp-server` |
 
-### 1. Install Redis
+The two servers use **different keys** — don't assume one key works for both.
+Both hosts are already in `known_hosts` on this machine.
 
-Production uses the same **unofficial Redis-for-Windows port** already
-validated on the dev machine (not Memurai — its free tier is
-production-prohibited and auto-shuts-down after 10 days, which would cause
-mysterious outages).
+Both run from `/home/ubuntu/offset-erp` (a clone of this repo, `main`
+branch) via `docker-compose.yml` in that directory: three services —
+`redis`, `web` (the Django app via Daphne), `nginx` (TLS termination,
+reverse proxy). SQLite is the database engine on both (not Postgres),
+matching what `Offset_ERP/settings.py` defaults to.
 
-Download the MSI from https://github.com/tporadowski/redis/releases
-(`Redis-x64-5.0.14.1` or newer). During install, check:
-- "Add the Redis installation folder to the PATH environment variable"
-- "Redis Windows service"
+## Deploying a change
 
-This registers Redis as a Windows Service listening on `127.0.0.1:6379`,
-auto-starting on boot. Verify in `services.msc` that its Startup type is
-**Automatic**. No config file changes needed — `Offset_ERP/settings.py`
-already points at `redis://127.0.0.1:6379` and forces RESP2 protocol
-(`protocol: 2` in `CACHES`/`CHANNEL_LAYERS`) for compatibility with this
-older Redis version.
-
-### 2. Pull code and install dependencies
+Once your change is committed and pushed to `origin/main`, run this against
+**each** server in turn (primary first, then standby):
 
 ```bash
-cd /d E:\Offset_Printing_ERP
-git pull origin main
-python -m pip install -r requirements.txt
+ssh -i <key for that host> ubuntu@<host> "cd /home/ubuntu/offset-erp && git pull origin main"
+ssh -i <key for that host> ubuntu@<host> "cd /home/ubuntu/offset-erp && sudo docker compose build web"
+ssh -i <key for that host> ubuntu@<host> "cd /home/ubuntu/offset-erp && sudo docker compose up -d web"
 ```
 
-### 3. One-time migrate + permission seed
+**The `build` step is not optional.** The image has no source bind-mount —
+`Dockerfile` `COPY`s the working tree in at build time — so `git pull`
+alone changes nothing running until the image is rebuilt and the container
+recreated. Skipping `build` and running only `up -d` silently redeploys the
+*old* code.
+
+Then confirm a clean startup:
 
 ```bash
-python manage.py migrate
-python manage.py seed_access_control
-python manage.py seed_chat_permissions
+ssh -i <key for that host> ubuntu@<host> "cd /home/ubuntu/offset-erp && sudo docker compose logs web --tail 15"
 ```
 
-`seed_access_control` must run before `seed_chat_permissions` (the latter
-looks up `Role` rows the former creates).
+Look for `Listening on TCP address 0.0.0.0:8000` with no tracebacks above
+it. `sudo docker compose ps` should show `web`, `redis`, and `nginx` all
+`Up`.
 
-### 4. Manual smoke test before touching the scheduled task
+## What happens automatically vs. what doesn't
 
-Run `start server.bat` as usual. Confirm:
-- The site loads normally.
-- `/chat/` loads, and the Chat nav link appears (permission-gated).
-- Two accounts can send a message and see it arrive live with no page
-  refresh (confirms Redis + Channels are actually wired up, not just that
-  the server started).
+`docker-entrypoint.sh` runs on every container start (so on every deploy),
+in order:
 
-### 5. Fix the boot-time Scheduled Task
+1. `manage.py migrate --noinput`
+2. `seed_access_control`, `seed_chat_permissions`, `seed_viewer_role`,
+   `seed_bots`, `seed_bom_masters`, `seed_bom_permissions` (each `|| true`
+   — safe to re-run, won't fail the boot if something's already seeded)
+3. `backfill_raw_items_from_rm_skus` (`|| true`)
+4. `collectstatic --noinput` — needed on **every** start, not just the
+   first: `staticfiles` is a named Docker volume, so the image's build-time
+   `collectstatic` output never reaches the live volume after the first
+   deploy.
+5. `daphne` starts and listens on `:8000`.
 
-The existing task ("Offset ERP Server") wasn't starting the server
-automatically at boot. Root cause: its action ran `start server.bat`, which
-opens an interactive console window (`cmd /k`) — a task set to "Run whether
-user is logged on or not" has no desktop to display that window on before
-anyone logs in, so it silently does nothing.
+So **migrations and permission/master-data seeding never need a manual
+step** — they're already covered by the steps above.
 
-Fix: a new script, `start_server_task.bat` (in the same
-`C:\Users\Universal\OneDrive\Development\` folder as the original), runs
-headless, resolves `python.exe` explicitly, waits up to 60s for Redis to
-become reachable before starting Django, and logs everything to
-`E:\Offset_Printing_ERP\logs\server_startup.log`. `start server.bat` itself
-is untouched and still fine for manual double-click runs.
-
-In `taskschd.msc` → "Offset ERP Server" → Properties:
-- **Actions tab**: change the action to point at `start_server_task.bat`
-  instead of `start server.bat`.
-- **Settings tab**: uncheck **"Stop the task if it runs longer than: 3
-  days"** — a Task Scheduler default that would kill a long-running server
-  process even after startup itself is fixed.
-- **Settings tab**: uncheck **"Start the task only if the computer is on AC
-  power"** if it's checked.
-- **General tab**: confirm **"Run whether user is logged on or not"** is
-  still selected.
-
-Then re-run `setup_server_task.local.bat` to re-register the task, and do a
-real reboot test — restart the machine and check
-`logs\server_startup.log` for a clean startup with Redis reachable, with no
-one logged in.
-
-### 6. Enable HTTPS for calling (self-signed certificate)
-
-WebRTC's camera/microphone access (`getUserMedia`/`getDisplayMedia`) only
-works in a browser "secure context" — `https:` or `localhost`/`127.0.0.1`.
-Since this server is reached over plain `http://` from other LAN PCs, calling
-and screen sharing silently fail everywhere except the server machine itself.
-Fix: serve the whole site over HTTPS with a self-signed certificate, on the
-**same port** the site already uses — not a second parallel port.
-
-Generate a cert (PowerShell, using OpenSSL if available, or the .NET
-`New-SelfSignedCertificate` cmdlet — either works; example with OpenSSL):
+**One-off management commands** (a backfill script written for a specific
+bug, `--apply` flags, etc.) are *not* run automatically and need an explicit
+call after the container is up:
 
 ```bash
-openssl req -x509 -newkey rsa:2048 -nodes -keyout chat_key.pem -out chat_cert.pem -days 3650 -subj "/CN=192.168.88.30" -addext "subjectAltName=IP:192.168.88.30"
+ssh -i <key for that host> ubuntu@<host> "cd /home/ubuntu/offset-erp && sudo docker compose exec web python manage.py <command> [--apply]"
 ```
 
-Store `chat_key.pem`/`chat_cert.pem` under `E:\Offset_Printing_ERP\certs\`
-(gitignored, see `.gitignore` — never commit private keys).
+Always dry-run first (omit `--apply`) if the command supports it, read the
+output, then re-run with `--apply`.
 
-The actual production launcher, `scripts\server\run_server.bat`, already does this:
-it binds Daphne **directly** to a single TLS listener on `:8000`
+## Notes
 
-```bash
-python -m daphne -e ssl:8000:privateKey=certs/chat_key.pem:certKey=certs/chat_cert.pem:interface=192.168.88.30 Offset_ERP.asgi:application
-```
-
-— there is no separate plain-HTTP `:8000` anymore. It also starts a small
-companion process, `scripts\server\http_redirect_server.py`, listening on port `:80`
-that 301-redirects any plain-HTTP request to the HTTPS site, so old bookmarks
-and anyone typing the bare IP still land somewhere useful instead of a
-connection error. `Offset_ERP/settings.py` already trusts
-`https://192.168.88.30:8000` via `CSRF_TRUSTED_ORIGINS` (overridable with the
-`CSRF_TRUSTED_ORIGINS` env var if the port/IP differ).
-
-On each LAN PC, the first visit to `https://192.168.88.30:8000` shows a
-"Your connection is not private" warning (expected for a self-signed cert on
-an internal LAN) — click **Advanced → Proceed**. This is a one-time step per
-browser per machine.
-
-## If something breaks
-
-- **Chat page loads but messages don't send/appear live**: check Redis is
-  actually running (`services.msc`, or `Test-NetConnection 127.0.0.1 -Port
-  6379`).
-- **Server won't start at all after `git pull`**: check
-  `pip install -r requirements.txt` actually completed — `Pillow` in
-  particular can fail to build on some systems without a matching wheel;
-  if so, `pip install Pillow` alone first to see the real error.
-- **Boot task still doesn't start the server**: check
-  `logs\server_startup.log` — it will say exactly where it stopped (couldn't
-  find `python.exe`, `cd` failed, Redis unreachable, etc.) rather than
-  failing silently like before.
+- `docker compose` (not `docker-compose`) — the host uses the Compose v2
+  plugin. Commands need `sudo`.
+- The `docker-compose.yml: the attribute 'version' is obsolete` warning on
+  every command is cosmetic — ignore it.
+- The standby has its in-process bot/backup schedulers disabled via
+  settings (visible in its boot log as `... disabled via settings.
+  Skipping.`) so it doesn't double-send the scheduled emails/backups the
+  primary already sends. This is expected, not a bug.
+- Redis and Nginx are almost never touched by a normal deploy — `up -d web`
+  only recreates the `web` service, leaving `redis`/`nginx` running
+  undisturbed (they've been up for weeks in practice).
+- Both servers pull from the same `origin/main` — there is no separate
+  release branch. A push to `main` is a push toward production; treat it
+  accordingly.
