@@ -1,6 +1,7 @@
 """Fires the assignment email exactly when a Task's assignee/team actually
 changes — mirrors core/signals.py::capture_previous_status + trigger_job_notifications
 on PlanningJob, the codebase's established pattern for model-transition side effects."""
+from django.db import transaction
 from django.db.models.signals import pre_save, post_save
 from django.dispatch import receiver
 
@@ -31,4 +32,10 @@ def send_assignment_email_on_change(sender, instance, created, **kwargs):
 
     if (created or assignee_changed or team_changed) and (instance.assignee_id or instance.assigned_team_id):
         from tasks.emails import send_assignment_email
-        send_assignment_email(instance)
+        # Deferred to transaction commit so that, when the caller wraps the
+        # task save and its attachment uploads in one atomic() block (see
+        # tasks/views.py create_task/edit_task), any pasted screenshots or
+        # attached files already exist by the time the email is built and
+        # can be attached to it — otherwise this fires mid-transaction,
+        # before those attachment rows exist.
+        transaction.on_commit(lambda: send_assignment_email(instance))

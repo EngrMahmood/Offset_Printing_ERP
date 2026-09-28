@@ -1,13 +1,32 @@
 """Assignment-notice email + shared recipient resolution for the tasks app.
-tasks/reminders.py reuses resolve_recipients()/_split_addresses() for the
-recurring reminder send."""
+tasks/reminders.py reuses resolve_recipients()/_split_addresses()/
+attach_task_files() for the recurring reminder send."""
 import logging
+import mimetypes
 
 from django.conf import settings
 from django.core.mail import EmailMessage
 from django.template.loader import render_to_string
 
 logger = logging.getLogger(__name__)
+
+
+def attach_task_files(message, task):
+    """Attach every file on the task (pasted screenshots and manually
+    attached files alike) to an outgoing EmailMessage. Best-effort per file
+    — one unreadable attachment must not sink the whole send."""
+    for attachment in task.attachments.all():
+        try:
+            with attachment.file.open('rb') as f:
+                content = f.read()
+            filename = attachment.original_filename or attachment.file.name.rsplit('/', 1)[-1]
+            mimetype = mimetypes.guess_type(filename)[0] or 'application/octet-stream'
+            message.attach(filename, content, mimetype)
+        except Exception:
+            logger.exception(
+                'Failed to attach task attachment id %s to email for task id %s',
+                attachment.pk, task.pk,
+            )
 
 
 def _split_addresses(raw):
@@ -85,6 +104,7 @@ def send_assignment_email(task):
             cc=cc_addrs,
             bcc=bcc_addrs,
         )
+        attach_task_files(message, task)
         message.send(fail_silently=False)
         TaskNotificationLog.objects.create(
             task=task,

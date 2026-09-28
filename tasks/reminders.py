@@ -69,7 +69,7 @@ def send_reminder_email(task):
     TaskNotificationLog row. Never raises to the caller — failures are
     recorded, not propagated, matching bot/services.py::run_bot's outer
     try/except."""
-    from .emails import _split_addresses, resolve_recipients, task_detail_url
+    from .emails import _split_addresses, attach_task_files, resolve_recipients, task_detail_url
 
     settings_obj = TaskNotificationSettings.get_solo()
     if not settings_obj.reminders_enabled:
@@ -108,6 +108,7 @@ def send_reminder_email(task):
             cc=cc_addrs,
             bcc=bcc_addrs,
         )
+        attach_task_files(message, task)
         message.send(fail_silently=False)
         TaskNotificationLog.objects.create(
             task=task,

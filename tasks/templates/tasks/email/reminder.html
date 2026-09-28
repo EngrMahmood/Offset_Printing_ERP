@@ -11,7 +11,9 @@ This task is {{ days_overdue }} day{{ days_overdue|pluralize }} overdue.
 {% else %}
 Pending for {{ days_pending }} day{{ days_pending|pluralize }}.
 {% endif %}
-
+{% if task.attachments.all %}
+Attachments: {% for att in task.attachments.all %}{{ att.original_filename|default:att.file.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+{% endif %}
 View the task: {{ detail_url }}
 
 - Offset Printing ERP

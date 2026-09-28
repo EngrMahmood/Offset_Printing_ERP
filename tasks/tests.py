@@ -1,3 +1,4 @@
+from django.core import mail
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
 from django.utils import timezone
@@ -172,7 +173,9 @@ class TaskAttachmentTests(TestCase):
     def setUp(self):
         self.creator = User.objects.create_user(username='attach_creator', password='pwd')
         self.other_user = User.objects.create_user(username='attach_other', password='pwd')
-        self.employee = User.objects.create_user(username='attach_employee', password='pwd')
+        self.employee = User.objects.create_user(
+            username='attach_employee', password='pwd', email='attach_employee@example.com',
+        )
 
     def _image_file(self, name='pasted-screenshot-123.png'):
         # Minimal valid 1x1 PNG.
@@ -200,6 +203,32 @@ class TaskAttachmentTests(TestCase):
         attachment = task.attachments.first()
         self.assertTrue(attachment.is_image)
         self.assertEqual(attachment.uploaded_by, self.creator)
+
+    def test_assignment_email_includes_the_pasted_attachment(self):
+        """Regression: the assignment email used to fire from Task's post_save
+        signal *before* the view got a chance to save the uploaded/pasted
+        attachment rows, so task.attachments.all() was still empty by the
+        time the email was built — attachments silently never made it into
+        the email. create_task now wraps the task save + attachment save in
+        one atomic() block, and the signal defers sending via
+        transaction.on_commit() so it only runs once both exist."""
+        self.client.force_login(self.creator)
+
+        with self.captureOnCommitCallbacks(execute=True):
+            response = self.client.post('/tasks/create/', {
+                'title': 'Task with emailed screenshot',
+                'description': 'See attached',
+                'assignee': self.employee.pk,
+                'priority': 'medium',
+                'due_date': (timezone.now().date() + timedelta(days=2)).isoformat(),
+                'attachments': [self._image_file('email-shot.png')],
+            })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(len(mail.outbox), 1)
+        sent = mail.outbox[0]
+        self.assertEqual(len(sent.attachments), 1)
+        self.assertEqual(sent.attachments[0][0], 'email-shot.png')
 
     def test_edit_task_adds_additional_attachment(self):
         task = Task.objects.create(

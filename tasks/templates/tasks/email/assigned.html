@@ -8,7 +8,9 @@ Priority: {{ task.get_priority_display }}
 Due date: {{ task.due_date }}
 
 {{ task.description }}
-
+{% if task.attachments.all %}
+Attachments: {% for att in task.attachments.all %}{{ att.original_filename|default:att.file.name }}{% if not forloop.last %}, {% endif %}{% endfor %}
+{% endif %}
 View the task: {{ detail_url }}
 
 - Offset Printing ERP

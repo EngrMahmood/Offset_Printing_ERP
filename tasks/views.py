@@ -5,6 +5,7 @@ from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
 from django.contrib.auth.models import User
 from django.core.paginator import Paginator
+from django.db import transaction
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
 from .models import REMIND_FROM_CHOICES, Team, Task, TaskAttachment, TaskComment, TaskNotificationLog, TaskNotificationSettings
@@ -81,10 +82,11 @@ def create_task(request):
     if request.method == 'POST':
         form = TaskForm(request.POST)
         if form.is_valid():
-            task = form.save(commit=False)
-            task.created_by = request.user
-            task.save()
-            _save_task_attachments(request, task)
+            with transaction.atomic():
+                task = form.save(commit=False)
+                task.created_by = request.user
+                task.save()
+                _save_task_attachments(request, task)
             messages.success(request, f"Task '{task.title}' created and assigned successfully!")
             return redirect('tasks:dashboard')
     else:
@@ -105,8 +107,9 @@ def edit_task(request, pk):
     if request.method == 'POST':
         form = TaskForm(request.POST, instance=task)
         if form.is_valid():
-            task = form.save()
-            _save_task_attachments(request, task)
+            with transaction.atomic():
+                task = form.save()
+                _save_task_attachments(request, task)
             messages.success(request, f"Task '{task.title}' updated successfully!")
             return redirect('tasks:detail', pk=pk)
     else:
