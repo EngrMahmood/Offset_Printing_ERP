@@ -11,6 +11,7 @@ urlpatterns = [
     path('<int:pk>/delete/', views.delete_task, name='delete'),
     path('<int:pk>/update-status/', views.update_status, name='update_status'),
     path('<int:pk>/score/', views.grade_task, name='score'),
+    path('attachments/<int:pk>/delete/', views.delete_attachment, name='delete_attachment'),
     path('teams/', views.teams_list, name='teams'),
     path('teams/<int:pk>/edit/', views.edit_team, name='team_edit'),
     path('automation/', views.automation, name='automation'),

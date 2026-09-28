@@ -19,7 +19,7 @@
 {% block content %}
 <div class="erp-page-stack max-w-2xl mx-auto">
     <div class="erp-card bg-white">
-        <form method="post" class="space-y-4">
+        <form method="post" enctype="multipart/form-data" class="space-y-4" id="task-form">
             {% csrf_token %}
             
             {% if form.non_field_errors %}
@@ -46,6 +46,58 @@
                 {% if form.description.errors %}
                     <span class="text-xs text-rose-500 block">{{ form.description.errors.0 }}</span>
                 {% endif %}
+                <span class="text-[10px] text-slate-400">Tip: paste a screenshot (Ctrl+V) anywhere in this box — it previews right here, just like Outlook.</span>
+
+                <!-- Pasted / attached screenshots preview -->
+                {% if task %}
+                    {% for att in task.image_attachments %}
+                    <div class="relative inline-block w-20 h-20 mt-2 mr-2 align-top">
+                        <a href="{{ att.file.url }}" target="_blank" rel="noopener">
+                            <img src="{{ att.file.url }}" alt="{{ att.original_filename|default:att.file.name }}" class="w-20 h-20 object-cover rounded-lg border border-slate-200">
+                        </a>
+                        <button type="submit" form="delete-attachment-{{ att.pk }}" class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center shadow" title="Remove">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <form id="delete-attachment-{{ att.pk }}" method="post" action="{% url 'tasks:delete_attachment' att.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'tasks:edit' task.pk %}">
+                    </form>
+                    {% endfor %}
+                {% endif %}
+                <div id="task-image-previews" class="flex flex-wrap"></div>
+            </div>
+
+            <!-- Non-image file attachments -->
+            <div class="space-y-2">
+                <label class="block text-xs font-bold text-slate-500 uppercase tracking-wider">Other File Attachments</label>
+
+                {% if task and task.non_image_attachments %}
+                <div class="space-y-1.5 mb-2">
+                    {% for att in task.non_image_attachments %}
+                    <div class="flex items-center justify-between gap-2 bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs">
+                        <a href="{{ att.file.url }}" target="_blank" rel="noopener" class="flex items-center gap-1.5 text-blue-600 hover:underline min-w-0">
+                            <i class="fas fa-paperclip text-slate-400"></i>
+                            <span class="truncate">{{ att.original_filename|default:att.file.name }}</span>
+                        </a>
+                        <button type="submit" form="delete-attachment-{{ att.pk }}" class="text-rose-400 hover:text-rose-600" title="Remove attachment">
+                            <i class="fas fa-times"></i>
+                        </button>
+                    </div>
+                    <form id="delete-attachment-{{ att.pk }}" method="post" action="{% url 'tasks:delete_attachment' att.pk %}">
+                        {% csrf_token %}
+                        <input type="hidden" name="next" value="{% url 'tasks:edit' task.pk %}">
+                    </form>
+                    {% endfor %}
+                </div>
+                {% endif %}
+
+                <div id="task-attachment-previews" class="space-y-1.5 mb-2"></div>
+
+                <input type="file" name="attachments" id="task-attachment-input" multiple hidden>
+                <button type="button" id="task-attach-btn" class="erp-btn erp-btn-secondary text-xs px-3 py-1.5">
+                    <i class="fas fa-paperclip mr-1"></i> Attach File
+                </button>
             </div>
 
             <!-- Assignee Selection (Two Column Grid) -->
@@ -128,4 +180,107 @@
         </form>
     </div>
 </div>
+
+<script>
+(function () {
+    const input = document.getElementById('task-attachment-input');
+    const attachBtn = document.getElementById('task-attach-btn');
+    const previews = document.getElementById('task-attachment-previews');
+    const imagePreviews = document.getElementById('task-image-previews');
+    const description = document.getElementById('id_description');
+    if (!input || !attachBtn || !previews || !imagePreviews) return;
+
+    let pendingFiles = [];
+
+    function syncInputFiles() {
+        const dt = new DataTransfer();
+        pendingFiles.forEach(function (f) { dt.items.add(f); });
+        input.files = dt.files;
+    }
+
+    function renderPreviews() {
+        previews.innerHTML = '';
+        imagePreviews.innerHTML = '';
+
+        pendingFiles.forEach(function (file, index) {
+            const isImage = file.type && file.type.indexOf('image/') === 0;
+
+            if (isImage) {
+                // Shown as an inline thumbnail right under Description — like
+                // an Outlook-pasted screenshot — not as a generic attachment.
+                const box = document.createElement('div');
+                box.className = 'relative inline-block w-20 h-20 mt-2 mr-2 align-top';
+                const img = document.createElement('img');
+                img.className = 'w-20 h-20 object-cover rounded-lg border border-slate-200';
+                img.src = URL.createObjectURL(file);
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center shadow task-attachment-remove';
+                removeBtn.title = 'Remove';
+                removeBtn.dataset.index = index;
+                removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+                box.appendChild(img);
+                box.appendChild(removeBtn);
+                imagePreviews.appendChild(box);
+            } else {
+                const row = document.createElement('div');
+                row.className = 'flex items-center justify-between gap-2 bg-blue-50 border border-blue-100 rounded px-2 py-1.5 text-xs';
+                row.innerHTML =
+                    '<span class="flex items-center gap-1.5 text-slate-700 min-w-0">' +
+                        '<i class="fas fa-paperclip text-slate-400"></i>' +
+                        '<span class="truncate">' + file.name + '</span>' +
+                    '</span>' +
+                    '<button type="button" class="text-rose-400 hover:text-rose-600 task-attachment-remove" data-index="' + index + '" title="Remove"><i class="fas fa-times"></i></button>';
+                previews.appendChild(row);
+            }
+        });
+
+        [previews, imagePreviews].forEach(function (container) {
+            container.querySelectorAll('.task-attachment-remove').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    pendingFiles.splice(parseInt(btn.dataset.index, 10), 1);
+                    syncInputFiles();
+                    renderPreviews();
+                });
+            });
+        });
+    }
+
+    function addFiles(fileList) {
+        Array.from(fileList).forEach(function (f) { pendingFiles.push(f); });
+        syncInputFiles();
+        renderPreviews();
+    }
+
+    attachBtn.addEventListener('click', function () {
+        input.click();
+    });
+
+    input.addEventListener('change', function () {
+        // Files chosen via the native dialog fully replace input.files, so
+        // capture them before syncInputFiles() overwrites it with our own
+        // accumulated DataTransfer.
+        addFiles(input.files);
+    });
+
+    if (description) {
+        description.addEventListener('paste', function (event) {
+            const items = (event.clipboardData || window.clipboardData || {}).items || [];
+            for (let i = 0; i < items.length; i++) {
+                const item = items[i];
+                if (item.type && item.type.indexOf('image/') === 0) {
+                    event.preventDefault();
+                    const file = item.getAsFile();
+                    if (!file) return;
+                    const ext = item.type.split('/')[1] || 'png';
+                    const named = new File([file], 'pasted-screenshot-' + Date.now() + '.' + ext, { type: item.type });
+                    addFiles([named]);
+                    return;
+                }
+            }
+            // No image in the clipboard — let the default text-paste behavior proceed.
+        });
+    }
+})();
+</script>
 {% endblock %}

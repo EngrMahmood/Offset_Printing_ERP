@@ -128,6 +128,14 @@ class Task(models.Model):
                 return 'overdue'
         return 'none'
 
+    @property
+    def image_attachments(self):
+        return [a for a in self.attachments.all() if a.is_image]
+
+    @property
+    def non_image_attachments(self):
+        return [a for a in self.attachments.all() if not a.is_image]
+
     def calculate_auto_score(self):
         """
         Auto-score based on time consumed:
@@ -158,6 +166,32 @@ class Task(models.Model):
             self.score = self.calculate_auto_score()
             
         super().save(*args, **kwargs)
+
+
+class TaskAttachment(models.Model):
+    """Files (screenshots pasted from the clipboard, or picked manually) tied
+    to a task — plain-text description can't embed images inline the way
+    Outlook's rich-text body can, so a pasted screenshot becomes an
+    attachment instead."""
+
+    IMAGE_EXTENSIONS = ('.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp')
+
+    task = models.ForeignKey(Task, on_delete=models.CASCADE, related_name='attachments')
+    file = models.FileField(upload_to='task_attachments/%Y/%m/')
+    original_filename = models.CharField(max_length=255, blank=True)
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['uploaded_at']
+
+    def __str__(self):
+        return self.original_filename or self.file.name
+
+    @property
+    def is_image(self):
+        name = (self.original_filename or self.file.name or '').lower()
+        return name.endswith(self.IMAGE_EXTENSIONS)
 
 
 class TaskComment(models.Model):

@@ -1,4 +1,5 @@
 from django.shortcuts import render, redirect, get_object_or_404
+from django.urls import reverse
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.views.decorators.http import require_POST
@@ -6,7 +7,7 @@ from django.contrib.auth.models import User
 from django.core.paginator import Paginator
 from django.db.models import Avg, Count, Q
 from django.utils import timezone
-from .models import REMIND_FROM_CHOICES, Team, Task, TaskComment, TaskNotificationLog, TaskNotificationSettings
+from .models import REMIND_FROM_CHOICES, Team, Task, TaskAttachment, TaskComment, TaskNotificationLog, TaskNotificationSettings
 from .forms import TaskForm, TeamForm
 
 def is_manager_or_admin(user):
@@ -68,6 +69,13 @@ def dashboard(request):
     return render(request, 'tasks/dashboard.html', context)
 
 
+def _save_task_attachments(request, task):
+    for f in request.FILES.getlist('attachments'):
+        TaskAttachment.objects.create(
+            task=task, file=f, original_filename=f.name, uploaded_by=request.user,
+        )
+
+
 @login_required
 def create_task(request):
     if request.method == 'POST':
@@ -76,33 +84,51 @@ def create_task(request):
             task = form.save(commit=False)
             task.created_by = request.user
             task.save()
+            _save_task_attachments(request, task)
             messages.success(request, f"Task '{task.title}' created and assigned successfully!")
             return redirect('tasks:dashboard')
     else:
         form = TaskForm()
-        
+
     return render(request, 'tasks/form.html', {'form': form, 'title': 'Create Task'})
 
 
 @login_required
 def edit_task(request, pk):
     task = get_object_or_404(Task, pk=pk)
-    
+
     # Only creator, managers, or admins can edit tasks
     if task.created_by != request.user and not is_manager_or_admin(request.user):
         messages.error(request, "You do not have permission to edit this task.")
         return redirect('tasks:detail', pk=pk)
-        
+
     if request.method == 'POST':
         form = TaskForm(request.POST, instance=task)
         if form.is_valid():
             task = form.save()
+            _save_task_attachments(request, task)
             messages.success(request, f"Task '{task.title}' updated successfully!")
             return redirect('tasks:detail', pk=pk)
     else:
         form = TaskForm(instance=task)
-        
+
     return render(request, 'tasks/form.html', {'form': form, 'title': 'Edit Task', 'task': task})
+
+
+@login_required
+@require_POST
+def delete_attachment(request, pk):
+    attachment = get_object_or_404(TaskAttachment, pk=pk)
+    task = attachment.task
+
+    if task.created_by != request.user and not is_manager_or_admin(request.user):
+        messages.error(request, "You do not have permission to remove this attachment.")
+        return redirect('tasks:detail', pk=task.pk)
+
+    attachment.file.delete(save=False)
+    attachment.delete()
+    messages.success(request, "Attachment removed.")
+    return redirect(request.POST.get('next') or reverse('tasks:detail', kwargs={'pk': task.pk}))
 
 
 @login_required

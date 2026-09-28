@@ -56,7 +56,29 @@
 
                     <div class="text-sm text-slate-600 whitespace-pre-line leading-relaxed bg-slate-50 p-4 rounded-lg border border-slate-100">
                         {{ task.description }}
+                        {% if task.image_attachments %}
+                        <div class="flex flex-wrap gap-2 mt-3 pt-3 border-t border-slate-200">
+                            {% for att in task.image_attachments %}
+                                <a href="{{ att.file.url }}" target="_blank" rel="noopener" class="block w-24 h-24 rounded-lg border border-slate-200 overflow-hidden hover:opacity-90" title="{{ att.original_filename|default:att.file.name }}">
+                                    <img src="{{ att.file.url }}" alt="{{ att.original_filename|default:att.file.name }}" class="w-full h-full object-cover">
+                                </a>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
                     </div>
+
+                    {% if task.non_image_attachments %}
+                    <div class="space-y-2">
+                        <span class="text-slate-400 block font-semibold uppercase tracking-wider text-[10px]">Other File Attachments</span>
+                        <div class="flex flex-wrap gap-2">
+                            {% for att in task.non_image_attachments %}
+                                <a href="{{ att.file.url }}" target="_blank" rel="noopener" class="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded px-2 py-1.5 text-xs text-blue-600 hover:underline">
+                                    <i class="fas fa-paperclip text-slate-400"></i> {{ att.original_filename|default:att.file.name }}
+                                </a>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    {% endif %}
 
                     <!-- Meta Grid -->
                     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 text-xs pt-2">

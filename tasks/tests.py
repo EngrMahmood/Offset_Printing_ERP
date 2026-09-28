@@ -1,8 +1,9 @@
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
-from django.contrib.auth.models import User
 from django.utils import timezone
+from django.contrib.auth.models import User
 from datetime import timedelta
-from .models import Team, Task
+from .models import Team, Task, TaskAttachment
 
 class TaskScoringTests(TestCase):
 
@@ -162,6 +163,81 @@ class TaskDashboardAuditColumnsTests(TestCase):
         self.assertIn('Completed', html)
         self.assertIn(f'by {self.creator.username}', html)
         self.assertIn('overdue', html)
+
+
+class TaskAttachmentTests(TestCase):
+    """Pasted screenshots / manually picked files on the create & edit
+    forms — the Outlook-style paste-to-attach feature."""
+
+    def setUp(self):
+        self.creator = User.objects.create_user(username='attach_creator', password='pwd')
+        self.other_user = User.objects.create_user(username='attach_other', password='pwd')
+        self.employee = User.objects.create_user(username='attach_employee', password='pwd')
+
+    def _image_file(self, name='pasted-screenshot-123.png'):
+        # Minimal valid 1x1 PNG.
+        png_bytes = (
+            b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01'
+            b'\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\x0cIDATx\x9cc\xf8\xcf\xc0'
+            b'\x00\x00\x03\x01\x01\x00\x18\xdd\x8d\xb0\x00\x00\x00\x00IEND\xaeB`\x82'
+        )
+        return SimpleUploadedFile(name, png_bytes, content_type='image/png')
+
+    def test_create_task_saves_uploaded_attachment(self):
+        self.client.force_login(self.creator)
+        response = self.client.post('/tasks/create/', {
+            'title': 'Task with screenshot',
+            'description': 'See attached',
+            'assignee': self.employee.pk,
+            'priority': 'medium',
+            'due_date': (timezone.now().date() + timedelta(days=2)).isoformat(),
+            'attachments': [self._image_file()],
+        })
+
+        self.assertEqual(response.status_code, 302)
+        task = Task.objects.get(title='Task with screenshot')
+        self.assertEqual(task.attachments.count(), 1)
+        attachment = task.attachments.first()
+        self.assertTrue(attachment.is_image)
+        self.assertEqual(attachment.uploaded_by, self.creator)
+
+    def test_edit_task_adds_additional_attachment(self):
+        task = Task.objects.create(
+            title="Existing", description="x", assignee=self.employee,
+            due_date=timezone.now().date() + timedelta(days=2), created_by=self.creator,
+        )
+        self.client.force_login(self.creator)
+
+        response = self.client.post(f'/tasks/{task.pk}/edit/', {
+            'title': task.title,
+            'description': task.description,
+            'assignee': self.employee.pk,
+            'priority': 'medium',
+            'due_date': task.due_date.isoformat(),
+            'attachments': [self._image_file('extra.png')],
+        })
+
+        self.assertEqual(response.status_code, 302)
+        self.assertEqual(task.attachments.count(), 1)
+
+    def test_only_creator_or_manager_can_delete_attachment(self):
+        task = Task.objects.create(
+            title="Existing", description="x", assignee=self.employee,
+            due_date=timezone.now().date() + timedelta(days=2), created_by=self.creator,
+        )
+        attachment = TaskAttachment.objects.create(
+            task=task, file=self._image_file(), original_filename='shot.png', uploaded_by=self.creator,
+        )
+
+        self.client.force_login(self.other_user)
+        response = self.client.post(f'/tasks/attachments/{attachment.pk}/delete/')
+        self.assertEqual(response.status_code, 302)
+        self.assertTrue(TaskAttachment.objects.filter(pk=attachment.pk).exists())
+
+        self.client.force_login(self.creator)
+        response = self.client.post(f'/tasks/attachments/{attachment.pk}/delete/')
+        self.assertEqual(response.status_code, 302)
+        self.assertFalse(TaskAttachment.objects.filter(pk=attachment.pk).exists())
 
 
 class TeamEditTests(TestCase):
