@@ -122,13 +122,15 @@
                     <table class="erp-table" style="table-layout: fixed;">
                         <thead>
                             <tr>
-                                <th style="width:28%;">Task Description</th>
-                                <th style="width:16%;">Assigned To</th>
-                                <th style="width:10%; text-align:center;">Priority</th>
-                                <th style="width:10%; text-align:center;">Status</th>
-                                <th style="width:12%;">Created</th>
-                                <th style="width:12%;">Due Date</th>
-                                <th style="width:8%; text-align:center;">Score</th>
+                                <th style="width:27%;">Task Description</th>
+                                <th style="width:13%;">Assigned To</th>
+                                <th style="width:7%; text-align:center;">Priority</th>
+                                <th style="width:8%; text-align:center;">Status</th>
+                                <th style="width:9%;">Created</th>
+                                <th style="width:9%;">Due Date</th>
+                                <th style="width:9%;">Completed</th>
+                                <th style="width:11%;">Due Days</th>
+                                <th style="width:7%; text-align:center;">Score</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -150,6 +152,9 @@
                                         <div class="flex items-center gap-1.5 text-xs text-slate-700 mt-0.5">
                                             <i class="fas fa-users text-purple-400"></i> <span class="bg-purple-50 text-purple-700 font-semibold px-1.5 py-0.5 rounded text-[10px]">{{ t.assigned_team.name }}</span>
                                         </div>
+                                    {% endif %}
+                                    {% if t.created_by %}
+                                        <div class="text-[10px] text-slate-400 mt-0.5">by {{ t.created_by.username }}</div>
                                     {% endif %}
                                 </td>
                                 <td class="text-center">
@@ -187,6 +192,26 @@
                                         {% endif %}
                                     </div>
                                 </td>
+                                <td>
+                                    {% if t.completed_at %}
+                                        <div class="text-xs text-slate-600">{{ t.completed_at|date:"d M Y" }}</div>
+                                    {% else %}
+                                        <span class="text-slate-300 text-xs">—</span>
+                                    {% endif %}
+                                </td>
+                                <td>
+                                    {% if t.variance_kind == 'late' %}
+                                        <span class="text-rose-600 font-semibold text-xs">+{{ t.variance_days }}d late</span>
+                                    {% elif t.variance_kind == 'early' %}
+                                        <span class="text-emerald-600 font-semibold text-xs">{{ t.variance_days }}d early</span>
+                                    {% elif t.variance_kind == 'on_time' %}
+                                        <span class="text-slate-500 text-xs">On time</span>
+                                    {% elif t.variance_kind == 'overdue' %}
+                                        <span class="text-rose-600 font-semibold text-xs">+{{ t.variance_days }}d overdue</span>
+                                    {% else %}
+                                        <span class="text-slate-300 text-xs">—</span>
+                                    {% endif %}
+                                </td>
                                 <td class="text-center font-bold">
                                     {% if t.score is not None %}
                                         <span class="inline-block px-2 py-0.5 rounded text-xs {% if t.score >= 90 %}bg-emerald-100 text-emerald-800{% elif t.score >= 70 %}bg-blue-100 text-blue-800{% elif t.score >= 50 %}bg-amber-100 text-amber-800{% else %}bg-rose-100 text-rose-800{% endif %}">
@@ -199,7 +224,7 @@
                             </tr>
                             {% empty %}
                             <tr>
-                                <td colspan="7" class="text-center py-10 text-slate-400">
+                                <td colspan="9" class="text-center py-10 text-slate-400">
                                     <i class="fas fa-inbox text-3xl mb-3 block"></i>
                                     No tasks found matching the filter criteria.
                                 </td>

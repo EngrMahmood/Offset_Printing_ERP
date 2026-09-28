@@ -79,6 +79,91 @@ class TaskScoringTests(TestCase):
         self.assertIn(self.user, task.assigned_team.members.all())
 
 
+class TaskVarianceTests(TestCase):
+    """Task.variance_days / variance_kind drive the Tasks dashboard's
+    Completed / Due Days audit columns."""
+
+    def setUp(self):
+        self.creator = User.objects.create_user(username='variance_creator', password='pwd')
+        self.user = User.objects.create_user(username='variance_employee', password='pwd')
+
+    def test_completed_late_reports_positive_days(self):
+        due_date = timezone.now().date() - timedelta(days=10)
+        task = Task.objects.create(
+            title="Late", description="x", assignee=self.user, due_date=due_date,
+            created_by=self.creator, status='pending',
+        )
+        task.status = 'completed'
+        task.save()
+        Task.objects.filter(pk=task.pk).update(completed_at=timezone.now() - timedelta(days=5))
+        task.refresh_from_db()
+
+        self.assertEqual(task.variance_kind, 'late')
+        self.assertEqual(task.variance_days, 5)
+
+    def test_completed_early_reports_negative_direction(self):
+        due_date = timezone.now().date() + timedelta(days=5)
+        task = Task.objects.create(
+            title="Early", description="x", assignee=self.user, due_date=due_date,
+            created_by=self.creator, status='completed',
+        )
+        self.assertEqual(task.variance_kind, 'early')
+        self.assertEqual(task.variance_days, 5)
+
+    def test_completed_on_due_date_is_on_time(self):
+        due_date = timezone.now().date()
+        task = Task.objects.create(
+            title="OnTime", description="x", assignee=self.user, due_date=due_date,
+            created_by=self.creator, status='completed',
+        )
+        self.assertEqual(task.variance_kind, 'on_time')
+        self.assertEqual(task.variance_days, 0)
+
+    def test_pending_and_overdue_reports_overdue_kind(self):
+        due_date = timezone.now().date() - timedelta(days=4)
+        task = Task.objects.create(
+            title="StillOpen", description="x", assignee=self.user, due_date=due_date,
+            created_by=self.creator, status='in_progress',
+        )
+        self.assertEqual(task.variance_kind, 'overdue')
+        self.assertEqual(task.variance_days, 4)
+
+    def test_pending_and_not_yet_due_reports_none(self):
+        due_date = timezone.now().date() + timedelta(days=4)
+        task = Task.objects.create(
+            title="NotDueYet", description="x", assignee=self.user, due_date=due_date,
+            created_by=self.creator, status='pending',
+        )
+        self.assertEqual(task.variance_kind, 'none')
+        self.assertIsNone(task.variance_days)
+
+
+class TaskDashboardAuditColumnsTests(TestCase):
+    """Regression for the dashboard request to surface Completed date, Due
+    Days variance, and who assigned the task, for a complete audit trail."""
+
+    def setUp(self):
+        self.creator = User.objects.create_user(username='dash_creator', password='pwd')
+        self.user = User.objects.create_user(username='dash_employee', password='pwd')
+        self.client.force_login(self.creator)
+
+    def test_dashboard_shows_assigned_by_completed_and_due_days(self):
+        due_date = timezone.now().date() - timedelta(days=3)
+        task = Task.objects.create(
+            title="Audit Trail Task", description="x", assignee=self.user, due_date=due_date,
+            created_by=self.creator, status='pending',
+        )
+
+        response = self.client.get('/tasks/')
+
+        self.assertEqual(response.status_code, 200)
+        html = response.content.decode()
+        self.assertIn('Due Days', html)
+        self.assertIn('Completed', html)
+        self.assertIn(f'by {self.creator.username}', html)
+        self.assertIn('overdue', html)
+
+
 class TeamEditTests(TestCase):
     """edit_team view — teams_list's own POST handler only ever creates a
     new Team, with no way to update one after creation."""

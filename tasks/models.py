@@ -100,6 +100,34 @@ class Task(models.Model):
     def __str__(self):
         return self.title
 
+    @property
+    def variance_days(self):
+        """Absolute day count relative to the due date, for the audit trail —
+        pair with variance_kind for the direction. None means there's nothing
+        to report yet (in progress, not overdue, not completed)."""
+        if self.completed_at:
+            return abs((self.completed_at.date() - self.due_date).days)
+        if self.status not in ('completed', 'verified'):
+            today = timezone.localdate()
+            if today > self.due_date:
+                return (today - self.due_date).days
+        return None
+
+    @property
+    def variance_kind(self):
+        if self.completed_at:
+            delta = (self.completed_at.date() - self.due_date).days
+            if delta > 0:
+                return 'late'
+            if delta < 0:
+                return 'early'
+            return 'on_time'
+        if self.status not in ('completed', 'verified'):
+            today = timezone.localdate()
+            if today > self.due_date:
+                return 'overdue'
+        return 'none'
+
     def calculate_auto_score(self):
         """
         Auto-score based on time consumed:
