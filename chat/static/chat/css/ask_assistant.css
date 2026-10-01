@@ -1,9 +1,11 @@
-/* Dashboard-wide "Ask AI" widget. Bottom-left, deliberately opposite the
-   chat dock (bottom-right, see chat_dock.css), so the two never overlap. */
+/* Dashboard-wide "Ask AI" widget. Draggable — defaults bottom-left (opposite
+   the chat dock, bottom-right, see chat_dock.css) but the user can drag it
+   anywhere; its last position is remembered per-browser (see
+   ask_assistant.js, localStorage — a per-viewer convenience, not shared
+   state). Positioned with left/top (not bottom/right) so drag math is a
+   plain delta-add, no axis flipping. */
 #ask-ai-launcher {
     position: fixed;
-    left: 16px;
-    bottom: 16px;
     z-index: 1900;
     display: flex;
     align-items: center;
@@ -16,23 +18,24 @@
     box-shadow: 0 4px 14px rgba(67, 56, 202, 0.35);
     font-size: 13px;
     font-weight: 600;
-    cursor: pointer;
+    cursor: grab;
+    touch-action: none;
+    user-select: none;
 }
 #ask-ai-launcher:hover { background: #3730a3; }
+#ask-ai-launcher.is-dragging { cursor: grabbing; opacity: 0.9; transition: none; }
 
+/* Transparent click-catcher for "click outside to close" — the panel itself
+   is positioned near the launcher, not centered in this overlay. */
 #ask-ai-overlay {
     position: fixed;
     inset: 0;
-    background: rgba(15, 23, 42, 0.45);
     z-index: 2100;
-    display: flex;
-    align-items: flex-end;
-    justify-content: flex-start;
-    padding: 16px;
 }
 #ask-ai-overlay.is-hidden { display: none; }
 
 #ask-ai-panel {
+    position: fixed;
     width: 360px;
     max-width: calc(100vw - 32px);
     max-height: 70vh;

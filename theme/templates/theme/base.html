@@ -58,7 +58,7 @@
     <link rel="stylesheet" href="{% static 'theme/css/notifications.css' %}?v=3">
     <link rel="stylesheet" href="{% static 'chat/css/chat_dock.css' %}?v=6">
     {% if ask_ai_widget_enabled and nav.can_access_chat %}
-    <link rel="stylesheet" href="{% static 'chat/css/ask_assistant.css' %}?v=1">
+    <link rel="stylesheet" href="{% static 'chat/css/ask_assistant.css' %}?v=2">
     {% endif %}
     {% include 'includes/ui/theme_colors.html' %}
     <style>
@@ -262,7 +262,7 @@
     <script src="{% static 'chat/js/chat_sound.js' %}?v=5"></script>
     <script src="{% static 'chat/js/chat_dock.js' %}?v=8"></script>
     {% if ask_ai_widget_enabled and nav.can_access_chat %}
-    <script src="{% static 'chat/js/ask_assistant.js' %}?v=1"></script>
+    <script src="{% static 'chat/js/ask_assistant.js' %}?v=2"></script>
     {% endif %}
     {% endif %}
     {% block extra_js %}{% endblock %}
