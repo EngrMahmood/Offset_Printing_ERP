@@ -1,0 +1,104 @@
+/* Dashboard-wide "Ask AI" widget. Bottom-left, deliberately opposite the
+   chat dock (bottom-right, see chat_dock.css), so the two never overlap. */
+#ask-ai-launcher {
+    position: fixed;
+    left: 16px;
+    bottom: 16px;
+    z-index: 1900;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 16px;
+    background: #4338ca;
+    color: #fff;
+    border: none;
+    border-radius: 999px;
+    box-shadow: 0 4px 14px rgba(67, 56, 202, 0.35);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+#ask-ai-launcher:hover { background: #3730a3; }
+
+#ask-ai-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    z-index: 2100;
+    display: flex;
+    align-items: flex-end;
+    justify-content: flex-start;
+    padding: 16px;
+}
+#ask-ai-overlay.is-hidden { display: none; }
+
+#ask-ai-panel {
+    width: 360px;
+    max-width: calc(100vw - 32px);
+    max-height: 70vh;
+    background: #fff;
+    border-radius: 14px;
+    box-shadow: 0 12px 32px rgba(15, 23, 42, 0.25);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+#ask-ai-panel__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 14px;
+    background: #4338ca;
+    color: #fff;
+}
+#ask-ai-panel__header h3 { margin: 0; font-size: 14px; font-weight: 700; }
+#ask-ai-panel__close { background: none; border: none; color: #fff; font-size: 16px; cursor: pointer; opacity: 0.85; }
+#ask-ai-panel__close:hover { opacity: 1; }
+
+#ask-ai-panel__body {
+    padding: 12px 14px;
+    overflow-y: auto;
+    flex: 1;
+    font-size: 13px;
+    color: #1e293b;
+}
+#ask-ai-panel__hint { color: #64748b; font-size: 12px; margin: 0 0 10px; }
+#ask-ai-answer {
+    background: #f1f5f9;
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-top: 10px;
+    white-space: pre-wrap;
+    line-height: 1.5;
+    display: none;
+}
+#ask-ai-answer.is-visible { display: block; }
+#ask-ai-answer.is-error { background: #fef2f2; color: #b91c1c; }
+
+#ask-ai-panel__footer {
+    display: flex;
+    gap: 8px;
+    padding: 10px 14px;
+    border-top: 1px solid #e2e8f0;
+}
+#ask-ai-input {
+    flex: 1;
+    resize: none;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-family: inherit;
+}
+#ask-ai-input:focus { outline: none; border-color: #4338ca; }
+#ask-ai-submit {
+    background: #4338ca;
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+}
+#ask-ai-submit:disabled { opacity: 0.6; cursor: wait; }

@@ -2446,6 +2446,16 @@ class AISettings(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
     updated_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
 
+    # Written by core.llm.client.call_chat() on every attempt — a dead LLM
+    # endpoint (wrong host, server down) otherwise fails silently: every
+    # caller treats it as best-effort and just omits the AI content, so
+    # nothing ever surfaces the outage anywhere. This is what the Settings
+    # page reads to show "last worked X ago" / "last failed X ago, <error>"
+    # instead of an admin only noticing by accident.
+    last_success_at = models.DateTimeField(null=True, blank=True)
+    last_error_at = models.DateTimeField(null=True, blank=True)
+    last_error_message = models.CharField(max_length=500, blank=True)
+
     class Meta:
         verbose_name = 'AI Settings'
         verbose_name_plural = 'AI Settings'

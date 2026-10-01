@@ -373,6 +373,30 @@
                     </div>
                     <i class="fas fa-chevron-down text-slate-400 text-xs transition-transform group-open:rotate-180"></i>
                 </summary>
+                <div class="px-4 pb-1">
+                    {% if ai_settings.last_success_at and ai_settings.last_error_at and ai_settings.last_error_at > ai_settings.last_success_at %}
+                        <p class="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                            <i class="fas fa-triangle-exclamation"></i>
+                            Last LLM call <strong>failed</strong> {{ ai_settings.last_error_at|timesince }} ago ({{ ai_settings.last_error_message|truncatechars:140 }}).
+                            Last success was {{ ai_settings.last_success_at|timesince }} ago.
+                        </p>
+                    {% elif ai_settings.last_error_at and not ai_settings.last_success_at %}
+                        <p class="text-xs text-rose-600 bg-rose-50 border border-rose-200 rounded-lg px-3 py-2">
+                            <i class="fas fa-triangle-exclamation"></i>
+                            Every LLM call has failed so far — last failure {{ ai_settings.last_error_at|timesince }} ago ({{ ai_settings.last_error_message|truncatechars:140 }}).
+                        </p>
+                    {% elif ai_settings.last_success_at %}
+                        <p class="text-xs text-emerald-600 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                            <i class="fas fa-circle-check"></i>
+                            LLM reachable — last successful call {{ ai_settings.last_success_at|timesince }} ago.
+                            {% if ai_settings.last_error_at %}(last failure {{ ai_settings.last_error_at|timesince }} ago){% endif %}
+                        </p>
+                    {% else %}
+                        <p class="text-xs text-slate-400 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+                            No LLM call has been made yet since this was added — status will appear after the first bot summary or chat assistant reply.
+                        </p>
+                    {% endif %}
+                </div>
                 <form method="post" action="{% url 'ai_settings_edit' %}" class="p-4 pt-0 space-y-3">
                     {% csrf_token %}
                     <label class="flex items-start gap-3 p-3 bg-slate-50 rounded-lg border border-slate-200 cursor-pointer">

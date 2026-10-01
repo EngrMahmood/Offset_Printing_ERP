@@ -41,6 +41,31 @@ def _strip_think_tags(text: str) -> str:
     return _THINK_TAG_RE.sub('', text).strip()
 
 
+def _record_outcome(*, success: bool, error_message: str = '') -> None:
+    """Best-effort health tracking read by the Settings > AI page. Every
+    caller already treats an LLM failure as non-fatal and silently degrades
+    (see module docstring), which is exactly how a dead endpoint can go
+    unnoticed for a long time — this is the one place that outcome gets
+    written down anywhere, so an admin can see it without digging through
+    logs or waiting for the next downstream complaint."""
+    try:
+        from django.utils import timezone
+
+        from core.models import AISettings
+
+        now = timezone.now()
+        row = AISettings.get_solo()
+        if success:
+            row.last_success_at = now
+            row.save(update_fields=['last_success_at'])
+        else:
+            row.last_error_at = now
+            row.last_error_message = error_message[:500]
+            row.save(update_fields=['last_error_at', 'last_error_message'])
+    except Exception:
+        logger.warning('Failed to record LLM call outcome', exc_info=True)
+
+
 def _ai_enabled() -> bool:
     """AISettings DB row (editable from Settings, no restart needed) wins;
     the LLM_ENABLED env var is the fallback for servers set up before that
@@ -107,9 +132,11 @@ def call_chat(
             response.raise_for_status()
             data = response.json()
             content = _strip_think_tags(data['choices'][0]['message']['content'])
+            _record_outcome(success=True)
             return (content, data.get('usage')) if return_usage else content
-        except Exception:
+        except Exception as exc:
             logger.warning('LLM call failed', exc_info=True)
+            _record_outcome(success=False, error_message=str(exc))
             if raise_on_error:
                 raise LLMUnavailable('LLM call failed') from None
             return (None, None) if return_usage else None

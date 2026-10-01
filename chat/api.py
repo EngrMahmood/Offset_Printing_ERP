@@ -562,11 +562,21 @@ class AskAssistantView(APIView):
     permission_classes = [IsAuthenticated, ChatAccessPermission]
 
     def post(self, request):
+        from core.models import AISettings
+
         from .ai_assistant import resolve_and_reply
 
         question = (request.data.get('question') or '').strip()
         if not question:
             return Response({'detail': 'question is required.'}, status=status.HTTP_400_BAD_REQUEST)
+
+        ai_settings = AISettings.get_solo()
+        if not ai_settings.ai_enabled or not ai_settings.chat_assistant_enabled:
+            return Response(
+                {'detail': 'The AI Assistant is currently turned off (Settings > AI Features).'},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
+
         answer = resolve_and_reply(question, user=request.user)
         return Response({'answer': answer})
 

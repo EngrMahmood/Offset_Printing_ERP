@@ -172,6 +172,7 @@ TEMPLATES = [
                 'django.contrib.messages.context_processors.messages',
                 'core.context_processors.software_version',
                 'core.context_processors.navigation_permissions',
+                'core.context_processors.ai_features',
             ],
         },
     },

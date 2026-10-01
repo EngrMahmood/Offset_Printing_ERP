@@ -13,3 +13,19 @@ def navigation_permissions(request):
     return {
         'nav': get_nav_permissions(request),
     }
+
+
+def ai_features(request):
+    """Whether the dashboard-wide Ask AI widget should render for this
+    request. Cheap (singleton row, already cached per-request by Django's
+    query cache) — avoids every page needing its own view code just to gate
+    one floating button."""
+    if not getattr(request, 'user', None) or not request.user.is_authenticated:
+        return {'ask_ai_widget_enabled': False}
+    try:
+        from core.models import AISettings
+        row = AISettings.objects.first()
+        enabled = bool(row and row.ai_enabled and row.chat_assistant_enabled)
+    except Exception:
+        enabled = False
+    return {'ask_ai_widget_enabled': enabled}
