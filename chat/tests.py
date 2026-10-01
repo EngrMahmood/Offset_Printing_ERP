@@ -124,3 +124,92 @@ class ResolveAndReplyPoLookupTests(TestCase):
         self._make_job_card(job_card_no='JC-09-26-PP-2822', PO_No='CUSTOMER-PO-ABC123')
         reply = resolve_and_reply('po no ABC123')
         self.assertIn("couldn't find", reply)
+
+
+class ResolveAndReplyFlexibilityTests(TestCase):
+    """Further shorthand/fuzziness gaps found alongside the WO fix: "job
+    card 105" / "job 105" wording wasn't recognised (only "jc 105"), and SKU
+    / raw-material-SKU lookups required an exact match with no partial-match
+    fallback despite both being long, easy-to-mistype codes in practice."""
+
+    def setUp(self):
+        AISettings.objects.create(pk=1, ai_enabled=False)  # deterministic: raw facts, no LLM call
+        self.machine = Machine.objects.create(name='Ask AI Flex Test Machine')
+
+    def _make_job_card(self, **overrides):
+        defaults = dict(
+            SKU='SKU-TEST', order_qty=100, status='in_production',
+            po_date=date(2026, 1, 1), total_sheet_quantity=10, total_colors=1,
+            machine_name=self.machine,
+        )
+        defaults.update(overrides)
+        return JobCard.objects.create(**defaults)
+
+    def test_job_card_wording_resolves_by_serial(self):
+        from chat.ai_assistant import resolve_and_reply
+
+        self._make_job_card(job_card_no='JC-09-26-PP-2822')
+        self.assertIn('JC-09-26-PP-2822', resolve_and_reply('job card 2822'))
+        self.assertIn('JC-09-26-PP-2822', resolve_and_reply('job card no 2822'))
+
+    def test_bare_job_wording_resolves_by_serial(self):
+        from chat.ai_assistant import resolve_and_reply
+
+        self._make_job_card(job_card_no='JC-09-26-PP-2822')
+        self.assertIn('JC-09-26-PP-2822', resolve_and_reply('status of job 2822'))
+
+    def test_sku_partial_match_resolves_when_unique(self):
+        from chat.ai_assistant import resolve_and_reply
+
+        self._make_job_card(job_card_no='JC-09-26-PP-2823', SKU='INSERTCARD-UTBATHTOWEL100150-MIG-UK-EU-SEP2026')
+        reply = resolve_and_reply('sku INSERTCARD-UTBATHTOWEL100150')
+        self.assertIn('JC-09-26-PP-2823', reply)
+
+    def test_sku_partial_match_lists_candidates_when_ambiguous(self):
+        from chat.ai_assistant import resolve_and_reply
+
+        self._make_job_card(job_card_no='JC-09-26-PP-2822', SKU='INSERTCARD-UTSLTOWELSET-MIG-UK-EU-SEP2026')
+        self._make_job_card(job_card_no='JC-09-26-PP-2823', SKU='INSERTCARD-UTBATHTOWEL100150-MIG-UK-EU-SEP2026')
+        reply = resolve_and_reply('sku INSERTCARD-UT')
+        self.assertIn('which one did you mean', reply)
+        self.assertIn('INSERTCARD-UTSLTOWELSET-MIG-UK-EU-SEP2026', reply)
+        self.assertIn('INSERTCARD-UTBATHTOWEL100150-MIG-UK-EU-SEP2026', reply)
+        # Must NOT have silently picked one and returned a full detail reply.
+        self.assertNotIn('Job Card:', reply)
+
+    def test_sku_exact_match_still_wins_over_partial(self):
+        from chat.ai_assistant import resolve_and_reply
+
+        self._make_job_card(job_card_no='JC-09-26-PP-2822', SKU='INSERTCARD-UT')
+        self._make_job_card(job_card_no='JC-09-26-PP-2823', SKU='INSERTCARD-UTBATHTOWEL100150-MIG-UK-EU-SEP2026')
+        reply = resolve_and_reply('sku INSERTCARD-UT')
+        self.assertIn('JC-09-26-PP-2822', reply)
+        self.assertNotIn('which one did you mean', reply)
+
+    def test_raw_material_sku_partial_match_resolves_when_unique(self):
+        from chat.ai_assistant import resolve_and_reply
+        from core.models import Material
+        from supply_chain.models import RawMaterialSku
+
+        material = Material.objects.create(name='Rubber Roller Covering')
+        RawMaterialSku.objects.create(
+            sku='RUBBER COVERING OF SM-74 ROLLER SIZE DIA 75MM',
+            material=material, purchase_sheet_size='N/A',
+        )
+        reply = resolve_and_reply('material RUBBER COVERING OF SM-74')
+        self.assertIn('Rubber Roller Covering', reply)
+
+    def test_raw_material_sku_partial_match_lists_candidates_when_ambiguous(self):
+        from chat.ai_assistant import resolve_and_reply
+        from core.models import Material
+        from supply_chain.models import RawMaterialSku
+
+        material = Material.objects.create(name='Rubber Roller Covering')
+        RawMaterialSku.objects.create(
+            sku='RUBBER COVERING SM-74 75MM', material=material, purchase_sheet_size='75MM',
+        )
+        RawMaterialSku.objects.create(
+            sku='RUBBER COVERING SM-52 60MM', material=material, purchase_sheet_size='60MM',
+        )
+        reply = resolve_and_reply('material RUBBER COVERING')
+        self.assertIn('which one did you mean', reply)

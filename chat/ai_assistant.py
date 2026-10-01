@@ -24,14 +24,17 @@ import re
 # number embedded in a sentence like "what's the status of JC-07-26-PP-0701").
 JC_EXTRACT_PATTERN = re.compile(r'JC-\d{2}-\d{2}-(?:PP-)?\d+(?:\.\d+)?', re.IGNORECASE)
 
-# Fallback for "jc no 105" / "jc 105" / "jc#105" style mentions — the trailing
-# number in a full JC number (JC-MM-YY-PP-####) comes from a single global
-# counter (see core/jc_numbering.py: allocate_next_jc_number) that never
-# resets, so the bare serial alone is enough to identify a job card uniquely;
-# no month/year prefix is needed. Requires the word "jc" nearby so we don't
-# treat an arbitrary number elsewhere in the message as a job card reference.
+# Fallback for "jc no 105" / "jc 105" / "jc#105" / "job card 105" / "job no
+# 105" style mentions — the trailing number in a full JC number (JC-MM-YY-
+# PP-####) comes from a single global counter (see core/jc_numbering.py:
+# allocate_next_jc_number) that never resets, so the bare serial alone is
+# enough to identify a job card uniquely; no month/year prefix is needed.
+# Requires "jc" or "job (card)" nearby so we don't treat an arbitrary number
+# elsewhere in the message as a job card reference — bare "job" is included
+# (not just "job card") since "job 105" is common shorthand on the floor,
+# low false-positive risk given the number still has to follow directly.
 SHORT_JC_PATTERN = re.compile(
-    r'\bjc\b\.?\s*(?:no\.?|number|#)?\s*[:\-]?\s*(\d{1,6})\b', re.IGNORECASE
+    r'\b(?:jc|job(?:\s*card)?)\b\.?\s*(?:no\.?|number|#)?\s*[:\-]?\s*(\d{1,6})\b', re.IGNORECASE
 )
 
 # PO/WO/PR numbers are free text (not purely numeric), so capture a fairly
@@ -166,6 +169,50 @@ def _find_by_sku(value: str):
     )
 
 
+def _find_sku_candidates(value: str, *, limit: int = 11):
+    """Distinct SKUs containing `value`, for the partial-match fallback when
+    there's no exact SKU match — real finished-goods SKUs here are long,
+    hyphenated codes (see SKU_PATTERN's comment on the 120-char cap) that
+    are easy to mistype or abbreviate. Capped at `limit` so a short,
+    accidentally-broad substring (e.g. "pillow") can't build a huge
+    disambiguation list — the caller already treats hitting the cap as
+    "too broad, ask to narrow it down" rather than listing all of them."""
+    from core.models import JobCard
+
+    return list(
+        JobCard.objects.filter(SKU__icontains=value)
+        .order_by('SKU').values_list('SKU', flat=True).distinct()[:limit]
+    )
+
+
+def _reply_for_sku_query(value: str, question: str) -> str:
+    """Exact SKU match wins outright (full job-card detail reply, same as
+    every other single-record lookup here). No exact match falls back to a
+    partial (icontains) search: a unique partial match is resolved the same
+    way; several distinct SKUs containing the text means list the
+    candidates and ask the planner to be more specific, rather than
+    silently guessing one and risking a confidently wrong answer — worse
+    than a request for clarification."""
+    jc = _find_by_sku(value)
+    if jc:
+        return _reply_for(jc, question)
+
+    candidates = _find_sku_candidates(value, limit=11)
+    if not candidates:
+        return f"I couldn't find a job card with SKU {value}."
+    if len(candidates) == 1:
+        jc = _find_by_sku(candidates[0])
+        return _reply_for(jc, question) if jc else f"I couldn't find a job card with SKU {value}."
+
+    shown = candidates[:10]
+    overflow_note = ', and more' if len(candidates) > 10 else ''
+    listing = '\n'.join(f'- {sku}' for sku in shown)
+    return (
+        f'I found {len(shown)}{overflow_note} SKUs containing "{value}" — '
+        f'which one did you mean?\n{listing}'
+    )
+
+
 def _find_by_set_no(value: str):
     from core.models import JobCard
 
@@ -237,11 +284,23 @@ def _find_raw_material_sku(value: str):
     )
 
 
+def _find_raw_material_candidates(value: str, *, limit: int = 11):
+    """Partial-match fallback for raw material SKU, same reasoning as
+    _find_sku_candidates — these are long free-text codes (e.g. "RUBBER
+    COVERING OF SM-74 ROLLER SIZE DIA 75MM"), routinely typed only partly."""
+    from supply_chain.models import RawMaterialSku
+
+    return list(
+        RawMaterialSku.objects.filter(sku__icontains=value, is_active=True)
+        .order_by('sku').values_list('sku', flat=True).distinct()[:limit]
+    )
+
+
 # (pattern, resolver, label used in the "couldn't find" message)
-# PO/WO/PR is handled separately in resolve_and_reply (not here) since it
-# can resolve to several job cards at once — see _find_jobs_by_po.
+# PO/WO/PR and SKU are both handled separately in resolve_and_reply (not
+# here): PO/WO/PR can resolve to several job cards at once (_find_jobs_by_po)
+# and SKU needs the partial-match disambiguation path (_reply_for_sku_query).
 _LOOKUPS = [
-    (SKU_PATTERN, _find_by_sku, 'SKU'),
     (SET_NO_PATTERN, _find_by_set_no, 'plate set no'),
     (AWC_PATTERN, _find_by_awc, 'AWC no'),
 ]
@@ -478,6 +537,10 @@ def resolve_and_reply(question: str, user=None) -> str:
             return f"I couldn't find a job card with PO/WO/PR number {value}."
         return _reply_for_po_group(jobs, value, question)
 
+    sku_match = SKU_PATTERN.search(question)
+    if sku_match:
+        return _reply_for_sku_query(sku_match.group(1), question)
+
     for pattern, resolver, label in _LOOKUPS:
         found = pattern.search(question)
         if not found:
@@ -510,8 +573,22 @@ def resolve_and_reply(question: str, user=None) -> str:
     if material_match:
         value = material_match.group(1).strip().rstrip('?.!,')
         sku_obj = _find_raw_material_sku(value)
-        if not sku_obj:
+        if sku_obj:
+            return _reply_for_material(sku_obj, question)
+
+        candidates = _find_raw_material_candidates(value, limit=11)
+        if not candidates:
             return f"I couldn't find a raw material with SKU {value}."
-        return _reply_for_material(sku_obj, question)
+        if len(candidates) == 1:
+            sku_obj = _find_raw_material_sku(candidates[0])
+            return _reply_for_material(sku_obj, question) if sku_obj else f"I couldn't find a raw material with SKU {value}."
+
+        shown = candidates[:10]
+        overflow_note = ', and more' if len(candidates) > 10 else ''
+        listing = '\n'.join(f'- {sku}' for sku in shown)
+        return (
+            f'I found {len(shown)}{overflow_note} raw material SKUs containing "{value}" — '
+            f'which one did you mean?\n{listing}'
+        )
 
     return NO_MATCH_REPLY
