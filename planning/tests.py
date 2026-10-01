@@ -2181,6 +2181,40 @@ class SkuDuplicateAlertTests(TestCase):
 		)
 		self.assertEqual(dup_ids, {self.job_a.pk, self.job_b.pk})
 
+	def test_multi_form_sibling_not_treated_as_duplicate_sku(self):
+		"""Regression: Cover and Inner job cards of the SAME multi-form book
+		share the identical SKU by design, so the duplicate-SKU cluster logic
+		(built for genuinely separate orders of the same SKU) was flagging
+		every book as a false-positive duplicate. A real duplicate — a
+		second, unrelated root job for this SKU — must still be caught."""
+		from planning.sku_duplicate_alert import (
+			build_sku_duplicate_alert, duplicate_sku_lower_values,
+		)
+
+		root = PlanningJob.objects.create(
+			jc_number='JC-DUP-BOOK', po_number='PO-BOOK', sku='SKU-DUP-BOOK',
+			status='draft', form_label='Cover',
+		)
+		PlanningJob.objects.create(
+			jc_number='JC-DUP-BOOK.1', po_number='PO-BOOK', sku='SKU-DUP-BOOK',
+			status='draft', form_label='Inner', parent_planning_job=root,
+		)
+
+		self.assertIsNone(build_sku_duplicate_alert(root))
+		self.assertNotIn('sku-dup-book', duplicate_sku_lower_values())
+
+		# A genuinely separate second order for the same SKU must still alert.
+		other_root = PlanningJob.objects.create(
+			jc_number='JC-DUP-BOOK-2', po_number='PO-BOOK-2', sku='SKU-DUP-BOOK',
+			status='draft',
+		)
+		alert = build_sku_duplicate_alert(root)
+		self.assertIsNotNone(alert)
+		self.assertTrue(alert['is_duplicate_cluster'])
+		jc_numbers = {row['jc_number'] for row in alert['members']}
+		self.assertEqual(jc_numbers, {'JC-DUP-BOOK', 'JC-DUP-BOOK-2'})
+		self.assertIn('sku-dup-book', duplicate_sku_lower_values())
+
 
 class PlanningJobsQueueFilterTests(TestCase):
 	def setUp(self):
@@ -2491,10 +2525,17 @@ class SkuMasterUnitTypeAndMultiFormTests(TestCase):
 			status='draft', created_by=self.user,
 		)
 
-		created = create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		# PlanningJob.save() now auto-raises siblings the moment a matching
+		# recipe with >= 2 form labels exists (see the backfill test below),
+		# so this explicit call — made after the recipe already existed —
+		# is a no-op by the time it runs; the siblings were already created
+		# during PlanningJob.objects.create() itself. Read them back via the
+		# child_forms relation instead of this call's (now empty) return value.
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
 
-		self.assertEqual(len(created), 2)
 		base_job.refresh_from_db()
+		created = list(base_job.child_forms.all())
+		self.assertEqual(len(created), 2)
 		self.assertEqual(base_job.form_label, 'White')
 		sibling_labels = sorted(s.form_label for s in created)
 		self.assertEqual(sibling_labels, ['Pink', 'Yellow'])
@@ -2519,8 +2560,9 @@ class SkuMasterUnitTypeAndMultiFormTests(TestCase):
 			status='draft', created_by=self.user,
 		)
 
-		created = create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
 		base_job.refresh_from_db()
+		created = list(base_job.child_forms.all())
 
 		self.assertEqual(len(created), 1)
 		self.assertEqual(base_job.form_label, 'Cover')
@@ -2533,6 +2575,198 @@ class SkuMasterUnitTypeAndMultiFormTests(TestCase):
 		self.assertEqual(inner.order_qty, 30000)
 		self.assertEqual(inner.order_qty_pcs, 300000)
 
+	def test_sku_recipe_edit_page_renders_multi_form_book_builder(self):
+		"""The Cover/Inner builder (planning/includes/sku_recipe_form_fields.html)
+		needs the product-type -> unit-type JSON and the builder markup to
+		actually reach the page for its JS to work client-side."""
+		from core.models import Permission, ProductType, UserPermissionOverride
+
+		ProductType.objects.get_or_create(
+			name='Test Report Books', defaults={'default_unit_type': 'book'},
+		)
+		user = get_user_model().objects.create_user(username='mfb_editor', password='pwd')
+		profile, _ = UserProfile.objects.get_or_create(user=user)
+		profile.role = 'planner'
+		profile.save(update_fields=['role'])
+		permission, _ = Permission.objects.get_or_create(
+			code='action.edit_jobcard', defaults={'name': 'Edit Job Card'},
+		)
+		UserPermissionOverride.objects.get_or_create(
+			user=user, permission=permission, defaults={'granted': True},
+		)
+		self.client.force_login(user)
+
+		recipe = SkuRecipe.objects.create(
+			sku='MFB RENDER TEST BOOK', job_process_type='print_and_pack',
+			product_type='Test Report Books', default_form_labels='Cover:1:1:1,Inner:10:2:5',
+		)
+
+		response = self.client.get(f'/planning/sku-recipes/{recipe.id}/edit/')
+
+		self.assertEqual(response.status_code, 200)
+		html = response.content.decode()
+		self.assertIn('id="mfb-builder"', html)
+		self.assertIn('id="mfb-product-type-unit-map"', html)
+		self.assertIn('"Test Report Books": "book"', html)
+
+	def test_parse_form_labels_supports_pages_ups_passes(self):
+		from planning.services import parse_form_labels
+
+		self.assertEqual(
+			parse_form_labels('White,Pink,Yellow'),
+			[('White', None, None, None), ('Pink', None, None, None), ('Yellow', None, None, None)],
+		)
+		self.assertEqual(parse_form_labels('Cover:2'), [('Cover', 2, None, None)])
+		self.assertEqual(parse_form_labels('Cover:2:1'), [('Cover', 2, 1, None)])
+		self.assertEqual(
+			parse_form_labels('Cover:1:1:1,Inner:10:2:5'),
+			[('Cover', 1, 1, 1), ('Inner', 10, 2, 5)],
+		)
+
+	def test_heterogeneous_multi_form_book_gets_per_form_ups_and_passes(self):
+		"""FLUFFINGINSTRUCTION-MANNUAL-UNDERSINKORGANIZER: cover is single-up/
+		1-pass, inner pages are 2-up across 5 press passes. 'Label:pages:ups:passes'
+		syntax carries all three overrides per form, not just page count."""
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='FLUFFING MANUAL BOOK', job_process_type='print_and_pack',
+			default_form_labels='Cover:1:1:1,Inner:10:2:5', ups=1, print_passes=1,
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-008', sku='FLUFFING MANUAL BOOK', order_qty=1000,
+			status='draft', created_by=self.user, ups=1, print_passes=1,
+		)
+
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		base_job.refresh_from_db()
+		created = list(base_job.child_forms.all())
+
+		self.assertEqual(len(created), 1)
+		self.assertEqual(base_job.form_label, 'Cover')
+		self.assertEqual(base_job.pcs_per_unit, 1)
+		self.assertEqual(base_job.ups, 1)
+		self.assertEqual(base_job.print_passes, 1)
+
+		inner = created[0]
+		self.assertEqual(inner.form_label, 'Inner')
+		self.assertEqual(inner.pcs_per_unit, 10)
+		self.assertEqual(inner.ups, 2)
+		self.assertEqual(inner.print_passes, 5)
+
+	def test_sibling_form_inherits_machine_name(self):
+		"""Regression: machine_name was missing from SIBLING_FORM_COPIED_FIELDS,
+		so a new Inner sibling was created with a blank machine_name — which
+		planning_missing_fields() treats as missing (it only falls back to the
+		JobCard's own machine_name field, not a recipe lookup), silently
+		blocking QC submission until someone noticed and filled it in by hand."""
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='MACHINE NAME BOOK', job_process_type='print_and_pack',
+			default_form_labels='Cover:1:1:1,Inner:10:2:5',
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-010', sku='MACHINE NAME BOOK', order_qty=500,
+			status='draft', created_by=self.user, machine_name='GTO 1A',
+		)
+
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		created = list(base_job.child_forms.all())
+
+		self.assertEqual(created[0].machine_name, 'GTO 1A')
+
+	def test_form_labeled_sibling_print_passes_survive_resave(self):
+		"""Regression: sync_print_passes_from_sku_master used to have no
+		form_label guard (unlike the analogous pcs_per_unit sync), so simply
+		re-saving the Inner sibling from the test above silently reset its
+		print_passes back to the SKU master's own figure (the Cover's 1),
+		wiping out the per-form override."""
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='FLUFFING MANUAL BOOK 2', job_process_type='print_and_pack',
+			default_form_labels='Cover:1:1:1,Inner:10:2:5', ups=1, print_passes=1,
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-009', sku='FLUFFING MANUAL BOOK 2', order_qty=1000,
+			status='draft', created_by=self.user, ups=1, print_passes=1,
+		)
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		inner = base_job.child_forms.first()
+
+		inner.save()
+		inner.refresh_from_db()
+
+		self.assertEqual(inner.print_passes, 5)
+
+	def test_existing_draft_job_backfills_siblings_once_recipe_gets_form_labels(self):
+		"""Real-world ordering: a job card is often raised (e.g. from a PO)
+		before its SKU master has Cover/Inner configured — or before a
+		mistake in default_form_labels is corrected. Simply re-saving the
+		existing draft job after the recipe is fixed must be enough to raise
+		the missing sibling(s); no separate manual step should be required."""
+		recipe = SkuRecipe.objects.create(
+			sku='REV-01 BACKFILL BOOK', job_process_type='print_and_pack', product_type='Report Books',
+		)
+		job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-011', sku='REV-01 BACKFILL BOOK', order_qty=200,
+			status='draft', created_by=self.user,
+		)
+		self.assertEqual(job.child_forms.count(), 0)
+
+		# Planner fixes the SKU master afterward — this is the moment the
+		# original bug report was about: only one job card existed even
+		# though the recipe now lists Cover and Inner.
+		recipe.default_form_labels = 'Cover:1:1:1,Inner:1:2:1'
+		recipe.save()
+
+		# Re-fetch to simulate the realistic case: the recipe fix and the
+		# job re-save happen in separate requests, so this is a fresh
+		# PlanningJob instance rather than one that cached the stale
+		# pre-fix recipe on an earlier .sku_recipe lookup in this test.
+		job = PlanningJob.objects.get(pk=job.pk)
+		job.save()
+		job.refresh_from_db()
+
+		self.assertEqual(job.form_label, 'Cover')
+		self.assertEqual(job.child_forms.count(), 1)
+		self.assertEqual(job.child_forms.first().form_label, 'Inner')
+
+	def test_adding_a_new_inner_section_later_raises_only_the_new_sibling(self):
+		"""Regression: a planner using the Cover/Inner builder can add more
+		Inner sections over time (e.g. 'Inner 2', 'Inner 3' for parts with
+		artwork that changes separately). Re-syncing after the SKU master
+		gains a new label must raise ONLY that new sibling — it used to bail
+		out entirely the moment ANY sibling already existed, so later
+		additions were silently ignored."""
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='GROWING BOOK', job_process_type='print_and_pack',
+			default_form_labels='Cover:1:1:1,Inner:10:2:5',
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-012', sku='GROWING BOOK', order_qty=500,
+			status='draft', created_by=self.user, machine_name='GTO 1A',
+		)
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		self.assertEqual(base_job.child_forms.count(), 1)
+
+		# Planner adds a second Inner section, and separately corrects the
+		# first Inner's ups from 2 to 3 — both should take effect on re-sync.
+		recipe.default_form_labels = 'Cover:1:1:1,Inner:10:3:5,Inner 2:6:2:4'
+		recipe.save()
+
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+
+		children = {c.form_label: c for c in base_job.child_forms.all()}
+		self.assertEqual(set(children), {'Inner', 'Inner 2'})
+		self.assertEqual(children['Inner'].ups, 3)
+		self.assertEqual(children['Inner 2'].pcs_per_unit, 6)
+		self.assertEqual(children['Inner 2'].ups, 2)
+		self.assertEqual(children['Inner 2'].print_passes, 4)
+
 	def test_multi_form_sync_is_idempotent(self):
 		from planning.services import create_sibling_forms_from_sku_master
 
@@ -2544,10 +2778,13 @@ class SkuMasterUnitTypeAndMultiFormTests(TestCase):
 			jc_number='JC-UNIT-005', sku='NCR DUPLICATE BOOK', order_qty=5000,
 			status='draft', created_by=self.user,
 		)
+		# PlanningJob.save() already auto-raised the sibling during
+		# .objects.create() above, so both explicit calls here are no-ops —
+		# that's exactly the idempotency this test is checking.
 		first_run = create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
 		second_run = create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
 
-		self.assertEqual(len(first_run), 1)
+		self.assertEqual(first_run, [])
 		self.assertEqual(second_run, [])
 		self.assertEqual(base_job.child_forms.count(), 1)
 

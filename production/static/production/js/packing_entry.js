@@ -86,6 +86,20 @@ document.addEventListener('DOMContentLoaded', function () {
         set('ji_material', info.material);
         set('ji_destination', info.destination);
 
+        const breakdownWrap = document.getElementById('ji_form_breakdown_wrap');
+        const breakdownEl = document.getElementById('ji_form_breakdown');
+        if (breakdownWrap && breakdownEl) {
+            if (info.is_multi_form && info.form_breakdown && info.form_breakdown.length) {
+                breakdownEl.innerHTML = info.form_breakdown.map((form) => (
+                    `<div class="job-info-badge">${form.form_label}: ${form.printed_pcs} printed</div>`
+                )).join('');
+                breakdownWrap.classList.remove('is-hidden');
+            } else {
+                breakdownEl.innerHTML = '';
+                breakdownWrap.classList.add('is-hidden');
+            }
+        }
+
         const historyBody = document.getElementById('history_body');
         if (!historyBody) return;
         historyBody.innerHTML = '';

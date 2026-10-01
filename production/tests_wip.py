@@ -203,6 +203,48 @@ class WipAutomationTests(TestCase):
         )
         self.assertEqual(get_system_calculated_status_name(self.job_card), 'Partial Printing')
 
+    def test_printing_completed_uses_order_qty_pcs_not_order_qty_for_book_forms(self):
+        """Regression: 'Printing Completed' compared total_printed_pcs against
+        the bare order_qty, which is fine for a plain SKU (pcs_per_unit=1) but
+        wrong for a multi-form book's Inner pages, where total_printed_pcs
+        counts physical printed pages (sheets x ups) while order_qty is
+        stated in books. A 100-book Inner form needing 10 pages/book at 2-up
+        must print 1000 pages (order_qty_pcs), not 100, to be done — comparing
+        against order_qty alone declared it complete 10x too early."""
+        # planning_job.save() re-syncs the linked JobCard's impression ceiling
+        # (sync_job_card_impression_ceiling) from the planning_job's own
+        # figures, so it must run before the JobCard field overrides below —
+        # otherwise it would clobber them right back.
+        self.planning_job.print_passes = 1
+        self.planning_job.save()
+
+        self.job_card.pcs_per_unit = 10
+        self.job_card.ups = 2
+        self.job_card.order_qty = 100
+        self.job_card.total_impressions_required = 500
+        self.job_card.total_sheet_quantity = 500
+        self.job_card.save()
+
+        # 200 output sheets x 2 ups = 400 printed pcs — short of order_qty_pcs
+        # (100 books x 10 pages = 1000), even though it's already well past
+        # the bare order_qty of 100.
+        Production.objects.create(
+            entry_type='printing',
+            job_card=self.job_card,
+            machine=self.machine,
+            operator=self.operator,
+            shift='A',
+            date=date(2026, 1, 1),
+            impressions=200,
+            output_sheets=200,
+            print_pass_number=1,
+            created_by=self.user,
+        )
+
+        self.assertEqual(self.job_card.order_qty_pcs, 1000)
+        self.assertEqual(self.job_card.total_printed_pcs, 400)
+        self.assertEqual(get_system_calculated_status_name(self.job_card), 'Partial Printing')
+
     def test_packing_production_transition(self):
         """Creating a packing record transitions WIP to Sorting / Packing."""
         # Print first (1 pass is final, output_sheets > 0 is allowed)

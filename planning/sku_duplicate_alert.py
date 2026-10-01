@@ -63,6 +63,27 @@ def _is_active_planning_job(job):
     return _normalize_status(job.status) != 'completed'
 
 
+def _root_group_id(job):
+    """A multi-form book's Cover/Inner/... siblings all share this key (the
+    root job's id) — they're the SAME work order split across several job
+    cards, never separate 'duplicate SKU' orders."""
+    return job.parent_planning_job_id or job.pk
+
+
+def _dedupe_by_form_group(jobs):
+    """Collapse a job list down to one representative per multi-form book
+    group, preferring the root job when it's present in the list. A genuine
+    duplicate is a second, unrelated root job sharing the SKU — not a
+    sibling form of the same book."""
+    representative = {}
+    for job in jobs:
+        key = _root_group_id(job)
+        current = representative.get(key)
+        if current is None or (current.parent_planning_job_id is not None and job.parent_planning_job_id is None):
+            representative[key] = job
+    return list(representative.values())
+
+
 def active_jobs_for_sku(sku, *, exclude_job_id=None):
     sku_value = (sku or '').strip()
     if not sku_value:
@@ -139,6 +160,7 @@ def _compose_sku_alert_payload(
         return None
 
     cluster_jobs = [job for job in cluster_jobs if _is_active_planning_job(job)]
+    cluster_jobs = _dedupe_by_form_group(cluster_jobs)
     is_duplicate_cluster = len(cluster_jobs) >= 2
     if not is_duplicate_cluster and not recent_dispatches:
         return None
@@ -336,12 +358,18 @@ def _active_planning_jobs_queryset():
 
 
 def duplicate_sku_lower_values():
-    """Lowercase SKUs that appear on two or more active planning jobs."""
+    """Lowercase SKUs that appear on two or more active planning jobs.
+
+    Only counts root jobs (parent_planning_job__isnull=True): a multi-form
+    book's Cover/Inner/... siblings share the root's SKU by design and are
+    the same work order, not separate duplicate orders.
+    """
     from django.db.models import Count
     from django.db.models.functions import Lower
 
     return list(
         _active_planning_jobs_queryset()
+        .filter(parent_planning_job__isnull=True)
         .annotate(sku_lower=Lower('sku'))
         .exclude(sku_lower='')
         .values('sku_lower')
@@ -366,7 +394,10 @@ def low_priority_sku_lower_values(days=RECENT_DISPATCH_DAYS):
 
 
 def combine_sku_lower_values():
-    """Lowercase SKUs where ≥2 active jobs have no printing logged (combine eligible)."""
+    """Lowercase SKUs where ≥2 active jobs have no printing logged (combine eligible).
+
+    Only counts root jobs — see duplicate_sku_lower_values().
+    """
     from django.db.models import Count, Exists, OuterRef
     from django.db.models.functions import Lower
 
@@ -379,6 +410,7 @@ def combine_sku_lower_values():
     )
     return list(
         _active_planning_jobs_queryset()
+        .filter(parent_planning_job__isnull=True)
         .annotate(
             sku_lower=Lower('sku'),
             has_printing=Exists(printing_started),

@@ -102,6 +102,13 @@
                 <div><strong>Material</strong><div id="ji_material" class="job-info-value"></div></div>
                 <div><strong>Destination</strong><div id="ji_destination" class="job-info-value"></div></div>
             </div>
+            <div id="ji_form_breakdown_wrap" class="is-hidden" style="margin-top:0.75rem;">
+                <strong>Forms in this book</strong>
+                <div id="ji_form_breakdown" style="display:flex;gap:1rem;flex-wrap:wrap;margin-top:0.35rem;"></div>
+                <p class="erp-help-text" style="margin-top:0.35rem;">
+                    Pack Limit is capped by whichever form has the least printed stock — a copy needs all of its forms printed before it can be packed.
+                </p>
+            </div>
         </div>
 
         <form id="packing_form" method="POST" action="{% url 'packing_production_entry' %}" {% if is_view_mode %}onsubmit="return false;"{% endif %}>

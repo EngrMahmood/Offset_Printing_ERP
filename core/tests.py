@@ -1101,6 +1101,65 @@ class MultiFormAndRimJobTests(TestCase):
         job_card = self._make_job_card(job_card_no='JC-03-26-0200')
         self.assertEqual(job_card.sibling_forms, [])
 
+    def test_multi_form_book_packing_limited_by_least_printed_form(self):
+        # A book's Cover (1 pc/copy) and Inner (10 pcs/copy) share one PO
+        # quantity of 100 copies. Printing only enough Inner pages for 4
+        # copies must cap the whole group at 4, even though Cover printed
+        # far more than that.
+        cover = self._make_job_card(
+            job_card_no='JC-05-26-0400', order_qty=100, pcs_per_unit=1,
+            form_label='Cover', ups=1, machine_name=self.machine,
+            total_impressions_required=1000, total_sheet_quantity=100,
+        )
+        inner = self._make_job_card(
+            job_card_no='JC-05-26-0400.1', order_qty=100, pcs_per_unit=10,
+            form_label='Inner', parent_job_card=cover, ups=2, machine_name=self.machine,
+            total_impressions_required=1000, total_sheet_quantity=100,
+        )
+        Production.objects.create(
+            job_card=cover, entry_type='printing', date='2026-05-01', shift='A',
+            machine=self.machine, output_sheets=50, waste_sheets=0,
+        )
+        Production.objects.create(
+            job_card=inner, entry_type='printing', date='2026-05-01', shift='A',
+            machine=self.machine, output_sheets=20, waste_sheets=0,
+        )
+        self.assertEqual(cover.total_printed_pcs, 50)
+        self.assertEqual(inner.total_printed_pcs, 40)
+        # Inner covers only 40 // 10 = 4 copies, so the group caps at 4
+        # even though Cover printed 50 and the PO wants 100.
+        self.assertEqual(cover.group_ready_to_pack_pcs, 4)
+        self.assertEqual(cover.packing_limit_pcs, 4)
+
+        Production.objects.create(
+            job_card=cover, entry_type='packing', date='2026-05-01', shift='A',
+            packing_qty=4, sorting_waste_qty=0, sorter=self._ensure_sorter(),
+        )
+        over_limit = Production(
+            job_card=cover, entry_type='packing', date='2026-05-01', shift='A',
+            packing_qty=1, sorting_waste_qty=0, sorter=self._ensure_sorter(),
+        )
+        with self.assertRaises(ValidationError):
+            over_limit.save()
+
+    def test_dispatch_and_packing_pickers_exclude_child_forms(self):
+        from production.packing_entry import _packing_eligible_job_cards_queryset
+        from core.views import _dispatchable_job_cards_queryset
+
+        cover = self._make_job_card(job_card_no='JC-05-26-0500', order_qty=10, form_label='Cover')
+        self._make_job_card(
+            job_card_no='JC-05-26-0500.1', order_qty=10, form_label='Inner', parent_job_card=cover,
+        )
+        packing_ids = set(_packing_eligible_job_cards_queryset().values_list('pk', flat=True))
+        dispatch_ids = set(_dispatchable_job_cards_queryset().values_list('pk', flat=True))
+        self.assertIn(cover.pk, packing_ids | {cover.pk})
+        self.assertNotIn(
+            JobCard.objects.get(job_card_no='JC-05-26-0500.1').pk, packing_ids,
+        )
+        self.assertNotIn(
+            JobCard.objects.get(job_card_no='JC-05-26-0500.1').pk, dispatch_ids,
+        )
+
     def test_rim_job_order_qty_and_dispatch_track_in_rims_not_pcs(self):
         # order_qty is entered in the SAME unit as the WO/PO — 50 rims here,
         # not 25,000 pcs. pcs_per_unit (500) is used only to derive pcs for

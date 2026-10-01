@@ -831,7 +831,42 @@ class JobCard(models.Model):
         return int(self.total_packed_pcs or 0) + int(self.total_sorting_waste_pcs or 0)
 
     @property
+    def pack_group_members(self):
+        """This job card and its Cover/Inner siblings, if any (self alone
+        otherwise). Packing for a multi-form book binds all its forms into
+        one physical unit, so packing is tracked and limited per group, not
+        per individual job card — see group_ready_to_pack_pcs."""
+        return self.sibling_forms or [self]
+
+    @property
+    def group_ready_to_pack_pcs(self):
+        """Whole units (e.g. books) that can be packed right now, expressed in
+        this job card's own pcs_per_unit. Limited by whichever form in the
+        group has the least printed stock relative to its own pieces-per-unit
+        requirement (e.g. a book needs 1 Cover pc and 10 Inner pcs per copy —
+        printing only 40 Inner pages caps the group at 4 copies even if the
+        Cover run finished all of them)."""
+        root = self.parent_job_card or self
+        print_members = [m for m in self.pack_group_members if m.is_print_job]
+        if not print_members:
+            return root.order_qty_pcs
+        whole_units = min(
+            int(m.total_printed_pcs or 0) // max(1, int(m.pcs_per_unit or 1))
+            for m in print_members
+        )
+        return whole_units * max(1, int(root.pcs_per_unit or 1))
+
+    @property
+    def group_total_packing_used_pcs(self):
+        """Packed + sorting-waste pcs already logged against any form in this
+        job card's group, so a group's shared PO quantity is only ever
+        consumed once even if entries were historically split across forms."""
+        return sum(int(m.total_packing_used_pcs or 0) for m in self.pack_group_members)
+
+    @property
     def packing_limit_pcs(self):
+        if len(self.pack_group_members) > 1:
+            return min(self.order_qty_pcs, self.group_ready_to_pack_pcs)
         if self.is_print_job:
             return int(self.total_printed_pcs or 0)
         return self.order_qty_pcs
@@ -1150,8 +1185,9 @@ class Production(models.Model):
             if not self.shift:
                 errors['shift'] = 'Shift is required.'
 
+            group_member_ids = [m.pk for m in self.job_card.pack_group_members] if self.job_card else []
             existing_used = Production.objects.filter(
-                job_card=self.job_card,
+                job_card_id__in=group_member_ids,
                 is_active=True,
                 entry_type='packing',
             ).exclude(id=self.id).aggregate(

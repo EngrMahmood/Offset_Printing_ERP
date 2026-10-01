@@ -451,10 +451,17 @@ def job_card_records(request):
 
 
 def _dispatchable_job_cards_queryset(edit_record=None):
-    qs = JobCard.objects.filter(is_active=True, status__in=JOB_CARD_DISPATCHABLE_STATUSES)
+    # A multi-form book's Cover/Inner children are excluded: they share one PO
+    # quantity with their group root (see JobCard.pack_group_members), so
+    # dispatch — like packing — is always entered against the root only, to
+    # avoid the same PO quantity being dispatched against twice.
+    qs = JobCard.objects.filter(
+        is_active=True, status__in=JOB_CARD_DISPATCHABLE_STATUSES, parent_job_card__isnull=True,
+    )
     if edit_record:
         qs = JobCard.objects.filter(is_active=True).filter(
-            Q(status__in=JOB_CARD_DISPATCHABLE_STATUSES) | Q(pk=edit_record.job_card_id)
+            Q(status__in=JOB_CARD_DISPATCHABLE_STATUSES, parent_job_card__isnull=True)
+            | Q(pk=edit_record.job_card_id)
         ).distinct()
     return qs.select_related('planning_job').prefetch_related(
         Prefetch(

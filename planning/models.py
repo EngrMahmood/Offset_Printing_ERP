@@ -871,6 +871,16 @@ class PlanningJob(models.Model):
                 return True
             return False
 
+        # print_passes varies per form on a heterogeneous multi-form book
+        # (e.g. a booklet's Cover at 1 pass vs its Inner pages at 5) — once
+        # this job carries its own form_label it's a member of a form group
+        # and its print_passes is per-form data set at sibling-creation time,
+        # not something to keep re-syncing from the shared SKU master on
+        # every save. Mirrors the same guard in sync_unit_type_from_sku_master
+        # for pcs_per_unit.
+        if self.form_label:
+            return False
+
         recipe = self.approved_sku_recipe or self.sku_recipe
         if not recipe and (self.sku or '').strip():
             from planning.services import get_best_sku_recipe_for_sku
@@ -995,6 +1005,39 @@ class PlanningJob(models.Model):
         from core.jobcard_service import sync_job_card_impression_ceiling
 
         sync_job_card_impression_ceiling(self)
+
+        # Backfill: a job is very often created before its SKU master gets
+        # Cover/Inner set up (or before default_form_labels is corrected), so
+        # the auto-raise that normally fires at job-creation time (see
+        # planning.services.create_planning_job_for_sku_recipe_draft) never
+        # got a chance to run for it. Retrying on every save of a still-draft,
+        # not-yet-split root job means simply opening/saving it again after
+        # the SKU master is fixed is enough — no separate manual step needed.
+        # Safe to call unconditionally: create_sibling_forms_from_sku_master
+        # itself is idempotent (no-ops once child_forms already exist or
+        # default_form_labels has fewer than 2 forms).
+        if (
+            self.status == 'draft'
+            and not self.parent_planning_job_id
+            and not getattr(self, '_auto_splitting_forms', False)
+        ):
+            # Reentrancy guard: create_sibling_forms_from_sku_master sets
+            # form_label/pcs_per_unit/ups/print_passes on this SAME instance
+            # and saves it (to persist them) BEFORE the sibling rows actually
+            # exist — that nested save() would otherwise see child_forms
+            # still empty and re-enter this block, creating every sibling
+            # twice.
+            from planning.services import create_sibling_forms_from_sku_master, get_best_sku_recipe_for_sku
+
+            recipe = self.approved_sku_recipe or self.sku_recipe
+            if not recipe and (self.sku or '').strip():
+                recipe = get_best_sku_recipe_for_sku(self.sku)
+            if recipe:
+                self._auto_splitting_forms = True
+                try:
+                    create_sibling_forms_from_sku_master(self, recipe, actor=self.created_by)
+                finally:
+                    self._auto_splitting_forms = False
 
         return result
 
@@ -1123,13 +1166,15 @@ class SkuRecipe(models.Model):
         help_text=(
             "Comma-separated form names for a multi-form book SKU. Leave blank "
             "for a normal single-form job; creating a job for this SKU then "
-            "also creates one sibling job card per extra label. Two styles: "
-            "'White,Pink,Yellow' for a uniform book (e.g. an NCR triplicate — "
-            "every ply has the same page count, taken from Pieces per Order "
-            "Unit above); 'Cover:2,Inner:10' for a book whose forms are "
-            "different content/stock with DIFFERENT page counts each (e.g. a "
-            "booklet's cover vs its inner pages) — the number after the colon "
-            "overrides Pieces per Order Unit for just that one form."
+            "also creates one sibling job card per extra label. Each form is "
+            "'Label', 'Label:pages', 'Label:pages:ups', or "
+            "'Label:pages:ups:passes' — every part after Label is optional and "
+            "left blank inherits from Pieces per Order Unit / UPS / No. of "
+            "Passes above. 'White,Pink,Yellow' is a uniform book (e.g. an NCR "
+            "triplicate — every ply shares the same page count/ups/passes). "
+            "'Cover:2:1:1,Inner:10:2:5' is a heterogeneous book (e.g. a "
+            "booklet's cover — 2 pages, 1-up, 1 pass — vs its inner pages — 10 "
+            "pages, 2-up, 5 passes) where each form differs."
         ),
     )
 

@@ -44,9 +44,13 @@ def get_system_calculated_status_name(job_card):
     # that pass has STARTED producing good sheets, not that the run is done:
     # an operator can log the final pass in several partial entries before
     # the order quantity is actually met. "Printing Completed" requires the
-    # produced pcs to actually reach order_qty, the same threshold the
-    # packing check above uses; short of that it's 'Partial Printing', not
-    # complete.
+    # produced pcs to actually reach order_qty_pcs — NOT the bare order_qty —
+    # since total_printed_pcs counts physical sheets x ups (pages), while
+    # order_qty is stated in the PO's own unit (e.g. books). For a plain SKU
+    # (pcs_per_unit=1) the two are identical, so this only changes behavior
+    # for multi-page-per-unit SKUs (book covers/inner pages): a 1020-book
+    # Inner form needing 10 pages/book must print 10200 pages, not 1020, to
+    # actually be done — order_qty alone under-counted it by 10x.
     printing_records = Production.objects.filter(job_card=job_card, is_active=True, entry_type='printing')
 
     from production.printing_pass_helpers import get_job_card_pass_count
@@ -54,7 +58,7 @@ def get_system_calculated_status_name(job_card):
     final_pass_started = printing_records.filter(print_pass_number=total_passes, output_sheets__gt=0).exists()
 
     if final_pass_started:
-        if job_card.order_qty > 0 and job_card.total_printed_pcs >= job_card.order_qty:
+        if job_card.order_qty_pcs > 0 and job_card.total_printed_pcs >= job_card.order_qty_pcs:
             return 'Printing Completed'
         return 'Partial Printing'
 

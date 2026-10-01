@@ -36,12 +36,22 @@ def _has_printing_entry_subquery():
 
 
 def _packing_eligible_job_cards_queryset(edit_record=None):
+    """Job cards a planner can pick for packing entry.
+
+    A multi-form book's Cover/Inner children are excluded here: packing binds
+    all of a book's forms into one physical copy, so entry always happens
+    against the group's root job card (see JobCard.pack_group_members),
+    which carries the shared PO quantity. The root itself stays listed even
+    before every sibling has printed — packing_limit_pcs on it will simply
+    read 0 until they have, rather than hiding the row outright.
+    """
     has_printing = _has_printing_entry_subquery()
     if edit_record:
         qs = JobCard.objects.filter(is_active=True).filter(
             Q(pk=edit_record.job_card_id)
             | (
                 Q(status__in=JOB_CARD_PRODUCTION_CONTINUE_STATUSES)
+                & Q(parent_job_card__isnull=True)
                 & (Q(is_print_job=False) | Exists(has_printing))
             )
         ).distinct()
@@ -49,6 +59,7 @@ def _packing_eligible_job_cards_queryset(edit_record=None):
         qs = JobCard.objects.filter(
             is_active=True,
             status__in=JOB_CARD_PRODUCTION_CONTINUE_STATUSES,
+            parent_job_card__isnull=True,
         ).filter(
             Q(is_print_job=False) | Exists(has_printing),
         )
@@ -56,15 +67,34 @@ def _packing_eligible_job_cards_queryset(edit_record=None):
         Prefetch(
             'productions',
             queryset=Production.objects.filter(is_active=True).select_related('sorter', 'created_by'),
-        )
+        ),
+        Prefetch(
+            'child_forms',
+            queryset=JobCard.objects.filter(is_active=True).prefetch_related(
+                Prefetch(
+                    'productions',
+                    queryset=Production.objects.filter(is_active=True, entry_type='printing'),
+                ),
+            ),
+        ),
     )
 
 
 def _build_packing_job_info(job_card):
-    packed = job_card.total_packed_pcs
-    waste = job_card.total_sorting_waste_pcs
-    used = job_card.total_packing_used_pcs
+    members = job_card.pack_group_members
+    is_group = len(members) > 1
+    used = job_card.group_total_packing_used_pcs if is_group else job_card.total_packing_used_pcs
+    packed = sum(m.total_packed_pcs for m in members) if is_group else job_card.total_packed_pcs
+    waste = sum(m.total_sorting_waste_pcs for m in members) if is_group else job_card.total_sorting_waste_pcs
     limit = job_card.packing_limit_pcs
+    form_breakdown = []
+    if is_group:
+        for member in members:
+            form_breakdown.append({
+                'form_label': member.form_label or member.job_card_no,
+                'printed_pcs': f'{member.total_printed_pcs:,}' if member.is_print_job else 'N/A',
+                'pcs_per_unit': member.pcs_per_unit or 1,
+            })
     history_qs = [row for row in job_card.productions.all() if row.entry_type == 'packing']
     history_qs.sort(key=lambda row: (row.date or timezone.now().date(), row.created_at), reverse=True)
     history = []
@@ -103,6 +133,8 @@ def _build_packing_job_info(job_card):
         'destination': job_card.destination or '-',
         'ups': str(job_card.ups) if job_card.ups else '-',
         'history': history,
+        'is_multi_form': is_group,
+        'form_breakdown': form_breakdown,
     }
 
 

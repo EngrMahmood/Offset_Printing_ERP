@@ -73,7 +73,251 @@
 
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.unit_type label='Order Unit' help_text='Auto-filled from Product Type when left at Pieces (e.g. A4 Rim -> Rim). Override only for a SKU that genuinely differs from its category.' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.pcs_per_unit label='Pieces per Order Unit' help_text='500 for a rim; pages-per-book for a book SKU (e.g. 50 for one ply of a triplicate NCR book, 100 for a plain single-ply book). 1 for plain pcs SKUs.' %}
-{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.default_form_labels label='Multi-Form Book Labels' full_width=True help_text="Leave blank for a normal single-form SKU. Two styles: White,Pink,Yellow for a uniform book where every form has the same page count (e.g. an NCR triplicate — count taken from Pieces per Order Unit above); Cover:2,Inner:10 for a book whose forms are different content/stock with DIFFERENT page counts each (e.g. a booklet's cover vs its inner pages) — creating the first job card for this SKU then auto-raises one sibling job card per extra form, each with its own page count." %}
+<div id="mfb-raw-field-wrap">
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.default_form_labels label='Multi-Form Book Labels' full_width=True help_text="Leave blank for a normal single-form SKU. Each form is Label, Label:pages, Label:pages:ups, or Label:pages:ups:passes — every part after Label is optional and left blank inherits Pieces per Order Unit / UPS / No. of Passes above. White,Pink,Yellow is a uniform book (e.g. an NCR triplicate — every ply shares the same figures). Cover:2:1:1,Inner:10:2:5 is a heterogeneous book (cover: 2 pages, 1-up, 1 pass; inner: 10 pages, 2-up, 5 passes) — creating the first job card for this SKU then auto-raises one sibling job card per extra form." %}
+</div>
+
+<div id="mfb-builder" class="erp-form-field sku-recipe-field erp-form-grid__full" style="display:none;">
+    <label>Multi-Form Book Setup</label>
+    <div class="erp-form-help" style="margin-bottom:10px;">
+        This SKU is a book. Tick Cover and/or Inner Pages below — each becomes its own job card
+        with its own UPS and press passes. Add more Inner sections if different inner parts change
+        artwork separately.
+    </div>
+
+    <div class="mfb-section">
+        <label class="mfb-toggle">
+            <input type="checkbox" id="mfb-cover-enabled"> Cover
+        </label>
+        <div id="mfb-cover-fields" class="mfb-fields" style="display:none;">
+            <div class="mfb-field"><label>Pages</label><input type="number" min="1" id="mfb-cover-pages" class="erp-input"></div>
+            <div class="mfb-field"><label>UPS</label><input type="number" min="1" id="mfb-cover-ups" class="erp-input"></div>
+            <div class="mfb-field"><label>Passes</label><input type="number" min="1" id="mfb-cover-passes" class="erp-input"></div>
+        </div>
+    </div>
+
+    <div class="mfb-section">
+        <label class="mfb-toggle">
+            <input type="checkbox" id="mfb-inner-enabled"> Inner Pages
+        </label>
+        <div id="mfb-inner-rows"></div>
+        <button type="button" id="mfb-add-inner" class="erp-btn erp-btn-secondary sm" style="display:none; margin-top:6px;">
+            <i class="fas fa-plus"></i> Add another Inner section
+        </button>
+    </div>
+
+    <div class="erp-form-help" id="mfb-incompatible-note" style="display:none; color:#b45309;">
+        This SKU's existing multi-form setup doesn't match the simple Cover/Inner pattern above —
+        edit it directly in the Multi-Form Book Labels field, or clear that field to switch to this
+        guided builder.
+    </div>
+</div>
+
+<style>
+.mfb-section { margin-bottom: 14px; }
+.mfb-toggle { display: flex; align-items: center; gap: 6px; font-weight: 600; font-size: 13px; cursor: pointer; }
+.mfb-toggle input[type="checkbox"] { width: 16px; height: 16px; flex: 0 0 auto; padding: 0; margin: 0; }
+.mfb-fields { display: flex; gap: 10px; margin: 8px 0 0 22px; flex-wrap: wrap; }
+.mfb-field { display: flex; flex-direction: column; gap: 2px; }
+.mfb-field label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
+.mfb-field input { width: 90px; }
+.mfb-inner-row { display: flex; align-items: flex-end; gap: 10px; margin: 8px 0 0 22px; padding-bottom: 8px; border-bottom: 1px dashed #e2e8f0; flex-wrap: wrap; }
+.mfb-inner-row__label { font-size: 12px; font-weight: 600; color: #334155; min-width: 60px; }
+.mfb-inner-remove { align-self: flex-end; }
+</style>
+
+{{ product_type_unit_map|json_script:"mfb-product-type-unit-map" }}
+<script>
+(function () {
+    var rawWrap = document.getElementById('mfb-raw-field-wrap');
+    var builder = document.getElementById('mfb-builder');
+    var rawInput = document.getElementById('{{ form.default_form_labels.id_for_label }}');
+    var productTypeSelect = document.getElementById('{{ form.product_type.id_for_label }}');
+    if (!rawWrap || !builder || !rawInput || !productTypeSelect) return;
+
+    var productTypeUnitMap = JSON.parse(document.getElementById('mfb-product-type-unit-map').textContent);
+
+    var coverEnabled = document.getElementById('mfb-cover-enabled');
+    var coverFields = document.getElementById('mfb-cover-fields');
+    var coverPages = document.getElementById('mfb-cover-pages');
+    var coverUps = document.getElementById('mfb-cover-ups');
+    var coverPasses = document.getElementById('mfb-cover-passes');
+    var innerEnabled = document.getElementById('mfb-inner-enabled');
+    var innerRowsWrap = document.getElementById('mfb-inner-rows');
+    var addInnerBtn = document.getElementById('mfb-add-inner');
+    var incompatibleNote = document.getElementById('mfb-incompatible-note');
+
+    var innerRows = []; // [{pages, ups, passes}]
+
+    function parseLabels(raw) {
+        var parsed = [];
+        (raw || '').split(',').forEach(function (chunk) {
+            chunk = chunk.trim();
+            if (!chunk) return;
+            var parts = chunk.split(':');
+            var toIntOrNull = function (v) {
+                v = (v || '').trim();
+                return /^\d+$/.test(v) ? parseInt(v, 10) : null;
+            };
+            parsed.push({
+                label: parts[0].trim(),
+                pages: parts.length > 1 ? toIntOrNull(parts[1]) : null,
+                ups: parts.length > 2 ? toIntOrNull(parts[2]) : null,
+                passes: parts.length > 3 ? toIntOrNull(parts[3]) : null,
+            });
+        });
+        return parsed;
+    }
+
+    function isBuilderCompatible(labels) {
+        if (labels.length === 0) return true;
+        var coverCount = 0, innerIndex = 0;
+        for (var i = 0; i < labels.length; i++) {
+            var lname = labels[i].label.trim().toLowerCase();
+            if (lname === 'cover') { coverCount++; continue; }
+            innerIndex++;
+            var expected = innerIndex === 1 ? 'inner' : ('inner ' + innerIndex);
+            if (lname !== expected) return false;
+        }
+        return coverCount <= 1;
+    }
+
+    function formatPart(n) { return (n === null || n === undefined || n === '') ? '' : String(n); }
+
+    function buildRawValue() {
+        var chunks = [];
+        if (coverEnabled.checked) {
+            var cp = formatPart(coverPages.value), cu = formatPart(coverUps.value), cpa = formatPart(coverPasses.value);
+            if (cp || cu || cpa) {
+                chunks.push('Cover:' + cp + ':' + cu + ':' + cpa);
+            } else {
+                chunks.push('Cover');
+            }
+        }
+        if (innerEnabled.checked) {
+            innerRows.forEach(function (row, idx) {
+                var label = idx === 0 ? 'Inner' : ('Inner ' + (idx + 1));
+                var ip = formatPart(row.pagesInput.value), iu = formatPart(row.upsInput.value), ipa = formatPart(row.passesInput.value);
+                if (ip || iu || ipa) {
+                    chunks.push(label + ':' + ip + ':' + iu + ':' + ipa);
+                } else {
+                    chunks.push(label);
+                }
+            });
+        }
+        rawInput.value = chunks.join(',');
+    }
+
+    function renderInnerRows() {
+        innerRowsWrap.innerHTML = '';
+        innerRows.forEach(function (row, idx) {
+            var rowEl = document.createElement('div');
+            rowEl.className = 'mfb-inner-row';
+            var label = idx === 0 ? 'Inner' : ('Inner ' + (idx + 1));
+            rowEl.innerHTML =
+                '<span class="mfb-inner-row__label">' + label + '</span>' +
+                '<div class="mfb-field"><label>Pages</label><input type="number" min="1" class="erp-input mfb-inner-pages" value="' + formatPart(row.pages) + '"></div>' +
+                '<div class="mfb-field"><label>UPS</label><input type="number" min="1" class="erp-input mfb-inner-ups" value="' + formatPart(row.ups) + '"></div>' +
+                '<div class="mfb-field"><label>Passes</label><input type="number" min="1" class="erp-input mfb-inner-passes" value="' + formatPart(row.passes) + '"></div>' +
+                (innerRows.length > 1 ? '<button type="button" class="erp-btn erp-btn-danger sm mfb-inner-remove"><i class="fas fa-times"></i></button>' : '');
+            innerRowsWrap.appendChild(rowEl);
+            row.pagesInput = rowEl.querySelector('.mfb-inner-pages');
+            row.upsInput = rowEl.querySelector('.mfb-inner-ups');
+            row.passesInput = rowEl.querySelector('.mfb-inner-passes');
+            [row.pagesInput, row.upsInput, row.passesInput].forEach(function (inp) {
+                inp.addEventListener('input', buildRawValue);
+            });
+            var removeBtn = rowEl.querySelector('.mfb-inner-remove');
+            if (removeBtn) {
+                removeBtn.addEventListener('click', function () {
+                    innerRows.splice(idx, 1);
+                    renderInnerRows();
+                    buildRawValue();
+                });
+            }
+        });
+    }
+
+    function addInnerRow(pages, ups, passes) {
+        innerRows.push({ pages: pages, ups: ups, passes: passes });
+        renderInnerRows();
+    }
+
+    coverEnabled.addEventListener('change', function () {
+        coverFields.style.display = coverEnabled.checked ? 'flex' : 'none';
+        buildRawValue();
+    });
+    [coverPages, coverUps, coverPasses].forEach(function (inp) {
+        inp.addEventListener('input', buildRawValue);
+    });
+    innerEnabled.addEventListener('change', function () {
+        var on = innerEnabled.checked;
+        innerRowsWrap.style.display = on ? 'block' : 'none';
+        addInnerBtn.style.display = on ? 'inline-flex' : 'none';
+        if (on && innerRows.length === 0) {
+            addInnerRow(null, null, null);
+        }
+        buildRawValue();
+    });
+    addInnerBtn.addEventListener('click', function () {
+        addInnerRow(null, null, null);
+        buildRawValue();
+    });
+
+    function loadFromRawValue() {
+        var labels = parseLabels(rawInput.value);
+        var compatible = isBuilderCompatible(labels);
+        incompatibleNote.style.display = compatible ? 'none' : 'block';
+
+        var cover = null;
+        var inners = [];
+        labels.forEach(function (l) {
+            if (l.label.trim().toLowerCase() === 'cover') { cover = l; }
+            else { inners.push(l); }
+        });
+
+        coverEnabled.checked = !!cover;
+        coverFields.style.display = cover ? 'flex' : 'none';
+        coverPages.value = cover && cover.pages !== null ? cover.pages : '';
+        coverUps.value = cover && cover.ups !== null ? cover.ups : '';
+        coverPasses.value = cover && cover.passes !== null ? cover.passes : '';
+
+        innerRows = [];
+        inners.forEach(function (l) { innerRows.push({ pages: l.pages, ups: l.ups, passes: l.passes }); });
+        renderInnerRows();
+        innerEnabled.checked = inners.length > 0;
+        innerRowsWrap.style.display = inners.length > 0 ? 'block' : 'none';
+        addInnerBtn.style.display = inners.length > 0 ? 'inline-flex' : 'none';
+
+        return compatible;
+    }
+
+    function isBookProductType() {
+        var name = productTypeSelect.value;
+        return productTypeUnitMap[name] === 'book';
+    }
+
+    function refreshVisibility() {
+        if (!isBookProductType()) {
+            builder.style.display = 'none';
+            rawWrap.style.display = '';
+            return;
+        }
+        var compatible = loadFromRawValue();
+        if (compatible) {
+            builder.style.display = 'block';
+            rawWrap.style.display = 'none';
+        } else {
+            builder.style.display = 'none';
+            rawWrap.style.display = '';
+        }
+    }
+
+    productTypeSelect.addEventListener('change', refreshVisibility);
+    refreshVisibility();
+})();
+</script>
+{{ product_type_unit_map|json_script:"mfb-product-type-unit-map" }}
 
 {% with field=form.machine_name.field %}
 <div class="erp-form-field sku-recipe-field sku-recipe-field--{{ field.sku_role }}{% if field.sku_is_mine %} is-mine{% else %} is-other{% endif %}">
