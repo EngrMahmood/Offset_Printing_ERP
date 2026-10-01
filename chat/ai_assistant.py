@@ -126,15 +126,33 @@ def _find_by_serial(serial: int):
     return jc
 
 
-def _find_by_po(value: str):
+def _find_jobs_by_po(value: str):
+    """PO/WO/PR is commonly shared by several job cards — one WO routinely
+    covers several SKUs, each getting its own job card (e.g. WO-09-2026-09828
+    above a Cover and several Inner job cards) — so this always resolves to
+    every job card under that number, never just one. The old single-result
+    version silently returned whichever job happened to sort first and hid
+    the rest, which is misleading for exactly this common case.
+
+    Falls back to a trailing-digits match when there's no exact match and
+    the typed value is purely numeric, mirroring the JC short-serial
+    fallback in _find_by_serial — "wo 9828" instead of needing the full
+    "WO-09-2026-09828". Real PO_No values aren't all in that synthetic
+    WO-MM-YYYY-##### shape (a customer PO can be any free text), so this
+    fallback only fires for a pure-digit query, same safety margin as the
+    JC short-serial lookup."""
     from core.models import JobCard
 
-    return (
-        JobCard.objects.filter(PO_No__iexact=value)
-        .select_related('machine_name', 'production_wip_status__status', 'planning_job')
-        .order_by('-id')
-        .first()
-    )
+    base_qs = JobCard.objects.select_related(
+        'machine_name', 'production_wip_status__status', 'planning_job',
+    ).order_by('-id')
+
+    exact = list(base_qs.filter(PO_No__iexact=value))
+    if exact:
+        return exact
+    if value.isdigit():
+        return list(base_qs.filter(PO_No__iendswith=value).exclude(PO_No=''))
+    return []
 
 
 def _find_by_sku(value: str):
@@ -220,8 +238,9 @@ def _find_raw_material_sku(value: str):
 
 
 # (pattern, resolver, label used in the "couldn't find" message)
+# PO/WO/PR is handled separately in resolve_and_reply (not here) since it
+# can resolve to several job cards at once — see _find_jobs_by_po.
 _LOOKUPS = [
-    (PO_WO_PR_PATTERN, _find_by_po, 'PO/WO/PR number'),
     (SKU_PATTERN, _find_by_sku, 'SKU'),
     (SET_NO_PATTERN, _find_by_set_no, 'plate set no'),
     (AWC_PATTERN, _find_by_awc, 'AWC no'),
@@ -305,6 +324,29 @@ def _phrase_answer(facts: str, question: str) -> str:
 
 def _reply_for(jc, question: str) -> str:
     return _phrase_answer(_facts_for(jc), question)
+
+
+def _facts_for_po_group(jobs: list, po_label: str) -> str:
+    sample = jobs[:25]
+    lines = [f"PO/WO/PR No: {po_label}", f"Job cards under this number: {len(jobs)}"]
+    for jc in sample:
+        lines.append(
+            f"Job Card: {jc.job_card_no}, SKU: {jc.SKU}, Status: {jc.workflow_status_label}, "
+            f"Stage: {jc.wip_status_name}, Order Qty: {jc.order_qty}, Dispatched: {jc.total_dispatch}"
+        )
+    if len(jobs) > len(sample):
+        lines.append(f'... and {len(jobs) - len(sample)} more job card(s) not shown here.')
+    return '\n'.join(lines)
+
+
+def _reply_for_po_group(jobs: list, po_label: str, question: str) -> str:
+    # A single job card under this PO/WO/PR gets the normal full-detail
+    # reply (AWC, plate set no, wastage, ...); only a genuine multi-job
+    # group falls back to the summary table, same split as dispatch's
+    # own _reply_for_dispatches handling a single vs. multi-record DC.
+    if len(jobs) == 1:
+        return _reply_for(jobs[0], question)
+    return _phrase_answer(_facts_for_po_group(jobs, po_label), question)
 
 
 def _facts_for_dispatches(dispatches: list, dc_no: str) -> str:
@@ -427,6 +469,14 @@ def resolve_and_reply(question: str, user=None) -> str:
         if not jc:
             return f"I couldn't find a job card with number {serial}."
         return _reply_for(jc, question)
+
+    po_match = PO_WO_PR_PATTERN.search(question)
+    if po_match:
+        value = po_match.group(1)
+        jobs = _find_jobs_by_po(value)
+        if not jobs:
+            return f"I couldn't find a job card with PO/WO/PR number {value}."
+        return _reply_for_po_group(jobs, value, question)
 
     for pattern, resolver, label in _LOOKUPS:
         found = pattern.search(question)
