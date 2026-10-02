@@ -103,6 +103,45 @@ class PoExtractorLineCountTests(SimpleTestCase):
 		self.assertEqual(items[2]['sku'], 'LABELCAREUBMICROFIBERFITTEDQUEENMIG1')
 		self.assertAlmostEqual(float(items[2]['unit_cost']), 0.95, places=2)
 
+	def test_extract_two_row_item_with_book_unit_and_spaced_sku(self):
+		"""Regression: UNIT_PATTERN was missing 'BOOK' and 'RIM' — two of the
+		four canonical unit types core.models.JobCard.UNIT_TYPE_CHOICES
+		already models (pcs/rim/book/box) — so a WO/PO quoting quantity in
+		books (e.g. "30.0 BOOK") had its qty+unit regex never match, qty_raw
+		stayed None, and the whole line item was silently dropped. The SKU
+		here also has internal spaces ("...-Offset Paper 68gsm"), which is a
+		red herring reported alongside this — _extract_best_sku_token already
+		preserves spaced SKU text correctly; the unit was the real blocker."""
+		table_rows = [
+			['#', 'SKU', 'DELIVERY DATE', 'QUANTITY', 'UNIT COST', 'SUBTOTAL', 'GST AMOUNT', 'NET TOTAL'],
+			[
+				'1',
+				'STATIONERYpacking-comforter215.9X292.1-Offset Paper 68gsm / Remarks: Material WO item',
+				None, None, None, None, None, None,
+			],
+			[
+				None, 'STATIONERYpacking-comforter215.9X292.1-Offset Paper 68gsm',
+				'Oct 11, 2026', '30.0 BOOK', 'Rs270.00', 'Rs8,100.00', 'Rs0.00', 'Rs8,100.00',
+			],
+		]
+		items = _extract_items_from_table_rows(table_rows)
+		self.assertEqual(len(items), 1, f"Expected 1 item, got {len(items)}: {items}")
+		self.assertEqual(items[0]['sku'], 'STATIONERYpacking-comforter215.9X292.1-Offset Paper 68gsm')
+		self.assertEqual(items[0]['unit'], 'BOOK')
+		self.assertAlmostEqual(float(items[0]['quantity']), 30.0)
+		self.assertAlmostEqual(float(items[0]['unit_cost']), 270.0, places=2)
+
+	def test_extract_two_row_item_with_rim_unit(self):
+		table_rows = [
+			['#', 'SKU', 'DELIVERY DATE', 'QUANTITY', 'UNIT COST', 'SUBTOTAL', 'GST AMOUNT', 'NET TOTAL'],
+			['1', 'A4 PAPER RIM', None, None, None, None, None, None],
+			[None, '', 'Jun 30, 2026', '4.0 RIM', 'Rs 1,780.00', 'Rs 7,120.00', 'Rs 0.00', 'Rs 7,120.00'],
+		]
+		items = _extract_items_from_table_rows(table_rows)
+		self.assertEqual(len(items), 1)
+		self.assertEqual(items[0]['unit'], 'RIM')
+		self.assertAlmostEqual(float(items[0]['quantity']), 4.0)
+
 	def test_extract_two_row_item_with_blank_sku_cell_uses_job_name(self):
 		table_rows = [
 			['#', 'SKU', 'DELIVERY DATE', 'QUANTITY', 'UNIT COST', 'SUBTOTAL', 'GST AMOUNT', 'NET TOTAL'],

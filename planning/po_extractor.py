@@ -14,8 +14,15 @@ from datetime import datetime
 
 MONTH_REGEX = r'(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)'
 LINE_DATE_REGEX = r'(?:' + MONTH_REGEX + r'\s+\d{1,2},\s+\d{4}|\d{4}-\d{2}-\d{2})'
-# Unit pattern — extend here to support new units across all parsers
-UNIT_PATTERN = r'(?:PIECE|PCS|UNIT|SET|BOX|ROLL|PACK|KG|METER|YARD|NOS|EA|EACH|RL|MTR|HOURS|HRS|HR)\.?'
+# Unit pattern — extend here to support new units across all parsers.
+# RIM and BOOK are two of the four canonical unit types the rest of the ERP
+# already models (core.models.JobCard.UNIT_TYPE_CHOICES: pcs/rim/book/box)
+# but were missing here, so any WO/PO quoting quantity in rims or books
+# (e.g. "30.0 BOOK") had its line item silently dropped — the qty+unit
+# regex never matched, qty_raw stayed None, and _append_item's "must have
+# qty" check discarded the row with no error surfaced for that specific
+# item (just a generic "no line items found" when it was the only row).
+UNIT_PATTERN = r'(?:PIECE|PCS|UNIT|SET|BOX|BOOK|RIM|ROLL|PACK|KG|METER|YARD|NOS|EA|EACH|RL|MTR|HOURS|HRS|HR)\.?'
 _SKU_TOKEN_RE = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._/-]{2,}$')
 _SKU_BLOCK_WORDS = {
     'DATED',
