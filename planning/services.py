@@ -1118,24 +1118,33 @@ def ensure_draft_planning_job_for_po_sku(po_doc, sku, *, actor=None, recipe=None
     return job
 
 
-FormLabelSpec = namedtuple('FormLabelSpec', ['label', 'pcs_per_unit', 'ups', 'print_passes'])
+FormLabelSpec = namedtuple(
+    'FormLabelSpec', ['label', 'pcs_per_unit', 'ups', 'print_passes', 'material'], defaults=[None],
+)
 
 
 def parse_form_labels(raw_value):
     """Parse a SKU master's `default_form_labels` text into a list of
-    FormLabelSpec(label, pcs_per_unit, ups, print_passes).
+    FormLabelSpec(label, pcs_per_unit, ups, print_passes, material).
 
     Comma-separated forms, each written as 'Label', 'Label:pages',
-    'Label:pages:ups', or 'Label:pages:ups:passes' — every part after Label
-    is optional; a blank/omitted part means "inherit from the base job /
-    SKU master" (None here, resolved by the caller).
+    'Label:pages:ups', 'Label:pages:ups:passes', or
+    'Label:pages:ups:passes:material' — every part after Label is optional;
+    a blank/omitted part means "inherit from the base job / SKU master"
+    (None here, resolved by the caller). Material is the exact name of a
+    Material master row (e.g. 'NCR Pink'); it is everything after the 4th
+    colon, so it must not contain a comma (none of the master's names do).
 
     - 'White,Pink,Yellow' — a uniform multi-form book (NCR plies): every form
       shares the same page count/ups/passes, so all three are None per label
       and each sibling inherits the SKU master's own figures.
+    - 'White::::NCR White,Pink::::NCR Pink,Yellow::::NCR Yellow' — the same
+      NCR book where each ply is its own paper stock.
     - 'Cover:2:1:1,Inner:10:2:5' — a heterogeneous multi-form book (e.g. a
       booklet whose cover and inner pages are different stock/press runs):
       cover is 2 pages, 1-up, 1 pass; inner is 10 pages, 2-up, 5 passes.
+    - 'Cover:1:1:1:Art Card 300,Inner:10:2:5:Offset 68' — same, with each
+      form's paper chosen explicitly.
     Styles can be mixed on the same SKU, form by form, and any trailing part
     can be left off (e.g. 'Inner:10:2' to set pages+ups but inherit passes).
     """
@@ -1153,7 +1162,8 @@ def parse_form_labels(raw_value):
         pcs_per_unit = _int_or_none(parts[1]) if len(parts) > 1 else None
         ups = _int_or_none(parts[2]) if len(parts) > 2 else None
         print_passes = _int_or_none(parts[3]) if len(parts) > 3 else None
-        parsed.append(FormLabelSpec(label, pcs_per_unit, ups, print_passes))
+        material = ':'.join(parts[4:]).strip() or None
+        parsed.append(FormLabelSpec(label, pcs_per_unit, ups, print_passes, material))
     return parsed
 
 
@@ -1195,6 +1205,9 @@ def create_sibling_forms_from_sku_master(base_job, recipe, *, actor=None):
     if first.print_passes is not None and base_job.print_passes != first.print_passes:
         base_job.print_passes = first.print_passes
         update_fields.append('print_passes')
+    if first.material and base_job.material != first.material:
+        base_job.material = first.material
+        update_fields.append('material')
     if update_fields:
         base_job.save(update_fields=update_fields)
 
@@ -1218,6 +1231,9 @@ def create_sibling_forms_from_sku_master(base_job, recipe, *, actor=None):
         if f.print_passes is not None and child.print_passes != f.print_passes:
             child.print_passes = f.print_passes
             child_update_fields.append('print_passes')
+        if f.material and child.material != f.material:
+            child.material = f.material
+            child_update_fields.append('material')
         if child_update_fields:
             child.save(update_fields=child_update_fields)
 
@@ -1228,7 +1244,7 @@ def create_sibling_forms_from_sku_master(base_job, recipe, *, actor=None):
     return [
         create_sibling_form_planning_job(
             base_job, form_label=f.label, pcs_per_unit=f.pcs_per_unit,
-            ups=f.ups, print_passes=f.print_passes, actor=actor,
+            ups=f.ups, print_passes=f.print_passes, material=f.material or '', actor=actor,
         )
         for f in missing
     ]

@@ -1161,20 +1161,23 @@ class SkuRecipe(models.Model):
         help_text="Pieces per order unit when unit_type='rim' (500 for 1 rim = 500 pcs). Ignored for 'pcs'.",
     )
     default_form_labels = models.CharField(
-        max_length=255,
+        max_length=500,
         blank=True,
         help_text=(
             "Comma-separated form names for a multi-form book SKU. Leave blank "
             "for a normal single-form job; creating a job for this SKU then "
             "also creates one sibling job card per extra label. Each form is "
-            "'Label', 'Label:pages', 'Label:pages:ups', or "
-            "'Label:pages:ups:passes' — every part after Label is optional and "
-            "left blank inherits from Pieces per Order Unit / UPS / No. of "
-            "Passes above. 'White,Pink,Yellow' is a uniform book (e.g. an NCR "
-            "triplicate — every ply shares the same page count/ups/passes). "
-            "'Cover:2:1:1,Inner:10:2:5' is a heterogeneous book (e.g. a "
-            "booklet's cover — 2 pages, 1-up, 1 pass — vs its inner pages — 10 "
-            "pages, 2-up, 5 passes) where each form differs."
+            "'Label', 'Label:pages', 'Label:pages:ups', "
+            "'Label:pages:ups:passes', or 'Label:pages:ups:passes:material' — "
+            "every part after Label is optional and left blank inherits from "
+            "Pieces per Order Unit / UPS / No. of Passes / Material Type "
+            "above. 'White,Pink,Yellow' is a uniform book (e.g. an NCR "
+            "triplicate — every ply shares the same page count/ups/passes); "
+            "'White::::NCR White,Pink::::NCR Pink,Yellow::::NCR Yellow' gives "
+            "each ply its own paper. 'Cover:2:1:1,Inner:10:2:5' is a "
+            "heterogeneous book (e.g. a booklet's cover — 2 pages, 1-up, 1 "
+            "pass — vs its inner pages — 10 pages, 2-up, 5 passes) where each "
+            "form differs."
         ),
     )
 

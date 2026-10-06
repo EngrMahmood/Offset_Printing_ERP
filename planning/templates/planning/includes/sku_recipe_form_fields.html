@@ -74,15 +74,16 @@
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.unit_type label='Order Unit' help_text='Auto-filled from Product Type when left at Pieces (e.g. A4 Rim -> Rim). Override only for a SKU that genuinely differs from its category.' %}
 {% include 'planning/includes/sku_recipe_field.html' with bound_field=form.pcs_per_unit label='Pieces per Order Unit' help_text='500 for a rim; pages-per-book for a book SKU (e.g. 50 for one ply of a triplicate NCR book, 100 for a plain single-ply book). 1 for plain pcs SKUs.' %}
 <div id="mfb-raw-field-wrap">
-{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.default_form_labels label='Multi-Form Book Labels' full_width=True help_text="Leave blank for a normal single-form SKU. Each form is Label, Label:pages, Label:pages:ups, or Label:pages:ups:passes — every part after Label is optional and left blank inherits Pieces per Order Unit / UPS / No. of Passes above. White,Pink,Yellow is a uniform book (e.g. an NCR triplicate — every ply shares the same figures). Cover:2:1:1,Inner:10:2:5 is a heterogeneous book (cover: 2 pages, 1-up, 1 pass; inner: 10 pages, 2-up, 5 passes) — creating the first job card for this SKU then auto-raises one sibling job card per extra form." %}
+{% include 'planning/includes/sku_recipe_field.html' with bound_field=form.default_form_labels label='Multi-Form Book Labels' full_width=True help_text="Leave blank for a normal single-form SKU. Each form is Label, Label:pages, Label:pages:ups, Label:pages:ups:passes, or Label:pages:ups:passes:material — every part after Label is optional and left blank inherits Pieces per Order Unit / UPS / No. of Passes / Material Type above. White,Pink,Yellow is a uniform book (e.g. an NCR triplicate — every ply shares the same figures); White::::NCR White,Pink::::NCR Pink,Yellow::::NCR Yellow gives each ply its own paper. Cover:2:1:1,Inner:10:2:5 is a heterogeneous book (cover: 2 pages, 1-up, 1 pass; inner: 10 pages, 2-up, 5 passes) — creating the first job card for this SKU then auto-raises one sibling job card per extra form." %}
 </div>
 
 <div id="mfb-builder" class="erp-form-field sku-recipe-field erp-form-grid__full" style="display:none;">
     <label>Multi-Form Book Setup</label>
     <div class="erp-form-help" style="margin-bottom:10px;">
         This SKU is a book. Tick Cover and/or Inner Pages below — each becomes its own job card
-        with its own UPS and press passes. Add more Inner sections if different inner parts change
-        artwork separately.
+        with its own UPS, press passes and material (leave Material on "Same as Material Type
+        above" to use the SKU's main material). Add more Inner sections if different inner parts
+        change artwork or paper separately (e.g. each NCR ply on its own stock).
     </div>
 
     <div class="mfb-section">
@@ -93,6 +94,7 @@
             <div class="mfb-field"><label>Pages</label><input type="number" min="1" id="mfb-cover-pages" class="erp-input"></div>
             <div class="mfb-field"><label>UPS</label><input type="number" min="1" id="mfb-cover-ups" class="erp-input"></div>
             <div class="mfb-field"><label>Passes</label><input type="number" min="1" id="mfb-cover-passes" class="erp-input"></div>
+            <div class="mfb-field mfb-field--material"><label>Material</label><select id="mfb-cover-material" class="erp-input"></select></div>
         </div>
     </div>
 
@@ -121,6 +123,7 @@
 .mfb-field { display: flex; flex-direction: column; gap: 2px; }
 .mfb-field label { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
 .mfb-field input { width: 90px; }
+.mfb-field--material select { width: 210px; max-width: 100%; }
 .mfb-inner-row { display: flex; align-items: flex-end; gap: 10px; margin: 8px 0 0 22px; padding-bottom: 8px; border-bottom: 1px dashed #e2e8f0; flex-wrap: wrap; }
 .mfb-inner-row__label { font-size: 12px; font-weight: 600; color: #334155; min-width: 60px; }
 .mfb-inner-remove { align-self: flex-end; }
@@ -147,7 +150,44 @@
     var addInnerBtn = document.getElementById('mfb-add-inner');
     var incompatibleNote = document.getElementById('mfb-incompatible-note');
 
-    var innerRows = []; // [{pages, ups, passes}]
+    var coverMaterial = document.getElementById('mfb-cover-material');
+    var materialSelect = document.getElementById('{{ form.material.id_for_label }}');
+
+    var innerRows = []; // [{pages, ups, passes, material}]
+
+    // Material choices come from the recipe's own Material Type dropdown, so
+    // the builder always offers exactly what that field does — including a
+    // material added through its "+" button. A name containing a comma is
+    // skipped: the value is stored in a comma-separated string and couldn't
+    // be read back (no current material has one).
+    function materialNames() {
+        var names = [];
+        if (materialSelect) {
+            Array.prototype.forEach.call(materialSelect.options, function (opt) {
+                if (opt.value && opt.value.indexOf(',') === -1) names.push(opt.value);
+            });
+        }
+        return names;
+    }
+
+    function fillMaterialSelect(sel, selected) {
+        var names = materialNames();
+        // Keep a saved value even if it is no longer in the master list, so
+        // re-saving the SKU never silently drops it.
+        if (selected && names.indexOf(selected) === -1) names.push(selected);
+        sel.innerHTML = '';
+        var blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = 'Same as Material Type above';
+        sel.appendChild(blank);
+        names.forEach(function (name) {
+            var opt = document.createElement('option');
+            opt.value = name;
+            opt.textContent = name;
+            sel.appendChild(opt);
+        });
+        sel.value = selected || '';
+    }
 
     function parseLabels(raw) {
         var parsed = [];
@@ -164,6 +204,7 @@
                 pages: parts.length > 1 ? toIntOrNull(parts[1]) : null,
                 ups: parts.length > 2 ? toIntOrNull(parts[2]) : null,
                 passes: parts.length > 3 ? toIntOrNull(parts[3]) : null,
+                material: parts.length > 4 ? parts.slice(4).join(':').trim() : '',
             });
         });
         return parsed;
@@ -184,31 +225,49 @@
 
     function formatPart(n) { return (n === null || n === undefined || n === '') ? '' : String(n); }
 
+    function formChunk(label, pages, ups, passes, material) {
+        if (pages || ups || passes || material) {
+            return label + ':' + pages + ':' + ups + ':' + passes + (material ? ':' + material : '');
+        }
+        return label;
+    }
+
     function buildRawValue() {
         var chunks = [];
         if (coverEnabled.checked) {
-            var cp = formatPart(coverPages.value), cu = formatPart(coverUps.value), cpa = formatPart(coverPasses.value);
-            if (cp || cu || cpa) {
-                chunks.push('Cover:' + cp + ':' + cu + ':' + cpa);
-            } else {
-                chunks.push('Cover');
-            }
+            chunks.push(formChunk(
+                'Cover', formatPart(coverPages.value), formatPart(coverUps.value),
+                formatPart(coverPasses.value), coverMaterial.value
+            ));
         }
         if (innerEnabled.checked) {
             innerRows.forEach(function (row, idx) {
                 var label = idx === 0 ? 'Inner' : ('Inner ' + (idx + 1));
-                var ip = formatPart(row.pagesInput.value), iu = formatPart(row.upsInput.value), ipa = formatPart(row.passesInput.value);
-                if (ip || iu || ipa) {
-                    chunks.push(label + ':' + ip + ':' + iu + ':' + ipa);
-                } else {
-                    chunks.push(label);
-                }
+                chunks.push(formChunk(
+                    label, formatPart(row.pagesInput.value), formatPart(row.upsInput.value),
+                    formatPart(row.passesInput.value), row.materialInput.value
+                ));
             });
         }
         rawInput.value = chunks.join(',');
     }
 
+    // renderInnerRows() rebuilds every row from the row objects, so whatever
+    // the planner has typed or picked must be copied back into them first —
+    // otherwise adding or removing a section resets the other sections to
+    // their originally loaded values.
+    function syncRowsFromInputs() {
+        innerRows.forEach(function (row) {
+            if (!row.pagesInput) return;
+            row.pages = row.pagesInput.value === '' ? null : parseInt(row.pagesInput.value, 10);
+            row.ups = row.upsInput.value === '' ? null : parseInt(row.upsInput.value, 10);
+            row.passes = row.passesInput.value === '' ? null : parseInt(row.passesInput.value, 10);
+            row.material = row.materialInput.value;
+        });
+    }
+
     function renderInnerRows() {
+        syncRowsFromInputs();
         innerRowsWrap.innerHTML = '';
         innerRows.forEach(function (row, idx) {
             var rowEl = document.createElement('div');
@@ -219,18 +278,22 @@
                 '<div class="mfb-field"><label>Pages</label><input type="number" min="1" class="erp-input mfb-inner-pages" value="' + formatPart(row.pages) + '"></div>' +
                 '<div class="mfb-field"><label>UPS</label><input type="number" min="1" class="erp-input mfb-inner-ups" value="' + formatPart(row.ups) + '"></div>' +
                 '<div class="mfb-field"><label>Passes</label><input type="number" min="1" class="erp-input mfb-inner-passes" value="' + formatPart(row.passes) + '"></div>' +
+                '<div class="mfb-field mfb-field--material"><label>Material</label><select class="erp-input mfb-inner-material"></select></div>' +
                 (innerRows.length > 1 ? '<button type="button" class="erp-btn erp-btn-danger sm mfb-inner-remove"><i class="fas fa-times"></i></button>' : '');
             innerRowsWrap.appendChild(rowEl);
             row.pagesInput = rowEl.querySelector('.mfb-inner-pages');
             row.upsInput = rowEl.querySelector('.mfb-inner-ups');
             row.passesInput = rowEl.querySelector('.mfb-inner-passes');
+            row.materialInput = rowEl.querySelector('.mfb-inner-material');
+            fillMaterialSelect(row.materialInput, row.material || '');
             [row.pagesInput, row.upsInput, row.passesInput].forEach(function (inp) {
                 inp.addEventListener('input', buildRawValue);
             });
+            row.materialInput.addEventListener('change', buildRawValue);
             var removeBtn = rowEl.querySelector('.mfb-inner-remove');
             if (removeBtn) {
                 removeBtn.addEventListener('click', function () {
-                    innerRows.splice(idx, 1);
+                    innerRows.splice(innerRows.indexOf(row), 1);
                     renderInnerRows();
                     buildRawValue();
                 });
@@ -238,9 +301,21 @@
         });
     }
 
-    function addInnerRow(pages, ups, passes) {
-        innerRows.push({ pages: pages, ups: ups, passes: passes });
+    function addInnerRow(pages, ups, passes, material) {
+        innerRows.push({ pages: pages, ups: ups, passes: passes, material: material || '' });
         renderInnerRows();
+    }
+
+    // A material added through the Material Type field's "+" button should
+    // show up in the builder's dropdowns without a page reload.
+    function refreshMaterialSelects() {
+        fillMaterialSelect(coverMaterial, coverMaterial.value);
+        innerRows.forEach(function (row) {
+            if (row.materialInput) fillMaterialSelect(row.materialInput, row.materialInput.value);
+        });
+    }
+    if (materialSelect && window.MutationObserver) {
+        new MutationObserver(refreshMaterialSelects).observe(materialSelect, { childList: true });
     }
 
     coverEnabled.addEventListener('change', function () {
@@ -250,6 +325,7 @@
     [coverPages, coverUps, coverPasses].forEach(function (inp) {
         inp.addEventListener('input', buildRawValue);
     });
+    coverMaterial.addEventListener('change', buildRawValue);
     innerEnabled.addEventListener('change', function () {
         var on = innerEnabled.checked;
         innerRowsWrap.style.display = on ? 'block' : 'none';
@@ -281,9 +357,10 @@
         coverPages.value = cover && cover.pages !== null ? cover.pages : '';
         coverUps.value = cover && cover.ups !== null ? cover.ups : '';
         coverPasses.value = cover && cover.passes !== null ? cover.passes : '';
+        fillMaterialSelect(coverMaterial, cover ? cover.material : '');
 
         innerRows = [];
-        inners.forEach(function (l) { innerRows.push({ pages: l.pages, ups: l.ups, passes: l.passes }); });
+        inners.forEach(function (l) { innerRows.push({ pages: l.pages, ups: l.ups, passes: l.passes, material: l.material }); });
         renderInnerRows();
         innerEnabled.checked = inners.length > 0;
         innerRowsWrap.style.display = inners.length > 0 ? 'block' : 'none';

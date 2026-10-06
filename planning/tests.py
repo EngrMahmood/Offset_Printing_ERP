@@ -2647,20 +2647,113 @@ class SkuMasterUnitTypeAndMultiFormTests(TestCase):
 		self.assertIn('id="mfb-builder"', html)
 		self.assertIn('id="mfb-product-type-unit-map"', html)
 		self.assertIn('"Test Report Books": "book"', html)
+		# Per-form material choice (NCR plies / cover vs inner stock).
+		self.assertIn('id="mfb-cover-material"', html)
+		self.assertIn('mfb-inner-material', html)
 
 	def test_parse_form_labels_supports_pages_ups_passes(self):
 		from planning.services import parse_form_labels
 
 		self.assertEqual(
 			parse_form_labels('White,Pink,Yellow'),
-			[('White', None, None, None), ('Pink', None, None, None), ('Yellow', None, None, None)],
+			[
+				('White', None, None, None, None),
+				('Pink', None, None, None, None),
+				('Yellow', None, None, None, None),
+			],
 		)
-		self.assertEqual(parse_form_labels('Cover:2'), [('Cover', 2, None, None)])
-		self.assertEqual(parse_form_labels('Cover:2:1'), [('Cover', 2, 1, None)])
+		self.assertEqual(parse_form_labels('Cover:2'), [('Cover', 2, None, None, None)])
+		self.assertEqual(parse_form_labels('Cover:2:1'), [('Cover', 2, 1, None, None)])
 		self.assertEqual(
 			parse_form_labels('Cover:1:1:1,Inner:10:2:5'),
-			[('Cover', 1, 1, 1), ('Inner', 10, 2, 5)],
+			[('Cover', 1, 1, 1, None), ('Inner', 10, 2, 5, None)],
 		)
+
+	def test_parse_form_labels_supports_per_form_material(self):
+		from planning.services import parse_form_labels
+
+		# Material is the 5th part; earlier parts may be left blank.
+		self.assertEqual(
+			parse_form_labels('White::::NCR White,Pink::::NCR Pink,Yellow::::NCR Yellow'),
+			[
+				('White', None, None, None, 'NCR White'),
+				('Pink', None, None, None, 'NCR Pink'),
+				('Yellow', None, None, None, 'NCR Yellow'),
+			],
+		)
+		self.assertEqual(
+			parse_form_labels('Cover:1:1:1:Art Card 300,Inner:10:2:5:Offset 68'),
+			[('Cover', 1, 1, 1, 'Art Card 300'), ('Inner', 10, 2, 5, 'Offset 68')],
+		)
+		# A material may itself contain a colon, and one left off stays None.
+		self.assertEqual(
+			parse_form_labels('Cover:1:1:1:Odd:Name,Inner:10:2:5'),
+			[('Cover', 1, 1, 1, 'Odd:Name'), ('Inner', 10, 2, 5, None)],
+		)
+
+	def test_per_form_material_applied_to_every_form_of_an_ncr_book(self):
+		"""NCR triplicate: each ply is its own paper stock, so the planner
+		picks a material per form instead of every sibling inheriting the
+		root job's single material."""
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='NCR TRIPLICATE BOOK', job_process_type='print_and_pack', material='NCR White',
+			default_form_labels='Cover:1:1:1:NCR White,Inner:1:1:1:NCR Pink,Inner 2:1:1:1:NCR Yellow',
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-020', sku='NCR TRIPLICATE BOOK', order_qty=500,
+			status='draft', created_by=self.user, material='NCR White',
+		)
+
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		base_job.refresh_from_db()
+		children = {c.form_label: c for c in base_job.child_forms.all()}
+
+		self.assertEqual(base_job.material, 'NCR White')
+		self.assertEqual(children['Inner'].material, 'NCR Pink')
+		self.assertEqual(children['Inner 2'].material, 'NCR Yellow')
+
+	def test_form_without_a_material_inherits_the_root_jobs_material(self):
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='MIXED MATERIAL BOOK', job_process_type='print_and_pack', material='Art Card 300',
+			default_form_labels='Cover:1:1:1,Inner:10:2:5:Offset 68',
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-021', sku='MIXED MATERIAL BOOK', order_qty=500,
+			status='draft', created_by=self.user, material='Art Card 300',
+		)
+
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		base_job.refresh_from_db()
+		inner = base_job.child_forms.get(form_label='Inner')
+
+		self.assertEqual(base_job.material, 'Art Card 300')
+		self.assertEqual(inner.material, 'Offset 68')
+
+	def test_changing_a_forms_material_later_updates_the_draft_sibling(self):
+		from planning.services import create_sibling_forms_from_sku_master
+
+		recipe = SkuRecipe.objects.create(
+			sku='CHANGE MATERIAL BOOK', job_process_type='print_and_pack', material='Art Card 300',
+			default_form_labels='Cover:1:1:1:Art Card 300,Inner:10:2:5:Offset 68',
+		)
+		base_job = PlanningJob.objects.create(
+			jc_number='JC-UNIT-022', sku='CHANGE MATERIAL BOOK', order_qty=500,
+			status='draft', created_by=self.user, material='Art Card 300',
+		)
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+
+		recipe.default_form_labels = 'Cover:1:1:1:Bleach Card 230,Inner:10:2:5:Art Paper 128'
+		recipe.save()
+		base_job = PlanningJob.objects.get(pk=base_job.pk)
+		create_sibling_forms_from_sku_master(base_job, recipe, actor=self.user)
+		base_job.refresh_from_db()
+
+		self.assertEqual(base_job.material, 'Bleach Card 230')
+		self.assertEqual(base_job.child_forms.get(form_label='Inner').material, 'Art Paper 128')
 
 	def test_heterogeneous_multi_form_book_gets_per_form_ups_and_passes(self):
 		"""FLUFFINGINSTRUCTION-MANNUAL-UNDERSINKORGANIZER: cover is single-up/
