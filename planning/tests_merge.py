@@ -240,16 +240,22 @@ class MergeEvaluateTests(TestCase):
         self.assertEqual(data['savings']['makereadies_saved'], 1)
         self.assertEqual(set(data['items']), {str(jobs[1].id), str(jobs[2].id)})
 
-    def test_dropping_a_job_leaves_ups_blank_instead_of_failing(self):
-        # 16-up sheet: 4+2+3+2+1+4 ups fill it exactly at 5000 sheets. Drop a
-        # 4-up job and the rest cannot refill 16 ups, but still fit with blanks.
+    def test_dropping_a_job_that_cannot_refill_the_sheet_explains_why(self):
+        # 16-up sheet: all six fill it at 5000 sheets. Without the 4-up job the
+        # rest cannot take up all 16 ups with whole ups inside 5%.
         qtys = [20000, 10000, 15000, 10000, 5000, 20000]
         jobs = [make_job(f'JC{i}', q, ups=16) for i, q in enumerate(qtys)]
         data = self._evaluate(jobs[:-1])
-        self.assertTrue(data['ok'])
-        self.assertEqual(data['run_sheets'], 5000)
-        self.assertEqual(data['unused_ups'], 4)
-        self.assertEqual(data['worst_overage_pct'], 0.0)
+        self.assertFalse(data['ok'])
+        self.assertIn('16 ups', data['error'])
+
+    def test_exact_search_raises_other_jobs_ups_to_fill_the_sheet(self):
+        # Proportional rounding can miss splits that an exact search finds.
+        jobs = [make_job('JA', 9000, ups=8), make_job('JB', 3000, ups=8)]
+        result = allocate_ups(jobs, 8, MergeConfig(), exhaustive=True)
+        self.assertIsNotNone(result)
+        self.assertEqual(sum(i['allocated_ups'] for i in result['items']), 8)
+        self.assertEqual(result['unused_ups'], 0)
 
     def test_mismatched_specs_are_rejected(self):
         jobs = [make_job('JC1', 10000), make_job('JC2', 10000, material='Duplex Board 350gsm')]

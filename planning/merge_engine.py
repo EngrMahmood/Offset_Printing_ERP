@@ -92,22 +92,38 @@ def candidate_buckets(jobs, cfg):
     return {sig: group for sig, group in buckets.items() if len(group) > 1}
 
 
-def _allocate_with_spare_ups(jobs, quantities, sheet_ups, cfg):
-    """Fallback when the quantities cannot fill every ups of the sheet.
+def _allocate_exact_fill(jobs, quantities, sheet_ups, cfg):
+    """Exhaustive search for a whole-ups split that fills every ups of the sheet.
 
-    Finds the shortest run at which each job's whole ups fit on the sheet with
-    the over-production inside tolerance; any ups left over stay blank. This is
-    what happens when a job is dropped from a merge and the rest no longer add
-    up to a full sheet.
+    The proportional heuristic can miss a valid split. For each candidate run
+    length, every job's ups must lie between ceil(qty / run) (no under-production)
+    and floor(qty * (1 + tolerance) / run) (no excess); if the bounds can add up
+    to exactly ``sheet_ups`` the shortest such run wins. Ups above each job's
+    minimum are handed out until the sheet is full — i.e. other jobs' ups are
+    raised to take up the slack.
     """
-    lower = max(1, math.ceil(sum(quantities) / sheet_ups))
-    for run_sheets in range(lower, max(quantities) + 1):
-        ups = [math.ceil(q / run_sheets) for q in quantities]
-        if sum(ups) > sheet_ups:
+    tol = 1 + cfg.qty_tolerance_pct / 100.0
+    total = sum(quantities)
+    first = max(1, int(total / sheet_ups))
+    last = int(total * tol / sheet_ups) + 2
+    for run_sheets in range(first, last + 1):
+        lows = [math.ceil(q / run_sheets) for q in quantities]
+        highs = [int(q * tol / run_sheets + 1e-9) for q in quantities]
+        if any(lo > hi for lo, hi in zip(lows, highs)):
             continue
+        if not (sum(lows) <= sheet_ups <= sum(highs)):
+            continue
+        ups = list(lows)
+        spare = sheet_ups - sum(ups)
+        while spare:
+            # Give the next ups to the job it over-produces least.
+            index = min(
+                (i for i in range(len(ups)) if ups[i] < highs[i]),
+                key=lambda i: (run_sheets * (ups[i] + 1) - quantities[i]) / quantities[i],
+            )
+            ups[index] += 1
+            spare -= 1
         overages = [(run_sheets * u - q) / q * 100.0 for u, q in zip(ups, quantities)]
-        if max(overages) > cfg.qty_tolerance_pct:
-            continue
         return {
             'items': [
                 {
@@ -121,29 +137,28 @@ def _allocate_with_spare_ups(jobs, quantities, sheet_ups, cfg):
             ],
             'run_sheets': run_sheets,
             'sheet_ups': sheet_ups,
-            'unused_ups': sheet_ups - sum(ups),
+            'unused_ups': 0,
             'worst_overage_pct': round(max(overages), 2),
         }
     return None
 
 
-def allocate_ups(jobs, sheet_ups, cfg, allow_spare_ups=False):
+def allocate_ups(jobs, sheet_ups, cfg, exhaustive=False):
     """Split `sheet_ups` between jobs so nobody is under-produced.
 
-    Fills the whole sheet when the quantities allow it; otherwise leaves ups
-    blank (``unused_ups``) if ``allow_spare_ups`` and that still fits within
-    tolerance. The spare-ups search is a linear scan, so the combinatorial
-    suggestion builder leaves it off; it is for a planner's chosen selection.
-    Returns None when the quantities cannot be reconciled.
+    Always fills the whole sheet. With ``exhaustive`` it also runs an exact search
+    (slower, so the combinatorial suggestion builder leaves it off) that raises
+    other jobs' ups where the heuristic could not. Returns None when the
+    quantities cannot be reconciled within the tolerance.
     """
     quantities = [job.net_print_qty or 0 for job in jobs]
     if len(jobs) < 2 or sheet_ups < len(jobs) or any(q <= 0 for q in quantities):
         return None
 
     filled = _allocate_filling_sheet(jobs, quantities, sheet_ups, cfg)
-    if filled or not allow_spare_ups:
+    if filled or not exhaustive:
         return filled
-    return _allocate_with_spare_ups(jobs, quantities, sheet_ups, cfg)
+    return _allocate_exact_fill(jobs, quantities, sheet_ups, cfg)
 
 
 def _allocate_filling_sheet(jobs, quantities, sheet_ups, cfg):

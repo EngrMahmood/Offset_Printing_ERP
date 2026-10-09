@@ -5881,17 +5881,26 @@ def planning_merge_evaluate(request):
             'selected': len(jobs),
         })
 
-    allocation = allocate_ups(jobs, sheet_ups, cfg, allow_spare_ups=True)
+    allocation = allocate_ups(jobs, sheet_ups, cfg, exhaustive=True)
     if not allocation:
-        # Say how far off it is by re-running with the tolerance lifted.
-        relaxed = allocate_ups(jobs, sheet_ups, dataclasses.replace(cfg, qty_tolerance_pct=10000.0))
-        if relaxed:
+        # Say how much tolerance would be needed to fill the sheet with whole ups.
+        needed = None
+        for step in range(1, 400):
+            tolerance = cfg.qty_tolerance_pct + step * 0.5
+            relaxed = allocate_ups(
+                jobs, sheet_ups, dataclasses.replace(cfg, qty_tolerance_pct=tolerance), exhaustive=True
+            )
+            if relaxed:
+                needed = relaxed['worst_overage_pct']
+                break
+        if needed is not None:
             error = (
-                f"Quantities don't split into whole ups: over-production would reach "
-                f"{relaxed['worst_overage_pct']:g}% (limit {cfg.qty_tolerance_pct:g}%)."
+                f"These quantities cannot fill all {sheet_ups} ups with whole ups inside the "
+                f"{cfg.qty_tolerance_pct:g}% over-production limit (the best split needs "
+                f"{needed:g}%)."
             )
         else:
-            error = 'Quantities cannot be split into whole ups on this sheet.'
+            error = f'These quantities cannot fill all {sheet_ups} ups within the over-production limit.'
         return JsonResponse({'ok': False, 'error': error, 'selected': len(jobs)})
 
     savings = compute_savings(allocation, jobs, cfg)
@@ -5964,7 +5973,7 @@ def planning_merge_accept(request):
             messages.error(request, 'These jobs do not share the same size, material and colour specification.')
             return redirect('planning:merge_board')
 
-        allocation = allocate_ups(jobs, jobs[0].ups_value, cfg, allow_spare_ups=True)
+        allocation = allocate_ups(jobs, jobs[0].ups_value, cfg, exhaustive=True)
         if not allocation:
             if excluded:
                 messages.error(
