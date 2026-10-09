@@ -65,7 +65,7 @@
             setText(mrmin, s.mr_minutes_saved + ' min make-ready time saved');
             mrmin.hidden = !s.mr_minutes_saved;
             setText(card.querySelector('[data-chip="over"]'), 'max over-production ' + result.worst_overage_pct + '%');
-            setText(card.querySelector('[data-chip="run"]'), 'run ' + result.run_sheets + ' sheets × ' + result.sheet_ups + ' ups');
+            setText(card.querySelector('[data-chip="run"]'), 'run ' + result.run_sheets + ' sheets × ' + result.sheet_ups + ' ups' + (result.unused_ups ? ' (' + result.unused_ups + ' ups left blank)' : ''));
         }
     }
 

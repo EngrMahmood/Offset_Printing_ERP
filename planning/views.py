@@ -5881,7 +5881,7 @@ def planning_merge_evaluate(request):
             'selected': len(jobs),
         })
 
-    allocation = allocate_ups(jobs, sheet_ups, cfg)
+    allocation = allocate_ups(jobs, sheet_ups, cfg, allow_spare_ups=True)
     if not allocation:
         # Say how far off it is by re-running with the tolerance lifted.
         relaxed = allocate_ups(jobs, sheet_ups, dataclasses.replace(cfg, qty_tolerance_pct=10000.0))
@@ -5900,6 +5900,7 @@ def planning_merge_evaluate(request):
         'selected': len(jobs),
         'run_sheets': allocation['run_sheets'],
         'sheet_ups': allocation['sheet_ups'],
+        'unused_ups': allocation['unused_ups'],
         'worst_overage_pct': allocation['worst_overage_pct'],
         'savings': {
             key: savings[key] for key in (
@@ -5963,7 +5964,7 @@ def planning_merge_accept(request):
             messages.error(request, 'These jobs do not share the same size, material and colour specification.')
             return redirect('planning:merge_board')
 
-        allocation = allocate_ups(jobs, jobs[0].ups_value, cfg)
+        allocation = allocate_ups(jobs, jobs[0].ups_value, cfg, allow_spare_ups=True)
         if not allocation:
             if excluded:
                 messages.error(

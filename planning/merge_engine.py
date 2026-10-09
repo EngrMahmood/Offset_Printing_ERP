@@ -92,15 +92,61 @@ def candidate_buckets(jobs, cfg):
     return {sig: group for sig, group in buckets.items() if len(group) > 1}
 
 
-def allocate_ups(jobs, sheet_ups, cfg):
+def _allocate_with_spare_ups(jobs, quantities, sheet_ups, cfg):
+    """Fallback when the quantities cannot fill every ups of the sheet.
+
+    Finds the shortest run at which each job's whole ups fit on the sheet with
+    the over-production inside tolerance; any ups left over stay blank. This is
+    what happens when a job is dropped from a merge and the rest no longer add
+    up to a full sheet.
+    """
+    lower = max(1, math.ceil(sum(quantities) / sheet_ups))
+    for run_sheets in range(lower, max(quantities) + 1):
+        ups = [math.ceil(q / run_sheets) for q in quantities]
+        if sum(ups) > sheet_ups:
+            continue
+        overages = [(run_sheets * u - q) / q * 100.0 for u, q in zip(ups, quantities)]
+        if max(overages) > cfg.qty_tolerance_pct:
+            continue
+        return {
+            'items': [
+                {
+                    'job': job,
+                    'allocated_ups': u,
+                    'planned_produced_qty': run_sheets * u,
+                    'net_qty': q,
+                    'overage_pct': round(o, 2),
+                }
+                for job, u, q, o in zip(jobs, ups, quantities, overages)
+            ],
+            'run_sheets': run_sheets,
+            'sheet_ups': sheet_ups,
+            'unused_ups': sheet_ups - sum(ups),
+            'worst_overage_pct': round(max(overages), 2),
+        }
+    return None
+
+
+def allocate_ups(jobs, sheet_ups, cfg, allow_spare_ups=False):
     """Split `sheet_ups` between jobs so nobody is under-produced.
 
-    Returns a dict describing the allocation, or None when the quantities cannot
-    be reconciled within the tolerance.
+    Fills the whole sheet when the quantities allow it; otherwise leaves ups
+    blank (``unused_ups``) if ``allow_spare_ups`` and that still fits within
+    tolerance. The spare-ups search is a linear scan, so the combinatorial
+    suggestion builder leaves it off; it is for a planner's chosen selection.
+    Returns None when the quantities cannot be reconciled.
     """
     quantities = [job.net_print_qty or 0 for job in jobs]
     if len(jobs) < 2 or sheet_ups < len(jobs) or any(q <= 0 for q in quantities):
         return None
+
+    filled = _allocate_filling_sheet(jobs, quantities, sheet_ups, cfg)
+    if filled or not allow_spare_ups:
+        return filled
+    return _allocate_with_spare_ups(jobs, quantities, sheet_ups, cfg)
+
+
+def _allocate_filling_sheet(jobs, quantities, sheet_ups, cfg):
 
     total_qty = sum(quantities)
     allocation = [max(1, int(round(sheet_ups * q / total_qty))) for q in quantities]
@@ -148,6 +194,7 @@ def allocate_ups(jobs, sheet_ups, cfg):
         'items': items,
         'run_sheets': run_sheets,
         'sheet_ups': sheet_ups,
+        'unused_ups': 0,
         'worst_overage_pct': round(worst_overage, 2),
     }
 
