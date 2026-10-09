@@ -20,9 +20,98 @@
 .merge-plate-actions { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 0.78rem; white-space: nowrap; }
 .merge-plate-actions label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .erp-tiny { font-size: 0.78rem; }
+.merge-status { margin: 8px 0; padding: 8px 12px; border-radius: 8px; font-size: 0.88rem; background: rgba(200, 40, 40, 0.1); color: #b42318; }
+.merge-card.is-busy .merge-table { opacity: 0.6; }
+.merge-table tr.is-off td { opacity: 0.45; }
+.merge-table tr.is-off td:first-child { opacity: 1; }
+.merge-card.is-invalid .merge-chip { opacity: 0.35; }
+.merge-card button[disabled] { opacity: 0.5; cursor: not-allowed; }
 .merge-table { width: 100%; min-width: 760px; }
 @media (max-width: 900px) { .merge-filter-grid { grid-template-columns: 1fr; } }
 </style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var evalUrl = "{% url 'planning:merge_evaluate' %}";
+
+    function setText(el, text) { if (el) { el.textContent = text; } }
+
+    function applyResult(card, rows, result) {
+        var status = card.querySelector('[data-merge-status]');
+        var accept = card.querySelector('[data-merge-accept]');
+        var ok = !!result.ok;
+        card.classList.toggle('is-invalid', !ok);
+        accept.disabled = !ok;
+        status.hidden = ok;
+        if (!ok) { setText(status, result.error || 'This selection cannot be merged.'); }
+
+        rows.forEach(function (row) {
+            var on = row.querySelector('[data-job-check]').checked;
+            row.classList.toggle('is-off', !on);
+            var item = ok && result.items ? result.items[row.getAttribute('data-job-row')] : null;
+            setText(row.querySelector('[data-cell="ups"]'), item ? item.ups : '—');
+            setText(row.querySelector('[data-cell="planned"]'), item ? item.planned : '—');
+            setText(row.querySelector('[data-cell="over"]'), item ? item.over + '%' : '—');
+        });
+
+        if (ok) {
+            var s = result.savings;
+            setText(card.querySelector('[data-chip="setup"]'), s.setup_sheets_saved + ' setup sheets saved');
+            setText(card.querySelector('[data-chip="mr"]'), s.makereadies_saved + ' make-ready' + (s.makereadies_saved === 1 ? '' : 's') + ' saved');
+            setText(card.querySelector('[data-chip="plates"]'), s.plates_saved + ' plates saved');
+            var mrmin = card.querySelector('[data-chip="mrmin"]');
+            setText(mrmin, s.mr_minutes_saved + ' min make-ready time saved');
+            mrmin.hidden = !s.mr_minutes_saved;
+            setText(card.querySelector('[data-chip="over"]'), 'max over-production ' + result.worst_overage_pct + '%');
+            setText(card.querySelector('[data-chip="run"]'), 'run ' + result.run_sheets + ' sheets × ' + result.sheet_ups + ' ups');
+        }
+    }
+
+    function wire(card) {
+        var rows = Array.prototype.slice.call(card.querySelectorAll('[data-job-row]'));
+        var seq = 0;
+
+        function evaluate() {
+            var ids = rows
+                .filter(function (r) { return r.querySelector('[data-job-check]').checked; })
+                .map(function (r) { return r.getAttribute('data-job-row'); });
+            var mine = ++seq;
+            card.classList.add('is-busy');
+            var qs = ids.map(function (id) { return 'job_ids=' + encodeURIComponent(id); }).join('&');
+            fetch(evalUrl + '?' + qs, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
+                .then(function (r) { return r.json(); })
+                .then(function (data) { if (mine === seq) { applyResult(card, rows, data); } })
+                .catch(function () {
+                    if (mine === seq) {
+                        applyResult(card, rows, { ok: false, error: 'Could not recalculate — check your connection and retry.' });
+                    }
+                })
+                .then(function () { if (mine === seq) { card.classList.remove('is-busy'); } });
+        }
+
+        rows.forEach(function (row) {
+            var box = row.querySelector('[data-job-check]');
+            box.addEventListener('change', function () {
+                var exclude = row.querySelector('input[type=radio][value="exclude"]');
+                var scrap = row.querySelector('input[type=radio][value="scrap"]');
+                if (!box.checked && exclude) { exclude.checked = true; }
+                if (box.checked && scrap && exclude && exclude.checked) { scrap.checked = true; }
+                evaluate();
+            });
+            Array.prototype.forEach.call(row.querySelectorAll('input[type=radio]'), function (radio) {
+                radio.addEventListener('change', function () {
+                    var wantOn = radio.value !== 'exclude';
+                    if (box.checked !== wantOn) { box.checked = wantOn; evaluate(); }
+                });
+            });
+        });
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-merge-card]'), wire);
+})();
+</script>
 {% endblock %}
 
 {% block content %}
@@ -62,15 +151,16 @@
         </div>
 
         {% for suggestion in suggestions %}
-        <div class="merge-card">
+        <div class="merge-card" data-merge-card>
             <div class="merge-savings">
-                <span class="merge-chip">{{ suggestion.savings.setup_sheets_saved }} setup sheets saved</span>
-                <span class="merge-chip">{{ suggestion.savings.makereadies_saved }} make-ready{{ suggestion.savings.makereadies_saved|pluralize:"s" }} saved</span>
-                <span class="merge-chip">{{ suggestion.savings.plates_saved }} plates saved</span>
-                {% if suggestion.savings.mr_minutes_saved %}<span class="merge-chip">{{ suggestion.savings.mr_minutes_saved }} min make-ready time saved</span>{% endif %}
-                <span class="merge-chip warn">max over-production {{ suggestion.allocation.worst_overage_pct }}%</span>
-                <span class="merge-chip warn">run {{ suggestion.allocation.run_sheets }} sheets × {{ suggestion.allocation.sheet_ups }} ups</span>
+                <span class="merge-chip" data-chip="setup">{{ suggestion.savings.setup_sheets_saved }} setup sheets saved</span>
+                <span class="merge-chip" data-chip="mr">{{ suggestion.savings.makereadies_saved }} make-ready{{ suggestion.savings.makereadies_saved|pluralize:"s" }} saved</span>
+                <span class="merge-chip" data-chip="plates">{{ suggestion.savings.plates_saved }} plates saved</span>
+                <span class="merge-chip" data-chip="mrmin"{% if not suggestion.savings.mr_minutes_saved %} hidden{% endif %}>{{ suggestion.savings.mr_minutes_saved }} min make-ready time saved</span>
+                <span class="merge-chip warn" data-chip="over">max over-production {{ suggestion.allocation.worst_overage_pct }}%</span>
+                <span class="merge-chip warn" data-chip="run">run {{ suggestion.allocation.run_sheets }} sheets × {{ suggestion.allocation.sheet_ups }} ups</span>
             </div>
+            <div class="merge-status" data-merge-status hidden></div>
             <p class="erp-section-desc merge-sheet-line">
                 <strong>Print sheet:</strong> {{ suggestion.jobs.0.print_sheet_size|default:"—" }}
                 · <strong>Purchase sheet:</strong> {{ suggestion.jobs.0.purchase_sheet_size|default:"—" }}
@@ -79,20 +169,18 @@
             </p>
             <form method="post" action="{% url 'planning:merge_accept' %}">
             {% csrf_token %}
-            {% for job_id in suggestion.job_ids %}
-                <input type="hidden" name="job_ids" value="{{ job_id }}">
-            {% endfor %}
             <div class="erp-table-wrap">
                 <table class="erp-table merge-table">
                     <thead>
                         <tr>
-                            <th>JC</th><th>SKU</th><th>Source AWC</th><th>Size (mm)</th><th>Material</th><th>Colours</th>
+                            <th title="Tick the jobs to include in this merge">Use</th><th>JC</th><th>SKU</th><th>Source AWC</th><th>Size (mm)</th><th>Material</th><th>Colours</th>
                             <th>Net qty</th><th>Ups</th><th>Planned qty</th><th>Over %</th><th>Existing plate</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for item in suggestion.allocation.items %}
-                        <tr>
+                        <tr data-job-row="{{ item.job.id }}">
+                            <td><input type="checkbox" name="job_ids" value="{{ item.job.id }}" checked data-job-check aria-label="Include {{ item.job.jc_number }} in the merge"></td>
                             <td><a href="{% url 'planning:job_detail' item.job.id %}">{{ item.job.jc_number }}</a></td>
                             <td>{{ item.job.sku }}</td>
                             <td>{% if item.job.awc_no_display %}{{ item.job.awc_no_display }}{% else %}<em>NEW ARTWORK — to be created</em>{% endif %}</td>
@@ -100,9 +188,9 @@
                             <td>{{ item.job.material }}</td>
                             <td>{{ item.job.total_colors }}</td>
                             <td>{{ item.net_qty }}</td>
-                            <td><strong>{{ item.allocated_ups }}</strong></td>
-                            <td>{{ item.planned_produced_qty }}</td>
-                            <td>{{ item.overage_pct }}%</td>
+                            <td data-cell="ups"><strong>{{ item.allocated_ups }}</strong></td>
+                            <td data-cell="planned">{{ item.planned_produced_qty }}</td>
+                            <td data-cell="over">{{ item.overage_pct }}%</td>
                             <td>
                                 {% if item.job.existing_plate_request %}
                                     <a href="{% url 'printing_plates:request_detail' item.job.existing_plate_request.pk %}">
@@ -137,7 +225,7 @@
                     <label>Reason for the plate decision (optional)</label>
                     <input type="text" name="plate_reason" placeholder="Logged on each plate request">
                 </div>
-                <button type="submit" class="erp-btn erp-btn-primary">Accept merge</button>
+                <button type="submit" class="erp-btn erp-btn-primary" data-merge-accept>Accept merge</button>
             </div>
             </form>
         </div>

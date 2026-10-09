@@ -25,6 +25,7 @@ urlpatterns = [
     path('job-cards/', RedirectView.as_view(pattern_name='planning:jobs', permanent=False), name='job_cards'),
     path('merge/', views.planning_merge_board, name='merge_board'),
     path('merge/accept/', views.planning_merge_accept, name='merge_accept'),
+    path('merge/evaluate/', views.planning_merge_evaluate, name='merge_evaluate'),
     path('merge/<int:group_id>/', views.planning_merge_detail, name='merge_detail'),
     path('merge/<int:group_id>/combined-sheet/', views.planning_merge_combined_sheet, name='merge_combined_sheet'),
     path('merge/<int:group_id>/request-artwork/', views.planning_merge_request_artwork, name='merge_request_artwork'),

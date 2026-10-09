@@ -59,7 +59,7 @@ from django.db import transaction
 from django.db.models import Count, Prefetch, Q, Sum
 from django.db.models.functions import Upper
 from django.db.models.deletion import ProtectedError
-from django.http import Http404, HttpResponse
+from django.http import Http404, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
@@ -5818,6 +5818,105 @@ def planning_merge_board(request):
         },
     }
     return render(request, 'planning/planning_merge_board.html', context)
+
+
+@login_required
+@permission_required('can_view_planning_queue')
+def planning_merge_evaluate(request):
+    """Live what-if for the board: re-run the merge rules on a chosen subset.
+
+    The planner ticks/unticks jobs inside a suggestion and the board asks here
+    whether that selection can still gang (same size/material/colours, whole
+    ups, over-production inside tolerance) and what it would save.
+    """
+    import dataclasses
+
+    try:
+        job_ids = sorted({int(v) for v in request.GET.getlist('job_ids')})
+    except (TypeError, ValueError):
+        job_ids = []
+    if len(job_ids) < 2:
+        return JsonResponse({
+            'ok': False,
+            'error': 'Select at least two jobs to merge.',
+            'selected': len(job_ids),
+        })
+
+    cfg = MergeConfig()
+    jobs = list(_eligible_merge_jobs().filter(id__in=job_ids).order_by('id'))
+    if len(jobs) != len(job_ids):
+        return JsonResponse({
+            'ok': False,
+            'error': 'One or more selected jobs are no longer eligible. Refresh the board.',
+            'selected': len(job_ids),
+        })
+
+    blocked = [job.jc_number for job in jobs if merge_blockers(job, cfg)]
+    if blocked:
+        return JsonResponse({
+            'ok': False,
+            'error': 'Master data incomplete for ' + ', '.join(blocked) + '.',
+            'selected': len(jobs),
+        })
+
+    signatures = {bucket_signature(job, cfg) for job in jobs}
+    if len(signatures) != 1 or None in signatures:
+        return JsonResponse({
+            'ok': False,
+            'error': 'These jobs do not share the same size, material, sheet and colour specification.',
+            'selected': len(jobs),
+        })
+
+    sheet_ups = jobs[0].ups_value
+    if len(jobs) > cfg.max_group_size:
+        return JsonResponse({
+            'ok': False,
+            'error': f'A merge group can hold at most {cfg.max_group_size} jobs.',
+            'selected': len(jobs),
+        })
+    if sheet_ups < len(jobs):
+        return JsonResponse({
+            'ok': False,
+            'error': f'The sheet has only {sheet_ups} ups — not enough for {len(jobs)} jobs.',
+            'selected': len(jobs),
+        })
+
+    allocation = allocate_ups(jobs, sheet_ups, cfg)
+    if not allocation:
+        # Say how far off it is by re-running with the tolerance lifted.
+        relaxed = allocate_ups(jobs, sheet_ups, dataclasses.replace(cfg, qty_tolerance_pct=10000.0))
+        if relaxed:
+            error = (
+                f"Quantities don't split into whole ups: over-production would reach "
+                f"{relaxed['worst_overage_pct']:g}% (limit {cfg.qty_tolerance_pct:g}%)."
+            )
+        else:
+            error = 'Quantities cannot be split into whole ups on this sheet.'
+        return JsonResponse({'ok': False, 'error': error, 'selected': len(jobs)})
+
+    savings = compute_savings(allocation, jobs, cfg)
+    return JsonResponse({
+        'ok': True,
+        'selected': len(jobs),
+        'run_sheets': allocation['run_sheets'],
+        'sheet_ups': allocation['sheet_ups'],
+        'worst_overage_pct': allocation['worst_overage_pct'],
+        'savings': {
+            key: savings[key] for key in (
+                'setup_sheets_saved', 'makereadies_saved', 'plates_saved',
+                'mr_minutes_saved', 'impressions_saved',
+            )
+        },
+        'items': {
+            str(item['job'].id): {
+                'ups': item['allocated_ups'],
+                'planned': item['planned_produced_qty'],
+                'net': item['net_qty'],
+                'over': item['overage_pct'],
+            }
+            for item in allocation['items']
+        },
+    })
 
 
 @login_required

@@ -195,6 +195,71 @@ class MergeBoardViewTests(TestCase):
         self.assertEqual(board.context['eligible_count'], 3)
 
 
+class MergeEvaluateTests(TestCase):
+    """The board's live tick/untick what-if endpoint."""
+
+    def setUp(self):
+        user = get_user_model().objects.create_superuser('planner_eval', password='pw12345678')
+        profile, _ = UserProfile.objects.get_or_create(user=user)
+        profile.role = 'admin'
+        profile.save()
+        from core.models import Permission
+        for code in ('action.view_planning_queue', 'action.plan'):
+            Permission.objects.get_or_create(code=code, defaults={'name': code})
+        self.client.force_login(user)
+
+    def _evaluate(self, jobs):
+        return self.client.get(
+            reverse('planning:merge_evaluate'), {'job_ids': [j.id for j in jobs]}
+        ).json()
+
+    def test_full_selection_is_ok_with_allocation_and_savings(self):
+        jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
+        data = self._evaluate(jobs)
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['run_sheets'], 5000)
+        self.assertEqual(data['savings']['makereadies_saved'], 2)
+        self.assertEqual(data['items'][str(jobs[0].id)]['ups'], 2)
+
+    def test_deselecting_down_to_one_job_is_not_mergeable(self):
+        jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
+        data = self._evaluate(jobs[:1])
+        self.assertFalse(data['ok'])
+        self.assertIn('at least two', data['error'])
+
+    def test_deselecting_can_break_the_ups_split(self):
+        jobs = [make_job('JC1', 10000, ups=2), make_job('JC2', 6000, ups=2)]
+        data = self._evaluate(jobs)
+        self.assertFalse(data['ok'])
+        self.assertIn('over-production', data['error'])
+
+    def test_deselecting_can_leave_a_smaller_valid_merge(self):
+        jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
+        data = self._evaluate(jobs[1:])
+        self.assertTrue(data['ok'])
+        self.assertEqual(data['savings']['makereadies_saved'], 1)
+        self.assertEqual(set(data['items']), {str(jobs[1].id), str(jobs[2].id)})
+
+    def test_mismatched_specs_are_rejected(self):
+        jobs = [make_job('JC1', 10000), make_job('JC2', 10000, material='Duplex Board 350gsm')]
+        self.assertFalse(self._evaluate(jobs)['ok'])
+
+    def test_board_renders_a_checkbox_per_job(self):
+        make_job('JC1', 10000)
+        make_job('JC2', 5000)
+        make_job('JC3', 5000)
+        body = self.client.get(reverse('planning:merge_board')).content.decode()
+        self.assertEqual(body.count('name="job_ids"'), 3)
+
+    def test_accept_only_merges_the_ticked_jobs(self):
+        jobs = [make_job('JC1', 10000), make_job('JC2', 5000), make_job('JC3', 5000)]
+        self.client.post(
+            reverse('planning:merge_accept'), {'job_ids': [j.id for j in jobs[1:]]}, follow=True
+        )
+        group = MergeGroup.objects.get()
+        self.assertEqual(group.items.count(), 2)
+
+
 class MergeDownstreamTests(TestCase):
     def setUp(self):
         user = get_user_model().objects.create_user('planner2', password='pw12345678')
