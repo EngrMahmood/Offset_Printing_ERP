@@ -5820,6 +5820,36 @@ def planning_merge_board(request):
     return render(request, 'planning/planning_merge_board.html', context)
 
 
+MERGE_MAX_TOLERANCE_PCT = 50.0
+
+
+def _merge_config_with_tolerance(raw):
+    """A MergeConfig whose over-production limit the planner chose (bounded)."""
+    cfg = MergeConfig()
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return cfg
+    if value == value:  # not NaN
+        cfg.qty_tolerance_pct = min(max(value, 0.0), MERGE_MAX_TOLERANCE_PCT)
+    return cfg
+
+
+def _min_overproduction_pct(jobs, sheet_ups, cfg):
+    """Smallest over-production limit (rounded up to 0.1%) at which these jobs
+    can fill the whole sheet with whole ups, or None if none up to the cap."""
+    import dataclasses
+    import math
+
+    steps = int(MERGE_MAX_TOLERANCE_PCT / 0.25)
+    for step in range(0, steps + 1):
+        trial = dataclasses.replace(cfg, qty_tolerance_pct=step * 0.25)
+        allocation = allocate_ups(jobs, sheet_ups, trial, exhaustive=True)
+        if allocation:
+            return math.ceil(allocation['worst_overage_pct'] * 10 - 1e-9) / 10
+    return None
+
+
 @login_required
 @permission_required('can_view_planning_queue')
 def planning_merge_evaluate(request):
@@ -5829,8 +5859,6 @@ def planning_merge_evaluate(request):
     whether that selection can still gang (same size/material/colours, whole
     ups, over-production inside tolerance) and what it would save.
     """
-    import dataclasses
-
     try:
         job_ids = sorted({int(v) for v in request.GET.getlist('job_ids')})
     except (TypeError, ValueError):
@@ -5842,7 +5870,7 @@ def planning_merge_evaluate(request):
             'selected': len(job_ids),
         })
 
-    cfg = MergeConfig()
+    cfg = _merge_config_with_tolerance(request.GET.get('tolerance'))
     jobs = list(_eligible_merge_jobs().filter(id__in=job_ids).order_by('id'))
     if len(jobs) != len(job_ids):
         return JsonResponse({
@@ -5882,31 +5910,28 @@ def planning_merge_evaluate(request):
         })
 
     allocation = allocate_ups(jobs, sheet_ups, cfg, exhaustive=True)
+    minimum = _min_overproduction_pct(jobs, sheet_ups, cfg)
     if not allocation:
-        # Say how much tolerance would be needed to fill the sheet with whole ups.
-        needed = None
-        for step in range(1, 400):
-            tolerance = cfg.qty_tolerance_pct + step * 0.5
-            relaxed = allocate_ups(
-                jobs, sheet_ups, dataclasses.replace(cfg, qty_tolerance_pct=tolerance), exhaustive=True
-            )
-            if relaxed:
-                needed = relaxed['worst_overage_pct']
-                break
-        if needed is not None:
+        if minimum is not None:
             error = (
                 f"These quantities cannot fill all {sheet_ups} ups with whole ups inside the "
-                f"{cfg.qty_tolerance_pct:g}% over-production limit (the best split needs "
-                f"{needed:g}%)."
+                f"{cfg.qty_tolerance_pct:g}% over-production limit. The lowest limit that works "
+                f"for this selection is {minimum:g}%."
             )
         else:
-            error = f'These quantities cannot fill all {sheet_ups} ups within the over-production limit.'
-        return JsonResponse({'ok': False, 'error': error, 'selected': len(jobs)})
+            error = (
+                f'These quantities cannot fill all {sheet_ups} ups even at '
+                f'{MERGE_MAX_TOLERANCE_PCT:g}% over-production.'
+            )
+        return JsonResponse({
+            'ok': False, 'error': error, 'selected': len(jobs), 'min_tolerance': minimum,
+        })
 
     savings = compute_savings(allocation, jobs, cfg)
     return JsonResponse({
         'ok': True,
         'selected': len(jobs),
+        'min_tolerance': minimum,
         'run_sheets': allocation['run_sheets'],
         'sheet_ups': allocation['sheet_ups'],
         'unused_ups': allocation['unused_ups'],
@@ -5943,7 +5968,7 @@ def planning_merge_accept(request):
         messages.error(request, 'Select at least two jobs to merge.')
         return redirect('planning:merge_board')
 
-    cfg = MergeConfig()
+    cfg = _merge_config_with_tolerance(request.POST.get('tolerance'))
     with transaction.atomic():
         # Re-validate against the live eligibility set; never trust posted ups.
         jobs = list(_eligible_merge_jobs().select_for_update().filter(id__in=job_ids))
@@ -5984,7 +6009,7 @@ def planning_merge_accept(request):
                     f'{cfg.qty_tolerance_pct:g}% tolerance. Adjust the selection and try again.',
                 )
             else:
-                messages.error(request, 'Quantities cannot be split into whole ups within the 5% tolerance.')
+                messages.error(request, f'Quantities cannot be split into whole ups within the {cfg.qty_tolerance_pct:g}% tolerance.')
             return redirect('planning:merge_board')
 
         savings = compute_savings(allocation, jobs, cfg)

@@ -20,6 +20,8 @@
 .merge-plate-actions { display: flex; flex-direction: column; gap: 2px; margin-top: 4px; font-size: 0.78rem; white-space: nowrap; }
 .merge-plate-actions label { display: flex; align-items: center; gap: 4px; cursor: pointer; }
 .erp-tiny { font-size: 0.78rem; }
+.merge-tol { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 0 0 10px; }
+.merge-tol input { width: 80px; margin-left: 6px; }
 .merge-status { margin: 8px 0; padding: 8px 12px; border-radius: 8px; font-size: 0.88rem; background: rgba(200, 40, 40, 0.1); color: #b42318; }
 .merge-card.is-busy .merge-table { opacity: 0.6; }
 .merge-table tr.is-off td { opacity: 0.45; }
@@ -46,6 +48,20 @@
         accept.disabled = !ok;
         status.hidden = ok;
         if (!ok) { setText(status, result.error || 'This selection cannot be merged.'); }
+        var hint = card.querySelector('[data-merge-hint]');
+        var useMin = card.querySelector('[data-merge-usemin]');
+        var tolInput = card.querySelector('[data-merge-tol]');
+        var min = result.min_tolerance;
+        if (min !== undefined && min !== null) {
+            setText(hint, 'Lowest limit that fills the sheet for this selection: ' + min + '%');
+            var differs = parseFloat(tolInput.value) !== min;
+            useMin.hidden = !differs;
+            useMin.setAttribute('data-value', min);
+            setText(useMin, 'Use ' + min + '%');
+        } else {
+            setText(hint, result.selected >= 2 && result.error ? '' : '');
+            useMin.hidden = true;
+        }
 
         rows.forEach(function (row) {
             var on = row.querySelector('[data-job-check]').checked;
@@ -72,6 +88,17 @@
     function wire(card) {
         var rows = Array.prototype.slice.call(card.querySelectorAll('[data-job-row]'));
         var seq = 0;
+        var tol = card.querySelector('[data-merge-tol]');
+        var useMin = card.querySelector('[data-merge-usemin]');
+        var timer = null;
+        tol.addEventListener('input', function () {
+            clearTimeout(timer);
+            timer = setTimeout(evaluate, 350);
+        });
+        useMin.addEventListener('click', function () {
+            tol.value = useMin.getAttribute('data-value');
+            evaluate();
+        });
 
         function evaluate() {
             var ids = rows
@@ -80,6 +107,7 @@
             var mine = ++seq;
             card.classList.add('is-busy');
             var qs = ids.map(function (id) { return 'job_ids=' + encodeURIComponent(id); }).join('&');
+            qs += '&tolerance=' + encodeURIComponent(tol.value || '0');
             fetch(evalUrl + '?' + qs, { headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'same-origin' })
                 .then(function (r) { return r.json(); })
                 .then(function (data) { if (mine === seq) { applyResult(card, rows, data); } })
@@ -169,6 +197,13 @@
             </p>
             <form method="post" action="{% url 'planning:merge_accept' %}">
             {% csrf_token %}
+            <div class="merge-tol">
+                <label>Max over-production %
+                    <input type="number" name="tolerance" value="{{ config.qty_tolerance_pct|floatformat:"-2" }}" min="0" max="50" step="0.1" data-merge-tol>
+                </label>
+                <span class="erp-tiny" data-merge-hint></span>
+                <button type="button" class="erp-btn erp-btn-secondary" data-merge-usemin hidden></button>
+            </div>
             <div class="erp-table-wrap">
                 <table class="erp-table merge-table">
                     <thead>

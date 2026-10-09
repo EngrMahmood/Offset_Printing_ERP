@@ -257,6 +257,32 @@ class MergeEvaluateTests(TestCase):
         self.assertEqual(sum(i['allocated_ups'] for i in result['items']), 8)
         self.assertEqual(result['unused_ups'], 0)
 
+    def test_failure_reports_the_minimum_limit_and_a_higher_limit_accepts_it(self):
+        qtys = [20000, 10000, 15000, 10000, 5000]
+        jobs = [make_job(f'JM{i}', q, ups=16) for i, q in enumerate(qtys)]
+        strict = self._evaluate(jobs)
+        self.assertFalse(strict['ok'])
+        minimum = strict['min_tolerance']
+        self.assertIsNotNone(minimum)
+        self.assertGreater(minimum, 5)
+        relaxed = self.client.get(
+            reverse('planning:merge_evaluate'),
+            {'job_ids': [j.id for j in jobs], 'tolerance': minimum},
+        ).json()
+        self.assertTrue(relaxed['ok'])
+        self.assertLessEqual(relaxed['worst_overage_pct'], minimum)
+
+    def test_accept_honours_the_chosen_limit(self):
+        jobs = [make_job('JT1', 10000, ups=2), make_job('JT2', 7000, ups=2)]
+        self.client.post(reverse('planning:merge_accept'), {'job_ids': [j.id for j in jobs]}, follow=True)
+        self.assertEqual(MergeGroup.objects.count(), 0)
+        self.client.post(
+            reverse('planning:merge_accept'),
+            {'job_ids': [j.id for j in jobs], 'tolerance': '50'},
+            follow=True,
+        )
+        self.assertEqual(MergeGroup.objects.count(), 1)
+
     def test_mismatched_specs_are_rejected(self):
         jobs = [make_job('JC1', 10000), make_job('JC2', 10000, material='Duplex Board 350gsm')]
         self.assertFalse(self._evaluate(jobs)['ok'])
