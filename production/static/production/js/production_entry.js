@@ -1,4 +1,11 @@
 document.addEventListener('DOMContentLoaded', function(){
+    // This script is loaded on every page (base template) but only drives the
+    // Printing entry form. Packing and Dispatch entry share element ids such as
+    // job_card / job_info_card / history_card and have their own logic, so
+    // running here would hide the job context they just populated.
+    if (!document.getElementById('production_form')) {
+        return;
+    }
     const isViewMode = Boolean(
         window.IS_VIEW_MODE || new URLSearchParams(window.location.search).has('view')
     );

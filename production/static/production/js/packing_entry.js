@@ -100,6 +100,13 @@ document.addEventListener('DOMContentLoaded', function () {
             }
         }
 
+        const packQty = document.getElementById('packing_qty');
+        if (packQty) {
+            const balance = parseNumber(info.remaining_allowed);
+            packQty.placeholder = balance > 0 ? `Balance allowed: ${balance.toLocaleString()} pcs` : 'Fully packed - no balance left';
+            packQty.max = String(balance);
+        }
+
         const historyBody = document.getElementById('history_body');
         if (!historyBody) return;
         historyBody.innerHTML = '';
