@@ -41,9 +41,13 @@ GUIDE_NAV_ROLES = {
 }
 SUPPLY_CHAIN_NAV_ROLES = {'admin', 'manager', 'supply_chain'}
 AUDIT_NAV_ROLES = {'admin', 'manager', 'planner', 'production_manager', 'production', 'qc', 'dispatch'}
+# Item Requests are open to every role: anyone on the floor can raise a request
+# for something they need (maintenance spares, stationery, tools...). The seed also
+# grants it to custom roles, so the set below only has to cover the built-in roles.
 ITEM_REQUEST_NAV_ROLES = {
     'admin', 'manager', 'supply_chain', 'planner', 'production_manager', 'production',
     'graphics_designer', 'operator', 'dispatch', 'qc', 'storekeeper', 'finance',
+    'maintenance_engineer', 'viewer',
 }
 MAINTENANCE_NAV_ROLES = {'admin', 'manager', 'maintenance_engineer', 'production_manager', 'production', 'operator'}
 # Chat is an org-wide utility — open to every role by default (see chat.management.commands.seed_chat_permissions,

@@ -1,8 +1,8 @@
 {% extends 'theme/base.html' %}
 
-{% block title %}New PM Plan{% endblock %}
-{% block header_title %}New Preventive Maintenance Plan{% endblock %}
-{% block header_subtitle %}Set up a recurring maintenance schedule for a machine.{% endblock %}
+{% block title %}{% if is_create %}New{% else %}Edit{% endif %} PM Plan{% endblock %}
+{% block header_title %}{% if is_create %}New{% else %}Edit{% endif %} Preventive Maintenance Plan{% endblock %}
+{% block header_subtitle %}A recurring maintenance schedule for a machine. Use days for calendar plans, impressions for run-based plans (counted from Production entries).{% endblock %}
 {% block header_actions %}
     <a href="{% url 'maintenance:pm_plan_list' %}" class="erp-btn erp-btn-secondary">Back to List</a>
 {% endblock %}
@@ -10,7 +10,7 @@
 {% block content %}
 <div class="erp-page-stack">
     <section class="erp-section-shell">
-        <form method="post" class="erp-form-grid" style="grid-template-columns:1fr 1fr; gap:16px; max-width:700px;">
+        <form method="post" class="erp-form-grid" style="grid-template-columns:1fr 1fr; gap:16px; max-width:900px;">
             {% csrf_token %}
             {% for field in form %}
             <div class="erp-input-group">
@@ -19,6 +19,9 @@
                 {% if field.errors %}<div class="erp-alert erp-alert-danger">{{ field.errors|striptags }}</div>{% endif %}
             </div>
             {% endfor %}
+            <p class="erp-help-text" style="grid-column:1 / -1;">
+                Checklist content must be approved for this machine type by your maintenance/HSE team. Operators should not be asked to do electrical or other hazardous work.
+            </p>
             <div class="erp-actions" style="grid-column:1 / -1;">
                 <button type="submit" class="erp-btn erp-btn-primary">Save Plan</button>
             </div>

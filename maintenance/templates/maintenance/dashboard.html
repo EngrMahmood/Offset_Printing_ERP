@@ -2,37 +2,92 @@
 {% load maintenance_extras %}
 
 {% block title %}Maintenance Dashboard{% endblock %}
-{% block header_title %}Maintenance Dashboard{% endblock %}
-{% block header_subtitle %}Open faults, machines currently down, and quick access to logging.{% endblock %}
+{% block header_title %}Maintenance{% endblock %}
+{% block header_subtitle %}{% if is_staff %}Faults, repairs in progress, machines down and preventive maintenance.{% else %}Report a problem and follow what maintenance is doing about it.{% endif %}{% endblock %}
 {% block header_actions %}
-    <a href="{% url 'maintenance:complaint_create' %}" class="erp-btn erp-btn-primary">Report a Complaint</a>
+    <a href="{% url 'maintenance:complaint_create' %}" class="erp-btn erp-btn-primary">Report a Problem</a>
 {% endblock %}
 
 {% block content %}
 <div class="erp-page-stack">
+
+    {% if not is_staff %}
+    <section class="erp-section-shell">
+        <a href="{% url 'maintenance:complaint_create' %}" class="erp-btn erp-btn-primary" style="font-size:1.1rem; padding:14px 28px;">Report a Problem</a>
+    </section>
+    {% endif %}
+
+    {% if machines_down %}
+    <section class="erp-section-shell">
+        <h3>Machines Currently Stopped</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Machine</th><th>Stopped since</th><th>Reason</th><th>Ticket</th></tr></thead>
+                <tbody>
+                    {% for interval in machines_down %}
+                    <tr>
+                        <td><strong>{{ interval.machine }}</strong></td>
+                        <td>{{ interval.start_at }}</td>
+                        <td>{{ interval.get_reason_display }}</td>
+                        <td>{% if interval.record and is_staff %}<a href="{% url 'maintenance:record_detail' interval.record.pk %}">{{ interval.record.record_no }}</a>{% elif interval.record %}{{ interval.record.record_no }}{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if is_staff %}
     <section class="erp-section-shell">
         <div style="display:flex; gap:12px; flex-wrap:wrap;">
-            <a href="{% url 'maintenance:record_list' %}?view=mine" class="erp-btn erp-btn-secondary">My Complaints ({{ my_complaints_count }})</a>
-            {% if is_staff %}
-            <a href="{% url 'maintenance:record_list' %}?status=REPORTED" class="erp-btn erp-btn-secondary">New Complaints Awaiting Triage ({{ new_complaints_count }})</a>
-            <a href="{% url 'maintenance:record_list' %}?view=assigned" class="erp-btn erp-btn-secondary">My Tickets ({{ my_tickets_count }})</a>
-            {% endif %}
+            <a href="{% url 'maintenance:record_list' %}?status=REPORTED" class="erp-btn erp-btn-secondary">Awaiting triage ({{ new_complaints_count }})</a>
+            <a href="{% url 'maintenance:record_list' %}?status=IN_PROGRESS" class="erp-btn erp-btn-secondary">Repairs in progress ({{ in_progress_count }})</a>
+            <a href="{% url 'maintenance:record_list' %}?status=AWAITING_PARTS" class="erp-btn erp-btn-secondary">Waiting for parts ({{ awaiting_parts_count }})</a>
+            <a href="{% url 'maintenance:record_list' %}?status=AWAITING_VENDOR" class="erp-btn erp-btn-secondary">Waiting for vendor ({{ awaiting_vendor_count }})</a>
+            <a href="{% url 'maintenance:record_list' %}?view=assigned" class="erp-btn erp-btn-secondary">Assigned to me ({{ my_tickets_count }})</a>
+            <a href="{% url 'maintenance:pm_plan_list' %}" class="erp-btn erp-btn-secondary">Preventive plans{% if overdue_pm %} ({{ overdue_pm|length }} overdue){% endif %}</a>
         </div>
     </section>
 
+    {% if critical_records %}
     <section class="erp-section-shell">
-        <h3>Open Records ({{ open_count }})</h3>
+        <h3>Critical Faults</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Ticket</th><th>Machine</th><th>Status</th><th>Age</th></tr></thead>
+                <tbody>
+                    {% for record in critical_records %}
+                    <tr>
+                        <td><a href="{% url 'maintenance:record_detail' record.pk %}">{{ record.record_no }}</a></td>
+                        <td>{{ record.machine }}</td>
+                        <td><span class="erp-badge {{ record.status|status_badge }}">{{ record.get_status_display }}</span></td>
+                        <td>{{ record.created_at|timesince }} ago</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    {% if overdue_triage or stale_in_progress or overdue_pm %}
+    <section class="erp-section-shell">
+        <h3>Needs Attention</h3>
+        <ul>
+            {% for record in overdue_triage %}<li><a href="{% url 'maintenance:record_detail' record.pk %}">{{ record.record_no }}</a> — {{ record.machine }}: waiting for triage for {{ record.created_at|timesince }}.</li>{% endfor %}
+            {% for record in stale_in_progress %}<li><a href="{% url 'maintenance:record_detail' record.pk %}">{{ record.record_no }}</a> — {{ record.machine }}: repair running for {{ record.work_start_at|timesince }}.</li>{% endfor %}
+            {% for record in overdue_pm %}<li><a href="{% url 'maintenance:record_detail' record.pk %}">{{ record.record_no }}</a> — {{ record.machine }}: preventive maintenance "{{ record.pm_plan.title }}" is overdue.</li>{% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <h3>Open Tickets ({{ open_count }})</h3>
         <div class="erp-table-wrap erp-table-dense">
             <table class="erp-table">
                 <thead>
-                    <tr>
-                        <th>Record No.</th>
-                        <th>Machine</th>
-                        <th>Type</th>
-                        <th>Priority</th>
-                        <th>Status</th>
-                        <th>Age</th>
-                    </tr>
+                    <tr><th>Ticket</th><th>Machine</th><th>Type</th><th>Priority</th><th>Status</th><th>Age</th></tr>
                 </thead>
                 <tbody>
                     {% for record in open_records %}
@@ -49,35 +104,37 @@
                         </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="6">No open maintenance records.</td></tr>
+                    <tr><td colspan="6">No open tickets.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
     </section>
 
+    {% if recent_completed %}
     <section class="erp-section-shell">
-        <h3>Machines Currently Down</h3>
+        <h3>Recently Completed Repairs</h3>
+        <ul>
+            {% for record in recent_completed %}<li><a href="{% url 'maintenance:record_detail' record.pk %}">{{ record.record_no }}</a> — {{ record.machine }} ({{ record.get_status_display }}, {{ record.updated_at|timesince }} ago)</li>{% endfor %}
+        </ul>
+    </section>
+    {% endif %}
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <h3>My Reported Problems{% if my_complaints_count %} ({{ my_complaints_count }} still open){% endif %}</h3>
         <div class="erp-table-wrap erp-table-dense">
             <table class="erp-table">
-                <thead>
-                    <tr>
-                        <th>Machine</th>
-                        <th>Since</th>
-                        <th>Reason</th>
-                        <th>Record</th>
-                    </tr>
-                </thead>
+                <thead><tr><th>Ticket</th><th>Machine</th><th>What is happening</th></tr></thead>
                 <tbody>
-                    {% for interval in machines_down %}
+                    {% for record, help in my_tickets %}
                     <tr>
-                        <td>{{ interval.machine }}</td>
-                        <td>{{ interval.start_at }}</td>
-                        <td>{{ interval.get_reason_display }}</td>
-                        <td>{% if interval.record %}<a href="{% url 'maintenance:record_detail' interval.record.pk %}">{{ interval.record.record_no }}</a>{% endif %}</td>
+                        <td><a href="{% url 'maintenance:record_detail' record.pk %}">{{ record.record_no }}</a></td>
+                        <td>{{ record.machine }}</td>
+                        <td><strong>{{ record.get_status_display }}</strong>{% if help %} — {{ help }}{% endif %}</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="4">No machines currently down.</td></tr>
+                    <tr><td colspan="3">You have not reported any problems.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

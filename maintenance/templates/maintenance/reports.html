@@ -1,44 +1,85 @@
 {% extends 'theme/base.html' %}
 
 {% block title %}Maintenance Reports{% endblock %}
-{% block header_title %}Maintenance KPIs{% endblock %}
-{% block header_subtitle %}Breakdown frequency, MTTR, and cost per machine.{% endblock %}
+{% block header_title %}Maintenance Reports{% endblock %}
+{% block header_subtitle %}Breakdowns, downtime, repair time versus waiting time, repeat faults and preventive compliance.{% endblock %}
 
 {% block content %}
 <div class="erp-page-stack">
     <section class="erp-section-shell">
-        <div style="display:flex; gap:24px;">
-            <div><strong>{{ open_count }}</strong> open records</div>
-            <div><strong>{{ closed_count }}</strong> closed records</div>
+        <form method="get" style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
+            <div class="erp-input-group"><label class="erp-input-label">From</label><input type="date" name="date_from" value="{{ date_from }}" class="erp-input"></div>
+            <div class="erp-input-group"><label class="erp-input-label">To</label><input type="date" name="date_to" value="{{ date_to }}" class="erp-input"></div>
+            <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <div style="display:flex; gap:28px; flex-wrap:wrap;">
+            <div><strong>{{ total_tickets }}</strong> tickets</div>
+            <div><strong>{{ open_count }}</strong> open</div>
+            <div><strong>{{ closed_count }}</strong> closed</div>
+            <div><strong>{{ breakdown_tickets }}</strong> breakdown</div>
+            <div><strong>{{ preventive_tickets }}</strong> preventive</div>
+            <div><strong>{{ total_downtime_hours }}</strong> h total downtime</div>
+            <div><strong>{% if overall_mttr_minutes is not None %}{{ overall_mttr_minutes|floatformat:0 }} min{% else %}—{% endif %}</strong> MTTR</div>
+            <div><strong>{{ repair_hours }}</strong> h repairing · <strong>{{ waiting_hours }}</strong> h waiting (parts / vendor)</div>
+            <div><strong>{% if pm_compliance_pct is not None %}{{ pm_compliance_pct }}%{% else %}—{% endif %}</strong> PM compliance ({{ pm_done }} of {{ pm_total }} done, {{ pm_open }} open)</div>
         </div>
     </section>
 
     <section class="erp-section-shell">
-        <h3>Top Failing Machines</h3>
+        <h3>By Machine</h3>
         <div class="erp-table-wrap erp-table-dense">
             <table class="erp-table">
                 <thead>
-                    <tr>
-                        <th>Machine</th>
-                        <th>Breakdown Count</th>
-                        <th>MTTR (minutes)</th>
-                        <th>Total Maintenance Cost</th>
-                    </tr>
+                    <tr><th>Machine</th><th>Tickets</th><th>Breakdowns</th><th>Downtime (h)</th><th>MTTR (min)</th><th>Total Maintenance Cost</th></tr>
                 </thead>
                 <tbody>
                     {% for row in by_machine %}
                     <tr>
                         <td>{{ row.machine }}</td>
-                        <td>{{ row.breakdown_count }}</td>
-                        <td>{{ row.mttr_minutes|floatformat:1|default:'—' }}</td>
+                        <td>{{ row.tickets }}</td>
+                        <td>{{ row.breakdowns }}</td>
+                        <td>{{ row.downtime_hours }}{% if row.ongoing %} <span class="erp-badge erp-badge-rejected">still down</span>{% endif %}</td>
+                        <td>{% if row.mttr_minutes is not None %}{{ row.mttr_minutes|floatformat:0 }}{% else %}—{% endif %}</td>
                         <td>{{ row.total_cost|floatformat:2 }}</td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="4">No downtime data yet.</td></tr>
+                    <tr><td colspan="6">No maintenance activity in this period.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Repeat Faults</h3>
+        <p class="erp-help-text">The same machine and fault category on two or more tickets in the period.</p>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Machine</th><th>Fault category</th><th>Times</th></tr></thead>
+                <tbody>
+                    {% for row in repeat_faults %}
+                    <tr><td>{{ row.machine__name }}</td><td>{{ row.fault_types__name }}</td><td>{{ row.n }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="3">No repeat faults in this period.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>How these numbers are worked out</h3>
+        <ul class="erp-help-text">
+            <li>Tickets reported in the period are counted; cancelled tickets are excluded.</li>
+            <li><strong>Downtime</strong> is time the machine was unavailable, clipped to the period; a machine still down is counted up to now.</li>
+            <li><strong>MTTR</strong> is the average length of breakdown downtime that has ended (it measures time out of production, not technician hours). Downtime still open is left out until it closes.</li>
+            <li><strong>Repairing / waiting</strong> come from each ticket's status history (In Progress versus Awaiting Parts / Vendor).</li>
+            <li><strong>PM compliance</strong> is preventive tickets raised in the period that reached Verified or Closed.</li>
+            <li><strong>MTBF</strong> is not shown: it needs reliable machine operating hours, which the ERP does not record.</li>
+        </ul>
     </section>
 </div>
 {% endblock %}

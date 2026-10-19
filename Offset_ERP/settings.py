@@ -48,6 +48,11 @@ BOT_INPROCESS_SCHEDULER = os.environ.get('BOT_INPROCESS_SCHEDULER', 'True') == '
 # backup runs regardless of what backup_enabled says in the synced copy.
 BACKUP_INPROCESS_SCHEDULER = os.environ.get('BACKUP_INPROCESS_SCHEDULER', 'True') == 'True'
 
+# Preventive-maintenance ticket generation (maintenance/scheduler.py). Same
+# pattern as the schedulers above; set False on a standby server that mirrors
+# the primary's database.
+MAINTENANCE_INPROCESS_SCHEDULER = os.environ.get('MAINTENANCE_INPROCESS_SCHEDULER', 'True') == 'True'
+
 # Local LLM (LM Studio, OpenAI-compatible chat endpoint). Never hardcode the
 # endpoint elsewhere — everything routes through these settings so pointing
 # at a different host later (e.g. an Oracle VM) is a config change, not a

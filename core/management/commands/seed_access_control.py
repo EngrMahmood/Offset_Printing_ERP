@@ -240,6 +240,10 @@ class Command(BaseCommand):
             action_permission_by_key[key] = (permission, allowed_roles)
             self.stdout.write(f"{'Created' if created else 'Found'} permission: {code}")
 
+        # Item Requests are open to every role, including custom ones admins have created.
+        for role in Role.objects.all():
+            role.permissions.add(permission_by_key['item_request'])
+
         for key, (permission, allowed_roles) in action_permission_by_key.items():
             for slug in allowed_roles:
                 role = role_by_slug.get(slug)

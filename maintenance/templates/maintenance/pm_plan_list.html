@@ -2,7 +2,7 @@
 
 {% block title %}Preventive Maintenance Plans{% endblock %}
 {% block header_title %}Preventive Maintenance Plans{% endblock %}
-{% block header_subtitle %}Recurring PM schedules per machine.{% endblock %}
+{% block header_subtitle %}Which machine needs attention and by when. Tickets are raised automatically when a plan falls due.{% endblock %}
 {% block header_actions %}
     <a href="{% url 'maintenance:pm_plan_create' %}" class="erp-btn erp-btn-primary">New PM Plan</a>
 {% endblock %}
@@ -15,29 +15,49 @@
                 <thead>
                     <tr>
                         <th>Machine</th>
-                        <th>Title</th>
-                        <th>Interval</th>
-                        <th>Last Done</th>
-                        <th>Next Due</th>
-                        <th>Active</th>
+                        <th>Plan</th>
+                        <th>Every</th>
+                        <th>Last done</th>
+                        <th>Next due</th>
+                        <th>State</th>
+                        <th>Responsible</th>
+                        <th></th>
                     </tr>
                 </thead>
                 <tbody>
-                    {% for plan in plans %}
+                    {% for row in rows %}
                     <tr>
-                        <td>{{ plan.machine }}</td>
-                        <td>{{ plan.title }}</td>
-                        <td>{{ plan.interval_value }} {{ plan.get_interval_type_display }}</td>
-                        <td>{{ plan.last_done_at|default:'—' }}</td>
-                        <td>{{ plan.next_due_at|default:'—' }}</td>
-                        <td>{{ plan.is_active|yesno:'Yes,No' }}</td>
+                        <td>{{ row.plan.machine }}</td>
+                        <td>{{ row.plan.title }}</td>
+                        <td>{{ row.plan.interval_value }} {{ row.plan.get_interval_type_display|lower }}</td>
+                        <td>{{ row.plan.last_done_at|default:'—' }}</td>
+                        <td>
+                            {% if row.plan.interval_type == 'DAYS' %}{{ row.plan.next_due_at|default:'—' }}
+                            {% else %}{{ row.plan.next_due_impressions|default_if_none:'—' }} impressions
+                            <div class="erp-help-text">{{ row.impressions_run|default_if_none:0 }} logged so far (from Production entries)</div>{% endif %}
+                        </td>
+                        <td>
+                            <span class="erp-badge {% if row.state == 'overdue' %}erp-badge-rejected{% elif row.state == 'soon' %}erp-badge-warning{% endif %}">{{ row.label }}</span>
+                        </td>
+                        <td>{{ row.plan.assigned_to|default:'—' }}</td>
+                        <td style="white-space:nowrap;">
+                            <a href="{% url 'maintenance:pm_plan_edit' row.plan.pk %}" class="erp-btn erp-btn-secondary">Edit</a>
+                            <form method="post" action="{% url 'maintenance:pm_plan_toggle' row.plan.pk %}" style="display:inline;">
+                                {% csrf_token %}
+                                <button type="submit" class="erp-btn erp-btn-secondary">{% if row.plan.is_active %}Disable{% else %}Enable{% endif %}</button>
+                            </form>
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="6">No PM plans configured.</td></tr>
+                    <tr><td colspan="8">No PM plans configured.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>
         </div>
+        <p class="erp-help-text" style="margin-top:12px;">
+            Plans are checked automatically every 30 minutes. Each due occurrence raises exactly one ticket, with its own checklist.
+            Impression plans count impressions from Production entries, so they are only as complete as those entries.
+        </p>
     </section>
 </div>
 {% endblock %}

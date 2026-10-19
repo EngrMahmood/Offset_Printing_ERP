@@ -68,7 +68,7 @@ class MaintenanceRecord(models.Model):
     spare_parts_needed = models.BooleanField(default=False)
     repair_needed = models.BooleanField(default=False)
     repair_details = models.TextField(blank=True)
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='PENDING_APPROVAL', db_index=True)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='REPORTED', db_index=True)
     assigned_to = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
         related_name='maintenance_records_assigned',
@@ -77,6 +77,29 @@ class MaintenanceRecord(models.Model):
     work_end_at = models.DateTimeField(null=True, blank=True)
     labour_hours = models.DecimalField(max_digits=8, decimal_places=2, default=0)
     remarks = models.TextField(blank=True)
+    machine_stopped = models.BooleanField(
+        default=False,
+        help_text='The machine cannot run because of this fault. Drives downtime: it stays open until a '
+                  'verified repair (or confirmed restoration) and is never closed while another stopped ticket remains.',
+    )
+    root_cause = models.TextField(blank=True, help_text='Diagnosis / root cause. Required before completing the repair.')
+    repair_action = models.TextField(blank=True, help_text='What was actually done. Required before completing the repair.')
+    TEST_RESULT_CHOICES = [('', 'Not tested'), ('PASS', 'Passed'), ('FAIL', 'Failed')]
+    test_result = models.CharField(max_length=10, choices=TEST_RESULT_CHOICES, blank=True, default='')
+    verified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name='maintenance_records_verified',
+    )
+    verified_at = models.DateTimeField(null=True, blank=True)
+    pm_plan = models.ForeignKey(
+        'PreventiveMaintenancePlan', on_delete=models.SET_NULL, null=True, blank=True, related_name='generated_records',
+        help_text='The preventive plan occurrence that generated this ticket.',
+    )
+    pm_due_key = models.CharField(
+        max_length=40, blank=True,
+        help_text='Which due occurrence of the plan this ticket covers (a date, or "imp:<count>"). '
+                  'Unique per plan, so a plan can never raise two tickets for one occurrence.',
+    )
     is_active = models.BooleanField(default=True, db_index=True)
     deleted_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True,
@@ -88,6 +111,12 @@ class MaintenanceRecord(models.Model):
 
     class Meta:
         ordering = ['-reported_date', '-id']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['pm_plan', 'pm_due_key'], condition=~models.Q(pm_due_key=''),
+                name='maintenance_unique_pm_occurrence',
+            ),
+        ]
 
     def __str__(self):
         return self.record_no or f'Maintenance #{self.pk}'
@@ -185,6 +214,10 @@ class MachineDowntime(models.Model):
     end_at = models.DateTimeField(null=True, blank=True)
     reason = models.CharField(max_length=20, choices=REASON_CHOICES, default='BREAKDOWN')
     scheduled_minutes_lost = models.PositiveIntegerField(default=0)
+    closed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+    )
+    closed_reason = models.CharField(max_length=255, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -227,7 +260,20 @@ class PreventiveMaintenancePlan(models.Model):
     interval_value = models.PositiveIntegerField(help_text='Days between services, or impressions between services.')
     last_done_at = models.DateField(null=True, blank=True)
     next_due_at = models.DateField(null=True, blank=True)
-    next_due_impressions = models.PositiveIntegerField(null=True, blank=True)
+    next_due_impressions = models.PositiveIntegerField(
+        null=True, blank=True,
+        help_text='Cumulative impressions (from Production entries) at which the next service is due.',
+    )
+    instructions = models.TextField(blank=True, help_text='Shown on every ticket this plan raises.')
+    checklist = models.TextField(
+        blank=True,
+        help_text='One check per line. Each ticket gets its own copy to tick off and record findings against. '
+                  'Must be approved for the machine type by the responsible maintenance/HSE team.',
+    )
+    assigned_to = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+',
+        help_text='Technician or engineer responsible for this plan.',
+    )
     is_active = models.BooleanField(default=True, db_index=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -263,3 +309,22 @@ class MaintenanceActivityLog(models.Model):
 
     def __str__(self):
         return f'{self.record} — {self.action}'
+
+
+class MaintenanceChecklistItem(models.Model):
+    """One check on a specific ticket, copied from the PM plan when the ticket is
+    raised so the audit trail keeps what was actually checked and found."""
+
+    record = models.ForeignKey(MaintenanceRecord, on_delete=models.CASCADE, related_name='checklist_items')
+    position = models.PositiveIntegerField(default=0)
+    text = models.CharField(max_length=255)
+    is_done = models.BooleanField(default=False)
+    finding = models.TextField(blank=True)
+    done_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='+')
+    done_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['position', 'id']
+
+    def __str__(self):
+        return self.text

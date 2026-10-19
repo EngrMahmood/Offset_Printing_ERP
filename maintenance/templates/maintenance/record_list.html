@@ -5,7 +5,7 @@
 {% block header_title %}Maintenance Records{% endblock %}
 {% block header_subtitle %}All logged maintenance activity.{% endblock %}
 {% block header_actions %}
-    <a href="?{{ request.GET.urlencode }}&export=xlsx" class="erp-btn erp-btn-secondary">Export Excel</a>
+    {% if is_staff %}<a href="?{{ request.GET.urlencode }}&export=xlsx" class="erp-btn erp-btn-secondary">Export Excel</a>{% endif %}
     <a href="{% url 'maintenance:complaint_create' %}" class="erp-btn erp-btn-primary">Report a Complaint</a>
 {% endblock %}
 
@@ -22,7 +22,7 @@
     </section>
 
     <section class="erp-section-shell">
-        <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(5,1fr); gap:12px; align-items:end;">
+        <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; align-items:end;">
             {% if view %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
             <div class="erp-input-group">
                 <label class="erp-input-label">Search</label>
@@ -55,6 +55,25 @@
                     {% endfor %}
                 </select>
             </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">From</label>
+                <input type="date" name="date_from" class="erp-input" value="{{ date_from }}">
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">To</label>
+                <input type="date" name="date_to" class="erp-input" value="{{ date_to }}">
+            </div>
+            {% if is_staff %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">Technician</label>
+                <select name="assigned_to" class="erp-select">
+                    <option value="">All</option>
+                    {% for tech in technicians %}
+                    <option value="{{ tech.pk }}" {% if selected_technician == tech.pk|stringformat:"s" %}selected{% endif %}>{{ tech.get_full_name|default:tech.username }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% endif %}
             <div class="erp-actions">
                 <button type="submit" class="erp-btn erp-btn-secondary">Filter</button>
                 <a href="{% url 'maintenance:record_list' %}" class="erp-btn erp-btn-secondary">Reset</a>

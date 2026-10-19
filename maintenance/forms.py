@@ -1,4 +1,19 @@
+import os
+
 from django import forms
+from django.core.exceptions import ValidationError
+
+ALLOWED_ATTACHMENT_EXTENSIONS = {'.jpg', '.jpeg', '.png', '.webp', '.gif', '.pdf', '.mp4', '.mov', '.doc', '.docx', '.xls', '.xlsx'}
+MAX_ATTACHMENT_BYTES = 10 * 1024 * 1024
+
+
+def validate_attachment(upload):
+    """Reject oversized or unexpected file types before they are stored."""
+    extension = os.path.splitext(upload.name or '')[1].lower()
+    if extension not in ALLOWED_ATTACHMENT_EXTENSIONS:
+        raise ValidationError('This file type is not allowed. Upload a photo, PDF, video or Office document.')
+    if upload.size > MAX_ATTACHMENT_BYTES:
+        raise ValidationError('The file is larger than 10 MB.')
 
 from .models import (
     FaultCategory, MachineDowntime, MaintenanceAttachment, MaintenanceRecord, MaintenanceServiceJob,
@@ -44,14 +59,15 @@ class ComplaintForm(forms.ModelForm):
     Nothing technical — the engineer classifies everything else at triage."""
 
     machine_stopped = forms.ChoiceField(
-        label='Is the machine running?',
-        choices=[('no', "No — it's stopped"), ('yes', "Yes — still running, but needs attention")],
+        label='Has the machine stopped?',
+        choices=[('yes', 'Yes - production has stopped'), ('no', 'No - it is still running')],
         widget=forms.RadioSelect(attrs={'class': 'erp-radio-group'}),
-        initial='yes',
+        initial='no',
     )
     photo = forms.FileField(
         required=False, label='Photo (optional)',
         widget=forms.ClearableFileInput(attrs={'class': 'erp-input', 'accept': 'image/*'}),
+        validators=[validate_attachment],
     )
 
     class Meta:
@@ -153,18 +169,59 @@ class MachineDowntimeForm(forms.ModelForm):
 class PreventiveMaintenancePlanForm(forms.ModelForm):
     class Meta:
         model = PreventiveMaintenancePlan
-        fields = ['machine', 'title', 'interval_type', 'interval_value', 'next_due_at', 'is_active']
+        fields = [
+            'machine', 'title', 'interval_type', 'interval_value', 'next_due_at', 'next_due_impressions',
+            'assigned_to', 'instructions', 'checklist', 'is_active',
+        ]
         widgets = {
             'machine': forms.Select(attrs={'class': 'erp-select'}),
             'title': forms.TextInput(attrs={'class': 'erp-input'}),
             'interval_type': forms.Select(attrs={'class': 'erp-select'}),
-            'interval_value': forms.NumberInput(attrs={'class': 'erp-input'}),
-            'next_due_at': forms.DateInput(attrs={'class': 'erp-input', 'type': 'date'}),
+            'interval_value': forms.NumberInput(attrs={'class': 'erp-input', 'min': 1}),
+            'next_due_at': forms.DateInput(attrs={'class': 'erp-input', 'type': 'date'}, format='%Y-%m-%d'),
+            'next_due_impressions': forms.NumberInput(attrs={'class': 'erp-input', 'min': 0}),
+            'assigned_to': forms.Select(attrs={'class': 'erp-select'}),
+            'instructions': forms.Textarea(attrs={'class': 'erp-input', 'rows': 3}),
+            'checklist': forms.Textarea(attrs={'class': 'erp-input', 'rows': 6, 'placeholder': 'One check per line'}),
         }
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
+        from django.contrib.auth import get_user_model
+
+        from .permissions import STAFF_ROLES
+
         self.fields['next_due_at'].required = False
+        self.fields['next_due_impressions'].required = False
+        self.fields['assigned_to'].required = False
+        self.fields['assigned_to'].queryset = get_user_model().objects.filter(
+            is_active=True, profile__role__in=STAFF_ROLES,
+        )
+        self.fields['interval_value'].min_value = 1
+
+    def clean(self):
+        cleaned = super().clean()
+        interval_type = cleaned.get('interval_type')
+        interval = cleaned.get('interval_value')
+        if interval is not None and interval < 1:
+            self.add_error('interval_value', 'The interval must be at least 1.')
+        if interval_type == 'DAYS':
+            if not cleaned.get('next_due_at') and interval:
+                from datetime import timedelta
+
+                from django.utils import timezone
+
+                cleaned['next_due_at'] = timezone.localdate() + timedelta(days=interval)
+            cleaned['next_due_impressions'] = None
+        elif interval_type == 'IMPRESSIONS':
+            machine = cleaned.get('machine')
+            if cleaned.get('next_due_impressions') is None and machine and interval:
+                from .services import machine_impression_total
+
+                # Start counting from the machine's current logged total.
+                cleaned['next_due_impressions'] = machine_impression_total(machine) + interval
+            cleaned['next_due_at'] = None
+        return cleaned
 
 
 class MaintenanceAttachmentForm(forms.ModelForm):
@@ -179,3 +236,4 @@ class MaintenanceAttachmentForm(forms.ModelForm):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields['caption'].required = False
+        self.fields['file'].validators.append(validate_attachment)

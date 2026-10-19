@@ -59,54 +59,129 @@
         <section class="erp-section-shell">
             <h3>Awaiting Triage</h3>
             <p>This complaint hasn't been classified yet. Review it and assign fault type, priority, and how it will be handled.</p>
-            <div style="display:flex; gap:16px; align-items:center;">
+            <div style="display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
                 <a href="{% url 'maintenance:record_triage' record.pk %}" class="erp-btn erp-btn-primary">Triage This Complaint</a>
-                <form method="post" action="{% url 'maintenance:record_transition' record.pk %}" style="display:inline;" onsubmit="return confirm('Cancel this complaint? Use this only for duplicates or invalid reports.');">
+                <form method="post" action="{% url 'maintenance:record_transition' record.pk %}" style="display:flex; gap:8px; align-items:center;">
                     {% csrf_token %}
                     <input type="hidden" name="to_status" value="CANCELLED">
-                    <button type="submit" class="erp-link-btn" style="background:none; border:none; color:var(--erp-text-muted, #6b7280); text-decoration:underline; cursor:pointer; font-size:0.9em;">Not a valid complaint? Cancel it</button>
+                    <input type="text" name="note" class="erp-input" placeholder="Reason (required)" required>
+                    {% if machine_open_downtime %}
+                    <select name="machine_state" class="erp-select" required>
+                        <option value="">Machine state...</option>
+                        {% for value, label in machine_state_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                    </select>
+                    {% endif %}
+                    <button type="submit" class="erp-btn erp-btn-secondary" onclick="return confirm('Cancel this complaint? Use this only for duplicates or invalid reports.');">Cancel complaint</button>
                 </form>
             </div>
         </section>
         {% else %}
         <section class="erp-section-shell">
             <h3>Status</h3>
-            <p>Current: <strong>{{ record.get_status_display }}</strong> — a maintenance engineer will review this shortly.</p>
+            <p>Current: <strong>{{ record.get_status_display }}</strong> &mdash; a maintenance engineer will review this shortly.</p>
         </section>
         {% endif %}
     {% elif can_work %}
     <section class="erp-section-shell">
         <h3>Status</h3>
-        <p>Current: <strong>{{ record.get_status_display }}</strong></p>
-        {% if next_statuses %}
-        <form method="post" action="{% url 'maintenance:record_transition' record.pk %}" class="erp-form-grid" style="grid-template-columns:1fr 1fr 1fr auto; gap:12px; align-items:end;">
+        <p>Current: <strong>{{ record.get_status_display }}</strong>{% if status_help %} &mdash; {{ status_help }}{% endif %}</p>
+        {% if record.status != 'CLOSED' and record.status != 'CANCELLED' or next_actions %}
+        <form method="post" action="{% url 'maintenance:record_repair_update' record.pk %}" class="erp-form-grid" style="grid-template-columns:1fr 1fr; gap:12px; margin-bottom:16px;">
             {% csrf_token %}
             <div class="erp-input-group">
-                <label class="erp-input-label">Move to</label>
-                <select name="to_status" class="erp-select">
-                    {% for status in next_statuses %}
-                    <option value="{{ status }}">{{ status }}</option>
+                <label class="erp-input-label">Diagnosis / root cause</label>
+                <textarea name="root_cause" rows="2" class="erp-input">{{ record.root_cause }}</textarea>
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Repair action performed</label>
+                <textarea name="repair_action" rows="2" class="erp-input">{{ record.repair_action }}</textarea>
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Labour hours (actual work, not waiting)</label>
+                <input type="number" name="labour_hours" step="0.25" min="0" class="erp-input" value="{{ record.labour_hours }}">
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Machine test result</label>
+                <select name="test_result" class="erp-select">
+                    {% for value, label in test_result_choices %}<option value="{{ value }}" {% if record.test_result == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div><button type="submit" class="erp-btn erp-btn-secondary">Save repair details</button></div>
+        </form>
+        {% endif %}
+        {% if record.verified_at %}<p class="erp-help-text">Verified by {{ record.verified_by.get_full_name|default:record.verified_by.username }} on {{ record.verified_at|date:"d M Y H:i" }}.</p>{% endif %}
+        {% if next_actions %}
+        <form method="post" action="{% url 'maintenance:record_transition' record.pk %}" class="erp-form-grid" id="transition-form" style="grid-template-columns:1fr 2fr; gap:12px; align-items:end;">
+            {% csrf_token %}
+            <div class="erp-input-group">
+                <label class="erp-input-label">Next step</label>
+                <select name="to_status" id="transition-to" class="erp-select">
+                    {% for status, label in next_actions %}
+                    <option value="{{ status }}">{{ label }}</option>
                     {% endfor %}
                 </select>
             </div>
             <div class="erp-input-group">
-                <label class="erp-input-label">Note</label>
+                <label class="erp-input-label">Note / reason (required to cancel, reopen, or resume after a failed test)</label>
                 <input type="text" name="note" class="erp-input">
             </div>
-            {% if 'COMPLETED' in next_statuses %}
-            <div class="erp-input-group">
-                <label class="erp-input-label">Labour hours (if completing)</label>
-                <input type="number" name="labour_hours" step="0.5" class="erp-input" value="{{ record.labour_hours }}">
+            {% if machine_open_downtime %}
+            <div class="erp-input-group" id="machine-state-group" style="display:none; grid-column: 1 / -1;">
+                <label class="erp-input-label">This ticket stopped the machine &mdash; what is its state?</label>
+                <select name="machine_state" class="erp-select">
+                    <option value="">Choose...</option>
+                    {% for value, label in machine_state_choices %}<option value="{{ value }}">{{ label }}</option>{% endfor %}
+                </select>
             </div>
             {% endif %}
-            <button type="submit" class="erp-btn erp-btn-primary">Update Status</button>
+            <div><button type="submit" class="erp-btn erp-btn-primary">Update ticket</button></div>
         </form>
+        <script>
+            (function () {
+                var to = document.getElementById('transition-to');
+                var group = document.getElementById('machine-state-group');
+                if (!to || !group) { return; }
+                function sync() { group.style.display = to.value === 'CANCELLED' ? 'block' : 'none'; }
+                to.addEventListener('change', sync);
+                sync();
+            })();
+        </script>
         {% endif %}
     </section>
     {% else %}
     <section class="erp-section-shell">
         <h3>Status</h3>
-        <p>Current: <strong>{{ record.get_status_display }}</strong></p>
+        <p>Current: <strong>{{ record.get_status_display }}</strong>{% if status_help %} &mdash; {{ status_help }}{% endif %}</p>
+    </section>
+    {% endif %}
+
+    {% if record.pm_plan %}
+    <section class="erp-section-shell">
+        <h3>Preventive Maintenance &mdash; {{ record.pm_plan.title }}</h3>
+        {% if record.pm_plan.instructions %}<p style="white-space:pre-line;">{{ record.pm_plan.instructions }}</p>{% endif %}
+        {% if checklist_items %}
+        <form method="post" action="{% url 'maintenance:record_checklist_update' record.pk %}">
+            {% csrf_token %}
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Done</th><th>Check</th><th>Finding / action taken</th><th>By</th></tr></thead>
+                    <tbody>
+                        {% for item in checklist_items %}
+                        <tr>
+                            <td><input type="checkbox" name="done_{{ item.pk }}" {% if item.is_done %}checked{% endif %} {% if not can_work %}disabled{% endif %}></td>
+                            <td>{{ item.text }}</td>
+                            <td><input type="text" name="finding_{{ item.pk }}" value="{{ item.finding }}" class="erp-input" {% if not can_work %}disabled{% endif %}></td>
+                            <td>{% if item.done_by %}{{ item.done_by.get_full_name|default:item.done_by.username }}<div class="erp-help-text">{{ item.done_at|date:"d M H:i" }}</div>{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if can_work %}<button type="submit" class="erp-btn erp-btn-secondary" style="margin-top:10px;">Save checklist</button>{% endif %}
+        </form>
+        {% else %}
+        <p class="erp-help-text">This plan has no checklist.</p>
+        {% endif %}
     </section>
     {% endif %}
 
