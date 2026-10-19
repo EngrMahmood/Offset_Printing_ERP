@@ -9,7 +9,7 @@ from core.notifications import notify_roles, notify_users
 from supply_chain.models import ItemRequest
 
 from .models import (
-    MachineDowntime, MaintenanceActivityLog, MaintenanceApproval, MaintenanceChecklistItem, MaintenanceRecord,
+    DowntimePhase, MachineDowntime, MaintenanceActivityLog, MaintenanceApproval, MaintenanceChecklistItem, MaintenanceRecord,
     PreventiveMaintenancePlan,
 )
 
@@ -155,6 +155,36 @@ def _maintenance_department():
     return dept
 
 
+STATUS_PHASE = {
+    'REPORTED': DowntimePhase.WAIT_RESPONSE,
+    'DIAGNOSED': DowntimePhase.WAIT_START,
+    'IN_PROGRESS': DowntimePhase.REPAIR,
+    'AWAITING_PARTS': DowntimePhase.WAIT_PARTS,
+    'AWAITING_VENDOR': DowntimePhase.WAIT_VENDOR,
+    'COMPLETED': DowntimePhase.TESTING,
+}
+
+
+def sync_downtime_phase(record, now=None):
+    """Make every open downtime interval owned by ``record`` show the step its ticket is in.
+
+    Called whenever a ticket's status changes. A no-op when nothing changed, so it
+    is safe to call repeatedly. Statuses that mean the machine is no longer being
+    held up by this ticket (verified, closed, cancelled) simply close the open step.
+    """
+    now = now or timezone.now()
+    category = STATUS_PHASE.get(record.status)
+    for interval in record.downtime_intervals.filter(end_at__isnull=True):
+        current = interval.phases.filter(ended_at__isnull=True).first()
+        if current and category and current.category == category and current.record_id == record.pk:
+            continue
+        if current:
+            current.ended_at = now
+            current.save(update_fields=['ended_at'])
+        if category:
+            DowntimePhase.objects.create(downtime=interval, record=record, category=category, started_at=now)
+
+
 def open_downtime(record, reason='BREAKDOWN'):
     """Open downtime for the record's machine — one interval per physical stoppage.
 
@@ -167,12 +197,14 @@ def open_downtime(record, reason='BREAKDOWN'):
             existing.record = record
             existing.save(update_fields=['record'])
         return None
-    return MachineDowntime.objects.create(
+    interval = MachineDowntime.objects.create(
         machine=record.machine, record=record, start_at=timezone.now(), reason=reason,
     )
+    sync_downtime_phase(record, now=interval.start_at)
+    return interval
 
 
-def release_downtime(record, actor, reason, handover_only=False):
+def release_downtime(record, actor, reason, handover_only=False, at=None):
     """End this ticket's open downtime — unless another stopped ticket still needs it.
 
     If another unresolved, stopped ticket exists on the machine the interval is
@@ -192,13 +224,15 @@ def release_downtime(record, actor, reason, handover_only=False):
         if successor:
             interval.record = successor
             interval.save(update_fields=['record'])
+            sync_downtime_phase(successor)
             log_activity(record, actor, 'Downtime handed over', note=f'Machine still stopped by {successor.record_no}')
             log_activity(successor, actor, 'Downtime taken over', note=f'From {record.record_no}')
         elif not handover_only:
-            interval.end_at = timezone.now()
+            interval.end_at = at or timezone.now()
             interval.closed_by = actor
             interval.closed_reason = (reason or '')[:255]
             interval.save(update_fields=['end_at', 'closed_by', 'closed_reason'])
+            interval.phases.filter(ended_at__isnull=True).update(ended_at=interval.end_at)
             log_activity(record, actor, 'Downtime ended', note=reason)
 
 

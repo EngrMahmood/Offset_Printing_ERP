@@ -1,36 +1,177 @@
 {% extends 'theme/base.html' %}
+{% load maintenance_extras %}
 
 {% block title %}Machine Downtime{% endblock %}
 {% block header_title %}Machine Downtime{% endblock %}
-{% block header_subtitle %}Downtime intervals logged across all machines.{% endblock %}
+{% block header_subtitle %}Where the stopped time went, process by process, and which team or dependency owns each part.{% endblock %}
+
+{% block extra_head %}
+<style>
+.dt-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; }
+.dt-card { border: 1px solid var(--erp-border, #d9dee7); border-radius: 10px; padding: 14px 16px; }
+.dt-card .dt-big { font-size: 1.6rem; font-weight: 700; }
+.dt-card .dt-sub { font-size: 0.82rem; color: var(--erp-text-muted, #64748b); }
+.dt-bar { height: 10px; border-radius: 6px; background: #e8ecf2; overflow: hidden; margin-top: 8px; }
+.dt-bar > span { display: block; height: 100%; background: #3b82f6; }
+.dt-team-supply_chain .dt-bar > span, .dt-team-supplier .dt-bar > span { background: #f59e0b; }
+.dt-team-vendor .dt-bar > span { background: #ef4444; }
+.dt-team-untracked .dt-bar > span { background: #94a3b8; }
+details.dt-interval summary { cursor: pointer; }
+</style>
+{% endblock %}
 
 {% block content %}
 <div class="erp-page-stack">
     <section class="erp-section-shell">
+        <form method="get" style="display:flex; gap:12px; align-items:end; flex-wrap:wrap;">
+            <div class="erp-input-group"><label class="erp-input-label">From</label><input type="date" name="date_from" value="{{ date_from }}" class="erp-input"></div>
+            <div class="erp-input-group"><label class="erp-input-label">To</label><input type="date" name="date_to" value="{{ date_to }}" class="erp-input"></div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Machine</label>
+                <select name="machine" class="erp-select">
+                    <option value="">All machines</option>
+                    {% for machine in machines %}<option value="{{ machine.pk }}" {% if selected_machine == machine.pk|stringformat:"s" %}selected{% endif %}>{{ machine.name }}</option>{% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="erp-btn erp-btn-primary">Apply</button>
+        </form>
+    </section>
+
+    {% if analysis.ongoing_waits %}
+    <section class="erp-section-shell" style="border-left:4px solid #e5484d;">
+        <h3>Waiting right now</h3>
+        <p class="erp-help-text">Machines held up at this moment by something outside the repair itself.</p>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Machine</th><th>Ticket</th><th>Waiting for</th><th>Request</th><th>Supplier / vendor</th><th>Where it is</th><th>Waiting</th></tr></thead>
+                <tbody>
+                    {% for wait in analysis.ongoing_waits %}
+                    <tr>
+                        <td><strong>{{ wait.machine }}</strong></td>
+                        <td>{% if wait.record %}<a href="{% url 'maintenance:record_detail' wait.record.pk %}">{{ wait.record.record_no }}</a>{% endif %}</td>
+                        <td>{{ wait.kind }}{% if wait.item %}: {{ wait.item }}{% endif %}</td>
+                        <td>{% if wait.request_pk %}<a href="{% url 'supply_chain:item_request_detail' wait.request_pk %}">{{ wait.request_no }}</a><div class="erp-help-text">{{ wait.request_status }}</div>{% else %}<span class="erp-badge erp-badge-rejected">No request linked</span>{% endif %}</td>
+                        <td>{{ wait.supplier|default:"—" }}</td>
+                        <td>{{ wait.stage|default:"—" }}</td>
+                        <td><strong>{{ wait.duration }}</strong></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <h3>Total downtime in the period: {{ analysis.total }}</h3>
+        <div class="dt-cards">
+            {% for team in analysis.teams %}
+            <div class="dt-card dt-team-{{ team.key }}">
+                <div class="dt-sub">{{ team.label }}</div>
+                <div class="dt-big">{{ team.duration }}</div>
+                <div class="dt-sub">{{ team.pct }}% of downtime</div>
+                <div class="dt-bar"><span style="width: {{ team.pct }}%"></span></div>
+            </div>
+            {% empty %}
+            <p>No downtime recorded in this period.</p>
+            {% endfor %}
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>By process step</h3>
+        <p class="erp-help-text">Waiting for spare parts is split by what Supply Chain was doing, using the dates on the linked Item Request.</p>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Step</th><th>Owner</th><th>Time lost</th><th>Share</th><th>Times</th><th>Average</th></tr></thead>
+                <tbody>
+                    {% for step in analysis.steps %}
+                    <tr class="dt-team-{{ step.team_key }}">
+                        <td>{{ step.label }}</td>
+                        <td>{{ step.team }}</td>
+                        <td><strong>{{ step.duration }}</strong></td>
+                        <td style="min-width:130px;">{{ step.pct }}%<div class="dt-bar"><span style="width: {{ step.pct }}%"></span></div></td>
+                        <td>{{ step.occurrences }}</td>
+                        <td>{{ step.average }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6">Nothing to show for this period.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    {% if analysis.longest_waits %}
+    <section class="erp-section-shell">
+        <h3>Longest waits on parts and vendors</h3>
+        <p class="erp-help-text">Use this list to ask Procurement or a vendor to speed up.</p>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Machine</th><th>Ticket</th><th>Waiting for</th><th>Request</th><th>Supplier / vendor</th><th>Stage</th><th>Started</th><th>Waited</th></tr></thead>
+                <tbody>
+                    {% for wait in analysis.longest_waits %}
+                    <tr>
+                        <td>{{ wait.machine }}</td>
+                        <td>{% if wait.record %}<a href="{% url 'maintenance:record_detail' wait.record.pk %}">{{ wait.record.record_no }}</a>{% endif %}</td>
+                        <td>{{ wait.kind }}{% if wait.item %}: {{ wait.item }}{% endif %}</td>
+                        <td>{% if wait.request_pk %}<a href="{% url 'supply_chain:item_request_detail' wait.request_pk %}">{{ wait.request_no }}</a>{% else %}—{% endif %}</td>
+                        <td>{{ wait.supplier|default:"—" }}</td>
+                        <td>{{ wait.stage|default:"—" }}{% if wait.ongoing %} <span class="erp-badge erp-badge-rejected">ongoing</span>{% endif %}</td>
+                        <td>{{ wait.started_at|date:"d M H:i" }}</td>
+                        <td><strong>{{ wait.duration }}</strong></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <h3>By machine</h3>
         <div class="erp-table-wrap erp-table-dense">
             <table class="erp-table">
                 <thead>
-                    <tr>
-                        <th>Machine</th>
-                        <th>Start</th>
-                        <th>End</th>
-                        <th>Reason</th>
-                        <th>Minutes Lost (Scheduled)</th>
-                        <th>Record</th>
-                    </tr>
+                    <tr><th>Machine</th><th>Total</th>{% for team in analysis.team_order %}{% if team != 'untracked' %}<th>{{ analysis.team_labels|get_item:team }}</th>{% endif %}{% endfor %}</tr>
                 </thead>
                 <tbody>
-                    {% for interval in intervals %}
+                    {% for row in analysis.machines %}
                     <tr>
-                        <td>{{ interval.machine }}</td>
-                        <td>{{ interval.start_at }}</td>
-                        <td>{{ interval.end_at|default:'Ongoing' }}</td>
-                        <td>{{ interval.get_reason_display }}</td>
-                        <td>{{ interval.scheduled_minutes_lost }}</td>
-                        <td>{% if interval.record %}<a href="{% url 'maintenance:record_detail' interval.record.pk %}">{{ interval.record.record_no }}</a>{% endif %}</td>
+                        <td>{{ row.machine }}</td><td><strong>{{ row.total }}</strong></td>
+                        {% for team in analysis.team_order %}{% if team != 'untracked' %}<td>{{ row.teams|get_item:team }}</td>{% endif %}{% endfor %}
                     </tr>
                     {% empty %}
-                    <tr><td colspan="6">No downtime intervals logged.</td></tr>
+                    <tr><td colspan="6">No downtime in this period.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Each stoppage</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Machine</th><th>Stopped</th><th>Restored</th><th>Total</th><th>Ticket</th><th>Steps</th></tr></thead>
+                <tbody>
+                    {% for row in intervals %}
+                    <tr>
+                        <td>{{ row.interval.machine }}</td>
+                        <td>{{ row.interval.start_at|date:"d M Y H:i" }}</td>
+                        <td>{% if row.ongoing %}<span class="erp-badge erp-badge-rejected">still stopped</span>{% else %}{{ row.interval.end_at|date:"d M Y H:i" }}{% endif %}</td>
+                        <td><strong>{{ row.duration }}</strong></td>
+                        <td>{% if row.interval.record %}<a href="{% url 'maintenance:record_detail' row.interval.record.pk %}">{{ row.interval.record.record_no }}</a>{% endif %}</td>
+                        <td>
+                            <details class="dt-interval"><summary>{{ row.steps|length }} step{{ row.steps|length|pluralize }}</summary>
+                                <ul style="margin:6px 0 0; padding-left:18px;">
+                                    {% for step in row.steps %}<li>{{ step.label }} — <strong>{{ step.duration }}</strong> <span class="erp-help-text">({{ step.team }})</span></li>{% endfor %}
+                                </ul>
+                            </details>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6">No stoppages in this period.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

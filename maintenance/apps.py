@@ -6,5 +6,7 @@ class MaintenanceConfig(AppConfig):
     name = 'maintenance'
 
     def ready(self):
+        from maintenance import signals
+        signals.connect()
         from maintenance.scheduler import start_scheduler
         start_scheduler()

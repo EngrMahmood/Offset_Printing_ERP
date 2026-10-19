@@ -20,6 +20,7 @@ urlpatterns = [
     path('records/<int:pk>/repair/', views.record_repair_update, name='record_repair_update'),
     path('records/<int:pk>/checklist/', views.record_checklist_update, name='record_checklist_update'),
     path('records/<int:pk>/transition/', views.record_transition, name='record_transition'),
+    path('machines/', views.machine_board, name='machine_board'),
     path('downtime/', views.downtime_list, name='downtime_list'),
     path('pm-plans/', views.pm_plan_list, name='pm_plan_list'),
     path('pm-plans/new/', views.pm_plan_create, name='pm_plan_create'),

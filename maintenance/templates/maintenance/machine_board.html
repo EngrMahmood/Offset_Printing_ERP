@@ -1,0 +1,78 @@
+{% extends 'theme/base.html' %}
+{% load maintenance_extras %}
+
+{% block title %}Machines — Maintenance{% endblock %}
+{% block header_title %}Machines{% endblock %}
+{% block header_subtitle %}Every machine with maintenance activity. Open a machine to see all of its tickets.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'maintenance:complaint_create' %}" class="erp-btn erp-btn-primary">Report a Problem</a>
+{% endblock %}
+
+{% block extra_head %}
+<style>
+.mb-machine { border: 1px solid var(--erp-border, #d9dee7); border-radius: 10px; margin-bottom: 10px; background: var(--erp-surface, #fff); }
+.mb-machine > summary { list-style: none; cursor: pointer; padding: 12px 16px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+.mb-machine > summary::-webkit-details-marker { display: none; }
+.mb-machine > summary::before { content: '\25B8'; font-size: 0.9rem; transition: transform .15s; }
+.mb-machine[open] > summary::before { transform: rotate(90deg); }
+.mb-name { font-weight: 700; font-size: 1.02rem; min-width: 150px; }
+.mb-meta { font-size: 0.85rem; color: var(--erp-text-muted, #64748b); }
+.mb-body { padding: 0 16px 14px; }
+.mb-stopped { border-color: #e5484d; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div style="display:flex; gap:24px; flex-wrap:wrap;">
+            <div><strong>{{ rows|length }}</strong> machines with activity</div>
+            <div><strong>{{ stopped_count }}</strong> currently stopped</div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        {% for row in rows %}
+        <details class="mb-machine {% if row.stopped %}mb-stopped{% endif %}" {% if row.stopped %}open{% endif %}>
+            <summary>
+                <span class="mb-name">{{ row.machine.name }}</span>
+                {% if row.stopped %}
+                    <span class="erp-badge erp-badge-rejected">Stopped {{ row.stopped_for }}</span>
+                    {% if row.current_step %}<span class="mb-meta">now: {{ row.current_step }}</span>{% endif %}
+                {% else %}
+                    <span class="erp-badge erp-badge-approved">Running</span>
+                {% endif %}
+                <span class="mb-meta">{{ row.open_tickets|length }} open · {{ row.tickets|length }} total ticket{{ row.tickets|length|pluralize }}</span>
+                {% if is_staff %}<span class="mb-meta">downtime last 90 days: {{ row.downtime_90d }}</span>{% endif %}
+            </summary>
+            <div class="mb-body">
+                <div class="erp-table-wrap erp-table-dense">
+                    <table class="erp-table">
+                        <thead>
+                            <tr><th>Ticket</th><th>Reported</th><th>Problem</th><th>Type</th><th>Priority</th><th>Status</th><th>Assigned</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for ticket in row.tickets %}
+                            <tr>
+                                <td><a href="{% url 'maintenance:record_detail' ticket.pk %}">{{ ticket.record_no }}</a></td>
+                                <td>{{ ticket.reported_date|date:"d M Y" }}</td>
+                                <td>{{ ticket.fault_description|truncatechars:70 }}</td>
+                                <td>{{ ticket.get_maintenance_type_display|default:"—" }}</td>
+                                <td><span class="erp-badge {{ ticket.priority|priority_badge }}">{{ ticket.get_priority_display }}</span></td>
+                                <td><span class="erp-badge {{ ticket.status|status_badge }}">{{ ticket.get_status_display }}</span></td>
+                                <td>{{ ticket.assigned_to|default:"—" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr><td colspan="7">No tickets {% if not is_staff %}reported by you {% endif %}for this machine.</td></tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </details>
+        {% empty %}
+        <p>No maintenance activity yet.</p>
+        {% endfor %}
+    </section>
+</div>
+{% endblock %}

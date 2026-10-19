@@ -372,20 +372,24 @@
            class="erp-subnav-link {% if url == 'complaint_create' %}is-active{% endif %}">
             Report a Complaint
         </a>
+        <a href="{% url 'maintenance:machine_board' %}"
+           class="erp-subnav-link {% if url == 'machine_board' %}is-active{% endif %}">
+            Machines
+        </a>
+        {% if nav.role == 'admin' or nav.role == 'manager' or nav.role == 'production_manager' or nav.role == 'maintenance_engineer' %}
         <a href="{% url 'maintenance:downtime_list' %}"
            class="erp-subnav-link {% if url == 'downtime_list' %}is-active{% endif %}">
             Downtime
         </a>
-        {% if nav.role == 'admin' or nav.role == 'manager' or nav.role == 'production_manager' or nav.role == 'maintenance_engineer' %}
         <a href="{% url 'maintenance:pm_plan_list' %}"
            class="erp-subnav-link {% if url == 'pm_plan_list' or url == 'pm_plan_create' %}is-active{% endif %}">
             PM Plans
         </a>
-        {% endif %}
         <a href="{% url 'maintenance:reports' %}"
            class="erp-subnav-link {% if url == 'reports' %}is-active{% endif %}">
             Reports
         </a>
+        {% endif %}
     </div>
 
     {% elif app == 'bom' and nav.can_access_bom %}

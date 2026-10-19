@@ -24,7 +24,8 @@ from django.utils import timezone
 
 from .models import MaintenanceRecord
 from .services import (
-    log_activity, notify_repair_completed, notify_status_update, notify_waiting, release_downtime,
+    log_activity, notify_repair_completed, notify_status_update, notify_waiting, open_downtime,
+    raise_service_demand, raise_spare_part_demand, release_downtime, sync_downtime_phase,
 )
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,9 @@ def transition_record(record, to_status, actor, note='', labour_hours=None, mach
         if to_status == 'COMPLETED':
             _validate_completion(record, labour_hours)
 
+        if to_status in ('AWAITING_PARTS', 'AWAITING_VENDOR'):
+            _raise_demand_for_wait(record, to_status, actor)
+
         if to_status == 'IN_PROGRESS' and from_status == 'COMPLETED' and not note:
             raise TransitionError('Say why the test failed or the repair is being resumed.')
 
@@ -155,16 +159,20 @@ def transition_record(record, to_status, actor, note='', labour_hours=None, mach
             record.verified_at = now
         record.save()
 
+        if is_reopen and record.machine_stopped:
+            open_downtime(record, reason='BREAKDOWN')      # the machine is stopped again
+        sync_downtime_phase(record, now=now)
+
         if to_status == 'VERIFIED':
             if record.pm_plan_id:
                 record.pm_plan.last_done_at = timezone.localdate()
                 record.pm_plan.save(update_fields=['last_done_at'])
-            release_downtime(record, actor, 'Repair verified — machine tested and restored')
+            release_downtime(record, actor, 'Repair verified — machine tested and restored', at=now)
         elif to_status == 'CLOSED':
-            release_downtime(record, actor, 'Ticket closed')
+            release_downtime(record, actor, 'Ticket closed', at=now)
         elif to_status == 'CANCELLED':
             if machine_state == 'restored' or not record.machine_stopped:
-                release_downtime(record, actor, f'Cancelled — machine confirmed restored. {note}'.strip())
+                release_downtime(record, actor, f'Cancelled — machine confirmed restored. {note}'.strip(), at=now)
             else:
                 release_downtime(record, actor, 'Cancelled — downtime continued by another ticket', handover_only=True)
 
@@ -172,6 +180,36 @@ def transition_record(record, to_status, actor, note='', labour_hours=None, mach
 
         transaction.on_commit(lambda: _notify_after_commit(record, actor, to_status))
     return record
+
+
+def _raise_demand_for_wait(record, to_status, actor):
+    """A ticket may only wait on parts or a vendor if the wait is tracked in Supply Chain.
+
+    Without a linked request nobody can see what is being waited for, or chase it.
+    Any line not yet requested is raised automatically as part of the move.
+    """
+    from supply_chain.models import ItemRequestType
+
+    if to_status == 'AWAITING_PARTS':
+        lines = list(record.spare_parts.all())
+        if not lines:
+            raise TransitionError(
+                'Add the spare part(s) you are waiting for first, so the wait is tracked against Supply Chain.'
+            )
+        pending = [line for line in lines if not line.item_request_id]
+        if pending and not ItemRequestType.objects.filter(code='MNT', is_active=True).exists():
+            raise TransitionError('Supply Chain has no active "MNT" (maintenance) request type set up.')
+        for line in pending:
+            raise_spare_part_demand(line, actor)
+    else:
+        jobs = list(record.service_jobs.all())
+        if not jobs:
+            raise TransitionError('Add the outside service job first, so the wait is tracked against Supply Chain.')
+        pending = [job for job in jobs if not job.item_request_id]
+        if pending and not ItemRequestType.objects.filter(code='SRV', is_active=True).exists():
+            raise TransitionError('Supply Chain has no active "SRV" (service) request type set up.')
+        for job in pending:
+            raise_service_demand(job, actor)
 
 
 def _prepare_cancellation(record, note, machine_state):

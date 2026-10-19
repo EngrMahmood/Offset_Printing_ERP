@@ -11,6 +11,7 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
 from .decorators import maintenance_required, maintenance_staff_required
+from .downtime_analysis import build_downtime_analysis, interval_timeline, machine_overview, recent_intervals
 from .reporting import build_report
 from .permissions import STAFF_ROLES, is_maintenance_staff, require_record_access
 from .workflow import (
@@ -27,7 +28,7 @@ from .models import (
 )
 from .services import (
     generate_record_no, log_activity, notify_assigned, pm_overdue_since, pm_plan_status, notify_complaint_raised, notify_triaged,
-    open_breakdown_downtime_if_needed, open_downtime, raise_service_demand, raise_spare_part_demand,
+    open_breakdown_downtime_if_needed, open_downtime, sync_downtime_phase, raise_service_demand, raise_spare_part_demand,
     soft_delete_record,
 )
 logger = logging.getLogger(__name__)
@@ -250,6 +251,7 @@ def record_triage(request, pk):
             record.save()
             form.save_m2m()
             open_breakdown_downtime_if_needed(record)
+            sync_downtime_phase(record)
             log_activity(
                 record, request.user, 'Triaged & classified', from_status='REPORTED', to_status='DIAGNOSED',
             )
@@ -293,7 +295,10 @@ def record_detail(request, pk):
         'record': record,
         'spare_parts': record.spare_parts.select_related('item_request', 'existing_sku'),
         'service_jobs': record.service_jobs.select_related('item_request'),
-        'downtime_intervals': record.downtime_intervals.all(),
+        'downtime_intervals': [
+            {'interval': interval, 'steps': interval_timeline(interval)}
+            for interval in record.downtime_intervals.prefetch_related('phases__record')
+        ],
         'activity_log': record.activity_log.select_related('actor'),
         'attachments': record.attachments.select_related('uploaded_by'),
         'spare_part_form': MaintenanceSparePartForm(),
@@ -496,10 +501,36 @@ def bulk_delete(request):
     return redirect('maintenance:record_list')
 
 
+@maintenance_required
+def machine_board(request):
+    """Machine-wise window: each machine with its current state and, in a drop-down, every related ticket."""
+    rows = machine_overview(is_maintenance_staff(request.user), request.user)
+    return render(request, 'maintenance/machine_board.html', {
+        'rows': rows,
+        'stopped_count': sum(1 for row in rows if row['stopped']),
+        'is_staff': is_maintenance_staff(request.user),
+    })
+
+
 @maintenance_staff_required
 def downtime_list(request):
-    intervals = MachineDowntime.objects.select_related('machine', 'record').all()
-    return render(request, 'maintenance/downtime_list.html', {'intervals': intervals})
+    """Process-wise downtime: where the stopped time went and which team or dependency owns it."""
+    today = timezone.localdate()
+    date_to = _parse_date(request.GET.get('date_to')) or today
+    date_from = _parse_date(request.GET.get('date_from')) or (date_to - timedelta(days=30))
+    if date_from > date_to:
+        date_from, date_to = date_to, date_from
+    machine_id = request.GET.get('machine') or ''
+    from core.models import Machine
+
+    analysis = build_downtime_analysis(date_from, date_to, machine_id or None)
+    return render(request, 'maintenance/downtime_list.html', {
+        'analysis': analysis,
+        'intervals': recent_intervals(date_from, date_to, machine_id or None),
+        'date_from': date_from.isoformat(), 'date_to': date_to.isoformat(),
+        'machines': Machine.objects.filter(is_active=True).order_by('name'),
+        'selected_machine': machine_id,
+    })
 
 
 @maintenance_staff_required

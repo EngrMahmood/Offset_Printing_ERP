@@ -6,6 +6,14 @@ from maintenance.workflow import TRANSITIONS, TransitionError, allowed_transitio
 from .base import MaintenanceTestCase
 
 
+def add_wait_lines(record):
+    """A ticket can only wait on parts / a vendor when there is something to wait for."""
+    from maintenance.models import MaintenanceServiceJob, MaintenanceSparePart
+
+    MaintenanceSparePart.objects.create(record=record, description='Belt', quantity=1, uom='pcs')
+    MaintenanceServiceJob.objects.create(record=record, vendor='ACME', scope='Rebuild gearbox')
+
+
 def ready_for_completion(record):
     record.root_cause = 'Worn feeder belt'
     record.repair_action = 'Replaced belt'
@@ -20,6 +28,7 @@ class TransitionRuleTests(MaintenanceTestCase):
                 with self.subTest(f'{from_status}->{target}'):
                     # a ticket that did not stop the machine keeps this test about status rules only
                     record = self.make_record(status=from_status)
+                    add_wait_lines(record)
                     ready_for_completion(record)
                     record.test_result = 'PASS'
                     record.save()

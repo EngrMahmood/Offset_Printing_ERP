@@ -227,6 +227,55 @@ class MachineDowntime(models.Model):
         return f'{self.machine} down from {self.start_at}'
 
 
+class DowntimePhase(models.Model):
+    """One stretch of a downtime interval spent in a single process step.
+
+    A stopped machine moves through steps - waiting for maintenance to respond,
+    repair, waiting for spare parts, waiting for an outside vendor, testing - and
+    each step has a different owner. Recording the steps lets the business ask
+    "how many days did we lose waiting for procurement?" instead of just "how long
+    was the machine down?". Phases are written by the workflow as the ticket moves
+    and never edited by hand.
+    """
+
+    WAIT_RESPONSE = 'WAIT_RESPONSE'
+    WAIT_START = 'WAIT_START'
+    REPAIR = 'REPAIR'
+    WAIT_PARTS = 'WAIT_PARTS'
+    WAIT_VENDOR = 'WAIT_VENDOR'
+    TESTING = 'TESTING'
+    UNTRACKED = 'UNTRACKED'
+    CATEGORY_CHOICES = [
+        (WAIT_RESPONSE, 'Waiting for maintenance to respond'),
+        (WAIT_START, 'Diagnosed - waiting to start repair'),
+        (REPAIR, 'Repair in progress'),
+        (WAIT_PARTS, 'Waiting for spare parts'),
+        (WAIT_VENDOR, 'Waiting for outside vendor'),
+        (TESTING, 'Testing & verification'),
+        (UNTRACKED, 'Before step tracking'),
+    ]
+
+    downtime = models.ForeignKey(MachineDowntime, on_delete=models.CASCADE, related_name='phases')
+    record = models.ForeignKey(
+        'MaintenanceRecord', on_delete=models.SET_NULL, null=True, blank=True, related_name='downtime_phases',
+        help_text='The ticket that owned the downtime during this phase.',
+    )
+    category = models.CharField(max_length=20, choices=CATEGORY_CHOICES)
+    started_at = models.DateTimeField()
+    ended_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['started_at', 'id']
+        indexes = [models.Index(fields=['category', 'started_at'])]
+
+    def __str__(self):
+        return f'{self.get_category_display()} ({self.started_at:%d %b %H:%M})'
+
+    @property
+    def is_open(self):
+        return self.ended_at is None
+
+
 class MaintenanceApproval(models.Model):
     ACTION_CHOICES = [
         ('SUBMIT', 'Submitted'),

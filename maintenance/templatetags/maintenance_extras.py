@@ -32,3 +32,12 @@ def priority_badge(priority):
 @register.filter
 def status_badge(status):
     return _STATUS_BADGES.get(status, 'erp-badge-neutral')
+
+
+@register.filter
+def get_item(mapping, key):
+    """Dictionary lookup by a variable key: {{ row.teams|get_item:team }}."""
+    try:
+        return mapping.get(key, '')
+    except AttributeError:
+        return ''

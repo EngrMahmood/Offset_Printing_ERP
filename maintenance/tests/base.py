@@ -28,6 +28,10 @@ class MaintenanceTestCase(TestCase):
     engineer, a manager and a user without module access."""
 
     def setUp(self):
+        from supply_chain.models import ItemRequestType
+
+        for code, name in (('MNT', 'Maintenance'), ('SRV', 'Service')):
+            ItemRequestType.objects.get_or_create(code=code, defaults={'name': name, 'is_active': True})
         self.machine = Machine.objects.create(name='SM74-A', machine_type='offset_printing')
         self.other_machine = Machine.objects.create(name='GTO-B', machine_type='offset_printing')
         self.operator = make_user('op1', 'operator')

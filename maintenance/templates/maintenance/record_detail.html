@@ -266,23 +266,25 @@
     {% endif %}
 
     <section class="erp-section-shell">
-        <h3>Downtime</h3>
-        <div class="erp-table-wrap erp-table-dense">
-            <table class="erp-table">
-                <thead><tr><th>Start</th><th>End</th><th>Reason</th></tr></thead>
-                <tbody>
-                    {% for interval in downtime_intervals %}
-                    <tr>
-                        <td>{{ interval.start_at }}</td>
-                        <td>{{ interval.end_at|default:'Ongoing' }}</td>
-                        <td>{{ interval.get_reason_display }}</td>
-                    </tr>
-                    {% empty %}
-                    <tr><td colspan="3">No downtime logged.</td></tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+        <h3>Downtime &mdash; where the time went</h3>
+        {% for item in downtime_intervals %}
+        <div style="margin-bottom:14px;">
+            <div><strong>{{ item.interval.start_at|date:"d M Y H:i" }}</strong> &rarr; {% if item.interval.end_at %}{{ item.interval.end_at|date:"d M Y H:i" }}{% else %}<span class="erp-badge erp-badge-rejected">machine still stopped</span>{% endif %}
+                {% if item.interval.closed_reason %}<span class="erp-help-text"> &mdash; {{ item.interval.closed_reason }}</span>{% endif %}</div>
+            {% if item.steps %}
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Step</th><th>Owner</th><th>Time</th></tr></thead>
+                    <tbody>
+                        {% for step in item.steps %}<tr><td>{{ step.label }}</td><td>{{ step.team }}</td><td>{{ step.duration }}</td></tr>{% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
         </div>
+        {% empty %}
+        <p>No downtime logged &mdash; the machine was not stopped by this ticket.</p>
+        {% endfor %}
     </section>
 
     <section class="erp-section-shell">
