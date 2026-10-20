@@ -172,7 +172,21 @@ def _parse_period_filter(request, default_period='month'):
         except ValueError:
             pass
 
-    if period == 'today':
+    if period == 'quarter':
+        import calendar as _calendar
+
+        try:
+            quarter = int(request.GET.get('quarter') or ((today.month - 1) // 3 + 1))
+        except (TypeError, ValueError):
+            quarter = (today.month - 1) // 3 + 1
+        quarter = min(max(quarter, 1), 4)
+        year = _get_year(request)
+        first_month = (quarter - 1) * 3 + 1
+        start = datetime(year, first_month, 1).date()
+        last_month = first_month + 2
+        end = datetime(year, last_month, _calendar.monthrange(year, last_month)[1]).date()
+        label = f'Q{quarter} {year}'
+    elif period == 'today':
         start = end = today
         label = 'Today'
     elif period == 'yesterday':
@@ -1981,10 +1995,22 @@ def build_wastage_report_context(request):
     tentative_excluded = 0
 
     # Prefetch related data to avoid N+1 queries
-    job_cards = job_cards.select_related('planning_job', 'machine_name').prefetch_related(
+    job_cards = job_cards.select_related('planning_job', 'machine_name', 'parent_job_card').prefetch_related(
         Prefetch('productions', queryset=Production.objects.filter(is_active=True)),
         Prefetch('dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
     )
+
+    # Multi-form books (Cover + Inner forms): packing and dispatch are recorded once, on
+    # the base (Cover) job card, in books. Every form's dispatched pieces are therefore
+    # derived from the base card's dispatch - books shipped x that form's pieces per
+    # book - so any shortage in the final book count lands on each form (the inner
+    # pages share it) instead of every Inner form showing a 100% gap.
+    base_dispatch_units = {
+        row['job_card_id']: row['total'] or 0
+        for row in Dispatch.objects.filter(
+            is_active=True, job_card__child_forms__isnull=False,
+        ).values('job_card_id').annotate(total=Sum('dispatch_qty'))
+    }
 
     # Order chronologically by system-entry date (= created_at, same as displayed Plan Date)
     job_cards = job_cards.order_by('created_at')
@@ -1999,6 +2025,7 @@ def build_wastage_report_context(request):
     total_dispatch_gap_pcs = 0
     total_wastage_pcs = 0
     total_finalized_waste_pcs = 0
+    total_finalized_plan_qty = 0
     total_tentative_waste_pcs = 0
     jobs_needing_reconciliation = 0
 
@@ -2008,18 +2035,43 @@ def build_wastage_report_context(request):
         ups = job.ups or 1
         plan_qty_pcs = int(job.total_sheets_planned * ups)
 
-        # Python-level summation of prefetched relations to avoid N+1 queries
-        dispatch_qty_pcs = sum(d.dispatch_qty for d in job.dispatch_set.all())
+        # Python-level summation of prefetched relations to avoid N+1 queries.
+        # Dispatch is recorded in the job's own order unit (pcs, rims, books...),
+        # while plan, printing and sorting here are in pieces - convert, or a rim
+        # job that dispatched every rim reads as a ~100% gap.
+        ppu = max(int(job.pcs_per_unit or 1), 1)
+        if job.parent_job_card_id:
+            dispatch_qty_pcs = int((base_dispatch_units.get(job.parent_job_card_id) or 0) * ppu)
+        else:
+            dispatch_qty_pcs = int(sum(d.dispatch_qty for d in job.dispatch_set.all() if d.is_active) * ppu)
         printing_waste_sheets = sum(p.waste_sheets for p in job.productions.all() if p.entry_type == 'printing')
         printing_waste_pcs = printing_waste_sheets * ups
         sorting_waste_pcs = sum(p.sorting_waste_qty for p in job.productions.all() if p.entry_type == 'packing')
 
-        # Dispatch Gap (Pcs): Plan Qty (Pcs) - Dispatch Qty
-        # Clamped to 0 minimum as per discussion
-        dispatch_gap_pcs = max(plan_qty_pcs - dispatch_qty_pcs, 0)
+        # Stock (PlanningJob.stock_qty): pieces carried forward from an over-run on this
+        # job, or held in stock for it. Pieces left in stock are not wasted, so they come
+        # off the gap. A job with no plan at all was fulfilled from stock: nothing was
+        # printed, so there is nothing to waste (and nothing to divide a percentage by).
+        stock_qty_pcs = int(job.planning_job.stock_qty or 0) if job.planning_job_id else 0
 
-        # Status of Wastage (Tentative vs Finalized)
-        is_completed = (job.status in ('completed', 'closed') or job.job_status == 'Completed')
+        # Dispatch Gap (Pcs): Plan Qty (Pcs) - Dispatch Qty - stock carried forward.
+        # Clamped to 0 minimum as per discussion
+        dispatch_gap_pcs = max(plan_qty_pcs - dispatch_qty_pcs - stock_qty_pcs, 0) if plan_qty_pcs > 0 else 0
+
+        if plan_qty_pcs <= 0:
+            data_note = 'Fulfilled from stock' if stock_qty_pcs > 0 else 'No plan and no stock recorded'
+        elif stock_qty_pcs > 0:
+            data_note = f'{stock_qty_pcs:,} pcs carried to stock (not counted as wastage)'
+        else:
+            data_note = ''
+
+        # Status of Wastage (Tentative vs Finalized). A form of a multi-form book is
+        # finalized when its base job card is: forms can never complete on their own.
+        _base = job.parent_job_card if job.parent_job_card_id else None
+        is_completed = (
+            job.status in ('completed', 'closed') or job.job_status == 'Completed'
+            or bool(_base and (_base.status in ('completed', 'closed') or _base.job_status == 'Completed'))
+        )
         wastage_status = "Finalized" if is_completed else "Tentative"
         job_product_type = product_type_by_sku.get(job.SKU, 'Unclassified')
 
@@ -2096,10 +2148,12 @@ def build_wastage_report_context(request):
             's_no': s_no_counter,
             'job_card_no': job.job_card_no,
             'sku': job.SKU,
+            'form_label': job.form_label or '',
             'product_type': job_product_type,
             'plan_date': plan_date,
             'plan_month': plan_month,
             'plan_qty': plan_qty_pcs,
+            'stock_qty': stock_qty_pcs,
             'dispatch_qty': dispatch_qty_pcs,
             'printing_waste_sheets': printing_waste_sheets,
             'printing_waste_pcs': printing_waste_pcs,
@@ -2112,6 +2166,7 @@ def build_wastage_report_context(request):
             'total_wastage_pcs': job_total_waste_pcs,
             'total_wastage_pct': f"{total_waste_pct}%",
             'needs_reconciliation_review': 'Yes' if needs_reconciliation_review else '',
+            'data_note': data_note,
         }
         wastage_rows.append(row)
 
@@ -2125,13 +2180,22 @@ def build_wastage_report_context(request):
 
         if is_completed:
             total_finalized_waste_pcs += job_total_waste_pcs
+            total_finalized_plan_qty += plan_qty_pcs
         else:
             total_tentative_waste_pcs += job_total_waste_pcs
 
         if needs_reconciliation_review:
             jobs_needing_reconciliation += 1
 
-    overall_wastage_pct = round((total_wastage_pcs / total_plan_qty * 100), 2) if total_plan_qty > 0 else 0.0
+    # The headline is the CONFIRMED figure: finalized (completed / closed) jobs only.
+    # A job still running has not dispatched yet, so its whole undispatched plan
+    # sits in "dispatch gap" - that is work in progress, not wastage, and folding it
+    # in made the overall card read 60-70% in a normal month. The all-jobs figure is
+    # kept, labelled as such, for anyone who wants the old view.
+    overall_wastage_pct = (
+        round((total_finalized_waste_pcs / total_finalized_plan_qty * 100), 2) if total_finalized_plan_qty > 0 else 0.0
+    )
+    all_jobs_wastage_pct = round((total_wastage_pcs / total_plan_qty * 100), 2) if total_plan_qty > 0 else 0.0
 
     summary = {
         'total_plan_qty': total_plan_qty,
@@ -2140,20 +2204,38 @@ def build_wastage_report_context(request):
         'sorting_waste_pcs': total_sorting_waste_pcs,
         'dispatch_gap_pcs': total_dispatch_gap_pcs,
         'total_wastage_pcs': total_wastage_pcs,
-        'overall_wastage_pct': overall_wastage_pct,
+        'finalized_plan_qty': total_finalized_plan_qty,
         'finalized_wastage_pcs': total_finalized_waste_pcs,
+        'overall_wastage_pct': overall_wastage_pct,
         'tentative_wastage_pcs': total_tentative_waste_pcs,
+        'all_jobs_wastage_pct': all_jobs_wastage_pct,
         'jobs_needing_reconciliation': jobs_needing_reconciliation,
+    }
+    summary_labels = {
+        'total_plan_qty': 'Plan qty, all jobs (pcs)',
+        'total_dispatch_qty': 'Dispatched, all jobs (pcs)',
+        'printing_waste_pcs': 'Printing waste (pcs)',
+        'sorting_waste_pcs': 'Sorting waste (pcs)',
+        'dispatch_gap_pcs': 'Dispatch gap, all jobs (pcs)',
+        'total_wastage_pcs': 'Total incl. open jobs (pcs)',
+        'finalized_plan_qty': 'Plan qty, finalized jobs (pcs)',
+        'finalized_wastage_pcs': 'Confirmed wastage, finalized (pcs)',
+        'overall_wastage_pct': 'Overall wastage % (finalized jobs)',
+        'tentative_wastage_pcs': 'Open jobs: undispatched + waste (pcs, not final)',
+        'all_jobs_wastage_pct': 'Incl. open jobs % (not meaningful until dispatched)',
+        'jobs_needing_reconciliation': 'Jobs needing review',
     }
 
     headers = [
         's_no',
         'job_card_no',
         'sku',
+        'form_label',
         'product_type',
         'plan_date',
         'plan_month',
         'plan_qty',
+        'stock_qty',
         'dispatch_qty',
         'printing_waste_sheets',
         'printing_waste_pcs',
@@ -2166,16 +2248,19 @@ def build_wastage_report_context(request):
         'total_wastage_pcs',
         'total_wastage_pct',
         'needs_reconciliation_review',
+        'data_note',
     ]
 
     header_labels = {
         's_no': 'S.No.',
         'job_card_no': 'Job Card No',
         'sku': 'SKU',
+        'form_label': 'Form',
         'product_type': 'Product Type',
         'plan_date': 'Plan Date',
         'plan_month': 'Plan Month',
         'plan_qty': 'Plan Qty (Pcs)',
+        'stock_qty': 'Stock Qty (Pcs)',
         'dispatch_qty': 'Dispatched Qty (Pcs)',
         'printing_waste_sheets': 'Printing Waste (Sheets)',
         'printing_waste_pcs': 'Printing Waste (Pcs)',
@@ -2188,6 +2273,7 @@ def build_wastage_report_context(request):
         'total_wastage_pcs': 'Total Wastage (Pcs)',
         'total_wastage_pct': 'Total Wastage %',
         'needs_reconciliation_review': 'Needs Review',
+        'data_note': 'Note',
     }
 
     # Determine the date range to display in the report subtitle.
@@ -2325,14 +2411,41 @@ def build_wastage_report_context(request):
         'dispatch_gap_pct': 'Dispatch Gap %', 'total_wastage_pcs': 'Total Wastage (Pcs)',
         'total_wastage_pct': 'Total Wastage %',
     }
-    export_extra = {}
-    if (request.GET.get('tab') or '').strip().lower() == 'product_type':
-        # "Export by product type": the summary table becomes the exported rowset.
-        export_extra = {
+    # Words printed under the title of every download, so a file still explains itself
+    # when it is opened later: which jobs the summary counts, and any filter applied.
+    basis_note = (
+        'Product type summary: finalized (completed / closed) jobs only'
+        + (f' ({tentative_excluded} tentative job(s) not included)' if tentative_excluded else '')
+        if pt_basis == 'finalized' else
+        'Product type summary: includes tentative jobs (undispatched quantity counts as dispatch gap)'
+    )
+    export_notes = [basis_note]
+    if product_type_filter:
+        export_notes.append(f'Product type filter: {product_type_filter}')
+    if wastage_status_filter:
+        export_notes.append(f'Job rows: {wastage_status_filter} jobs only')
+    if high_wastage_filter:
+        export_notes.append('Job rows: total wastage above 5% only')
+
+    export_extra = {'export_notes': export_notes}
+    is_pt_export = (request.GET.get('tab') or '').strip().lower() == 'product_type'
+    if is_pt_export:
+        # "Export by product type": the summary is sheet 1; sheet 2 is the job-level
+        # (backend) data it was built from. CSV has one table, so it gets the summary.
+        export_extra.update({
             'export_rows': product_type_summary,
             'headers': product_type_headers,
             'header_labels': product_type_labels,
-        }
+            'extra_sheets': [{
+                'title': 'Job Data', 'headers': headers, 'labels': header_labels, 'rows': wastage_rows_paginated,
+            }],
+        })
+    elif is_export:
+        # "All jobs" export: the job list is sheet 1; sheet 2 is the product-type summary.
+        export_extra['extra_sheets'] = [{
+            'title': 'By Product Type', 'headers': product_type_headers, 'labels': product_type_labels,
+            'rows': product_type_summary,
+        }]
 
     return {
         'report': next(item for item in REPORT_CATALOG if item['key'] == 'wastage-report'),
@@ -2347,6 +2460,7 @@ def build_wastage_report_context(request):
             'high_wastage': 'true' if high_wastage_filter else '',
             'product_type': product_type_filter,
             'pt_basis': pt_basis,
+            'quarter': (request.GET.get('quarter') or '').strip(),
             'page': current_page,
             'period': period,
             'period_label': period_label,
@@ -2357,6 +2471,7 @@ def build_wastage_report_context(request):
             'year': year,
         },
         'summary': summary,
+        'summary_labels': summary_labels,
         'wastage_rows': wastage_rows_paginated,
         'product_type_summary': product_type_summary,
         'product_type_basis': pt_basis,

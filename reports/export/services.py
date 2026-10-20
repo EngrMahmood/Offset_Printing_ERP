@@ -93,6 +93,26 @@ def build_report_title(payload: dict) -> str:
     return report_title
 
 
+def _export_notes(payload: dict) -> list[str]:
+    """Lines printed under the title so a downloaded file explains itself: the period
+    it covers and any basis / filter the report states in ``data['export_notes']``."""
+    data = payload.get('data') or {}
+    notes = []
+    start, end = data.get('start_date'), data.get('end_date')
+    if start and end:
+        notes.append(f'Period: {start} to {end}')
+    for note in data.get('export_notes') or []:
+        if note:
+            notes.append(str(note))
+    return notes
+
+
+def _extra_sheets(payload: dict) -> list[dict]:
+    """Additional worksheets a report asks for (Excel only): [{title, headers, labels, rows}]."""
+    sheets = (payload.get('data') or {}).get('extra_sheets') or []
+    return [sheet for sheet in sheets if isinstance(sheet, dict) and sheet.get('rows')]
+
+
 def _slugify(text: str) -> str:
     slug = re.sub(r'[^A-Za-z0-9]+', '-', text).strip('-').lower()
     return slug or 'report'
@@ -189,6 +209,8 @@ def export_as_csv(payload: dict) -> bytes:
     writer = csv.writer(output)
     writer.writerow([report_title])
     writer.writerow(['generated_at', payload.get('generated_at', '')])
+    for note in _export_notes(payload):
+        writer.writerow([note])
     totals_line = _report_totals_line(payload, rows)
     if totals_line:
         writer.writerow([totals_line])
@@ -225,6 +247,8 @@ def export_as_xlsx(payload: dict) -> bytes:
     sheet.append([report_title])
     sheet['A1'].font = Font(bold=True, size=13, color=BRAND_PRIMARY_STRONG.lstrip('#'))
     sheet.append(['generated_at', payload.get('generated_at', '')])
+    for note in _export_notes(payload):
+        sheet.append([note])
     totals_line = _report_totals_line(payload, rows)
     if totals_line:
         sheet.append([totals_line])
@@ -250,6 +274,30 @@ def export_as_xlsx(payload: dict) -> bytes:
         for idx, row in enumerate(rows, start=1):
             sheet.append([_cell_value(header, idx, row) for header in headers])
         sheet.freeze_panes = sheet.cell(row=header_row_index + 1, column=1).coordinate
+
+    # Further worksheets (e.g. the job-level "backend" data behind a summary).
+    header_fill = PatternFill('solid', fgColor=BRAND_PRIMARY.lstrip('#'))
+    header_font = Font(bold=True, color='FFFFFF')
+    for extra in _extra_sheets(payload):
+        extra_sheet = workbook.create_sheet(title=re.sub(r'[\\/*?:\[\]]', ' ', str(extra.get('title') or 'Data'))[:31])
+        extra_sheet.append([f"{report_title} - {extra.get('title') or 'Data'}"])
+        extra_sheet['A1'].font = Font(bold=True, size=13, color=BRAND_PRIMARY_STRONG.lstrip('#'))
+        for note in _export_notes(payload):
+            extra_sheet.append([note])
+        extra_sheet.append([])
+        extra_headers, extra_labels = _headers_with_row_numbers(
+            list(extra.get('headers') or sorted({k for r in extra['rows'] for k in r})), dict(extra.get('labels') or {}),
+        )
+        extra_sheet.append([extra_labels.get(h, h) for h in extra_headers])
+        extra_header_row = extra_sheet.max_row
+        for col_index in range(1, len(extra_headers) + 1):
+            cell = extra_sheet.cell(row=extra_header_row, column=col_index)
+            cell.fill = header_fill
+            cell.font = header_font
+            cell.alignment = Alignment(vertical='center')
+        for idx, row in enumerate(extra['rows'], start=1):
+            extra_sheet.append([_cell_value(h, idx, row) for h in extra_headers])
+        extra_sheet.freeze_panes = extra_sheet.cell(row=extra_header_row + 1, column=1).coordinate
 
     stream = io.BytesIO()
     workbook.save(stream)
@@ -358,6 +406,8 @@ def export_as_pdf(payload: dict) -> bytes:
         Paragraph(f'Offset Printing ERP - {xml_escape(report_title)}', title_style),
         Paragraph(f'Generated at: {generated_at} — Rows: {row_count}', meta_style),
     ]
+    for note in _export_notes(payload):
+        story.append(Paragraph(xml_escape(note), meta_style))
     totals_line = _report_totals_line(payload, rows)
     if totals_line:
         story.append(Paragraph(totals_line, meta_style))

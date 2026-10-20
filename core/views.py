@@ -509,6 +509,11 @@ def _build_dispatch_job_card_info(job_card, edit_record_id=None):
         'po_no': job_card.PO_No or '-',
         'order_qty': job_card.order_qty,
         'order_qty_display': f'{job_card.order_qty:,}',
+        # Dispatch is entered in the job's own order unit - the unit on the customer's
+        # PO / WO - not always pieces (a rim job is dispatched in rims).
+        'unit_type': job_card.unit_type or 'pcs',
+        'unit_label': {'pcs': 'pcs', 'rim': 'rims', 'book': 'books', 'box': 'boxes'}.get(job_card.unit_type or 'pcs', 'pcs'),
+        'pcs_per_unit': int(job_card.pcs_per_unit or 1),
         'produced_qty': int(job_card.total_packed_pcs or 0) if job_card.is_print_job else int(job_card.total_packed_pcs or 0),
         'produced_qty_display': f'{int(job_card.total_packed_pcs or 0):,}',
         'printed_pcs_display': f'{int(job_card.total_printed_pcs or 0):,}' if job_card.is_print_job else 'N/A',

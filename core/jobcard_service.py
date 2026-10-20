@@ -309,7 +309,30 @@ def job_card_completion_blockers(job_card):
     return reasons
 
 
-def transition_job_card_status(job_card: JobCard, target_status, actor=None, reason=''):
+def _cascade_to_child_forms(base_card, target_status, before_status, actor):
+    """A multi-form book is one deliverable: packing and dispatch are recorded once, on
+    the base (Cover) job card, so the Inner forms can never complete on their own
+    (they have printing but no packing/dispatch). When the base job card completes or
+    closes, every form follows; when it is reopened, the forms reopen with it."""
+    if base_card.parent_job_card_id:
+        return
+    children = list(base_card.child_forms.filter(is_active=True).select_related('planning_job'))
+    if not children:
+        return
+    if target_status in ('completed', 'closed'):
+        followers = [c for c in children if c.workflow_status != target_status]
+    elif target_status == 'in_production' and before_status in ('completed', 'closed'):
+        followers = [c for c in children if c.workflow_status in ('completed', 'closed')]
+    else:
+        return
+    for child in followers:
+        transition_job_card_status(
+            child, target_status, actor=actor, _system_cascade=True,
+            reason=f'System: base job card {base_card.job_card_no} moved to {target_status}',
+        )
+
+
+def transition_job_card_status(job_card: JobCard, target_status, actor=None, reason='', _system_cascade=False):
     target_status = normalize_job_card_status(target_status, default='')
     if not target_status:
         raise ValidationError({'status': 'Unknown Job Card workflow status.'})
@@ -400,14 +423,16 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         ('completed', 'in_production'),
         ('closed', 'in_production'),
     }
-    if (current_status, target_status) not in allowed_transitions:
+    if (current_status, target_status) not in allowed_transitions and not _system_cascade:
         raise ValidationError({'status': f'Transition not allowed from {current_status} to {target_status}.'})
 
     if target_status in JOB_CARD_PLANNING_APPROVAL_STATUSES and job_card.planning_missing_fields():
         missing_fields = ', '.join(job_card.planning_missing_fields())
         raise ValidationError({'status': f'Complete planning fields before moving to {target_status}: {missing_fields}.'})
 
-    if target_status == 'completed':
+    # A form follows its base job card, so it is exempt from the packing / dispatch
+    # blockers (those happen once, on the base card).
+    if target_status == 'completed' and not _system_cascade:
         blockers = job_card_completion_blockers(job_card)
         if blockers:
             raise ValidationError({'status': '; '.join(blockers)})
@@ -425,6 +450,8 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
             before_status=before_status,
             extra_message=reason,
         )
+        if not _system_cascade:
+            _cascade_to_child_forms(job_card, target_status, before_status, actor)
 
         # Reopening a job that already has production/dispatch recorded is a
         # deliberate, permission-gated feature (planners can correct a

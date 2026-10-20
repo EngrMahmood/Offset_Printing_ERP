@@ -38,8 +38,17 @@
                     <option value="yesterday" {% if request.GET.period == 'yesterday' %}selected{% endif %}>Yesterday</option>
                     <option value="week" {% if request.GET.period == 'week' %}selected{% endif %}>This Week</option>
                     <option value="days" {% if request.GET.period == 'days' %}selected{% endif %}>Last 30 Days</option>
+                    {% if 'quarter' in report.filters %}<option value="quarter" {% if request.GET.period == 'quarter' %}selected{% endif %}>Quarter (pick below)</option>{% endif %}
                     <option value="all" {% if request.GET.period == 'all' %}selected{% endif %}>All Time</option>
                 </select>
+                {% if 'quarter' in report.filters %}
+                <select name="quarter" id="bi-quarter" title="Quarter" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px; background: white; {% if request.GET.period != 'quarter' %}display:none;{% endif %}">
+                    {% for q in '1234' %}<option value="{{ q }}" {% if request.GET.quarter == q %}selected{% endif %}>Q{{ q }}</option>{% endfor %}
+                </select>
+                <select name="year" id="bi-year" title="Year" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px; background: white; {% if request.GET.period != 'quarter' %}display:none;{% endif %}">
+                    {% for y in quarter_years %}<option value="{{ y }}" {% if request.GET.year == y|stringformat:"s" %}selected{% endif %}>{{ y }}</option>{% endfor %}
+                </select>
+                {% endif %}
                 <input type="date" name="date_from" value="{{ request.GET.date_from }}" title="From Date" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
                 <input type="date" name="date_to" value="{{ request.GET.date_to }}" title="To Date" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px;">
                 {% endif %}
@@ -197,6 +206,19 @@
     const dateFromInput = document.querySelector('input[name="date_from"]');
     const dateToInput = document.querySelector('input[name="date_to"]');
     if (periodSelect && dateFromInput && dateToInput) {
+        const quarterPick = document.getElementById('bi-quarter');
+        const yearPick = document.getElementById('bi-year');
+        function syncQuarterPickers() {
+            const on = periodSelect.value === 'quarter';
+            if (quarterPick) quarterPick.style.display = on ? '' : 'none';
+            if (yearPick) yearPick.style.display = on ? '' : 'none';
+            if (on && quarterPick && !quarterPick.dataset.set && !'{{ request.GET.quarter }}') {
+                quarterPick.value = String(Math.floor(new Date().getMonth() / 3) + 1);
+                quarterPick.dataset.set = '1';
+            }
+        }
+        periodSelect.addEventListener('change', syncQuarterPickers);
+        syncQuarterPickers();
         periodSelect.addEventListener('change', function() {
             if (this.value !== '') {
                 dateFromInput.value = '';
@@ -243,14 +265,14 @@
         return [];
     }
 
-    function renderKPIs(summary) {
+    function renderKPIs(summary, summaryLabels) {
         const grid = document.getElementById('kpi-grid');
         grid.innerHTML = '';
         if (!summary || typeof summary !== 'object') return;
         Object.entries(summary).forEach(([k, v]) => {
             const card = document.createElement('div');
             card.className = 'bi-kpi';
-            card.innerHTML = `<div class="label">${k.replaceAll('_', ' ')}</div><div class="value">${v ?? 0}</div>`;
+            card.innerHTML = `<div class="label">${(summaryLabels && summaryLabels[k]) || k.replaceAll('_', ' ')}</div><div class="value">${v ?? 0}</div>`;
             grid.appendChild(card);
         });
     }
@@ -358,7 +380,7 @@
             paginationContainer.style.display = 'none';
         }
 
-        renderKPIs(summary);
+        renderKPIs(summary, data.summary_labels);
         renderTable(rows, data.headers, data.header_labels);
         renderCharts(summary);
         renderWastageTrends(data.daily_wastage, data.weekly_wastage);

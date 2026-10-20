@@ -349,7 +349,8 @@
 
                             <div class="erp-form-field">
 
-                                <label for="dispatch_qty">Dispatch Qty (pcs)</label>
+                                <label for="dispatch_qty">Dispatch Qty (<span id="dispatch_qty_unit">pcs</span>)</label>
+                                <div id="dispatch_qty_unit_hint" class="erp-help-text" style="display:none;"></div>
 
                                 <input id="dispatch_qty" name="dispatch_qty" type="number" min="1" class="erp-input" value="{{ edit_record.dispatch_qty|default:'' }}" placeholder="Enter quantity" required {% if is_view_mode %}disabled{% endif %}>
 
@@ -1135,7 +1136,20 @@ document.addEventListener('DOMContentLoaded', function () {
         document.getElementById('ji_po_no_label').textContent =
             (info.po_no || '').toUpperCase().startsWith('WO-') ? 'WO No' : 'PO No';
 
-        document.getElementById('ji_order_qty').textContent = info.order_qty_display;
+        document.getElementById('ji_order_qty').textContent = info.order_qty_display + (info.unit_label && info.unit_label !== 'pcs' ? ' ' + info.unit_label : '');
+
+        (function () {
+            const unit = info.unit_label || 'pcs';
+            document.getElementById('dispatch_qty_unit').textContent = unit;
+            const hint = document.getElementById('dispatch_qty_unit_hint');
+            if (unit !== 'pcs') {
+                hint.textContent = 'Enter the number of ' + unit + ' (same unit as the order)' +
+                    (info.pcs_per_unit > 1 ? ' - 1 ' + unit.replace(/s$/, '') + ' = ' + info.pcs_per_unit.toLocaleString() + ' pcs.' : '.');
+                hint.style.display = 'block';
+            } else {
+                hint.style.display = 'none';
+            }
+        })();
 
         document.getElementById('ji_produced').textContent = info.produced_qty_display;
 

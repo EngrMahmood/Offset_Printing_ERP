@@ -921,7 +921,9 @@ class ReportsAppTests(TestCase):
         self.assertEqual(summary['sorting_waste_pcs'], 30)
         self.assertEqual(summary['dispatch_gap_pcs'], 250)
         self.assertEqual(summary['total_wastage_pcs'], 380)
-        self.assertEqual(summary['overall_wastage_pct'], 38.0)
+        # The only job is still open, so there is no confirmed wastage yet; the all-jobs figure keeps the old view.
+        self.assertEqual(summary['overall_wastage_pct'], 0.0)
+        self.assertEqual(summary['all_jobs_wastage_pct'], 38.0)
         self.assertEqual(summary['tentative_wastage_pcs'], 380)
         self.assertEqual(summary['finalized_wastage_pcs'], 0)
 
@@ -1956,8 +1958,8 @@ class DailyProductionReleasedToProductionTests(TestCase):
         self.assertEqual(data['totals']['released_jobs'], 0)
 
 
-class WastageByProductTypeTests(TestCase):
-    """The Wastage Report's product-type summary (product type lives on the SKU master)."""
+class WastageReportFixtures(TestCase):
+    """Shared fixtures for the Wastage Report tests: four job cards across two product types."""
 
     def setUp(self):
         import datetime
@@ -2028,6 +2030,18 @@ class WastageByProductTypeTests(TestCase):
 
     def summary_by_type(self, data):
         return {row['product_type']: row for row in data['product_type_summary']}
+
+
+    # ---- downloads -------------------------------------------------------------------------
+
+    def export(self, kind, **params):
+        return self.client.get(
+            reverse('reports:reports_api:export_report', args=['wastage-report']), {'type': kind, **params},
+        )
+
+
+class WastageByProductTypeTests(WastageReportFixtures):
+    """The Wastage Report's product-type summary (product type lives on the SKU master)."""
 
     def test_summary_defaults_to_finalized_jobs_only(self):
         data = self.run_report()
@@ -2104,3 +2118,263 @@ class WastageByProductTypeTests(TestCase):
         self.assertContains(response, 'name="product_type"')
         self.assertContains(response, 'Insert Card')
         self.assertContains(response, 'Wastage By Product Type')
+
+    def test_csv_export_is_not_cut_to_the_first_page_after_viewing_the_report(self):
+        import datetime
+
+        from core.models import JobCard, Machine
+
+        machine = Machine.objects.get(name='PT Machine')
+        JobCard.objects.bulk_create([
+            JobCard(
+                job_card_no=f'JC-BULK-{i}', order_qty=100, ups=1, total_sheet_quantity=100, status='in_production',
+                is_active=True, SKU='SKU-LBL-3', po_date=datetime.date.today(), total_colors=4,
+                machine_name=machine, total_impressions_required=100,
+            )
+            for i in range(110)
+        ])
+        # Viewing the report on screen caches its paginated (100-row) result...
+        on_screen = self.client.get(reverse('reports:reports_api:run_report', args=['wastage-report']))
+        self.assertEqual(len(on_screen.json()['payload']['data']['wastage_rows']), 100)
+        # ...the download must still contain every job.
+        body = self.export('csv').content.decode('utf-8-sig')
+        self.assertEqual(body.count('JC-BULK-'), 110)
+        self.assertEqual(body.count('JC-PT-'), 4)
+
+    def test_downloads_state_the_period_they_cover(self):
+        import datetime
+
+        today = datetime.date.today().strftime('%Y-%m-%d')
+        csv_body = self.export('csv', date_from=today, date_to=today).content.decode('utf-8-sig')
+        self.assertIn(f'Period: {today} to {today}', csv_body)
+        pt_body = self.export('csv', date_from=today, date_to=today, tab='product_type').content.decode('utf-8-sig')
+        self.assertIn(f'Period: {today} to {today}', pt_body)
+        self.assertIn('Product type summary: finalized', pt_body)
+
+    def test_period_is_derived_from_the_data_when_no_dates_are_chosen(self):
+        import datetime
+
+        today = datetime.date.today().strftime('%Y-%m-%d')
+        body = self.export('csv', tab='product_type').content.decode('utf-8-sig')
+        self.assertIn('Period: ', body)
+        self.assertIn(today, body)
+
+    def test_product_type_excel_has_the_summary_then_the_job_data(self):
+        import io
+
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(io.BytesIO(self.export('xlsx', tab='product_type').content))
+        self.assertEqual(workbook.sheetnames, ['Report', 'Job Data'])
+        summary = [[c for c in row] for row in workbook['Report'].iter_rows(values_only=True)]
+        self.assertTrue(any(row and 'Insert Card' in row for row in summary))
+        self.assertTrue(any(row and any(str(cell).startswith('Period: ') for cell in row if cell) for row in summary))
+        job_rows = list(workbook['Job Data'].iter_rows(values_only=True))
+        flat = ' '.join(str(c) for row in job_rows for c in row if c is not None)
+        for job_card in ('JC-PT-1', 'JC-PT-2', 'JC-PT-3', 'JC-PT-4'):
+            self.assertIn(job_card, flat)
+        self.assertIn('Product Type', flat)
+
+    def test_all_jobs_excel_has_the_product_type_summary_as_sheet_two(self):
+        import io
+
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(io.BytesIO(self.export('xlsx').content))
+        self.assertEqual(workbook.sheetnames, ['Report', 'By Product Type'])
+        flat = ' '.join(str(c) for row in workbook['By Product Type'].iter_rows(values_only=True) for c in row if c is not None)
+        self.assertIn('Insert Card', flat)
+        self.assertIn('All product types', flat)
+
+    def test_extra_sheets_do_not_leak_into_csv_or_pdf_rows(self):
+        body = self.export('csv').content.decode('utf-8-sig')
+        self.assertNotIn('All product types', body)           # summary lives only on sheet 2 of the workbook
+
+
+class WastageHeadlineUnitsAndQuarterTests(WastageReportFixtures):
+    """Headline figure, unit conversion and quarter filter (reuses the fixtures above)."""
+
+    def test_overall_wastage_counts_finalized_jobs_only(self):
+        summary = self.run_report()['summary']
+        # finalized: JC-PT-1 (55), JC-PT-2 (... see fixtures) and JC-PT-3 over 3000 planned pcs
+        self.assertEqual(summary['finalized_plan_qty'], 3000)
+        self.assertEqual(summary['finalized_wastage_pcs'], 55 + 160)
+        self.assertEqual(summary['overall_wastage_pct'], round((55 + 160) * 100 / 3000, 2))
+        # the open job's whole plan is "dispatch gap" but must not drive the headline
+        self.assertEqual(summary['tentative_wastage_pcs'], 1000)
+        self.assertGreater(summary['all_jobs_wastage_pct'], summary['overall_wastage_pct'] * 2)
+
+    def test_labels_are_provided_for_the_cards(self):
+        data = self.run_report()
+        for key in data['summary']:
+            self.assertIn(key, data['summary_labels'])
+
+    def test_dispatch_in_rims_is_converted_to_pieces(self):
+        import datetime
+
+        from core.models import Dispatch, JobCard, Machine
+
+        card = JobCard.objects.create(
+            job_card_no='JC-RIM-1', order_qty=100, ups=1, total_sheet_quantity=50000, status='completed',
+            is_active=True, SKU='SKU-LBL-1', po_date=datetime.date.today(), total_colors=4,
+            machine_name=Machine.objects.get(name='PT Machine'), total_impressions_required=50000,
+            unit_type='rim', pcs_per_unit=500,
+        )
+        Dispatch.objects.create(job_card=card, dc_no='DC-RIM-1', dispatch_date=datetime.date.today(),
+                                dispatch_qty=100, is_active=True)
+        JobCard.objects.filter(pk=card.pk).update(status='completed')
+        row = next(r for r in self.run_report()['wastage_rows'] if r['job_card_no'] == 'JC-RIM-1')
+        self.assertEqual((row['plan_qty'], row['dispatch_qty'], row['difference_pcs']), (50000, 50000, 0))
+        self.assertEqual(row['total_wastage_pct'], '0.0%')
+
+    def test_quarter_filter_picks_that_calendar_quarter(self):
+        import datetime
+
+        from django.utils import timezone
+
+        from core.models import JobCard
+
+        year = timezone.localdate().year
+        in_q1 = JobCard.objects.get(job_card_no='JC-PT-1')
+        in_q3 = JobCard.objects.get(job_card_no='JC-PT-2')
+        JobCard.objects.filter(pk=in_q1.pk).update(created_at=timezone.make_aware(datetime.datetime(year, 2, 10, 12)))
+        JobCard.objects.filter(pk=in_q3.pk).update(created_at=timezone.make_aware(datetime.datetime(year, 8, 10, 12)))
+        for other in ('JC-PT-3', 'JC-PT-4'):
+            JobCard.objects.filter(job_card_no=other).update(created_at=timezone.make_aware(datetime.datetime(year, 11, 5, 12)))
+
+        q1 = self.run_report(period='quarter', quarter='1', year=str(year))
+        self.assertEqual({r['job_card_no'] for r in q1['wastage_rows']}, {'JC-PT-1'})
+        self.assertEqual((q1['start_date'], q1['end_date']), (f'{year}-01-01', f'{year}-03-31'))
+        q3 = self.run_report(period='quarter', quarter='3', year=str(year))
+        self.assertEqual({r['job_card_no'] for r in q3['wastage_rows']}, {'JC-PT-2'})
+        self.assertEqual((q3['start_date'], q3['end_date']), (f'{year}-07-01', f'{year}-09-30'))
+        q4 = self.run_report(period='quarter', quarter='4', year=str(year))
+        self.assertEqual({r['job_card_no'] for r in q4['wastage_rows']}, {'JC-PT-3', 'JC-PT-4'})
+
+    def test_quarter_download_states_the_quarter_dates(self):
+        from django.utils import timezone
+
+        year = timezone.localdate().year
+        body = self.export('csv', period='quarter', quarter='2', year=str(year)).content.decode('utf-8-sig')
+        self.assertIn(f'Period: {year}-04-01 to {year}-06-30', body)
+
+    def test_quarter_and_year_are_part_of_the_cache_key(self):
+        from django.utils import timezone
+
+        year = timezone.localdate().year
+        first = self.run_report(period='quarter', quarter='1', year=str(year))
+        second = self.run_report(period='quarter', quarter='2', year=str(year))
+        self.assertNotEqual(first['start_date'], second['start_date'])
+
+    def test_report_page_offers_the_quarter_picker(self):
+        response = self.client.get(reverse('reports:detail', args=['wastage-report']))
+        self.assertContains(response, 'Quarter (pick below)')
+        self.assertContains(response, 'id="bi-quarter"')
+        self.assertContains(response, 'id="bi-year"')
+
+    # ---- multi-form books and stock ------------------------------------------------------
+
+    def _make_card(self, no, sku='SKU-LBL-1', *, sheets, ups, status='completed', order_qty=1000, parent=None,
+                   label='', stock=0, dispatched=0, ppu=1, unit='pcs', waste_sheets=0):
+        import datetime
+
+        from core.models import Dispatch, JobCard, Machine, Production
+        from planning.models import PlanningJob
+
+        planning_job = PlanningJob.objects.create(
+            jc_number=no, order_qty=order_qty, ups=ups, print_sheets=sheets, wastage_sheets=0,
+            status='in_production', plan_date=datetime.date.today(), plan_month='July 2026', stock_qty=stock or None,
+        )
+        card = JobCard.objects.create(
+            job_card_no=no, planning_job=planning_job, order_qty=order_qty, ups=ups, total_sheet_quantity=sheets,
+            status=status, is_active=True, SKU=sku, po_date=datetime.date.today(), total_colors=4,
+            machine_name=Machine.objects.get(name='PT Machine'), total_impressions_required=max(sheets, 1),
+            parent_job_card=parent, form_label=label, unit_type=unit, pcs_per_unit=ppu,
+        )
+        if waste_sheets:
+            Production.objects.create(
+                entry_type='printing', job_card=card, date=datetime.date.today(), shift='A',
+                output_sheets=max(sheets, 1), waste_sheets=waste_sheets, status='completed',
+                machine=Machine.objects.get(name='PT Machine'),
+            )
+        if dispatched:
+            Dispatch.objects.create(job_card=card, dc_no=f'DC-{no}', dispatch_date=datetime.date.today(),
+                                    dispatch_qty=dispatched, is_active=True)
+        JobCard.objects.filter(pk=card.pk).update(status=status)
+        return JobCard.objects.get(pk=card.pk)
+
+    def row(self, data, job_card_no):
+        return next(r for r in data['wastage_rows'] if r['job_card_no'] == job_card_no)
+
+    def test_book_forms_share_the_final_book_count(self):
+        # 1,020 books shipped. Cover planned 1,040 pcs, each Inner 1,030 pcs; packing/dispatch only on the Cover.
+        cover = self._make_card('JC-BOOK-1', sheets=520, ups=2, order_qty=1020, label='Cover', dispatched=1020, unit='book')
+        inner = self._make_card('JC-BOOK-1.1', sheets=1030, ups=1, order_qty=1020, parent=cover, label='Inner',
+                                status='in_production', unit='book', waste_sheets=7)
+        data = self.run_report()
+        cover_row, inner_row = self.row(data, 'JC-BOOK-1'), self.row(data, 'JC-BOOK-1.1')
+        self.assertEqual((cover_row['dispatch_qty'], cover_row['difference_pcs']), (1020, 20))
+        self.assertEqual((inner_row['dispatch_qty'], inner_row['difference_pcs']), (1020, 10))   # shortage reaches the inner pages too
+        self.assertEqual(inner_row['printing_waste_pcs'], 7)                                    # its own printing waste is kept
+        self.assertEqual(inner_row['form_label'], 'Inner')
+
+    def test_forms_are_finalized_when_their_base_card_is(self):
+        cover = self._make_card('JC-BOOK-2', sheets=100, ups=1, order_qty=100, label='Cover', dispatched=100, unit='book')
+        self._make_card('JC-BOOK-2.1', sheets=100, ups=1, order_qty=100, parent=cover, label='Inner',
+                        status='in_production', unit='book')
+        data = self.run_report()
+        self.assertEqual(self.row(data, 'JC-BOOK-2.1')['wastage_status'], 'Finalized')
+
+    def test_forms_of_an_open_book_stay_tentative(self):
+        cover = self._make_card('JC-BOOK-3', sheets=100, ups=1, order_qty=100, label='Cover', status='in_production', unit='book')
+        self._make_card('JC-BOOK-3.1', sheets=100, ups=1, order_qty=100, parent=cover, label='Inner',
+                        status='in_production', unit='book')
+        data = self.run_report()
+        self.assertEqual(self.row(data, 'JC-BOOK-3.1')['wastage_status'], 'Tentative')
+
+    def test_book_pieces_per_form_are_respected(self):
+        # 200 books of 50 pieces per form: each form plans 10,015 pcs; 200 books shipped = 10,000 pcs each.
+        cover = self._make_card('JC-BOOK-4', sheets=10015, ups=1, order_qty=200, label='Cover', dispatched=200, ppu=50, unit='book')
+        self._make_card('JC-BOOK-4.1', sheets=10015, ups=1, order_qty=200, parent=cover, label='Inner', status='in_production', ppu=50, unit='book')
+        data = self.run_report()
+        for no in ('JC-BOOK-4', 'JC-BOOK-4.1'):
+            r = self.row(data, no)
+            self.assertEqual((r['dispatch_qty'], r['difference_pcs']), (10000, 15))
+
+    def test_pieces_carried_to_stock_are_not_counted_as_wastage(self):
+        self._make_card('JC-STK-1', sheets=1040, ups=1, order_qty=1000, stock=40, dispatched=1000)
+        r = self.row(self.run_report(), 'JC-STK-1')
+        self.assertEqual((r['plan_qty'], r['stock_qty'], r['difference_pcs']), (1040, 40, 0))
+        self.assertIn('carried to stock', r['data_note'])
+
+    def test_stock_only_covers_the_part_of_the_gap_it_explains(self):
+        self._make_card('JC-STK-2', sheets=1100, ups=1, order_qty=1000, stock=40, dispatched=1000)
+        r = self.row(self.run_report(), 'JC-STK-2')
+        self.assertEqual(r['difference_pcs'], 60)                     # 1100 - 1000 - 40
+
+    def test_zero_plan_job_with_stock_is_flagged_as_fulfilled_from_stock(self):
+        self._make_card('JC-STK-3', sheets=0, ups=6, order_qty=360, stock=360, dispatched=360)
+        r = self.row(self.run_report(), 'JC-STK-3')
+        self.assertEqual((r['plan_qty'], r['difference_pcs'], r['total_wastage_pct']), (0, 0, '0.0%'))
+        self.assertEqual(r['data_note'], 'Fulfilled from stock')
+
+    def test_zero_plan_job_without_stock_is_flagged_for_a_data_check(self):
+        self._make_card('JC-STK-4', sheets=0, ups=6, order_qty=360, dispatched=360)
+        r = self.row(self.run_report(), 'JC-STK-4')
+        self.assertEqual(r['data_note'], 'No plan and no stock recorded')
+
+    def test_new_columns_are_in_the_export(self):
+        data = self.run_report()
+        for column in ('form_label', 'stock_qty', 'data_note'):
+            self.assertIn(column, data['headers'])
+        self.assertEqual(data['header_labels']['data_note'], 'Note')
+
+    def test_dispatch_screen_info_carries_the_unit(self):
+        from core.views import _build_dispatch_job_card_info
+        from core.models import JobCard
+
+        card = self._make_card('JC-UNIT-1', sheets=50000, ups=1, order_qty=100, ppu=500, unit='rim', dispatched=10)
+        info = _build_dispatch_job_card_info(JobCard.objects.get(pk=card.pk))
+        self.assertEqual((info['unit_label'], info['pcs_per_unit']), ('rims', 500))
+        plain = _build_dispatch_job_card_info(JobCard.objects.get(job_card_no='JC-PT-1'))
+        self.assertEqual(plain['unit_label'], 'pcs')

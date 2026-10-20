@@ -45,6 +45,11 @@ def report_detail(request, report_type: str):
     context = {
         'report': report,
     }
+    if 'quarter' in report.filters:
+        from django.utils import timezone
+
+        this_year = timezone.localdate().year
+        context['quarter_years'] = list(range(this_year, max(this_year - 4, 2019), -1))
     if 'product_type' in report.filters:
         from core.models import ProductType
 

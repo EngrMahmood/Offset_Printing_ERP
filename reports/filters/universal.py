@@ -28,6 +28,9 @@ def parse_universal_filters(request) -> dict:
         'page': (request.GET.get('page') or '').strip(),
         'high_wastage': (request.GET.get('high_wastage') or '').strip(),
         'product_type': (request.GET.get('product_type') or '').strip(),
+        # An export runs the executor without pagination; it must never be served the
+        # (paginated, 100-row) payload cached for the on-screen run of the same filters.
+        '_export': (request.GET.get('_export') or '').strip(),
         'pt_basis': (request.GET.get('pt_basis') or '').strip(),
         # KPI Scorecard's month/quarter selector — without these in the cache
         # key, every period selection collided on the same cached payload.
