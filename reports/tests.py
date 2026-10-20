@@ -1954,3 +1954,153 @@ class DailyProductionReleasedToProductionTests(TestCase):
         data = response.json()['payload']['data']
         self.assertEqual(data['released_rows'], [])
         self.assertEqual(data['totals']['released_jobs'], 0)
+
+
+class WastageByProductTypeTests(TestCase):
+    """The Wastage Report's product-type summary (product type lives on the SKU master)."""
+
+    def setUp(self):
+        import datetime
+
+        from django.core.cache import cache
+        from django.contrib.auth.models import Permission
+        from django.contrib.contenttypes.models import ContentType
+
+        from core.models import Dispatch, JobCard, Machine, Production, ProductType, Sorter
+        from planning.models import SkuRecipe
+
+        cache.clear()
+        User = get_user_model()
+        self.user = User.objects.create_user(username='pt_user', password='pass12345')
+        profile = UserProfile.objects.get(user=self.user)
+        profile.role = 'manager'
+        profile.save(update_fields=['role'])
+        permission, _ = Permission.objects.get_or_create(
+            codename='view_reports', name='Can view reports',
+            content_type=ContentType.objects.get_for_model(UserProfile),
+        )
+        self.user.user_permissions.add(permission)
+        self.client.login(username='pt_user', password='pass12345')
+
+        for name in ('Label', 'Insert Card'):
+            ProductType.objects.get_or_create(name=name)
+        machine = Machine.objects.create(name='PT Machine', is_active=True)
+        sorter = Sorter.objects.create(name='PT Sorter', is_active=True)
+
+        def make(no, sku, ptype, status, dispatched, print_waste, sort_waste):
+            SkuRecipe.objects.update_or_create(sku=sku, defaults={'product_type': ptype})
+            card = JobCard.objects.create(
+                job_card_no=no, order_qty=1000, ups=1, total_sheet_quantity=1000, status=status, is_active=True,
+                SKU=sku, po_date=datetime.date.today(), total_colors=4, machine_name=machine,
+                total_impressions_required=1000,
+            )
+            Production.objects.create(
+                entry_type='printing', job_card=card, date=datetime.date.today(), shift='A',
+                output_sheets=1000, waste_sheets=print_waste, status='completed', machine=machine,
+            )
+            if dispatched or sort_waste:
+                Production.objects.create(
+                    entry_type='packing', job_card=card, date=datetime.date.today(), shift='A',
+                    packing_qty=dispatched, sorting_waste_qty=sort_waste, status='completed', sorter=sorter,
+                )
+            if dispatched:
+                Dispatch.objects.create(
+                    job_card=card, dc_no=f'DC-{no}', dispatch_date=datetime.date.today(),
+                    dispatch_qty=dispatched, is_active=True,
+                )
+            # Production entries move the card along the workflow; pin the status this test is about.
+            JobCard.objects.filter(pk=card.pk).update(status=status)
+            return card
+
+        # Two finalized Labels and one finalized Insert Card, plus one tentative Label with nothing dispatched.
+        make('JC-PT-1', 'SKU-LBL-1', 'Label', 'completed', 980, 10, 5)
+        make('JC-PT-2', 'SKU-LBL-2', 'Label', 'closed', 990, 5, 5)
+        make('JC-PT-3', 'SKU-INS-1', 'Insert Card', 'completed', 900, 40, 20)
+        make('JC-PT-4', 'SKU-LBL-3', 'Label', 'in_production', 0, 0, 0)
+
+    def run_report(self, **params):
+        from django.core.cache import cache
+
+        cache.clear()
+        response = self.client.get(reverse('reports:reports_api:run_report', args=['wastage-report']), params)
+        self.assertEqual(response.status_code, 200)
+        return response.json()['payload']['data']
+
+    def summary_by_type(self, data):
+        return {row['product_type']: row for row in data['product_type_summary']}
+
+    def test_summary_defaults_to_finalized_jobs_only(self):
+        data = self.run_report()
+        rows = self.summary_by_type(data)
+        self.assertEqual(data['product_type_basis'], 'finalized')
+        self.assertEqual(data['product_type_tentative_excluded'], 1)
+        label = rows['Label']
+        self.assertEqual((label['jobs'], label['plan_qty']), (2, 2000))            # tentative Label left out
+        self.assertEqual(label['printing_waste_pcs'], 15)
+        self.assertEqual(label['sorting_waste_pcs'], 10)
+        self.assertEqual(label['dispatch_gap_pcs'], 30)                           # (1000-980) + (1000-990)
+        self.assertEqual(label['total_wastage_pcs'], 55)
+        self.assertEqual(label['total_wastage_pct'], 2.75)
+        insert = rows['Insert Card']
+        self.assertEqual((insert['jobs'], insert['total_wastage_pcs'], insert['total_wastage_pct']), (1, 160, 16.0))
+
+    def test_grand_total_row_adds_up(self):
+        rows = self.run_report()['product_type_summary']
+        total = rows[-1]
+        self.assertTrue(total['is_total'])
+        self.assertEqual(total['product_type'], 'All product types')
+        self.assertEqual(total['jobs'], 3)
+        self.assertEqual(total['plan_qty'], 3000)
+        self.assertEqual(total['total_wastage_pcs'], 55 + 160)
+
+    def test_including_tentative_jobs_changes_the_basis(self):
+        data = self.run_report(pt_basis='all')
+        label = self.summary_by_type(data)['Label']
+        self.assertEqual(data['product_type_basis'], 'all')
+        self.assertEqual(label['jobs'], 3)
+        self.assertEqual(label['dispatch_gap_pcs'], 30 + 1000)                    # the undispatched job's whole plan
+
+    def test_product_type_filter_limits_the_rows_and_the_summary(self):
+        data = self.run_report(product_type='Insert Card')
+        self.assertEqual({row['sku'] for row in data['wastage_rows']}, {'SKU-INS-1'})
+        self.assertEqual([r['product_type'] for r in data['product_type_summary'][:-1]], ['Insert Card'])
+
+    def test_rows_carry_their_product_type_and_the_column_is_exported(self):
+        data = self.run_report()
+        by_sku = {row['sku']: row['product_type'] for row in data['wastage_rows']}
+        self.assertEqual(by_sku['SKU-LBL-1'], 'Label')
+        self.assertEqual(by_sku['SKU-INS-1'], 'Insert Card')
+        self.assertIn('product_type', data['headers'])
+        self.assertEqual(data['header_labels']['product_type'], 'Product Type')
+
+    def test_existing_status_filter_is_unaffected_by_the_summary_basis(self):
+        data = self.run_report(wastage_status='tentative')
+        self.assertEqual({row['job_card_no'] for row in data['wastage_rows']}, {'JC-PT-4'})
+        self.assertEqual(self.summary_by_type(data)['Label']['jobs'], 2)           # summary still on finalized
+
+    def test_export_by_product_type_uses_the_summary_table(self):
+        data = self.run_report(tab='product_type')
+        self.assertEqual(data['headers'][0], 'product_type')
+        self.assertEqual(data['export_rows'][0]['product_type'], 'Label')
+
+        response = self.client.get(
+            reverse('reports:reports_api:export_report', args=['wastage-report']), {'type': 'csv', 'tab': 'product_type'},
+        )
+        self.assertEqual(response.status_code, 200)
+        body = response.content.decode('utf-8-sig')
+        self.assertIn('Product Type', body)
+        self.assertIn('Insert Card', body)
+        self.assertIn('All product types', body)
+
+    def test_unclassified_skus_are_grouped_not_dropped(self):
+        from planning.models import SkuRecipe
+
+        SkuRecipe.objects.filter(sku='SKU-LBL-1').update(product_type='')
+        data = self.run_report()
+        self.assertIn('Unclassified', self.summary_by_type(data))
+
+    def test_report_page_offers_the_product_type_filter(self):
+        response = self.client.get(reverse('reports:detail', args=['wastage-report']))
+        self.assertContains(response, 'name="product_type"')
+        self.assertContains(response, 'Insert Card')
+        self.assertContains(response, 'Wastage By Product Type')

@@ -74,6 +74,18 @@
                     <option value="finalized" {% if request.GET.wastage_status == 'finalized' %}selected{% endif %}>Finalized</option>
                 </select>
                 {% endif %}
+                {% if 'product_type' in report.filters %}
+                <select name="product_type" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px; background: white;">
+                    <option value="">Product Type (All)</option>
+                    {% for name in product_types %}
+                    <option value="{{ name }}" {% if request.GET.product_type == name %}selected{% endif %}>{{ name }}</option>
+                    {% endfor %}
+                </select>
+                <select name="pt_basis" title="Which jobs the Product Type summary counts" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px; background: white;">
+                    <option value="finalized">Product summary: finalized jobs</option>
+                    <option value="all" {% if request.GET.pt_basis == 'all' %}selected{% endif %}>Product summary: incl. tentative</option>
+                </select>
+                {% endif %}
                 {% if 'high_wastage' in report.filters %}
                 <select name="high_wastage" style="padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px; min-height: 34px; background: white;">
                     <option value="">Wastage Level (All)</option>
@@ -103,6 +115,29 @@
                 <h4 style="margin:0 0 8px;">Distribution</h4>
                 <div class="bi-chart-wrap">
                     <canvas id="pieChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div id="bi-product-type-container" style="display:none; margin-top:12px;">
+            <div class="bi-chart-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:8px;">
+                    <h4 style="margin:0;">Wastage By Product Type</h4>
+                    <div class="actions">
+                        <a id="btn-export-pt-csv" class="erp-btn erp-btn-secondary" href="#">CSV</a>
+                        <a id="btn-export-pt-xlsx" class="erp-btn erp-btn-secondary" href="#">Excel</a>
+                    </div>
+                </div>
+                <p id="bi-product-type-note" style="font-size:12px; color:#64748b; margin:6px 0 10px;"></p>
+                <div class="bi-table-wrap">
+                    <table class="bi-table">
+                        <thead><tr>
+                            <th>Product Type</th><th>Jobs</th><th>Plan Qty (Pcs)</th><th>Dispatched (Pcs)</th>
+                            <th>Printing Waste %</th><th>Sorting Waste %</th><th>Dispatch Gap %</th>
+                            <th>Total Wastage (Pcs)</th><th>Total Wastage %</th>
+                        </tr></thead>
+                        <tbody id="bi-product-type-body"></tbody>
+                    </table>
                 </div>
             </div>
         </div>
@@ -327,6 +362,29 @@
         renderTable(rows, data.headers, data.header_labels);
         renderCharts(summary);
         renderWastageTrends(data.daily_wastage, data.weekly_wastage);
+        renderProductTypeSummary(data);
+    }
+
+    function renderProductTypeSummary(data) {
+        const container = document.getElementById('bi-product-type-container');
+        if (!container) return;
+        const rows = data.product_type_summary;
+        if (!Array.isArray(rows)) { container.style.display = 'none'; return; }
+        container.style.display = 'block';
+        const n = (v) => (v ?? 0).toLocaleString();
+        document.getElementById('bi-product-type-body').innerHTML = rows.length ? rows.map(r =>
+            `<tr${r.is_total ? ' style="font-weight:700; background:#f1f5f9;"' : ''}>` +
+            `<td>${r.product_type}</td><td>${n(r.jobs)}</td><td>${n(r.plan_qty)}</td><td>${n(r.dispatch_qty)}</td>` +
+            `<td>${r.printing_waste_pct}%</td><td>${r.sorting_waste_pct}%</td><td>${r.dispatch_gap_pct}%</td>` +
+            `<td>${n(r.total_wastage_pcs)}</td><td>${r.total_wastage_pct}%</td></tr>`
+        ).join('') : '<tr><td colspan="9">No jobs for this selection.</td></tr>';
+        const note = document.getElementById('bi-product-type-note');
+        if (data.product_type_basis === 'all') {
+            note.textContent = 'Includes tentative jobs: their undispatched quantity is counted as dispatch gap, so percentages read high until the jobs are finalized.';
+        } else {
+            const skipped = data.product_type_tentative_excluded || 0;
+            note.textContent = 'Finalized (completed / closed) jobs only' + (skipped ? ` — ${skipped} tentative job(s) left out until they finalize.` : '.');
+        }
     }
 
     function renderWastageTrends(daily, weekly) {
@@ -382,6 +440,17 @@
     document.getElementById('btn-export-pdf').addEventListener('click', function(e) {
         e.preventDefault();
         window.location.href = exportBase + '?type=pdf&' + currentQuery();
+    });
+
+    const ptCsv = document.getElementById('btn-export-pt-csv');
+    const ptXlsx = document.getElementById('btn-export-pt-xlsx');
+    if (ptCsv) ptCsv.addEventListener('click', function(e) {
+        e.preventDefault();
+        window.location.href = exportBase + '?type=csv&tab=product_type&' + currentQuery();
+    });
+    if (ptXlsx) ptXlsx.addEventListener('click', function(e) {
+        e.preventDefault();
+        window.location.href = exportBase + '?type=xlsx&tab=product_type&' + currentQuery();
     });
 
     loadReport();

@@ -27,6 +27,8 @@ def parse_universal_filters(request) -> dict:
         'tab': (request.GET.get('tab') or '').strip(),
         'page': (request.GET.get('page') or '').strip(),
         'high_wastage': (request.GET.get('high_wastage') or '').strip(),
+        'product_type': (request.GET.get('product_type') or '').strip(),
+        'pt_basis': (request.GET.get('pt_basis') or '').strip(),
         # KPI Scorecard's month/quarter selector — without these in the cache
         # key, every period selection collided on the same cached payload.
         'period_type': (request.GET.get('period_type') or '').strip(),

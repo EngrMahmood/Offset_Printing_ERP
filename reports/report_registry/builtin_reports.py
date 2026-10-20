@@ -227,10 +227,10 @@ registry.register(
     ReportDefinition(
         slug='wastage-report',
         title='Wastage Report',
-        description='Process-wise wastage analysis including printing, sorting, and dispatch gaps (tentative vs finalized).',
+        description='Process-wise and product-type-wise wastage analysis including printing, sorting, and dispatch gaps (tentative vs finalized).',
         department='production',
         permissions=('core.view_reports',),
-        filters=('date_range', 'status', 'po', 'job_card', 'sku', 'machine', 'wastage_status', 'high_wastage'),
+        filters=('date_range', 'status', 'po', 'job_card', 'sku', 'machine', 'wastage_status', 'high_wastage', 'product_type'),
         supported_exports=('csv', 'xlsx', 'pdf'),
         supported_charts=('bar', 'donut', 'line', 'top_n'),
         drilldown_support=True,

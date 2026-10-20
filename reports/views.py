@@ -45,6 +45,10 @@ def report_detail(request, report_type: str):
     context = {
         'report': report,
     }
+    if 'product_type' in report.filters:
+        from core.models import ProductType
+
+        context['product_types'] = list(ProductType.objects.order_by('name').values_list('name', flat=True))
     if has_custom:
         try:
             payload = run_report(report_type, request)

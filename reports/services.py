@@ -1936,6 +1936,11 @@ def build_wastage_report_context(request):
     machine_filter = (request.GET.get('machine') or '').strip()
     wastage_status_filter = (request.GET.get('wastage_status') or '').strip().lower()
     high_wastage_filter = request.GET.get('high_wastage') == 'true'
+    product_type_filter = (request.GET.get('product_type') or '').strip()
+    # The by-product-type summary defaults to finalized jobs: a job that has not
+    # been dispatched yet shows its whole plan as "dispatch gap", which would
+    # swamp the real wastage. 'all' adds the tentative jobs back in.
+    pt_basis = 'all' if (request.GET.get('pt_basis') or '').strip().lower() == 'all' else 'finalized'
 
     job_cards = JobCard.objects.filter(is_active=True)
 
@@ -1962,6 +1967,18 @@ def build_wastage_report_context(request):
         job_cards = job_cards.filter(job_card_no__icontains=job_card_filter)
     if machine_filter:
         job_cards = job_cards.filter(machine_name__name__icontains=machine_filter)
+    if product_type_filter:
+        job_cards = job_cards.filter(
+            SKU__in=SkuRecipe.objects.filter(product_type__iexact=product_type_filter).values('sku')
+        )
+
+    # Product type lives on the SKU master (SkuRecipe), one lookup for the whole run.
+    product_type_by_sku = {
+        sku: (ptype or '').strip() or 'Unclassified'
+        for sku, ptype in SkuRecipe.objects.values_list('sku', 'product_type')
+    }
+    product_type_totals = {}
+    tentative_excluded = 0
 
     # Prefetch related data to avoid N+1 queries
     job_cards = job_cards.select_related('planning_job', 'machine_name').prefetch_related(
@@ -2004,6 +2021,22 @@ def build_wastage_report_context(request):
         # Status of Wastage (Tentative vs Finalized)
         is_completed = (job.status in ('completed', 'closed') or job.job_status == 'Completed')
         wastage_status = "Finalized" if is_completed else "Tentative"
+        job_product_type = product_type_by_sku.get(job.SKU, 'Unclassified')
+
+        # By-product-type summary: independent of the Wastage Status / high-wastage
+        # filters (it has its own basis switch) so it always reads like-for-like.
+        if is_completed or pt_basis == 'all':
+            bucket = product_type_totals.setdefault(job_product_type, {
+                'jobs': 0, 'plan': 0, 'dispatch': 0, 'printing': 0, 'sorting': 0, 'gap': 0,
+            })
+            bucket['jobs'] += 1
+            bucket['plan'] += plan_qty_pcs
+            bucket['dispatch'] += dispatch_qty_pcs
+            bucket['printing'] += printing_waste_pcs
+            bucket['sorting'] += sorting_waste_pcs
+            bucket['gap'] += dispatch_gap_pcs
+        else:
+            tentative_excluded += 1
 
         # Apply wastage_status filter in Python to ensure consistency
         if wastage_status_filter == 'finalized' and not is_completed:
@@ -2063,6 +2096,7 @@ def build_wastage_report_context(request):
             's_no': s_no_counter,
             'job_card_no': job.job_card_no,
             'sku': job.SKU,
+            'product_type': job_product_type,
             'plan_date': plan_date,
             'plan_month': plan_month,
             'plan_qty': plan_qty_pcs,
@@ -2116,6 +2150,7 @@ def build_wastage_report_context(request):
         's_no',
         'job_card_no',
         'sku',
+        'product_type',
         'plan_date',
         'plan_month',
         'plan_qty',
@@ -2137,6 +2172,7 @@ def build_wastage_report_context(request):
         's_no': 'S.No.',
         'job_card_no': 'Job Card No',
         'sku': 'SKU',
+        'product_type': 'Product Type',
         'plan_date': 'Plan Date',
         'plan_month': 'Plan Month',
         'plan_qty': 'Plan Qty (Pcs)',
@@ -2243,6 +2279,61 @@ def build_wastage_report_context(request):
             'total_wastage_pct': pct,
         })
 
+    def _pct(part, whole):
+        return round(part * 100 / whole, 2) if whole > 0 else 0.0
+
+    product_type_summary = []
+    for name, b in sorted(product_type_totals.items(), key=lambda kv: -kv[1]['plan']):
+        total_waste = b['printing'] + b['sorting'] + b['gap']
+        product_type_summary.append({
+            'product_type': name,
+            'jobs': b['jobs'],
+            'plan_qty': b['plan'],
+            'dispatch_qty': b['dispatch'],
+            'printing_waste_pcs': b['printing'],
+            'printing_waste_pct': _pct(b['printing'], b['plan']),
+            'sorting_waste_pcs': b['sorting'],
+            'sorting_waste_pct': _pct(b['sorting'], b['plan']),
+            'dispatch_gap_pcs': b['gap'],
+            'dispatch_gap_pct': _pct(b['gap'], b['plan']),
+            'total_wastage_pcs': total_waste,
+            'total_wastage_pct': _pct(total_waste, b['plan']),
+        })
+    if product_type_summary:
+        grand = {key: sum(row[key] for row in product_type_summary) for key in (
+            'jobs', 'plan_qty', 'dispatch_qty', 'printing_waste_pcs', 'sorting_waste_pcs',
+            'dispatch_gap_pcs', 'total_wastage_pcs',
+        )}
+        product_type_summary.append({
+            'product_type': 'All product types', **grand,
+            'printing_waste_pct': _pct(grand['printing_waste_pcs'], grand['plan_qty']),
+            'sorting_waste_pct': _pct(grand['sorting_waste_pcs'], grand['plan_qty']),
+            'dispatch_gap_pct': _pct(grand['dispatch_gap_pcs'], grand['plan_qty']),
+            'total_wastage_pct': _pct(grand['total_wastage_pcs'], grand['plan_qty']),
+            'is_total': True,
+        })
+    product_type_headers = [
+        'product_type', 'jobs', 'plan_qty', 'dispatch_qty', 'printing_waste_pcs', 'printing_waste_pct',
+        'sorting_waste_pcs', 'sorting_waste_pct', 'dispatch_gap_pcs', 'dispatch_gap_pct',
+        'total_wastage_pcs', 'total_wastage_pct',
+    ]
+    product_type_labels = {
+        'product_type': 'Product Type', 'jobs': 'Jobs', 'plan_qty': 'Plan Qty (Pcs)',
+        'dispatch_qty': 'Dispatched Qty (Pcs)', 'printing_waste_pcs': 'Printing Waste (Pcs)',
+        'printing_waste_pct': 'Printing Waste %', 'sorting_waste_pcs': 'Sorting Waste (Pcs)',
+        'sorting_waste_pct': 'Sorting Waste %', 'dispatch_gap_pcs': 'Dispatch Gap (Pcs)',
+        'dispatch_gap_pct': 'Dispatch Gap %', 'total_wastage_pcs': 'Total Wastage (Pcs)',
+        'total_wastage_pct': 'Total Wastage %',
+    }
+    export_extra = {}
+    if (request.GET.get('tab') or '').strip().lower() == 'product_type':
+        # "Export by product type": the summary table becomes the exported rowset.
+        export_extra = {
+            'export_rows': product_type_summary,
+            'headers': product_type_headers,
+            'header_labels': product_type_labels,
+        }
+
     return {
         'report': next(item for item in REPORT_CATALOG if item['key'] == 'wastage-report'),
         'filters': {
@@ -2254,6 +2345,8 @@ def build_wastage_report_context(request):
             'machine': machine_filter,
             'wastage_status': wastage_status_filter,
             'high_wastage': 'true' if high_wastage_filter else '',
+            'product_type': product_type_filter,
+            'pt_basis': pt_basis,
             'page': current_page,
             'period': period,
             'period_label': period_label,
@@ -2265,6 +2358,9 @@ def build_wastage_report_context(request):
         },
         'summary': summary,
         'wastage_rows': wastage_rows_paginated,
+        'product_type_summary': product_type_summary,
+        'product_type_basis': pt_basis,
+        'product_type_tentative_excluded': tentative_excluded,
         'daily_wastage': daily_wastage,
         'weekly_wastage': weekly_wastage,
         'pagination': pagination_data,
@@ -2273,6 +2369,7 @@ def build_wastage_report_context(request):
         'header_labels': header_labels,
         'start_date': display_start_date,
         'end_date': display_end_date,
+        **export_extra,
     }
 
 
