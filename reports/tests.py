@@ -2415,3 +2415,80 @@ class ExportHelpersAcceptListDataTests(TestCase):
         response = self.client.get(reverse('production_wip'), {'export': 'xlsx'})
         self.assertEqual(response.status_code, 200)
         self.assertIn('spreadsheetml', response['Content-Type'])
+
+
+class KPIFocusReconcilesWithWipTests(TestCase):
+    """The Order Fulfilment improvement plan must say which jobs are on the WIP board and why the rest are not."""
+
+    def setUp(self):
+        import datetime
+
+        from core.models import JobCard, Machine
+        from planning.models import PlanningJob
+
+        self.start, self.end = datetime.date(2026, 7, 1), datetime.date(2026, 7, 31)
+        self.machine = Machine.objects.create(name='Recon Machine', is_active=True)
+        self.when = datetime.date(2026, 7, 10)
+
+        def make(no, status, *, parent=None, card=True, order_qty=100):
+            pj = PlanningJob.objects.create(
+                jc_number=no, order_qty=order_qty, status='in_production', plan_date=self.when,
+                plan_month='July 2026', po_approval_date=self.when,
+            )
+            if not card:
+                return pj
+            return JobCard.objects.create(
+                job_card_no=no, planning_job=pj, order_qty=order_qty, ups=1, total_sheet_quantity=order_qty,
+                status=status, is_active=True, SKU=f'SKU-{no}', po_date=self.when, total_colors=4,
+                total_impressions_required=order_qty, machine_name=self.machine, parent_job_card=parent,
+                form_label='Inner' if parent else '',
+            )
+
+        self.running = make('JC-R-RUN', 'in_production')
+        self.released = make('JC-R-REL', 'released')
+        self.approved = make('JC-R-APPR', 'qc_approved')
+        self.closed = make('JC-R-CLOSED', 'closed')
+        self.no_card = make('JC-R-NOCARD', '', card=False)
+        self.book = make('JC-R-BOOK', 'in_production')
+        self.book_form = make('JC-R-BOOK.1', 'in_production', parent=self.book)
+
+    def rows(self):
+        from reports.kpi_services import build_kpi_focus_rows
+
+        return {r['job_card_no']: r for r in build_kpi_focus_rows('order_fulfillment', self.start, self.end)}
+
+    def test_every_row_says_whether_it_is_on_the_wip_board(self):
+        rows = self.rows()
+        self.assertEqual(rows['JC-R-RUN']['on_wip'], 'Yes')
+        self.assertEqual(rows['JC-R-REL']['on_wip'], 'Yes')
+        for no in ('JC-R-APPR', 'JC-R-CLOSED', 'JC-R-NOCARD'):
+            self.assertEqual(rows[no]['on_wip'], 'No', no)
+
+    def test_on_wip_flag_matches_the_wip_boards_own_job_set(self):
+        from core.models import JobCard
+
+        wip = set(JobCard.objects.filter(is_active=True, status__in=['released', 'in_production']).values_list('job_card_no', flat=True))
+        flagged_yes = {no for no, r in self.rows().items() if r['on_wip'] == 'Yes'}
+        self.assertTrue(flagged_yes <= wip)
+
+    def test_jobs_not_yet_released_are_not_called_stuck_at_printing(self):
+        rows = self.rows()
+        self.assertEqual(rows['JC-R-APPR']['issue'], 'Not Released')
+        self.assertEqual(rows['JC-R-NOCARD']['issue'], 'Not Released')
+        self.assertEqual(rows['JC-R-RUN']['issue'], 'Stuck at Printing')
+
+    def test_short_closed_jobs_are_labelled_as_such(self):
+        row = self.rows()['JC-R-CLOSED']
+        self.assertEqual(row['issue'], 'Closed short-dispatched')
+        self.assertEqual(row['job_status'], 'Closed')
+
+    def test_inner_forms_are_not_listed_separately_from_their_book(self):
+        rows = self.rows()
+        self.assertIn('JC-R-BOOK', rows)
+        self.assertNotIn('JC-R-BOOK.1', rows)
+
+    def test_export_headers_include_the_new_columns(self):
+        from reports.kpi_services import KPI_FOCUS_HEADERS, KPI_FOCUS_HEADER_LABELS
+
+        self.assertIn('on_wip', KPI_FOCUS_HEADERS)
+        self.assertEqual(KPI_FOCUS_HEADER_LABELS['on_wip'], 'On WIP Board')

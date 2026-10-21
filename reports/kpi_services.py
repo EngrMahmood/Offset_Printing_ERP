@@ -287,7 +287,14 @@ def _focus_order_fulfillment(start, end):
                 'job_card_no': job.jc_number, 'po_number': job.po_number or '', 'sku': job.sku,
                 'issue': 'Not Released', 'machine': (job.machine_name or '').strip(), 'qty_pcs': gap,
                 'date': '', 'days_pending': (today - job.created_at.date()).days if job.created_at else '',
+                'job_status': 'No job card yet', 'on_wip': 'No',
             })
+            continue
+
+        # One physical book = one row. A multi-form book's Inner forms are never packed or
+        # dispatched on their own (that happens once, on the base card), so listing them
+        # would repeat the same shortfall once per form.
+        if job_card.parent_job_card_id:
             continue
 
         ups = job_card.ups or 1
@@ -316,7 +323,17 @@ def _focus_order_fulfillment(start, end):
         pending_printing = max(order_qty - printed_pcs, 0) if job_card.is_print_job else 0
         pending_packing = max(packing_limit_pcs - packed_pcs, 0)
         pending_dispatch = max(packed_pcs - dispatched_pcs, 0)
-        if pending_printing:
+        workflow_status = job_card.workflow_status
+        on_wip = workflow_status in ('released', 'in_production')
+        if workflow_status in ('completed', 'closed'):
+            # Finished, but shipped less than ordered: a short-closed order, not a job
+            # that is stuck on the floor (and it is not on the WIP board any more).
+            issue = 'Closed short-dispatched'
+        elif not on_wip:
+            # Approved / waiting for QC or release: nothing has started, so "stuck at
+            # printing" would be wrong. Not on the WIP board until it is released.
+            issue = 'Not Released'
+        elif pending_printing:
             issue = 'Stuck at Printing'
         elif pending_packing:
             issue = 'Stuck at Packing'
@@ -333,6 +350,7 @@ def _focus_order_fulfillment(start, end):
             'job_card_no': job_card.job_card_no, 'po_number': job_card.PO_No or '', 'sku': job_card.SKU,
             'issue': issue, 'machine': job_card.machine_name_display, 'qty_pcs': gap,
             'date': '', 'days_pending': days_pending,
+            'job_status': job_card.workflow_status_label, 'on_wip': 'Yes' if on_wip else 'No',
         })
     return rows
 
@@ -402,9 +420,12 @@ def build_kpi_focus_rows(kpi_slug, start, end):
     return rows
 
 
-KPI_FOCUS_HEADERS = ['job_card_no', 'po_number', 'sku', 'issue', 'machine', 'qty_pcs', 'date', 'days_pending']
+KPI_FOCUS_HEADERS = [
+    'job_card_no', 'po_number', 'sku', 'issue', 'job_status', 'on_wip', 'machine', 'qty_pcs', 'date', 'days_pending',
+]
 KPI_FOCUS_HEADER_LABELS = {
     'job_card_no': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'issue': 'Issue / Stuck At',
+    'job_status': 'Job Status', 'on_wip': 'On WIP Board',
     'machine': 'Machine', 'qty_pcs': 'Qty (Pcs)', 'date': 'Date', 'days_pending': 'Days Pending',
 }
 
