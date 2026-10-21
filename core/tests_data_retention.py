@@ -94,3 +94,26 @@ class DataRetentionTests(TestCase):
         out = StringIO()
         call_command('prune_old_data', stdout=out)
         self.assertIn('Removed 1 old notification', out.getvalue())
+
+
+class RetentionFromBackupSettingsTests(DataRetentionTests):
+    """With no environment override, the Backup Settings page controls the windows."""
+
+    def test_backup_settings_supply_the_defaults(self):
+        from backup.models import BackupSetting
+
+        BackupSetting.objects.update_or_create(id=1, defaults={'notification_retention_days': 5, 'bot_email_body_retention_days': 2})
+        self.notification(6)
+        self.notification(4)
+        self.execution(3)
+        self.assertEqual(prune_old_data(now=self.now), {'notifications': 1, 'bot_bodies': 1})
+
+    def test_the_po_pdf_switch_follows_backup_settings_unless_the_environment_overrides(self):
+        from backup.models import BackupSetting
+        from core.data_retention import keep_po_pdf_files
+
+        self.assertFalse(keep_po_pdf_files())
+        BackupSetting.objects.update_or_create(id=1, defaults={'keep_po_pdf_files': True})
+        self.assertTrue(keep_po_pdf_files())
+        with override_settings(PO_KEEP_PDF_FILES=False):
+            self.assertFalse(keep_po_pdf_files())

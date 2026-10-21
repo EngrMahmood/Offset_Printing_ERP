@@ -17,6 +17,32 @@ BODY_PLACEHOLDER = '[Email body removed after {days} days to save space. Subject
 BATCH = 5000
 
 
+def _backup_setting(field, default):
+    """Value from Backup Settings; the default if that table is unavailable."""
+    try:
+        from backup.models import BackupSetting
+
+        return getattr(BackupSetting.get_settings(), field)
+    except Exception:
+        return default
+
+
+def notification_retention_days():
+    """Environment override if set, otherwise Backup Settings (default 30)."""
+    value = getattr(settings, 'NOTIFICATION_RETENTION_DAYS', None)
+    return value if value is not None else _backup_setting('notification_retention_days', 30)
+
+
+def bot_body_retention_days():
+    value = getattr(settings, 'BOT_EMAIL_BODY_RETENTION_DAYS', None)
+    return value if value is not None else _backup_setting('bot_email_body_retention_days', 14)
+
+
+def keep_po_pdf_files():
+    value = getattr(settings, 'PO_KEEP_PDF_FILES', None)
+    return value if value is not None else bool(_backup_setting('keep_po_pdf_files', False))
+
+
 def prune_old_data(notification_days=None, bot_body_days=None, now=None, dry_run=False):
     """Returns {'notifications': n, 'bot_bodies': n}: rows removed / bodies cleared (or that would be)."""
     from bot.models import BotExecution
@@ -24,9 +50,9 @@ def prune_old_data(notification_days=None, bot_body_days=None, now=None, dry_run
 
     now = now or timezone.now()
     if notification_days is None:
-        notification_days = getattr(settings, 'NOTIFICATION_RETENTION_DAYS', 30)
+        notification_days = notification_retention_days()
     if bot_body_days is None:
-        bot_body_days = getattr(settings, 'BOT_EMAIL_BODY_RETENTION_DAYS', 14)
+        bot_body_days = bot_body_retention_days()
     result = {'notifications': 0, 'bot_bodies': 0}
 
     if notification_days and notification_days > 0:

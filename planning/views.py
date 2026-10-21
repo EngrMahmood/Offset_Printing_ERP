@@ -19,7 +19,9 @@ def _po_file_to_store(pdf_file):
     The ERP reads a PO/WO PDF once, to extract its lines, and never opens it again, so by default
     it is not stored (the extracted data lives in the record). PO_KEEP_PDF_FILES=True turns
     storage back on."""
-    return pdf_file if getattr(django_settings, 'PO_KEEP_PDF_FILES', False) else ''
+    from core.data_retention import keep_po_pdf_files
+
+    return pdf_file if keep_po_pdf_files() else ''
 
 
 def _build_qr_image_base64(data):

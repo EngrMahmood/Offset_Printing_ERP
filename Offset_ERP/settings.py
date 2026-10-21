@@ -54,13 +54,16 @@ BACKUP_INPROCESS_SCHEDULER = os.environ.get('BACKUP_INPROCESS_SCHEDULER', 'True'
 MAINTENANCE_INPROCESS_SCHEDULER = os.environ.get('MAINTENANCE_INPROCESS_SCHEDULER', 'True') == 'True'
 
 # Housekeeping that keeps the database (and therefore every backup) small. Run before each
-# backup and by `manage.py prune_old_data`. 0 disables a rule.
-NOTIFICATION_RETENTION_DAYS = int(os.environ.get('NOTIFICATION_RETENTION_DAYS', '30'))
-BOT_EMAIL_BODY_RETENTION_DAYS = int(os.environ.get('BOT_EMAIL_BODY_RETENTION_DAYS', '14'))
+# backup and by `manage.py prune_old_data`. 0 disables a rule. These are optional env overrides;
+# when unset (None) the values on the Backup Settings page are used (defaults 30 / 14 / off).
+_opt_int = lambda name: int(os.environ[name]) if os.environ.get(name, '').strip() else None
+NOTIFICATION_RETENTION_DAYS = _opt_int('NOTIFICATION_RETENTION_DAYS')
+BOT_EMAIL_BODY_RETENTION_DAYS = _opt_int('BOT_EMAIL_BODY_RETENTION_DAYS')
 
 # The original PO/WO PDF is read once, to extract its data, and is not used by the ERP after
-# that. Set PO_KEEP_PDF_FILES=True to keep storing the uploaded files again.
-PO_KEEP_PDF_FILES = os.environ.get('PO_KEEP_PDF_FILES', 'False') == 'True'
+# that. Backup Settings -> "Keep uploaded PO/WO PDF files" turns storage back on; setting
+# PO_KEEP_PDF_FILES=True/False in the environment overrides it.
+PO_KEEP_PDF_FILES = (os.environ['PO_KEEP_PDF_FILES'] == 'True') if os.environ.get('PO_KEEP_PDF_FILES') else None
 
 # Local LLM (LM Studio, OpenAI-compatible chat endpoint). Never hardcode the
 # endpoint elsewhere — everything routes through these settings so pointing

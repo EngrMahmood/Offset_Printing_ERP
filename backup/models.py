@@ -34,6 +34,19 @@ class BackupSetting(models.Model):
                   "deleted automatically after each successful OneDrive upload. 0 = never delete. The newest 3 "
                   "backups are always kept, so a stalled backup job can never empty the folder.",
     )
+    notification_retention_days = models.PositiveIntegerField(
+        default=30,
+        help_text="Notifications older than this many days are deleted (read or not) before every backup. 0 = keep forever.",
+    )
+    bot_email_body_retention_days = models.PositiveIntegerField(
+        default=14,
+        help_text="The stored HTML of automation emails older than this many days is cleared before every backup "
+                  "(subject, recipients and status are kept). 0 = keep forever.",
+    )
+    keep_po_pdf_files = models.BooleanField(
+        default=False,
+        help_text="Keep a copy of every uploaded PO/WO PDF. Off by default: the ERP reads the PDF once and keeps the extracted data.",
+    )
     keep_daily = models.IntegerField(default=30, help_text="Number of daily backups to retain.")
     keep_weekly = models.IntegerField(default=12, help_text="Number of weekly backups to retain.")
     keep_monthly = models.IntegerField(default=12, help_text="Number of monthly backups to retain.")

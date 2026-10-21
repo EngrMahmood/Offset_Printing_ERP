@@ -120,6 +120,26 @@
             <span style="font-size: 11px; color: var(--erp-text-muted);">Default 7. Older backups in the OneDrive folder are deleted automatically after each successful OneDrive upload. 0 = never delete. The newest 3 backups are always kept.</span>
         </div>
 
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 20px;">
+            <div>
+                <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">Notifications: keep for (days)</label>
+                {{ form.notification_retention_days }}
+                <span style="font-size: 11px; color: var(--erp-text-muted);">Default 30. Older notifications (read or unread) are deleted before every backup. 0 = keep forever.</span>
+            </div>
+            <div>
+                <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">Automation email bodies: keep for (days)</label>
+                {{ form.bot_email_body_retention_days }}
+                <span style="font-size: 11px; color: var(--erp-text-muted);">Default 14. The stored HTML of older automation emails is cleared; subject, recipients and status stay. 0 = keep forever.</span>
+            </div>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600;">
+                {{ form.keep_po_pdf_files }} Keep uploaded PO/WO PDF files
+            </label>
+            <span style="font-size: 11px; color: var(--erp-text-muted);">Off by default. The ERP reads each PO/WO PDF once and keeps the extracted data, so the file is not stored and does not enlarge backups. Applies to new uploads only.</span>
+        </div>
+
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
             <div>
                 <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">Keep Daily Backups</label>
