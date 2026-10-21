@@ -108,6 +108,12 @@
             <i class="fas fa-trash-alt"></i> Retention Cleanup Policy
         </h4>
         
+        <div style="margin-bottom: 20px; max-width: 420px;">
+            <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">OneDrive: keep backups for (days)</label>
+            {{ form.onedrive_retention_days }}
+            <span style="font-size: 11px; color: var(--erp-text-muted);">Default 7. Older backups in the OneDrive folder are deleted automatically after each successful OneDrive upload. 0 = never delete. The newest 3 backups are always kept.</span>
+        </div>
+
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 24px;">
             <div>
                 <label class="erp-eyebrow" style="margin-bottom: 6px; display: block;">Keep Daily Backups</label>

@@ -22,6 +22,12 @@ class BackupSetting(models.Model):
     cloud_onedrive_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Windows: path to OneDrive sync folder (e.g. C:\\Users\\Name\\OneDrive\\ERP_Backups). Linux/cloud servers with no desktop client: an rclone remote instead, e.g. onedrive:ERP_Backups/CloudVM")
     cloud_gdrive_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Windows: path to Google Drive sync folder (e.g. G:\\My Drive\\ERP_Backups). Linux/cloud servers with no desktop client: an rclone remote instead, e.g. gdrive:ERP_Backups/CloudVM")
     
+    onedrive_retention_days = models.PositiveIntegerField(
+        default=7,
+        help_text="OneDrive keeps only this many days of backups; older ERP backup zips in the OneDrive folder are "
+                  "deleted automatically after each successful OneDrive upload. 0 = never delete. The newest 3 "
+                  "backups are always kept, so a stalled backup job can never empty the folder.",
+    )
     keep_daily = models.IntegerField(default=30, help_text="Number of daily backups to retain.")
     keep_weekly = models.IntegerField(default=12, help_text="Number of weekly backups to retain.")
     keep_monthly = models.IntegerField(default=12, help_text="Number of monthly backups to retain.")

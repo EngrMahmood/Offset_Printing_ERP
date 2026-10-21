@@ -64,6 +64,127 @@ def copy_to_cloud_folder(file_path, destination):
         shutil.copy2(file_path, dest_path)
         return dest_path
 
+BACKUP_ZIP_RE = re.compile(r'^ERP_Backup_.*\.zip$')
+MIN_BACKUPS_TO_KEEP = 3
+
+
+def _list_cloud_backups(destination):
+    """[(name, modified datetime)] for the ERP backup zips in a cloud folder, or None if it
+    could not be read (callers must then delete nothing)."""
+    import json
+
+    found = []
+    if is_rclone_remote(destination):
+        result = subprocess.run(
+            ['rclone', 'lsjson', destination, '--files-only'], capture_output=True, text=True, timeout=300,
+        )
+        if result.returncode != 0:
+            logger.error('rclone lsjson %s failed: %s', destination, result.stderr[-300:])
+            return None
+        try:
+            entries = json.loads(result.stdout or '[]')
+        except ValueError:
+            logger.error('rclone lsjson %s returned unreadable output', destination)
+            return None
+        for entry in entries:
+            if BACKUP_ZIP_RE.match(entry.get('Name', '')):
+                modified = datetime.datetime.fromisoformat(entry['ModTime'].replace('Z', '+00:00'))
+                found.append((entry['Name'], modified))
+        return found
+    if not os.path.isdir(destination):
+        logger.error('Backup folder %s does not exist; nothing pruned', destination)
+        return None
+    for name in os.listdir(destination):
+        full = os.path.join(destination, name)
+        if BACKUP_ZIP_RE.match(name) and os.path.isfile(full):
+            found.append((name, datetime.datetime.fromtimestamp(os.path.getmtime(full), tz=datetime.timezone.utc)))
+    return found
+
+
+def prune_cloud_backups(destination, retention_days, min_keep=MIN_BACKUPS_TO_KEEP, now=None, dry_run=False):
+    """Delete ERP backup zips older than ``retention_days`` from one cloud folder.
+
+    Safe by construction: only files named ``ERP_Backup_*.zip`` are touched, the newest
+    ``min_keep`` are always kept (so a stalled backup job can never empty the folder),
+    and if the folder cannot be listed nothing is deleted. Works for an rclone remote
+    (``onedrive:ERP_Backups/CloudVM``) and for a desktop-synced folder path. Returns
+    the names removed (or that would be removed, for ``dry_run``); never raises.
+    """
+    if not destination or not retention_days or retention_days <= 0:
+        return []
+    try:
+        files = _list_cloud_backups(destination)
+        if files is None:
+            return []
+        now = now or timezone.now()
+        cutoff = now - datetime.timedelta(days=retention_days)
+        newest_first = sorted(files, key=lambda item: item[1], reverse=True)
+        protected = {name for name, _ in newest_first[:max(min_keep, 0)]}
+        doomed = [name for name, modified in newest_first if modified < cutoff and name not in protected]
+        if dry_run:
+            return doomed
+        removed = []
+        for name in doomed:
+            try:
+                if is_rclone_remote(destination):
+                    result = subprocess.run(
+                        ['rclone', 'deletefile', f"{destination.rstrip('/')}/{name}"],
+                        capture_output=True, text=True, timeout=300,
+                    )
+                    if result.returncode != 0:
+                        raise Exception(result.stderr[-300:])
+                else:
+                    os.remove(os.path.join(destination, name))
+                removed.append(name)
+                logger.info('Pruned old backup %s from %s', name, destination)
+            except Exception as exc:
+                logger.error('Could not delete old backup %s from %s: %s', name, destination, exc)
+        return removed
+    except Exception:
+        logger.exception('Backup pruning failed for %s', destination)
+        return []
+
+
+MEDIA_MIRROR_FOLDER = 'media_files'
+
+
+def sync_media_incrementally(media_root, destination):
+    """Mirror the media folder into ``<destination>/media_files`` - only files that are new
+    or changed are transferred, and nothing already in the backup is ever deleted.
+
+    Uploaded files (PO/WO PDFs, quotes, photos) never change once saved, so re-zipping and
+    re-uploading the whole folder every day (about 36 MB a day, ~1 GB a month) was pure waste.
+    Works for an rclone remote and for a desktop-synced folder path. Returns a small summary.
+    """
+    target = f"{destination.rstrip('/').rstrip(chr(92))}/{MEDIA_MIRROR_FOLDER}" if is_rclone_remote(destination) \
+        else os.path.join(destination, MEDIA_MIRROR_FOLDER)
+    if is_rclone_remote(destination):
+        result = subprocess.run(
+            ['rclone', 'copy', media_root, target, '--transfers', '4', '--stats', '0', '-v'],
+            capture_output=True, text=True, timeout=3600,
+        )
+        if result.returncode != 0:
+            raise Exception(f'rclone media copy to {target} failed: {result.stderr[-300:]}')
+        transferred = sum(1 for line in (result.stderr or '').splitlines() if ': Copied (new)' in line or ': Copied (replaced' in line)
+        return {'path': target, 'files_transferred': transferred}
+
+    os.makedirs(target, exist_ok=True)
+    transferred = 0
+    for folder, _dirs, files in os.walk(media_root):
+        relative = os.path.relpath(folder, media_root)
+        out_dir = target if relative == '.' else os.path.join(target, relative)
+        os.makedirs(out_dir, exist_ok=True)
+        for name in files:
+            source = os.path.join(folder, name)
+            copy = os.path.join(out_dir, name)
+            if os.path.exists(copy) and os.path.getsize(copy) == os.path.getsize(source) \
+                    and int(os.path.getmtime(copy)) >= int(os.path.getmtime(source)):
+                continue
+            shutil.copy2(source, copy)
+            transferred += 1
+    return {'path': target, 'files_transferred': transferred}
+
+
 def calculate_sha256(file_path):
     """Calculate the SHA-256 checksum of a file."""
     sha256_hash = hashlib.sha256()
@@ -130,6 +251,17 @@ def _setting(env_name, db_value):
     always wins over the DB value when present.
     """
     return os.environ.get(env_name) or db_value
+
+def _int_setting(env_name, db_value):
+    """Like _setting, for integers: an env var in this deployment's own .env wins over the DB value."""
+    raw = os.environ.get(env_name)
+    if raw not in (None, ''):
+        try:
+            return int(raw)
+        except ValueError:
+            logger.warning('%s=%r is not a number; using the stored setting', env_name, raw)
+    return int(db_value or 0)
+
 
 def create_backup(backup_type='AUTO', user=None, targets=None):
     """
@@ -202,6 +334,11 @@ def create_backup(backup_type='AUTO', user=None, targets=None):
             if 'gdrive' not in targets:
                 effective_gdrive = None
         effective_media_folder = _setting('BACKUP_MEDIA_FOLDER_OVERRIDE', settings_obj.media_cloud_folder)
+        # Remember whether media has its own destination BEFORE the per-run adjustment below
+        # blanks it for a run that doesn't cover that destination. Without this, the OneDrive
+        # run (media is routed to Google Drive) lost track of that and bundled the whole media
+        # folder into its database zip - roughly 35 MB of PDFs a day on a nearly-full OneDrive.
+        media_has_own_destination = bool(effective_media_folder)
         # Media rides along with whichever run actually covers its own
         # destination remote -- in split mode, a gdrive: media folder only
         # backs up during the gdrive run, not the onedrive one (and vice
@@ -234,7 +371,7 @@ def create_backup(backup_type='AUTO', user=None, targets=None):
 
             # Optionally include media (bundled in the same zip, unless routed
             # separately via media_cloud_folder above)
-            if effective_include_media and not separate_media and hasattr(settings, 'MEDIA_ROOT') and settings.MEDIA_ROOT:
+            if effective_include_media and not media_has_own_destination and hasattr(settings, 'MEDIA_ROOT') and settings.MEDIA_ROOT:
                 media_root = settings.MEDIA_ROOT
                 if os.path.exists(media_root):
                     for root, dirs, files in os.walk(media_root):
@@ -285,6 +422,12 @@ def create_backup(backup_type='AUTO', user=None, targets=None):
                     'link': get_share_link(od_path) if is_rclone_remote(effective_onedrive) else None,
                     'synced_at': timezone.now().isoformat(),
                 }
+                # Keep OneDrive to a rolling window (default one week). Runs only after a
+                # successful upload, and never fails the backup itself.
+                retention_days = _int_setting('BACKUP_ONEDRIVE_RETENTION_DAYS_OVERRIDE', settings_obj.onedrive_retention_days)
+                pruned = prune_cloud_backups(effective_onedrive, retention_days)
+                if pruned:
+                    cloud_sync_details['onedrive']['pruned'] = pruned
             except Exception as e:
                 logger.error(f"Failed to copy to OneDrive folder: {str(e)}")
                 cloud_errors.append(f"OneDrive: {str(e)}")
@@ -303,23 +446,18 @@ def create_backup(backup_type='AUTO', user=None, targets=None):
                 logger.error(f"Failed to copy to Google Drive folder: {str(e)}")
                 cloud_errors.append(f"Google Drive: {str(e)}")
 
-        # Media routed to its own destination instead of bundled into the zip above
+        # Media routed to its own destination: mirrored incrementally (new/changed files
+        # only) rather than re-zipped and re-uploaded in full on every run.
         if separate_media and hasattr(settings, 'MEDIA_ROOT') and settings.MEDIA_ROOT and os.path.exists(settings.MEDIA_ROOT):
-            media_zip_filename = f"ERP_Media_{timestamp}.zip"
-            media_zip_path = os.path.join(local_dir, media_zip_filename)
-            temp_files.append(media_zip_path)
             try:
-                with zipfile.ZipFile(media_zip_path, 'w', zipfile.ZIP_DEFLATED) as media_zip:
-                    media_root = settings.MEDIA_ROOT
-                    for root, dirs, files in os.walk(media_root):
-                        for file in files:
-                            file_path = os.path.join(root, file)
-                            arcname = os.path.relpath(file_path, os.path.dirname(media_root))
-                            media_zip.write(file_path, arcname=arcname)
-                media_location = copy_to_cloud_folder(media_zip_path, effective_media_folder)
-                logger.info(f"Successfully copied media backup to: {media_location}")
+                media_summary = sync_media_incrementally(settings.MEDIA_ROOT, effective_media_folder)
+                cloud_sync_details['media'] = {**media_summary, 'synced_at': timezone.now().isoformat()}
+                logger.info(
+                    "Media mirrored to %s (%s new/changed file(s))",
+                    media_summary['path'], media_summary['files_transferred'],
+                )
             except Exception as e:
-                logger.error(f"Failed to create/copy separate media backup: {str(e)}")
+                logger.error(f"Failed to sync media backup: {str(e)}")
                 cloud_errors.append(f"Media: {str(e)}")
 
         # Finalize history record

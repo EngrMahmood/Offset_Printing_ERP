@@ -4909,11 +4909,18 @@ def upload_po(request):
             if configured_skus:
                 merged_payload['new_skus_configured'] = configured_skus
 
+            previous_file = existing_doc.po_file.name if existing_doc.po_file else ''
             existing_doc.po_file = pdf_file
             existing_doc.extracted_payload = merged_payload
             existing_doc.extraction_status = 'processed'
             existing_doc.uploaded_by = request.user
             existing_doc.save(update_fields=['po_file', 'extracted_payload', 'extraction_status', 'uploaded_by'])
+            # The replaced PDF would otherwise stay on disk (and in every backup) with nothing pointing to it.
+            if previous_file and previous_file != existing_doc.po_file.name:
+                try:
+                    existing_doc.po_file.storage.delete(previous_file)
+                except Exception:
+                    pass
             po_doc = existing_doc
         else:
             po_doc = PoDocument.objects.create(
