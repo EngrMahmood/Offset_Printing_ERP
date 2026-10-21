@@ -2378,3 +2378,40 @@ class WastageHeadlineUnitsAndQuarterTests(WastageReportFixtures):
         self.assertEqual((info['unit_label'], info['pcs_per_unit']), ('rims', 500))
         plain = _build_dispatch_job_card_info(JobCard.objects.get(job_card_no='JC-PT-1'))
         self.assertEqual(plain['unit_label'], 'pcs')
+
+
+class ExportHelpersAcceptListDataTests(TestCase):
+    """Some callers (Production WIP, job summary, finalization) hand the exporters a bare list of rows."""
+
+    def payload(self):
+        return {
+            'report': {'title': 'List Report'}, 'generated_at': '2026-01-01 10:00:00',
+            'data': [{'job_card_no': 'JC-1', 'qty': 5}, {'job_card_no': 'JC-2', 'qty': 7}],
+            'headers': ['job_card_no', 'qty'], 'header_labels': {'job_card_no': 'Job Card No', 'qty': 'Qty'},
+        }
+
+    def test_xlsx_csv_and_pdf_work_with_list_data(self):
+        import io
+
+        from openpyxl import load_workbook
+
+        from reports.export.services import export_as_csv, export_as_pdf, export_as_xlsx
+
+        workbook = load_workbook(io.BytesIO(export_as_xlsx(self.payload())))
+        flat = ' '.join(str(c) for row in workbook.active.iter_rows(values_only=True) for c in row if c is not None)
+        self.assertIn('JC-1', flat)
+        self.assertIn('JC-2', flat)
+        self.assertEqual(workbook.sheetnames, ['Report'])
+        self.assertIn('JC-2', export_as_csv(self.payload()).decode('utf-8-sig'))
+        self.assertTrue(export_as_pdf(self.payload()).startswith(b'%PDF'))
+
+    def test_production_wip_excel_download_does_not_error(self):
+        from core.models import Permission
+
+        Permission.objects.get_or_create(code='action.view_production_wip', defaults={'name': 'View production WIP'})
+        User = get_user_model()
+        user = User.objects.create_superuser('wip_admin', password='pass12345')
+        self.client.login(username='wip_admin', password='pass12345')
+        response = self.client.get(reverse('production_wip'), {'export': 'xlsx'})
+        self.assertEqual(response.status_code, 200)
+        self.assertIn('spreadsheetml', response['Content-Type'])

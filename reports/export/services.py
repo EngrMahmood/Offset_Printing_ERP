@@ -96,7 +96,9 @@ def build_report_title(payload: dict) -> str:
 def _export_notes(payload: dict) -> list[str]:
     """Lines printed under the title so a downloaded file explains itself: the period
     it covers and any basis / filter the report states in ``data['export_notes']``."""
-    data = payload.get('data') or {}
+    data = payload.get('data')
+    if not isinstance(data, dict):
+        return []              # some callers hand over a bare list of rows
     notes = []
     start, end = data.get('start_date'), data.get('end_date')
     if start and end:
@@ -109,7 +111,8 @@ def _export_notes(payload: dict) -> list[str]:
 
 def _extra_sheets(payload: dict) -> list[dict]:
     """Additional worksheets a report asks for (Excel only): [{title, headers, labels, rows}]."""
-    sheets = (payload.get('data') or {}).get('extra_sheets') or []
+    data = payload.get('data')
+    sheets = (data.get('extra_sheets') if isinstance(data, dict) else None) or []
     return [sheet for sheet in sheets if isinstance(sheet, dict) and sheet.get('rows')]
 
 
