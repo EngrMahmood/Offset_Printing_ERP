@@ -53,6 +53,15 @@ BACKUP_INPROCESS_SCHEDULER = os.environ.get('BACKUP_INPROCESS_SCHEDULER', 'True'
 # the primary's database.
 MAINTENANCE_INPROCESS_SCHEDULER = os.environ.get('MAINTENANCE_INPROCESS_SCHEDULER', 'True') == 'True'
 
+# Housekeeping that keeps the database (and therefore every backup) small. Run before each
+# backup and by `manage.py prune_old_data`. 0 disables a rule.
+NOTIFICATION_RETENTION_DAYS = int(os.environ.get('NOTIFICATION_RETENTION_DAYS', '30'))
+BOT_EMAIL_BODY_RETENTION_DAYS = int(os.environ.get('BOT_EMAIL_BODY_RETENTION_DAYS', '14'))
+
+# The original PO/WO PDF is read once, to extract its data, and is not used by the ERP after
+# that. Set PO_KEEP_PDF_FILES=True to keep storing the uploaded files again.
+PO_KEEP_PDF_FILES = os.environ.get('PO_KEEP_PDF_FILES', 'False') == 'True'
+
 # Local LLM (LM Studio, OpenAI-compatible chat endpoint). Never hardcode the
 # endpoint elsewhere — everything routes through these settings so pointing
 # at a different host later (e.g. an Oracle VM) is a config change, not a

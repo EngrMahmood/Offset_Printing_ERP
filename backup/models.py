@@ -22,6 +22,12 @@ class BackupSetting(models.Model):
     cloud_onedrive_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Windows: path to OneDrive sync folder (e.g. C:\\Users\\Name\\OneDrive\\ERP_Backups). Linux/cloud servers with no desktop client: an rclone remote instead, e.g. onedrive:ERP_Backups/CloudVM")
     cloud_gdrive_folder = models.CharField(max_length=255, blank=True, null=True, help_text="Windows: path to Google Drive sync folder (e.g. G:\\My Drive\\ERP_Backups). Linux/cloud servers with no desktop client: an rclone remote instead, e.g. gdrive:ERP_Backups/CloudVM")
     
+    COMPRESSION_CHOICES = [('7z', '7-Zip (.7z, smallest)'), ('zip', 'Zip (.zip, opens anywhere)')]
+    compression_format = models.CharField(
+        max_length=4, choices=COMPRESSION_CHOICES, default='7z',
+        help_text="7-Zip makes database backups less than half the size (needs 7-Zip installed; if it is missing "
+                  "a normal .zip is made instead). Backups that bundle media or logs always use .zip.",
+    )
     onedrive_retention_days = models.PositiveIntegerField(
         default=7,
         help_text="OneDrive keeps only this many days of backups; older ERP backup zips in the OneDrive folder are "

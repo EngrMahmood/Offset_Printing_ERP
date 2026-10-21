@@ -16,6 +16,7 @@ class BackupSystemTests(TestCase):
         # Setup settings
         self.setting = BackupSetting.get_settings()
         self.setting.local_backup_folder = 'test_backups'
+        self.setting.compression_format = 'zip'      # these tests open the archive with zipfile
         self.setting.save()
 
     def tearDown(self):
@@ -347,6 +348,7 @@ class MediaRoutingTests(TestCase):
         settings_obj.media_cloud_folder = 'gdrive:ERP_Backups/Test/Media'
         settings_obj.include_media = True
         settings_obj.onedrive_retention_days = 0
+        settings_obj.compression_format = 'zip'      # the fake uploader inspects archives with zipfile
         settings_obj.save()
         self.addCleanup(shutil.rmtree, os.path.join(settings.BASE_DIR, 'test_backups_media'), True)
 
@@ -493,3 +495,185 @@ class IncrementalMediaSyncTests(TestCase):
             with self.assertRaises(Exception) as ctx:
                 sync_media_incrementally('/app/media', 'gdrive:x')
         self.assertIn('quota exceeded', str(ctx.exception))
+
+
+class SevenZipBackupTests(TestCase):
+    """Database backups are 7-Zip archives when 7-Zip is available, and plain zips otherwise."""
+
+    def setUp(self):
+        import shutil
+        import tempfile
+
+        from backup.archive import find_7zip
+
+        self.have_7z = bool(find_7zip())
+        self.work = tempfile.mkdtemp(prefix='sevenz_')
+        self.addCleanup(shutil.rmtree, self.work, True)
+        self.addCleanup(shutil.rmtree, os.path.join(settings.BASE_DIR, 'test_backups_7z'), True)
+
+    def make_sqlite(self, path, rows=2000):
+        import sqlite3
+
+        con = sqlite3.connect(path)
+        con.execute('CREATE TABLE t (id INTEGER PRIMARY KEY, body TEXT)')
+        con.executemany('INSERT INTO t (body) VALUES (?)', [(f'<tr><td>row {i}</td><td>some repeated html text</td></tr>',) for i in range(rows)])
+        con.commit()
+        con.close()
+        return path
+
+    def test_7z_round_trip_is_valid_and_smaller_than_a_zip(self):
+        if not self.have_7z:
+            self.skipTest('7-Zip not installed here')
+        import zipfile
+
+        from backup.archive import create_7z, extract_all, list_entries
+
+        db = self.make_sqlite(os.path.join(self.work, 'src.db'), rows=20000)
+        archive = create_7z(os.path.join(self.work, 'out.7z'), db, 'db.sqlite3')
+        self.assertEqual(list(list_entries(archive)), ['db.sqlite3'])
+        self.assertEqual(list_entries(archive)['db.sqlite3'], os.path.getsize(db))
+        extract_all(archive, os.path.join(self.work, 'x'))
+        self.assertEqual(open(db, 'rb').read(), open(os.path.join(self.work, 'x', 'db.sqlite3'), 'rb').read())
+        zip_path = os.path.join(self.work, 'out.zip')
+        with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as z:
+            z.write(db, 'db.sqlite3')
+        self.assertLess(os.path.getsize(archive), os.path.getsize(zip_path))
+
+    def test_zip_archives_are_still_listed_and_extracted(self):
+        import zipfile
+
+        from backup.archive import extract_all, list_entries
+
+        path = os.path.join(self.work, 'a.zip')
+        with zipfile.ZipFile(path, 'w') as z:
+            z.writestr('db.sqlite3', b'hello')
+        self.assertEqual(list_entries(path), {'db.sqlite3': 5})
+        extract_all(path, os.path.join(self.work, 'out'))
+        self.assertEqual(open(os.path.join(self.work, 'out', 'db.sqlite3'), 'rb').read(), b'hello')
+
+    def test_a_missing_7zip_binary_is_reported_clearly(self):
+        from unittest import mock
+
+        from backup.archive import ArchiveError, create_7z, list_entries
+
+        with mock.patch('backup.archive.find_7zip', return_value=None):
+            with self.assertRaises(ArchiveError):
+                create_7z(os.path.join(self.work, 'x.7z'), self.make_sqlite(os.path.join(self.work, 's.db')), 'db.sqlite3')
+            with self.assertRaises(ArchiveError):
+                list_entries(os.path.join(self.work, 'x.7z'))
+
+    def _run_backup(self, **overrides):
+        from backup.models import BackupSetting
+        from backup.services import create_backup, get_database_engine
+
+        if get_database_engine() != 'sqlite':
+            self.skipTest('SQLite-specific backup test')
+        settings_obj = BackupSetting.get_settings()
+        settings_obj.local_backup_folder = 'test_backups_7z'
+        settings_obj.cloud_onedrive_folder = None
+        settings_obj.cloud_gdrive_folder = None
+        settings_obj.media_cloud_folder = ''
+        settings_obj.include_media = False
+        for key, value in overrides.items():
+            setattr(settings_obj, key, value)
+        settings_obj.save()
+        return create_backup(backup_type='MANUAL')
+
+    def test_a_database_backup_is_a_7z_when_7zip_is_available(self):
+        if not self.have_7z:
+            self.skipTest('7-Zip not installed here')
+        from backup.restore import simulate_restore
+
+        history = self._run_backup(compression_format='7z')
+        self.assertEqual(history.status, 'SUCCESS')
+        self.assertTrue(history.file_name.endswith('.7z'))
+        self.assertTrue(os.path.isfile(os.path.join(settings.BASE_DIR, 'test_backups_7z', history.file_name)))
+        result = simulate_restore(history.id)
+        self.assertTrue(result.is_valid, result.message)       # the restore path can read a .7z too
+
+    def test_zip_format_can_be_chosen(self):
+        history = self._run_backup(compression_format='zip')
+        self.assertTrue(history.file_name.endswith('.zip'))
+
+    def test_without_7zip_the_backup_falls_back_to_a_zip(self):
+        from unittest import mock
+
+        with mock.patch('backup.archive.find_7zip', return_value=None):
+            history = self._run_backup(compression_format='7z')
+        self.assertEqual(history.status, 'SUCCESS')
+        self.assertTrue(history.file_name.endswith('.zip'))
+
+    def test_a_backup_that_bundles_logs_stays_a_zip(self):
+        history = self._run_backup(compression_format='7z', include_logs=True)
+        self.assertTrue(history.file_name.endswith('.zip'))
+
+    def test_env_override_of_the_format_wins(self):
+        from unittest import mock
+
+        with mock.patch.dict(os.environ, {'BACKUP_COMPRESSION_FORMAT': 'zip'}):
+            history = self._run_backup(compression_format='7z')
+        self.assertTrue(history.file_name.endswith('.zip'))
+
+    def test_onedrive_pruning_covers_7z_files_too(self):
+        from backup.services import BACKUP_ZIP_RE
+
+        self.assertTrue(BACKUP_ZIP_RE.match('ERP_Backup_sqlite_v1_CloudVM_A1_2026-10-21_131517.7z'))
+        self.assertTrue(BACKUP_ZIP_RE.match('ERP_Backup_sqlite_v1_CloudVM_A1_2026-10-21_131517.zip'))
+        self.assertFalse(BACKUP_ZIP_RE.match('ERP_Backup_notes.txt'))
+        self.assertFalse(BACKUP_ZIP_RE.match('other.7z'))
+
+    def test_sqlite_snapshot_is_compact_and_valid(self):
+        import sqlite3
+
+        from backup.services import run_sqlite_backup
+        from core.models import ChangeLog
+
+        for i in range(300):
+            ChangeLog.objects.create(entity_type='job_card', record_id=i, record_label=f'JC-{i}', action='update',
+                                     field_changes={'x': 'y' * 200}, change_reason='r')
+        ChangeLog.objects.all().delete()          # leaves free pages behind in the live database
+        out = os.path.join(self.work, 'snap.db')
+        run_sqlite_backup(out)
+        con = sqlite3.connect(out)
+        self.assertEqual(con.execute('PRAGMA integrity_check').fetchone()[0], 'ok')
+        self.assertEqual(con.execute('PRAGMA freelist_count').fetchone()[0], 0)
+        con.close()
+
+
+class PreBackupCleanupTests(TestCase):
+    """create_backup trims short-lived data first, and a cleanup failure never stops a backup."""
+
+    def setUp(self):
+        import shutil
+
+        from backup.models import BackupSetting
+        from backup.services import get_database_engine
+
+        if get_database_engine() != 'sqlite':
+            self.skipTest('SQLite-specific backup test')
+        settings_obj = BackupSetting.get_settings()
+        settings_obj.local_backup_folder = 'test_backups_retention'
+        settings_obj.cloud_onedrive_folder = None
+        settings_obj.cloud_gdrive_folder = None
+        settings_obj.compression_format = 'zip'
+        settings_obj.save()
+        self.addCleanup(shutil.rmtree, os.path.join(settings.BASE_DIR, 'test_backups_retention'), True)
+
+    def test_old_notifications_are_removed_before_the_backup_is_taken(self):
+        import datetime
+
+        from core.models import Notification
+
+        user = User.objects.create_user('cleanup_user', password='pw12345678')
+        row = Notification.objects.create(user=user, event_type='x', title='old')
+        Notification.objects.filter(pk=row.pk).update(created_at=timezone.now() - datetime.timedelta(days=90))
+        history = create_backup(backup_type='MANUAL')
+        self.assertEqual(history.status, 'SUCCESS')
+        self.assertEqual(Notification.objects.count(), 0)
+
+    def test_a_cleanup_failure_does_not_stop_the_backup(self):
+        from unittest import mock
+
+        with mock.patch('core.data_retention.prune_old_data', side_effect=RuntimeError('boom')):
+            history = create_backup(backup_type='MANUAL')
+        self.assertEqual(history.status, 'SUCCESS')

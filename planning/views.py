@@ -9,6 +9,19 @@ from difflib import SequenceMatcher
 from datetime import date, datetime
 
 
+
+from django.conf import settings as django_settings
+
+
+def _po_file_to_store(pdf_file):
+    """The PDF to keep with a PO record, or '' to keep none.
+
+    The ERP reads a PO/WO PDF once, to extract its lines, and never opens it again, so by default
+    it is not stored (the extracted data lives in the record). PO_KEEP_PDF_FILES=True turns
+    storage back on."""
+    return pdf_file if getattr(django_settings, 'PO_KEEP_PDF_FILES', False) else ''
+
+
 def _build_qr_image_base64(data):
     try:
         import qrcode
@@ -4910,7 +4923,7 @@ def upload_po(request):
                 merged_payload['new_skus_configured'] = configured_skus
 
             previous_file = existing_doc.po_file.name if existing_doc.po_file else ''
-            existing_doc.po_file = pdf_file
+            existing_doc.po_file = _po_file_to_store(pdf_file)
             existing_doc.extracted_payload = merged_payload
             existing_doc.extraction_status = 'processed'
             existing_doc.uploaded_by = request.user
@@ -4924,7 +4937,7 @@ def upload_po(request):
             po_doc = existing_doc
         else:
             po_doc = PoDocument.objects.create(
-                po_file=pdf_file,
+                po_file=_po_file_to_store(pdf_file),
                 extracted_payload=extracted,
                 extraction_status='processed',
                 uploaded_by=request.user,
@@ -5072,9 +5085,8 @@ def manual_po_entry(request):
             'source_item_count': len(items),
         }
 
-        manual_file = ContentFile(b'', name=f'manual_po_{po_number}_{timezone.now().strftime("%Y%m%d%H%M%S")}.txt')
         po_doc = PoDocument.objects.create(
-            po_file=manual_file,
+            po_file='',
             extracted_payload=payload,
             extraction_status='processed',
             uploaded_by=request.user,

@@ -6,6 +6,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
     unzip \
+    7zip \
     && curl https://rclone.org/install.sh | bash \
     && rm -rf /var/lib/apt/lists/*
 

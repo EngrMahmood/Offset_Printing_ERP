@@ -10,6 +10,7 @@ from django.db import connections, transaction
 from django.utils import timezone
 from django.contrib.auth import get_user_model
 from backup.models import BackupHistory, RestoreHistory
+from backup.archive import ArchiveError, extract_all, list_entries
 from backup.services import get_database_engine, calculate_sha256
 
 logger = logging.getLogger(__name__)
@@ -52,27 +53,26 @@ def simulate_restore(backup_record_id):
         if current_checksum != backup.sha256_checksum:
             return RestoreSimulationResult(is_valid=False, message="File integrity check failed: Checksum mismatch.")
 
-    # Inspect ZIP structure
+    # Inspect the archive (.zip or .7z)
     try:
-        with zipfile.ZipFile(zip_path, 'r') as zip_file:
-            namelist = zip_file.namelist()
-            engine = get_database_engine()
-            
-            db_in_zip_name = "db.sqlite3" if engine == 'sqlite' else "db.dump"
-            
-            if db_in_zip_name not in namelist:
-                return RestoreSimulationResult(is_valid=False, message=f"Backup archive is missing the core database file: {db_in_zip_name}")
-            
-            # Get db file size in zip
-            db_info = zip_file.getinfo(db_in_zip_name)
-            return RestoreSimulationResult(
-                is_valid=True,
-                message="Backup file structure and integrity verified successfully. Ready to restore.",
-                db_size=db_info.file_size,
-                file_count=len(namelist)
-            )
+        entries = list_entries(zip_path)
+        engine = get_database_engine()
+
+        db_in_zip_name = "db.sqlite3" if engine == 'sqlite' else "db.dump"
+
+        if db_in_zip_name not in entries:
+            return RestoreSimulationResult(is_valid=False, message=f"Backup archive is missing the core database file: {db_in_zip_name}")
+
+        return RestoreSimulationResult(
+            is_valid=True,
+            message="Backup file structure and integrity verified successfully. Ready to restore.",
+            db_size=entries[db_in_zip_name],
+            file_count=len(entries)
+        )
     except zipfile.BadZipFile:
         return RestoreSimulationResult(is_valid=False, message="The backup file is not a valid ZIP archive.")
+    except ArchiveError as e:
+        return RestoreSimulationResult(is_valid=False, message=str(e))
     except Exception as e:
         return RestoreSimulationResult(is_valid=False, message=f"Verification failed: {str(e)}")
 
@@ -108,8 +108,7 @@ def perform_restore(backup_record_id, user=None):
                 
         # Extract files to temporary directory
         logger.info(f"Extracting backup zip for restoration: {zip_path}")
-        with zipfile.ZipFile(zip_path, 'r') as zip_file:
-            zip_file.extractall(settings_dir)
+        extract_all(zip_path, settings_dir)
             
         engine = get_database_engine()
         

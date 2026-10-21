@@ -1080,7 +1080,10 @@ class PoDocument(models.Model):
         blank=True,
         related_name='po_documents',
     )
-    po_file = models.FileField(upload_to='planning/po_docs/')
+    po_file = models.FileField(
+        upload_to='planning/po_docs/', blank=True,
+        help_text='The uploaded PDF. Not stored unless PO_KEEP_PDF_FILES is on: the data is extracted once and kept in extracted_payload.',
+    )
     extracted_payload = models.JSONField(null=True, blank=True)
     extraction_status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     uploaded_by = models.ForeignKey(

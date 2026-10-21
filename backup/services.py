@@ -64,7 +64,7 @@ def copy_to_cloud_folder(file_path, destination):
         shutil.copy2(file_path, dest_path)
         return dest_path
 
-BACKUP_ZIP_RE = re.compile(r'^ERP_Backup_.*\.zip$')
+BACKUP_ZIP_RE = re.compile(r'^ERP_Backup_.*\.(zip|7z)$')
 MIN_BACKUPS_TO_KEEP = 3
 
 
@@ -104,7 +104,7 @@ def _list_cloud_backups(destination):
 def prune_cloud_backups(destination, retention_days, min_keep=MIN_BACKUPS_TO_KEEP, now=None, dry_run=False):
     """Delete ERP backup zips older than ``retention_days`` from one cloud folder.
 
-    Safe by construction: only files named ``ERP_Backup_*.zip`` are touched, the newest
+    Safe by construction: only files named ``ERP_Backup_*.zip`` / ``.7z`` are touched, the newest
     ``min_keep`` are always kept (so a stalled backup job can never empty the folder),
     and if the folder cannot be listed nothing is deleted. Works for an rclone remote
     (``onedrive:ERP_Backups/CloudVM``) and for a desktop-synced folder path. Returns
@@ -203,8 +203,22 @@ def get_database_engine():
     return 'unknown'
 
 def run_sqlite_backup(dest_db_path):
-    """Safely backup SQLite database using the native Python/sqlite3 backup API."""
+    """Snapshot the SQLite database into a compact file.
+
+    ``VACUUM INTO`` writes a consistent copy without the free pages and fragmentation a plain
+    page-by-page copy carries over (and without touching the live database); if it is not
+    available, fall back to the native backup API."""
     import sqlite3
+    try:
+        if os.path.exists(dest_db_path):
+            os.remove(dest_db_path)
+        with connections['default'].cursor() as cursor:
+            cursor.execute("VACUUM INTO %s", [dest_db_path])
+        return
+    except Exception as exc:
+        logger.warning("VACUUM INTO failed (%s); using the standard backup API instead", exc)
+        if os.path.exists(dest_db_path):
+            os.remove(dest_db_path)
     # Use connections['default'].cursor().connection to get the active sqlite3 connection
     src_conn = connections['default'].cursor().connection
     dest_conn = sqlite3.connect(dest_db_path)
@@ -252,6 +266,23 @@ def _setting(env_name, db_value):
     """
     return os.environ.get(env_name) or db_value
 
+class _NullArchive:
+    """Stands in for the zip writer when the archive was already produced by 7-Zip."""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def write(self, *args, **kwargs):
+        pass
+
+
+def _open_zip(path, skip):
+    return _NullArchive() if skip else zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED)
+
+
 def _int_setting(env_name, db_value):
     """Like _setting, for integers: an env var in this deployment's own .env wins over the DB value."""
     raw = os.environ.get(env_name)
@@ -286,6 +317,14 @@ def create_backup(backup_type='AUTO', user=None, targets=None):
     )
 
     temp_files = []
+
+    # Trim short-lived data first so this backup (and every later one) stays small. A cleanup
+    # problem must never stop a backup.
+    try:
+        from core.data_retention import prune_old_data
+        prune_old_data()
+    except Exception:
+        logger.exception("Pre-backup data cleanup failed; continuing with the backup")
 
     try:
         # Create local backup folder if it doesn't exist. Kept inside the try so a
@@ -362,9 +401,26 @@ def create_backup(backup_type='AUTO', user=None, targets=None):
         # that's sent to both OneDrive/Google Drive folders below.
         separate_media = bool(effective_include_media and effective_media_folder)
 
-        # Compress database and optional files
-        logger.info("Compressing backup files into ZIP archive")
-        with zipfile.ZipFile(zip_filepath, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        # Compress database and optional files. A database-only backup uses 7-Zip (LZMA2, less
+        # than half the size) when it is installed and enabled; anything bundling media or logs,
+        # or any 7-Zip problem, falls back to the ordinary deflate .zip below.
+        bundles_extras = bool(
+            (effective_include_media and not media_has_own_destination and hasattr(settings, 'MEDIA_ROOT') and settings.MEDIA_ROOT)
+            or settings_obj.include_logs
+        )
+        wanted_format = os.environ.get('BACKUP_COMPRESSION_FORMAT') or settings_obj.compression_format
+        made_7z = False
+        if wanted_format == '7z' and not bundles_extras and engine == 'sqlite':
+            from backup.archive import ArchiveError, create_7z
+            archive_path_7z = os.path.splitext(zip_filepath)[0] + '.7z'
+            try:
+                create_7z(archive_path_7z, temp_db_path, 'db.sqlite3')
+                zip_filepath, zip_filename, made_7z = archive_path_7z, os.path.basename(archive_path_7z), True
+                logger.info("Compressed database backup with 7-Zip: %s", zip_filename)
+            except ArchiveError as exc:
+                logger.warning("7-Zip backup not used (%s); making a .zip instead", exc)
+        logger.info("Compressing backup files into %s archive", '7z' if made_7z else 'ZIP')
+        with _open_zip(zip_filepath, made_7z) as zip_file:
             # Add database copy to the zip as database file
             db_in_zip_name = "db.sqlite3" if engine == 'sqlite' else "db.dump"
             zip_file.write(temp_db_path, arcname=db_in_zip_name)
