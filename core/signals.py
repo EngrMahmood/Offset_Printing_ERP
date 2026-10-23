@@ -186,6 +186,10 @@ def split_merge_group_printing_entry(sender, instance, created, **kwargs):
         merge_allocated_ups=lead_item.allocated_ups,
     )
 
+    from core.merge_sheets import member_share_of_run
+
+    total_ups = sum(it.allocated_ups or 0 for it in items) or (group.total_sheet_ups or 0)
+
     for item in items:
         if item.planning_job_id == planning_job.id:
             continue
@@ -199,19 +203,25 @@ def split_merge_group_printing_entry(sender, instance, created, **kwargs):
                     member_card, actor=instance.created_by,
                     reason='Auto-started via merge-group split run',
                 )
+            # Each member's entry carries its own share of the run's good sheets, waste and
+            # impressions (see member_share_of_run), so the rows across the group add up to the run.
+            share = member_share_of_run(
+                instance.output_sheets, instance.waste_sheets, instance.impressions,
+                item.allocated_ups, total_ups, member_card.ups,
+            )
             Production.objects.create(
                 job_card=member_card,
                 entry_type='printing',
                 date=instance.date,
                 shift=instance.shift,
                 machine=instance.machine,
-                output_sheets=instance.output_sheets,
-                waste_sheets=0,          # run waste is counted once, on the lead entry
-                impressions=0,           # run impressions counted once, on the lead entry
+                output_sheets=share['output_sheets'],
+                waste_sheets=share['waste_sheets'],
+                impressions=share['impressions'],
                 merge_parent=instance,
-                merge_allocated_ups=item.allocated_ups,
+                merge_allocated_ups=share['merge_allocated_ups'],
                 status=instance.status,
-                created_by=instance.created_by,
+                # created_by stays empty: this row is written by the system, not by a person.
             )
         except Exception:
             # A single member failing must never block the operator's entry.
@@ -219,6 +229,22 @@ def split_merge_group_printing_entry(sender, instance, created, **kwargs):
                 'Merge split failed for %s on group %s',
                 item.planning_job.jc_number, group.code,
             )
+
+
+@receiver(post_save, sender='core.Production')
+def sync_merge_members_when_lead_entry_changes(sender, instance, created, **kwargs):
+    """Editing, archiving or restoring a lead's printing entry carries through to the member
+    entries derived from it, so their shares always add up to the run as it now stands."""
+    if created or instance.entry_type != 'printing' or instance.merge_parent_id:
+        return
+    if not instance.merge_children.exists():
+        return
+    from core.merge_sheets import refresh_member_entries
+
+    try:
+        refresh_member_entries(instance)
+    except Exception:
+        logger.exception('Could not refresh combined-layout member entries for production %s', instance.pk)
 
 
 @receiver(post_save, sender='core.Production')

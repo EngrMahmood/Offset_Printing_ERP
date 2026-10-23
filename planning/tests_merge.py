@@ -384,9 +384,11 @@ class MergeDownstreamTests(TestCase):
             self.assertEqual(follower_entries.count(), 1)
             fe = follower_entries.first()
             self.assertEqual(fe.merge_parent_id, entry.id)
-            self.assertEqual(fe.merge_allocated_ups, 1)
+            # The member's entry is its share of the run: 1 of 4 ups -> 1,250 of its own sheets (x 4 ups
+            # = the 5,000 pieces it got), and a quarter of the run's impressions.
+            self.assertEqual(fe.output_sheets, 1250)
             self.assertEqual(fe.pcs_produced, 5000)
-            self.assertEqual(fe.impressions, 0)
+            self.assertIsNone(fe.created_by)
 
             follower_card = cards[item.planning_job_id]
             follower_card.refresh_from_db()
@@ -1187,3 +1189,177 @@ class MergedJobsQueueVisibilityTests(TestCase):
         self.assertContains(response, self.member_jc)
         self.assertContains(response, 'Showing')
         self.assertContains(response, self.group.code)
+
+
+class MergeEntryAccountingTests(TestCase):
+    """Jobs printed on a combined layout: who added the entry, and sheets/pieces measured at the job's share."""
+
+    setUp = MergeDownstreamTests.setUp
+    _accept_group = MergeDownstreamTests._accept_group
+
+    def _lead_run(self, **fields):
+        from core.models import Production
+
+        group, jobs = self._accept_group()
+        cards = {job.id: make_card(job) for job in jobs}
+        entry = Production.objects.create(
+            job_card=cards[group.lead_job.id], entry_type='printing', date='2026-07-21', shift='A',
+            output_sheets=5000, created_by=self.user, **fields,
+        )
+        return group, cards, entry
+
+    def _follower_entry(self, group, cards):
+        from core.models import Production
+
+        item = group.items.filter(is_lead=False).first()
+        return cards[item.planning_job_id], Production.objects.get(job_card=cards[item.planning_job_id], entry_type='printing')
+
+    def test_split_entries_are_written_by_the_system_not_a_person(self):
+        from core.models import Production
+
+        group, cards, entry = self._lead_run()
+        children = Production.objects.filter(merge_parent=entry)
+        self.assertEqual(children.count(), 2)
+        self.assertEqual({c.created_by_id for c in children}, {None})
+        self.assertEqual(entry.created_by_id, self.user.id)
+
+    def test_the_run_is_divided_across_members_by_share(self):
+        from core.models import Production
+
+        group, cards, entry = self._lead_run(waste_sheets=80, impressions=5000)
+        entry.refresh_from_db()
+        by_job = {p.job_card_id: p for p in Production.objects.filter(entry_type='printing')}
+        # shares of the 4-up sheet: lead 2, followers 1 + 1.  Card ups 4.
+        lead = by_job[cards[group.lead_job.id].id]
+        followers = [by_job[c.id] for jid, c in cards.items() if jid != group.lead_job.id]
+        self.assertEqual([f.impressions for f in followers], [1250, 1250])      # 5,000 x 1/4 each
+        self.assertEqual([f.waste_sheets for f in followers], [20, 20])         # 80 x 1/4 each
+        self.assertEqual([f.output_sheets for f in followers], [1250, 1250])    # 5,000 x 1/4 each
+        # pieces add up to the run: lead 5,000 x 2 ups + followers 1,250 x 4 ups each
+        pieces = lead.pcs_produced + sum(f.pcs_produced for f in followers)
+        self.assertEqual(pieces, 5000 * 4)
+
+    def test_editing_the_lead_entry_carries_to_members_and_archiving_removes_them(self):
+        from core.models import Production
+
+        group, cards, entry = self._lead_run(impressions=5000)
+        entry.output_sheets = 4000
+        entry.impressions = 4000
+        entry.save()
+        children = Production.objects.filter(merge_parent=entry)
+        self.assertEqual({c.output_sheets for c in children}, {1000})
+        self.assertEqual({c.impressions for c in children}, {1000})
+        entry.is_active = False
+        entry.save()
+        self.assertEqual(Production.objects.filter(merge_parent=entry, is_active=True).count(), 0)
+
+    def test_old_style_member_entries_are_converted_by_the_rebalance_command(self):
+        from io import StringIO
+
+        from django.core.management import call_command
+
+        from core.models import Production
+
+        group, cards, entry = self._lead_run(impressions=5000)
+        # Put the members back to how they used to be written: full sheets, no impressions, merge ups marked.
+        Production.objects.filter(merge_parent=entry).update(output_sheets=5000, impressions=0, merge_allocated_ups=1)
+        out = StringIO()
+        call_command('rebalance_merge_entries', stdout=out)
+        self.assertIn('Would convert 2 of 2', out.getvalue())
+        self.assertEqual({c.output_sheets for c in Production.objects.filter(merge_parent=entry)}, {5000})
+        call_command('rebalance_merge_entries', '--apply', stdout=out)
+        children = Production.objects.filter(merge_parent=entry)
+        self.assertEqual({c.output_sheets for c in children}, {1250})
+        self.assertEqual({c.impressions for c in children}, {1250})
+        call_command('rebalance_merge_entries', '--apply', stdout=out)            # running again changes nothing
+        self.assertEqual({c.output_sheets for c in Production.objects.filter(merge_parent=entry)}, {1250})
+
+    def test_sheets_are_measured_at_the_jobs_own_ups_against_its_plan(self):
+        group, cards, entry = self._lead_run()
+        card, follower = self._follower_entry(group, cards)
+        # 5,000 press sheets, but this job owns 1 of the 4 ups on its standalone sheet -> 1,250 of its own sheets.
+        self.assertEqual(follower.standalone_total_sheets, 1250)
+        self.assertEqual(card.sheets_consumed_standalone, 1250)
+        card.total_sheet_quantity = 1500          # plan at its own ups
+        card.save()
+        self.assertEqual(card.extra_sheets_used, 0)   # raw sheets (5,000) would have read as 3,500 over
+        card.total_sheet_quantity = 1000
+        card.save()
+        self.assertEqual(card.extra_sheets_used, 250)
+
+    def test_ordinary_entries_are_unchanged(self):
+        from core.models import JobCard, Machine, Production
+
+        job = make_job('JCX', 1000)
+        card = make_card(job)
+        entry = Production.objects.create(
+            job_card=card, entry_type='printing', date='2026-07-21', shift='A', output_sheets=300, waste_sheets=20,
+        )
+        self.assertEqual(entry.standalone_total_sheets, 320)
+
+    def test_waste_pieces_use_the_merge_share_not_the_card_ups(self):
+        from core.services import compute_job_card_wastage_metrics
+
+        group, cards, entry = self._lead_run(waste_sheets=100)
+        lead_card = cards[group.lead_job.id]
+        lead_card.ups = 21                         # the standalone sheet is 21-up, the job owns 2 of the combined sheet
+        lead_card.save()
+        self.assertEqual(compute_job_card_wastage_metrics(lead_card)['printing_waste_pcs'], 200)   # 100 x 2, not 100 x 21
+
+    def test_daily_production_counts_the_press_sheets_once_and_pieces_per_job(self):
+        from django.test import RequestFactory
+
+        from reports.services import build_daily_production_context
+
+        group, cards, entry = self._lead_run()
+        request = RequestFactory().get('/reports/daily-production/?date_from=2026-07-21&date_to=2026-07-21')
+        request.user = self.user
+        totals = build_daily_production_context(request)['totals']
+        self.assertEqual(totals['output_sheets'], 5000)                  # the 5,000 sheets that ran, not 3 x 5,000
+        self.assertEqual(totals['printed_pcs'], 5000 * (2 + 1 + 1))      # pieces: each job at its own share
+
+    def test_daily_production_also_reports_each_day_shift_by_shift(self):
+        from django.test import RequestFactory
+
+        from core.models import Production
+        from reports.services import build_daily_production_context
+
+        group, cards, entry = self._lead_run(impressions=5000)                    # shift A
+        Production.objects.create(
+            job_card=cards[group.lead_job.id], entry_type='printing', date='2026-07-21', shift='B',
+            output_sheets=1000, impressions=1000, created_by=self.user,
+        )
+        request = RequestFactory().get('/reports/daily-production/?date_from=2026-07-21&date_to=2026-07-21')
+        request.user = self.user
+        data = build_daily_production_context(request)
+        by_shift = {r['shift']: r for r in data['printing_day_shift_rows']}
+        self.assertEqual(set(by_shift), {'A', 'B'})
+        self.assertEqual(by_shift['A']['output_sheets'], 5000)
+        self.assertEqual(by_shift['B']['output_sheets'], 1000)
+        self.assertEqual(by_shift['A']['shift_label'], 'Shift A')
+        # the combined row is the sum of its shifts
+        self.assertEqual(data['printing_rows'][0]['output_sheets'], 6000)
+        overview = {r['shift']: r for r in data['overview_shift_rows']}
+        self.assertEqual(overview['B']['printed_sheets'] if 'printed_sheets' in overview['B'] else overview['B']['output_sheets'], 1000)
+
+    def test_daily_production_exports_include_the_shift_rows(self):
+        from django.test import RequestFactory
+
+        from core.models import Production
+        from reports.services import build_daily_production_context
+
+        group, cards, entry = self._lead_run(impressions=5000)
+        Production.objects.create(
+            job_card=cards[group.lead_job.id], entry_type='printing', date='2026-07-21', shift='B',
+            output_sheets=1000, impressions=1000, created_by=self.user,
+        )
+        for tab in ('overview', 'printing'):
+            request = RequestFactory().get(f'/reports/daily-production/?date_from=2026-07-21&date_to=2026-07-21&tab={tab}')
+            request.user = self.user
+            data = build_daily_production_context(request)
+            self.assertIn('shift_label', data['headers'])
+            self.assertEqual(data['header_labels']['shift_label'], 'Shift')
+            shifts = [row['shift_label'] for row in data['export_rows']]
+            self.assertEqual(shifts, ['All shifts', 'Shift A', 'Shift B'])
+            sheets = [row['output_sheets'] for row in data['export_rows']]
+            self.assertEqual(sheets, [6000, 5000, 1000])

@@ -7,6 +7,7 @@ from django.db.models import ExpressionWrapper, F, FloatField, Prefetch, Sum, Va
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from core.merge_sheets import piece_ups_expr
 from core.models import Dispatch, JobCard, Production
 from planning.models import PlanningJob
 
@@ -52,7 +53,7 @@ def _packed_pcs_for_period(start, end):
 
 def _wastage_pcs_for_period(start, end):
     waste_pcs_expr = ExpressionWrapper(
-        Coalesce(F('waste_sheets'), Value(0)) * Coalesce(F('job_card__ups'), Value(1)),
+        Coalesce(F('waste_sheets'), Value(0)) * piece_ups_expr(),
         output_field=FloatField(),
     )
     printing_waste = Production.objects.filter(
@@ -160,10 +161,10 @@ def _waste_rows(start, end):
     for p in Production.objects.filter(
         is_active=True, entry_type='printing', date__range=(start, end),
     ).values(
-        'job_card__job_card_no', 'job_card__PO_No', 'date', 'waste_sheets', 'job_card__ups',
+        'job_card__job_card_no', 'job_card__PO_No', 'date', 'waste_sheets', 'job_card__ups', 'merge_allocated_ups',
         'job_card__machine_name__name', 'job_card__planning_job__machine_name',
     ):
-        waste_pcs = (p['waste_sheets'] or 0) * (p['job_card__ups'] or 1)
+        waste_pcs = (p['waste_sheets'] or 0) * (p['merge_allocated_ups'] or p['job_card__ups'] or 1)
         rows.append({
             'row_type': 'Printing Waste', 'job_card_no': p['job_card__job_card_no'] or '',
             'reference': '', 'po_number': p['job_card__PO_No'] or '', 'date': p['date'], 'qty_pcs': waste_pcs,

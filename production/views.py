@@ -28,6 +28,7 @@ from core.models import (
     Supervisor,
     Sorter,
 )
+from core.merge_sheets import standalone_sheets_expr
 from core.views import permission_required
 from core.services import (
     add_unique_message,
@@ -637,7 +638,7 @@ def production_records(request):
         per_page = 50
 
     records = Production.objects.filter(is_active=True, job_card__is_active=True, entry_type='printing').select_related(
-        'job_card', 'machine', 'operator', 'supervisor', 'sorter', 'created_by'
+        'job_card', 'machine', 'operator', 'supervisor', 'sorter', 'created_by', 'merge_parent__job_card'
     ).order_by('-date', '-id')
 
     if query:
@@ -730,10 +731,13 @@ def production_records(request):
     records = records.order_by(ordering)
 
     total_count = records.count()
+    # Combined-layout split entries repeat the lead's sheets on every member job, so the sheet totals
+    # count real press runs only (merge_parent is empty); each member's pieces are still its own.
+    own_runs = Q(merge_parent__isnull=True)
     filtered_totals = records.aggregate(
         impressions_total=Sum('impressions'),
-        output_total=Sum('output_sheets'),
-        waste_total=Sum('waste_sheets'),
+        output_total=Sum('output_sheets', filter=own_runs),
+        waste_total=Sum('waste_sheets', filter=own_runs),
     )
     paginator = Paginator(records, per_page)
     page_number = request.GET.get('page')
@@ -741,16 +745,20 @@ def production_records(request):
 
     records = list(page_obj.object_list)
     page_impressions_total = sum(row.impressions or 0 for row in records)
-    page_output_total = sum(row.output_sheets or 0 for row in records)
-    page_waste_total = sum(row.waste_sheets or 0 for row in records)
+    page_output_total = sum(row.output_sheets or 0 for row in records if not row.merge_parent_id)
+    page_waste_total = sum(row.waste_sheets or 0 for row in records if not row.merge_parent_id)
     page_overrun_count = sum(1 for row in records if row.overrun_minutes > 0)
     page_tolerance_alert_count = 0
     job_card_ids = list({row.job_card_id for row in records})
+    # Measured at each job's standalone ups so a job printed on a combined layout (where it owns only
+    # part of the sheet) is compared with its own plan fairly.
     consumption_map = {
-        item['job_card_id']: int((item['total_output'] or 0) + (item['total_waste'] or 0))
-        for item in Production.objects.filter(is_active=True, job_card_id__in=job_card_ids).values('job_card_id').annotate(
-            total_output=Sum('output_sheets'),
-            total_waste=Sum('waste_sheets'),
+        item['job_card_id']: int(round((item['total_output'] or 0) + (item['total_waste'] or 0)))
+        for item in Production.objects.filter(
+            is_active=True, entry_type='printing', job_card_id__in=job_card_ids,
+        ).values('job_card_id').annotate(
+            total_output=Sum(standalone_sheets_expr('output_sheets')),
+            total_waste=Sum(standalone_sheets_expr('waste_sheets')),
         )
     }
     for row in records:
@@ -917,7 +925,9 @@ def production_data_anomalies(request):
     via the "Override" request flow on Production Records for other users —
     nothing is changed automatically here.
     """
-    printing_qs = Production.objects.filter(is_active=True, entry_type='printing')
+    # Combined-layout split entries carry the lead's sheets with no impressions by design (the run's
+    # impressions are recorded once, on the lead), so they are never data-entry mistakes.
+    printing_qs = Production.objects.filter(is_active=True, entry_type='printing', merge_parent__isnull=True)
 
     def _row(row, total_passes):
         pass_no = effective_print_pass_number(row, total_passes)
@@ -1192,8 +1202,9 @@ def production_dashboard(request):
 
     total_impressions = period_productions.aggregate(total=Sum('impressions'))['total'] or 0
     total_downtime = period_productions.aggregate(total=Sum('downtime_minutes'))['total'] or 0
-    total_output = period_productions.aggregate(total=Sum('output_sheets'))['total'] or 0
-    total_waste = period_productions.aggregate(total=Sum('waste_sheets'))['total'] or 0
+    # Real press runs only: combined-layout split entries repeat the lead's sheets on every member job.
+    total_output = period_productions.filter(merge_parent__isnull=True).aggregate(total=Sum('output_sheets'))['total'] or 0
+    total_waste = period_productions.filter(merge_parent__isnull=True).aggregate(total=Sum('waste_sheets'))['total'] or 0
     total_planned_minutes = period_productions.aggregate(total=Sum('planned_time'))['total'] or 0
     total_run_minutes = period_productions.aggregate(total=Sum('run_time'))['total'] or 0
     total_make_ready_minutes = period_productions.aggregate(total=Sum('make_ready_time'))['total'] or 0

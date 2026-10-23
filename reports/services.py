@@ -18,6 +18,7 @@ from django.db.models import (
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 
+from core.merge_sheets import piece_ups_expr, standalone_sheets_expr
 from core.models import (
     JOB_CARD_DISPATCHABLE_STATUSES,
     ChangeLog,
@@ -482,7 +483,7 @@ def build_overview_context(request):
             'title': 'Production Entries',
             'value': productions.count(),
             'subtitle': 'Logged production runs',
-            'hint': f"{productions.aggregate(total_output=Sum('output_sheets'))['total_output'] or 0:,} output sheets",
+            'hint': f"{productions.filter(merge_parent__isnull=True).aggregate(total_output=Sum('output_sheets'))['total_output'] or 0:,} output sheets",
         },
         {
             'title': 'Dispatch Rows',
@@ -618,7 +619,7 @@ def build_machine_planning_context(request):
     job_card_ids = [j.job_card.id for j in candidate_jobs if getattr(j, 'job_card', None)]
     produced_lookup = dict(
         Production.objects.filter(is_active=True, entry_type='printing', job_card_id__in=job_card_ids)
-        .values('job_card_id').annotate(total=Sum('output_sheets'))
+        .values('job_card_id').annotate(total=Sum(standalone_sheets_expr('output_sheets')))
         .values_list('job_card_id', 'total')
     )
     production_state_by_job_id = {}
@@ -699,7 +700,7 @@ def build_machine_planning_context(request):
         avg_aging_days=Avg('aging_days'),
     )
 
-    actual_runs = Production.objects.filter(is_active=True, date__range=(start, end))
+    actual_runs = Production.objects.filter(is_active=True, date__range=(start, end), merge_parent__isnull=True)
     actual_rows = list(
         actual_runs.values('machine__name')
         .annotate(
@@ -1288,7 +1289,8 @@ def build_production_insights_context(request):
     machine_filter = (request.GET.get('machine') or '').strip()
     shift_filter = (request.GET.get('shift') or '').strip()
 
-    productions = Production.objects.filter(is_active=True, date__range=(start, end), date__year=year)
+    # Press runs only: combined-layout split entries repeat the lead's sheets on every member job.
+    productions = Production.objects.filter(is_active=True, date__range=(start, end), date__year=year, merge_parent__isnull=True)
     if search_value:
         productions = productions.filter(
             Q(job_card__job_card_no__icontains=search_value)
@@ -1466,49 +1468,61 @@ def build_daily_production_context(request):
     # with packing's pcs-native sorting waste into one "Process Wastage"
     # figure) needs each row's own job_card.ups, done here as a DB
     # expression rather than a Python join.
+    # A run on a combined layout counts at the job's share of the sheet (merge_allocated_ups), not
+    # the standalone ups on its card.
     waste_pcs_expr = ExpressionWrapper(
-        Coalesce(F('waste_sheets'), Value(0)) * Coalesce(F('job_card__ups'), Value(1)),
+        Coalesce(F('waste_sheets'), Value(0)) * piece_ups_expr(),
         output_field=FloatField(),
     )
     output_pcs_expr = ExpressionWrapper(
-        Coalesce(F('output_sheets'), Value(0)) * Coalesce(F('job_card__ups'), Value(1)),
+        Coalesce(F('output_sheets'), Value(0)) * piece_ups_expr(),
         output_field=FloatField(),
     )
+    # Sheets and impressions describe the press run, so they are counted from the real entry only:
+    # the split entries copied onto each member job repeat the lead's sheets.
+    press_run = Q(merge_parent__isnull=True)
 
-    printing_rows = list(
-        productions.filter(entry_type='printing')
-        .values('date')
-        .annotate(
-            # waste_pcs/output_pcs/expected_impressions must be annotated
-            # before waste_sheets/output_sheets/run_time below — within a
-            # single .annotate() call, F() resolves against annotations
-            # already added earlier in the same call, and would otherwise
-            # pick up the Sum('waste_sheets') aggregate instead of the raw
-            # column (Django raises "is an aggregate" for that).
-            waste_pcs=Coalesce(Sum(waste_pcs_expr), Value(0.0)),
-            output_pcs=Coalesce(Sum(output_pcs_expr), Value(0.0)),
-            expected_impressions=Coalesce(Sum(expected_expr), Value(0.0)),
-            impressions=Coalesce(Sum('impressions'), Value(0)),
-            output_sheets=Coalesce(Sum('output_sheets'), Value(0)),
-            waste_sheets=Coalesce(Sum('waste_sheets'), Value(0)),
-            downtime_minutes=Coalesce(Sum('downtime_minutes'), Value(0.0)),
-            # changeover_count must be annotated before make_ready_time below —
-            # otherwise Q(make_ready_time__gt=0) resolves against the
-            # Coalesce(Sum(...)) annotation instead of the raw column, wrapping
-            # an aggregate inside FILTER() and producing invalid SQL.
-            changeover_count=Count('id', filter=Q(make_ready_time__gt=0)),
-            make_ready_time=Coalesce(Sum('make_ready_time'), Value(0.0)),
-            entries=Count('id'),
+    def _printing_by(*group_fields):
+        return list(
+            productions.filter(entry_type='printing')
+            .values(*group_fields)
+            .annotate(
+                # waste_pcs/output_pcs/expected_impressions must be annotated
+                # before waste_sheets/output_sheets/run_time below — within a
+                # single .annotate() call, F() resolves against annotations
+                # already added earlier in the same call, and would otherwise
+                # pick up the Sum('waste_sheets') aggregate instead of the raw
+                # column (Django raises "is an aggregate" for that).
+                waste_pcs=Coalesce(Sum(waste_pcs_expr), Value(0.0)),
+                output_pcs=Coalesce(Sum(output_pcs_expr), Value(0.0)),
+                expected_impressions=Coalesce(Sum(expected_expr), Value(0.0)),
+                impressions=Coalesce(Sum('impressions'), Value(0)),
+                output_sheets=Coalesce(Sum('output_sheets', filter=press_run), Value(0)),
+                waste_sheets=Coalesce(Sum('waste_sheets', filter=press_run), Value(0)),
+                downtime_minutes=Coalesce(Sum('downtime_minutes'), Value(0.0)),
+                # changeover_count must be annotated before make_ready_time below —
+                # otherwise Q(make_ready_time__gt=0) resolves against the
+                # Coalesce(Sum(...)) annotation instead of the raw column, wrapping
+                # an aggregate inside FILTER() and producing invalid SQL.
+                changeover_count=Count('id', filter=Q(make_ready_time__gt=0)),
+                make_ready_time=Coalesce(Sum('make_ready_time'), Value(0.0)),
+                entries=Count('id'),
+            )
+            .order_by('-date', *group_fields[1:])
         )
-        .order_by('-date')
-    )
+
+    printing_rows = _printing_by('date')
+    printing_day_shift_rows = _printing_by('date', 'shift')
     # The report engine serialises dates to ISO strings before they reach the
     # template, so build the display label here while they are still dates.
     def _label(day):
         return day.strftime('%Y-%m-%d (%a)') if day else '—'
 
-    for row in printing_rows:
+    shift_names = dict(Production.SHIFT_CHOICES)
+    for row in printing_rows + printing_day_shift_rows:
         row['date_label'] = _label(row['date'])
+        if 'shift' in row:
+            row['shift_label'] = shift_names.get(row['shift'], row['shift'])
         gross = (row['output_sheets'] or 0) + (row['waste_sheets'] or 0)
         row['waste_pct'] = round((row['waste_sheets'] or 0) * 100.0 / gross, 2) if gross else 0.0
         expected = row['expected_impressions'] or 0
@@ -1524,10 +1538,39 @@ def build_daily_production_context(request):
         )
         .order_by('-date')
     )
-    for row in packing_rows:
+    packing_day_shift_rows = list(
+        productions.filter(entry_type='packing')
+        .values('date', 'shift')
+        .annotate(
+            packing_qty=Coalesce(Sum('packing_qty'), Value(0)),
+            sorting_waste_qty=Coalesce(Sum('sorting_waste_qty'), Value(0)),
+            entries=Count('id'),
+        )
+        .order_by('-date', 'shift')
+    )
+    for row in packing_rows + packing_day_shift_rows:
         row['date_label'] = _label(row['date'])
+        if 'shift' in row:
+            row['shift_label'] = shift_names.get(row['shift'], row['shift'])
         gross = (row['packing_qty'] or 0) + (row['sorting_waste_qty'] or 0)
         row['waste_pct'] = round((row['sorting_waste_qty'] or 0) * 100.0 / gross, 2) if gross else 0.0
+
+    # Overview, shift by shift: printing and packing carry a shift; releases and dispatches do not,
+    # so they stay on the combined rows only.
+    overview_shift_map = {}
+    for row in printing_day_shift_rows:
+        bucket = overview_shift_map.setdefault((row['date'], row['shift']), {})
+        bucket.update(impressions=row['impressions'], output_sheets=row['output_sheets'], printing_waste=row['waste_sheets'])
+    for row in packing_day_shift_rows:
+        bucket = overview_shift_map.setdefault((row['date'], row['shift']), {})
+        bucket.update(packing_qty=row['packing_qty'], packing_waste=row['sorting_waste_qty'])
+    overview_shift_rows = [
+        {'date': day, 'date_label': _label(day), 'shift': shift, 'shift_label': shift_names.get(shift, shift),
+         'impressions': 0, 'output_sheets': 0, 'printing_waste': 0, 'packing_qty': 0, 'packing_waste': 0, **vals}
+        for (day, shift), vals in sorted(overview_shift_map.items(), key=lambda kv: (kv[0][0], ), reverse=True)
+    ]
+    overview_shift_rows.sort(key=lambda r: r['shift'])
+    overview_shift_rows.sort(key=lambda r: r['date'], reverse=True)
 
     dispatch_rows = list(
         dispatches.values('dispatch_date')
@@ -1706,7 +1749,7 @@ def build_daily_production_context(request):
 
     # Machine split for the printing tab.
     printing_by_machine = list(
-        productions.filter(entry_type='printing')
+        productions.filter(entry_type='printing', merge_parent__isnull=True)
         .values('machine__name')
         .annotate(
             impressions=Coalesce(Sum('impressions'), Value(0)),
@@ -1721,7 +1764,7 @@ def build_daily_production_context(request):
     # Shift performance split.
     shift_labels = dict(Production.SHIFT_CHOICES)
     printing_by_shift = list(
-        productions.filter(entry_type='printing')
+        productions.filter(entry_type='printing', merge_parent__isnull=True)
         .values('shift')
         .annotate(
             impressions=Coalesce(Sum('impressions'), Value(0)),
@@ -1748,9 +1791,21 @@ def build_daily_production_context(request):
 
     # The generic exporter picks up data['export_rows'] with data['headers'];
     # ?tab= selects which of the four tables gets exported.
+    # Exports carry the shift-wise rows too: each date's combined row (shift "All shifts") is followed by its
+    # Shift A / Shift B rows, so the file shows the same data as the screen. Dispatch has no shift.
+    def _with_shift_rows(combined_rows, shift_rows):
+        by_date = {}
+        for shift_row in shift_rows:
+            by_date.setdefault(shift_row['date'], []).append(shift_row)
+        out = []
+        for row in combined_rows:
+            out.append({**row, 'shift_label': 'All shifts'})
+            out.extend(by_date.get(row['date'], []))
+        return out
+
     export_tabs = {
-        'overview': (overview_rows, [
-            ('date_label', 'Date'), ('released_count', 'Jobs Released'), ('released_qty', 'Released Qty'),
+        'overview': (_with_shift_rows(overview_rows, overview_shift_rows), [
+            ('date_label', 'Date'), ('shift_label', 'Shift'), ('released_count', 'Jobs Released'), ('released_qty', 'Released Qty'),
             ('impressions', 'Impressions'),
             ('output_sheets', 'Printed Sheets'), ('printing_waste', 'Printing Waste'),
             ('packing_qty', 'Packed Pcs'), ('packing_waste', 'Packing Waste'),
@@ -1761,15 +1816,15 @@ def build_daily_production_context(request):
             ('po_number', 'PO/WO No'), ('sku', 'SKU'), ('machine', 'Machine'),
             ('order_qty', 'Order Qty'), ('released_by', 'Released By'),
         ]),
-        'printing': (printing_rows, [
-            ('date_label', 'Date'), ('entries', 'Entries'), ('impressions', 'Impressions'),
+        'printing': (_with_shift_rows(printing_rows, printing_day_shift_rows), [
+            ('date_label', 'Date'), ('shift_label', 'Shift'), ('entries', 'Entries'), ('impressions', 'Impressions'),
             ('output_sheets', 'Output Sheets'), ('waste_sheets', 'Waste Sheets'),
             ('waste_pct', 'Waste %'), ('downtime_minutes', 'Downtime (min)'),
             ('changeover_count', 'Changeovers'), ('make_ready_time', 'Changeover Time (min)'),
             ('efficiency_pct', 'Efficiency %'),
         ]),
-        'packing': (packing_rows, [
-            ('date_label', 'Date'), ('entries', 'Entries'), ('packing_qty', 'Packed Pcs'),
+        'packing': (_with_shift_rows(packing_rows, packing_day_shift_rows), [
+            ('date_label', 'Date'), ('shift_label', 'Shift'), ('entries', 'Entries'), ('packing_qty', 'Packed Pcs'),
             ('sorting_waste_qty', 'Sorting Waste'), ('waste_pct', 'Waste %'),
         ]),
         'dispatch': (dispatch_rows, [
@@ -1798,6 +1853,9 @@ def build_daily_production_context(request):
         'overview_rows': overview_rows,
         'printing_rows': printing_rows,
         'packing_rows': packing_rows,
+        'printing_day_shift_rows': printing_day_shift_rows,
+        'packing_day_shift_rows': packing_day_shift_rows,
+        'overview_shift_rows': overview_shift_rows,
         'dispatch_rows': dispatch_rows,
         'released_rows': released_rows,
         'process_wastage_rows': process_wastage_rows,
@@ -2045,7 +2103,11 @@ def build_wastage_report_context(request):
         else:
             dispatch_qty_pcs = int(sum(d.dispatch_qty for d in job.dispatch_set.all() if d.is_active) * ppu)
         printing_waste_sheets = sum(p.waste_sheets for p in job.productions.all() if p.entry_type == 'printing')
-        printing_waste_pcs = printing_waste_sheets * ups
+        # Each entry's own ups: a run on a combined layout counts at the job's share of that sheet.
+        printing_waste_pcs = sum(
+            p.waste_sheets * (p.merge_allocated_ups or ups)
+            for p in job.productions.all() if p.entry_type == 'printing'
+        )
         sorting_waste_pcs = sum(p.sorting_waste_qty for p in job.productions.all() if p.entry_type == 'packing')
 
         # Stock (PlanningJob.stock_qty): pieces carried forward from an over-run on this

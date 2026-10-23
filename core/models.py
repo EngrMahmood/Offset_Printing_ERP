@@ -6,6 +6,8 @@ from django.core.exceptions import ValidationError
 from django.db.models import Sum
 from django.contrib.auth import get_user_model
 
+from core.merge_sheets import standalone_sheets_expr
+
 from production.services import OEECalculator
 
 
@@ -770,13 +772,14 @@ class JobCard(models.Model):
         return int(round(base * (1 + tolerance)))
 
     @property
+    def sheets_consumed_standalone(self):
+        """Good + waste sheets used, measured at this job's standalone ups so that sheets printed
+        on a combined layout (where the job owns only part of the sheet) compare fairly with its plan."""
+        return sum(p.standalone_total_sheets for p in self.printing_productions)
+
+    @property
     def extra_sheets_used(self):
-        total_consumed = self.printing_productions.aggregate(
-            total_output=Sum('output_sheets'),
-            total_waste=Sum('waste_sheets'),
-        )
-        consumed = (total_consumed['total_output'] or 0) + (total_consumed['total_waste'] or 0)
-        return max(consumed - self.total_sheets_planned, 0)
+        return max(self.sheets_consumed_standalone - self.total_sheets_planned, 0)
     
     def _is_prefetched(self, related_name):
         """True when `related_name` was loaded via prefetch_related(), so `.all()`
@@ -1133,6 +1136,13 @@ class Production(models.Model):
     def total_sheets(self):
         return self.output_sheets + self.waste_sheets
 
+    @property
+    def standalone_total_sheets(self):
+        """Good + waste sheets at the job's standalone ups (see core.merge_sheets)."""
+        from core.merge_sheets import standalone_sheets
+
+        return standalone_sheets(self.total_sheets, self.merge_allocated_ups, self.job_card.ups)
+
     def minimum_impressions_for_output(self):
         """Calculate the minimum impressions required for the current output based on pass count."""
         if not self.job_card or self.output_sheets <= 0:
@@ -1273,12 +1283,12 @@ class Production(models.Model):
             is_active=True,
             entry_type='printing',
         ).exclude(id=self.id).aggregate(
-            total_output=Sum('output_sheets'),
-            total_waste=Sum('waste_sheets'),
+            total_output=Sum(standalone_sheets_expr('output_sheets')),
+            total_waste=Sum(standalone_sheets_expr('waste_sheets')),
         )
 
-        existing_output = existing['total_output'] or 0
-        existing_waste = existing['total_waste'] or 0
+        existing_output = int(round(existing['total_output'] or 0))
+        existing_waste = int(round(existing['total_waste'] or 0))
 
         total_existing_consumption = existing_output + existing_waste
         current_consumption = (self.output_sheets or 0) + (self.waste_sheets or 0)

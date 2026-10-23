@@ -323,8 +323,14 @@ def get_job_card_sheet_usage(job_card, exclude_production_id=None):
     qs = job_card.productions.filter(is_active=True, entry_type='printing')
     if exclude_production_id:
         qs = qs.exclude(pk=exclude_production_id)
-    totals = qs.aggregate(output=Sum('output_sheets'), waste=Sum('waste_sheets'))
-    return int(totals['output'] or 0) + int(totals['waste'] or 0)
+    # At the job's standalone ups, so sheets run on a combined layout compare with its own plan.
+    from core.merge_sheets import standalone_sheets_expr
+
+    totals = qs.aggregate(
+        output=Sum(standalone_sheets_expr('output_sheets')),
+        waste=Sum(standalone_sheets_expr('waste_sheets')),
+    )
+    return int(round(totals['output'] or 0)) + int(round(totals['waste'] or 0))
 
 
 def build_pass_tracking_info(job_card, exclude_production_id=None):

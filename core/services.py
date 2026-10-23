@@ -79,7 +79,8 @@ def compute_job_card_wastage_metrics(job_card):
     # Finalization queue.
     dispatch_qty_pcs = job_card.total_dispatch
     printing_waste_sheets = sum(p.waste_sheets for p in job_card.printing_productions)
-    printing_waste_pcs = printing_waste_sheets * ups
+    # Each entry's own ups: a run on a combined layout counts at the job's share of that sheet.
+    printing_waste_pcs = sum(p.waste_sheets * (p.merge_allocated_ups or ups) for p in job_card.printing_productions)
     sorting_waste_pcs = sum(p.sorting_waste_qty for p in job_card.packing_productions)
     dispatch_gap_pcs = max(plan_qty_pcs - dispatch_qty_pcs, 0)
 

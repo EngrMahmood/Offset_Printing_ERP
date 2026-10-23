@@ -311,6 +311,23 @@
                     </tbody>
                 </table>
             </div>
+
+            {% if data.overview_shift_rows %}
+            <div class="erp-card-header mb-4 mt-4">
+                <h3 class="erp-section-title">By Date and Shift</h3>
+                <p class="erp-card-subtitle">Printing and packing by shift. Releases and dispatches are not recorded per shift, so they appear in the combined table above.</p>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Date</th><th>Shift</th><th class="dp-num">Impressions</th><th class="dp-num">Printed Sheets</th><th class="dp-num">Printing Waste</th><th class="dp-num">Packed Pcs</th><th class="dp-num">Packing Waste</th></tr></thead>
+                    <tbody>
+                        {% for row in data.overview_shift_rows %}
+                        <tr><td><a class="dp-date-link" target="_blank" rel="noopener" href="{% url 'production_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}&amp;shift={{ row.shift }}">{{ row.date_label }}</a></td><td>{{ row.shift_label }}</td><td class="dp-num">{{ row.impressions|intcomma }}</td><td class="dp-num">{{ row.output_sheets|intcomma }}</td><td class="dp-num">{{ row.printing_waste|intcomma }}</td><td class="dp-num">{{ row.packing_qty|intcomma }}</td><td class="dp-num">{{ row.packing_waste|intcomma }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
         </div>
 
         <!-- PRINTING -->
@@ -355,6 +372,22 @@
                 </table>
             </div>
 
+
+            {% if data.printing_day_shift_rows %}
+            <div class="erp-card-header mb-4 mt-4">
+                <h3 class="erp-section-title">By Date and Shift</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Production Date</th><th>Shift</th><th class="dp-num">Entries</th><th class="dp-num">Impressions</th><th class="dp-num">Output Sheets</th><th class="dp-num">Waste Sheets</th><th class="dp-num">Waste %</th><th class="dp-num">Downtime (min)</th><th class="dp-num">Changeovers</th><th class="dp-num">Changeover Time (min)</th><th class="dp-num">Efficiency %</th></tr></thead>
+                    <tbody>
+                        {% for row in data.printing_day_shift_rows %}
+                        <tr><td><a class="dp-date-link" target="_blank" rel="noopener" href="{% url 'production_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}&amp;shift={{ row.shift }}">{{ row.date_label }}</a></td><td>{{ row.shift_label }}</td><td class="dp-num">{{ row.entries }}</td><td class="dp-num">{{ row.impressions|intcomma }}</td><td class="dp-num">{{ row.output_sheets|intcomma }}</td><td class="dp-num">{{ row.waste_sheets|intcomma }}</td><td class="dp-num">{{ row.waste_pct }}%</td><td class="dp-num">{{ row.downtime_minutes|floatformat:0 }}</td><td class="dp-num">{{ row.changeover_count }}</td><td class="dp-num">{{ row.make_ready_time|floatformat:0 }}</td><td class="dp-num">{% if row.efficiency_pct is not None %}{{ row.efficiency_pct }}%{% else %}—{% endif %}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
             {% if data.printing_by_shift %}
             <div class="erp-card-header mb-4 mt-4">
                 <h3 class="erp-section-title">By Shift</h3>
@@ -481,6 +514,22 @@
                 </table>
             </div>
             {% endif %}
+            {% if data.packing_day_shift_rows %}
+            <div class="erp-card-header mb-4 mt-4">
+                <h3 class="erp-section-title">By Date and Shift</h3>
+            </div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Packing Date</th><th>Shift</th><th class="dp-num">Entries</th><th class="dp-num">Packed Pcs</th><th class="dp-num">Sorting Waste</th><th class="dp-num">Waste %</th></tr></thead>
+                    <tbody>
+                        {% for row in data.packing_day_shift_rows %}
+                        <tr><td><a class="dp-date-link" target="_blank" rel="noopener" href="{% url 'production_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}&amp;shift={{ row.shift }}">{{ row.date_label }}</a></td><td>{{ row.shift_label }}</td><td class="dp-num">{{ row.entries }}</td><td class="dp-num">{{ row.packing_qty|intcomma }}</td><td class="dp-num">{{ row.sorting_waste_qty|intcomma }}</td><td class="dp-num">{{ row.waste_pct }}%</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+
         </div>
 
         <!-- DISPATCH -->

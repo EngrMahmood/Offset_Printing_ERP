@@ -357,7 +357,7 @@
                                         {% endif %}
                                     </td>
                                     <td>
-                                        {{ row.created_by.username|default:'—' }}
+                                        {% if row.merge_parent_id %}System<br><small class="erp-text-soft">combined layout share of {{ row.merge_parent.job_card.job_card_no }}'s run</small>{% elif row.created_by %}{{ row.created_by.username }}{% else %}—{% endif %}
                                         {% if row.created_at %}<br><small class="erp-text-soft">{{ row.created_at|date:"d M Y, H:i" }}</small>{% endif %}
                                     </td>
                                     {% if row.overrun_minutes > 0 %}
