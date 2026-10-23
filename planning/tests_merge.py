@@ -1311,10 +1311,11 @@ class MergeEntryAccountingTests(TestCase):
 
         from reports.services import build_daily_production_context
 
-        group, cards, entry = self._lead_run()
+        group, cards, entry = self._lead_run(impressions=5000)
         request = RequestFactory().get('/reports/daily-production/?date_from=2026-07-21&date_to=2026-07-21')
         request.user = self.user
         totals = build_daily_production_context(request)['totals']
+        self.assertEqual(totals['impressions'], 5000)                    # the run's impressions once, not plus the members' shares
         self.assertEqual(totals['output_sheets'], 5000)                  # the 5,000 sheets that ran, not 3 x 5,000
         self.assertEqual(totals['printed_pcs'], 5000 * (2 + 1 + 1))      # pieces: each job at its own share
 

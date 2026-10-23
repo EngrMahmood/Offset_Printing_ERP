@@ -367,7 +367,7 @@ def build_dashboard_context(request):
         date__range=(start, end),
     )
     period_printing_impressions = (
-        period_production_activity.filter(entry_type='printing').aggregate(total=Sum('impressions'))['total'] or 0
+        period_production_activity.filter(entry_type='printing', merge_parent__isnull=True).aggregate(total=Sum('impressions'))['total'] or 0
     )
     period_packed_qty = (
         period_production_activity.filter(entry_type='packing').aggregate(total=Sum('packing_qty'))['total'] or 0
@@ -1496,7 +1496,7 @@ def build_daily_production_context(request):
                 waste_pcs=Coalesce(Sum(waste_pcs_expr), Value(0.0)),
                 output_pcs=Coalesce(Sum(output_pcs_expr), Value(0.0)),
                 expected_impressions=Coalesce(Sum(expected_expr), Value(0.0)),
-                impressions=Coalesce(Sum('impressions'), Value(0)),
+                impressions=Coalesce(Sum('impressions', filter=press_run), Value(0)),
                 output_sheets=Coalesce(Sum('output_sheets', filter=press_run), Value(0)),
                 waste_sheets=Coalesce(Sum('waste_sheets', filter=press_run), Value(0)),
                 downtime_minutes=Coalesce(Sum('downtime_minutes'), Value(0.0)),

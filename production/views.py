@@ -735,7 +735,7 @@ def production_records(request):
     # count real press runs only (merge_parent is empty); each member's pieces are still its own.
     own_runs = Q(merge_parent__isnull=True)
     filtered_totals = records.aggregate(
-        impressions_total=Sum('impressions'),
+        impressions_total=Sum('impressions', filter=own_runs),
         output_total=Sum('output_sheets', filter=own_runs),
         waste_total=Sum('waste_sheets', filter=own_runs),
     )
@@ -744,7 +744,7 @@ def production_records(request):
     page_obj = paginator.get_page(page_number)
 
     records = list(page_obj.object_list)
-    page_impressions_total = sum(row.impressions or 0 for row in records)
+    page_impressions_total = sum(row.impressions or 0 for row in records if not row.merge_parent_id)
     page_output_total = sum(row.output_sheets or 0 for row in records if not row.merge_parent_id)
     page_waste_total = sum(row.waste_sheets or 0 for row in records if not row.merge_parent_id)
     page_overrun_count = sum(1 for row in records if row.overrun_minutes > 0)
@@ -1200,7 +1200,7 @@ def production_dashboard(request):
     )
     period_dispatches = Dispatch.objects.filter(is_active=True, job_card__is_active=True, dispatch_date__gte=start_date, dispatch_date__lte=end_date)
 
-    total_impressions = period_productions.aggregate(total=Sum('impressions'))['total'] or 0
+    total_impressions = period_productions.filter(merge_parent__isnull=True).aggregate(total=Sum('impressions'))['total'] or 0
     total_downtime = period_productions.aggregate(total=Sum('downtime_minutes'))['total'] or 0
     # Real press runs only: combined-layout split entries repeat the lead's sheets on every member job.
     total_output = period_productions.filter(merge_parent__isnull=True).aggregate(total=Sum('output_sheets'))['total'] or 0
