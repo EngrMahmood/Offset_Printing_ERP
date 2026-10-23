@@ -734,19 +734,24 @@ def production_records(request):
     # Combined-layout split entries repeat the lead's sheets on every member job, so the sheet totals
     # count real press runs only (merge_parent is empty); each member's pieces are still its own.
     own_runs = Q(merge_parent__isnull=True)
+    # When the filter matches only combined-layout member rows (e.g. searching one member job) there is
+    # no press run to count, so the header totals the rows shown instead of reading zero.
+    only_member_rows = not records.filter(own_runs).exists()
+    totals_filter = None if only_member_rows else own_runs
     filtered_totals = records.aggregate(
-        impressions_total=Sum('impressions', filter=own_runs),
-        output_total=Sum('output_sheets', filter=own_runs),
-        waste_total=Sum('waste_sheets', filter=own_runs),
+        impressions_total=Sum('impressions', filter=totals_filter),
+        output_total=Sum('output_sheets', filter=totals_filter),
+        waste_total=Sum('waste_sheets', filter=totals_filter),
     )
     paginator = Paginator(records, per_page)
     page_number = request.GET.get('page')
     page_obj = paginator.get_page(page_number)
 
     records = list(page_obj.object_list)
-    page_impressions_total = sum(row.impressions or 0 for row in records if not row.merge_parent_id)
-    page_output_total = sum(row.output_sheets or 0 for row in records if not row.merge_parent_id)
-    page_waste_total = sum(row.waste_sheets or 0 for row in records if not row.merge_parent_id)
+    counted_rows = records if only_member_rows else [row for row in records if not row.merge_parent_id]
+    page_impressions_total = sum(row.impressions or 0 for row in counted_rows)
+    page_output_total = sum(row.output_sheets or 0 for row in counted_rows)
+    page_waste_total = sum(row.waste_sheets or 0 for row in counted_rows)
     page_overrun_count = sum(1 for row in records if row.overrun_minutes > 0)
     page_tolerance_alert_count = 0
     job_card_ids = list({row.job_card_id for row in records})

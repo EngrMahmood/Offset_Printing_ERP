@@ -1364,3 +1364,28 @@ class MergeEntryAccountingTests(TestCase):
             self.assertEqual(shifts, ['All shifts', 'Shift A', 'Shift B'])
             sheets = [row['output_sheets'] for row in data['export_rows']]
             self.assertEqual(sheets, [6000, 5000, 1000])
+
+    def test_records_header_totals_follow_the_rows_when_only_member_rows_match(self):
+        from core.models import Production
+
+        group, cards, entry = self._lead_run(impressions=5000)
+        from core.models import Permission, UserPermissionOverride
+
+        admin = get_user_model().objects.create_superuser('records_admin', password='pw12345678')
+        permission, _ = Permission.objects.get_or_create(
+            code='action.view_production_records', defaults={'name': 'View production records'},
+        )
+        UserPermissionOverride.objects.get_or_create(user=admin, permission=permission, defaults={'granted': True})
+        UserProfile.objects.get_or_create(user=admin)
+        self.client.force_login(admin)
+        follower_card = next(c for jid, c in cards.items() if jid != group.lead_job.id)
+        member = Production.objects.get(job_card=follower_card, entry_type='printing')
+
+        only_member = self.client.get(reverse('production_records'), {'q': follower_card.job_card_no, 'date_from': '2026-07-21', 'date_to': '2026-07-21'})
+        self.assertEqual(only_member.context['filtered_output_total'], member.output_sheets)
+        self.assertEqual(only_member.context['filtered_impressions_total'], member.impressions)
+        self.assertGreater(member.output_sheets, 0)
+
+        everything = self.client.get(reverse('production_records'), {'date_from': '2026-07-21', 'date_to': '2026-07-21'})
+        self.assertEqual(everything.context['filtered_output_total'], 5000)        # the run once, not plus the members
+        self.assertEqual(everything.context['filtered_impressions_total'], 5000)
