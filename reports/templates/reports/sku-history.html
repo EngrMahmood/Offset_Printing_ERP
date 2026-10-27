@@ -1,0 +1,234 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ report.title }} — Reports{% endblock %}
+{% block header_title %}{{ report.title }}{% endblock %}
+{% block header_subtitle %}The complete history of one SKU: every order, what was printed, dispatched and wasted, and what is still owed.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .sh-search { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+    .sh-search input[type=text] { min-width: 320px; flex: 1 1 320px; }
+    .sh-title { font-size: 20px; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
+    .sh-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
+    .sh-chip { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 12px; color: #334155; }
+    .sh-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-bottom: 16px; }
+    .sh-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; }
+    .sh-card-label { font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #64748b; font-weight: 700; }
+    .sh-card-value { font-size: 22px; font-weight: 700; color: #0f172a; margin-top: 4px; font-variant-numeric: tabular-nums; }
+    .sh-card-sub { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .sh-card.warn .sh-card-value { color: #b45309; }
+    .sh-card.bad .sh-card-value { color: #b91c1c; }
+    .sh-num { text-align: right; font-variant-numeric: tabular-nums; }
+    .sh-link { font-weight: 600; text-decoration: none; }
+    .sh-link:hover { text-decoration: underline; }
+    .sh-badge { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; background: #e2e8f0; color: #334155; white-space: nowrap; }
+    .sh-badge.fin { background: #dcfce7; color: #166534; }
+    .sh-badge.tent { background: #fef3c7; color: #92400e; }
+    .sh-badge.cancel { background: #fee2e2; color: #991b1b; }
+    .sh-exports { display: flex; gap: 8px; margin: 4px 0 12px; flex-wrap: wrap; }
+    .sh-note { font-size: 12px; color: #64748b; }
+    .sh-section-title { margin: 22px 0 8px; font-size: 15px; font-weight: 700; color: #0f172a; }
+    .sh-match-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
+    .sh-match-list a { font-weight: 600; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" class="sh-search">
+            <input type="text" name="sku" value="{{ data.query }}" class="erp-input" placeholder="Type a SKU (or part of it) and press Search" autofocus>
+            <button type="submit" class="erp-btn erp-btn-primary">Search</button>
+            {% if data.query %}<a href="{% url 'reports:detail' 'sku-history' %}" class="erp-btn erp-btn-secondary">Clear</a>{% endif %}
+        </form>
+
+        {% if not data.query %}
+            <p class="sh-note" style="margin-top:12px;">Search by SKU code or any part of it. You get the full order history, the job card behind every order, totals for what was ordered, dispatched and wasted, and the repeat-order pattern for planning the next run.</p>
+        {% elif data.matches %}
+            <p class="sh-note" style="margin-top:12px;">{{ data.matches|length }} SKUs match "{{ data.query }}". Pick one:</p>
+            <div class="sh-match-list">
+                {% for match in data.matches %}
+                    <a href="?sku={{ match|urlencode }}">{{ match }}</a>
+                {% endfor %}
+            </div>
+        {% elif not data.sku %}
+            <p class="sh-note" style="margin-top:12px;">No SKU matches "{{ data.query }}".</p>
+        {% endif %}
+    </section>
+
+    {% if data.sku %}
+    <section class="erp-section-shell">
+        <h2 class="sh-title">{{ data.sku }}</h2>
+        {% if data.master %}
+        <div class="sh-chips">
+            {% if data.master.job_name %}<span class="sh-chip">{{ data.master.job_name }}</span>{% endif %}
+            {% if data.master.product_type %}<span class="sh-chip">Type: {{ data.master.product_type }}</span>{% endif %}
+            {% if data.master.material %}<span class="sh-chip">Material: {{ data.master.material }}</span>{% endif %}
+            {% if data.master.color_spec %}<span class="sh-chip">Colours: {{ data.master.color_spec }}</span>{% endif %}
+            {% if data.master.application %}<span class="sh-chip">{{ data.master.application }}</span>{% endif %}
+            {% if data.master.machine %}<span class="sh-chip">Machine: {{ data.master.machine }}</span>{% endif %}
+        </div>
+        {% endif %}
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="sh-grid">
+            <div class="sh-card">
+                <div class="sh-card-label">Orders (job cards)</div>
+                <div class="sh-card-value">{{ data.summary.jobs }}</div>
+                <div class="sh-card-sub">{{ data.summary.finalized_jobs }} finalized · {{ data.summary.open_jobs }} open{% if data.summary.cancelled %} · {{ data.summary.cancelled }} cancelled{% endif %}</div>
+            </div>
+            <div class="sh-card">
+                <div class="sh-card-label">Total order received</div>
+                <div class="sh-card-value">{{ data.summary.ordered_pcs|intcomma }}</div>
+                <div class="sh-card-sub">pcs</div>
+            </div>
+            <div class="sh-card">
+                <div class="sh-card-label">Printed</div>
+                <div class="sh-card-value">{{ data.summary.printed_pcs|intcomma }}</div>
+                <div class="sh-card-sub">{{ data.summary.packed_pcs|intcomma }} packed</div>
+            </div>
+            <div class="sh-card">
+                <div class="sh-card-label">Total dispatched</div>
+                <div class="sh-card-value">{{ data.summary.dispatched_pcs|intcomma }}</div>
+                <div class="sh-card-sub">{{ data.summary.fulfilment_pct }}% of ordered</div>
+            </div>
+            <div class="sh-card {% if data.summary.pending_pcs %}warn{% endif %}">
+                <div class="sh-card-label">Still owed</div>
+                <div class="sh-card-value">{{ data.summary.pending_pcs|intcomma }}</div>
+                <div class="sh-card-sub">pcs on open jobs{% if data.summary.stock_pcs %} · {{ data.summary.stock_pcs|intcomma }} in stock{% endif %}</div>
+            </div>
+            <div class="sh-card {% if data.summary.finalized_wastage_pct > 5 %}bad{% endif %}">
+                <div class="sh-card-label">Total wastage</div>
+                <div class="sh-card-value">{{ data.summary.finalized_wastage_pct }}%</div>
+                <div class="sh-card-sub">{{ data.summary.finalized_wastage_pcs|intcomma }} pcs on finalized jobs</div>
+            </div>
+            <div class="sh-card">
+                <div class="sh-card-label">Process wastage (all jobs)</div>
+                <div class="sh-card-value">{{ data.summary.process_waste_pcs|intcomma }}</div>
+                <div class="sh-card-sub">{{ data.summary.printing_waste_pcs|intcomma }} printing · {{ data.summary.sorting_waste_pcs|intcomma }} sorting</div>
+            </div>
+        </div>
+
+        <div class="sh-section-title" style="margin-top:0;">For planning the next order</div>
+        <div class="sh-grid">
+            <div class="sh-card">
+                <div class="sh-card-label">Last order</div>
+                <div class="sh-card-value" style="font-size:18px;">{{ data.insights.last_order|default:'—' }}</div>
+                <div class="sh-card-sub">{% if data.insights.days_since_last_order != '' %}{{ data.insights.days_since_last_order }} days ago{% endif %}{% if data.insights.first_order %} · first order {{ data.insights.first_order }}{% endif %}</div>
+            </div>
+            <div class="sh-card">
+                <div class="sh-card-label">Orders come every</div>
+                <div class="sh-card-value">{% if data.insights.avg_days_between_orders != '' %}{{ data.insights.avg_days_between_orders }} days{% else %}—{% endif %}</div>
+                <div class="sh-card-sub">on average</div>
+            </div>
+            <div class="sh-card">
+                <div class="sh-card-label">Typical order</div>
+                <div class="sh-card-value">{{ data.insights.avg_order_pcs|intcomma }}</div>
+                <div class="sh-card-sub">pcs · smallest {{ data.insights.min_order_pcs|intcomma }} · largest {{ data.insights.max_order_pcs|intcomma }}</div>
+            </div>
+            <div class="sh-card">
+                <div class="sh-card-label">Order to last dispatch</div>
+                <div class="sh-card-value">{% if data.insights.avg_lead_time_days != '' %}{{ data.insights.avg_lead_time_days }} days{% else %}—{% endif %}</div>
+                <div class="sh-card-sub">average on finalized jobs</div>
+            </div>
+            <div class="sh-card">
+                <div class="sh-card-label">Plan wastage allowance</div>
+                <div class="sh-card-value">{% if data.insights.avg_wastage_pct != '' %}{{ data.insights.avg_wastage_pct }}%{% else %}—{% endif %}</div>
+                <div class="sh-card-sub">average wastage actually seen</div>
+            </div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="sh-section-title" style="margin-top:0;">Job card by job card</div>
+        <p class="sh-note">Newest first. Click a job card to open its full detail in a new tab. All quantities are in pieces. Wastage uses the same definition as the Wastage Report (printing waste + sorting waste + dispatch gap on finalized jobs).</p>
+        <div class="sh-exports">
+            <a class="erp-btn erp-btn-secondary sm" href="{% url 'reports:reports_api:export_report' 'sku-history' %}?type=xlsx&amp;sku={{ data.sku|urlencode }}">Export Excel</a>
+            <a class="erp-btn erp-btn-secondary sm" href="{% url 'reports:reports_api:export_report' 'sku-history' %}?type=pdf&amp;sku={{ data.sku|urlencode }}">Export PDF</a>
+            <a class="erp-btn erp-btn-secondary sm" href="{% url 'reports:reports_api:export_report' 'sku-history' %}?type=csv&amp;sku={{ data.sku|urlencode }}">Export CSV</a>
+        </div>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        <th>Job Card</th><th>PO/WO</th><th>Order Date</th><th>Status</th><th>Machine</th>
+                        <th class="sh-num">Ordered</th><th class="sh-num">Printed</th><th class="sh-num">Printing Waste</th>
+                        <th class="sh-num">Packed</th><th class="sh-num">Sorting Waste</th><th class="sh-num">Dispatched</th>
+                        <th class="sh-num">Still Owed</th><th class="sh-num">Dispatch Gap</th>
+                        <th class="sh-num">Total Wastage</th><th class="sh-num">Wastage %</th>
+                        <th>Last Dispatch</th><th class="sh-num">Days</th><th>Note</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in data.rows %}
+                    <tr>
+                        <td>{% if row.url %}<a class="sh-link" href="{{ row.url }}" target="_blank" rel="noopener" title="Open {{ row.jc_no }} in a new tab">{{ row.jc_no }}</a>{% else %}{{ row.jc_no }}{% endif %}</td>
+                        <td>{{ row.po_number|default:'—' }}</td>
+                        <td>{{ row.order_date|default:'—' }}</td>
+                        <td><span class="sh-badge {% if row.status == 'Cancelled' %}cancel{% endif %}">{{ row.status }}</span>{% if row.wastage_status %} <span class="sh-badge {% if row.wastage_status == 'Finalized' %}fin{% else %}tent{% endif %}">{{ row.wastage_status }}</span>{% endif %}</td>
+                        <td>{{ row.machine|default:'—' }}</td>
+                        <td class="sh-num">{{ row.order_qty_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.printed_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.printing_waste_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.packed_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.sorting_waste_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.dispatched_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.pending_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.dispatch_gap_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.total_wastage_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.wastage_pct }}%</td>
+                        <td>{{ row.last_dispatch|default:'—' }}</td>
+                        <td class="sh-num">{% if row.lead_time_days != '' %}{{ row.lead_time_days }}{% else %}—{% endif %}</td>
+                        <td class="sh-note">{{ row.note }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="18">No job card or planning entry found for this SKU.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="sh-section-title" style="margin-top:0;">By order month</div>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Order Month</th><th class="sh-num">Jobs</th><th class="sh-num">Ordered (pcs)</th><th class="sh-num">Dispatched (pcs)</th><th class="sh-num">Wastage (pcs)</th></tr></thead>
+                <tbody>
+                    {% for row in data.monthly_rows %}
+                    <tr><td>{{ row.month }}</td><td class="sh-num">{{ row.jobs }}</td><td class="sh-num">{{ row.ordered_pcs|intcomma }}</td><td class="sh-num">{{ row.dispatched_pcs|intcomma }}</td><td class="sh-num">{{ row.wastage_pcs|intcomma }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="5">No orders yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="sh-section-title" style="margin-top:0;">Dispatch history</div>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Dispatch Date</th><th>DC No</th><th>Job Card</th><th>PO/WO</th><th class="sh-num">Qty (job unit)</th><th class="sh-num">Qty (pcs)</th></tr></thead>
+                <tbody>
+                    {% for row in data.dispatch_rows %}
+                    <tr>
+                        <td>{{ row.dispatch_date }}</td>
+                        <td>{{ row.dc_no }}</td>
+                        <td>{% if row.url %}<a class="sh-link" href="{{ row.url }}" target="_blank" rel="noopener">{{ row.jc_no }}</a>{% else %}{{ row.jc_no }}{% endif %}</td>
+                        <td>{{ row.po_number|default:'—' }}</td>
+                        <td class="sh-num">{{ row.dispatch_qty|intcomma }}</td>
+                        <td class="sh-num">{{ row.dispatch_pcs|intcomma }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6">Nothing dispatched yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+    {% endif %}
+</div>
+{% endblock %}

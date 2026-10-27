@@ -73,6 +73,9 @@ def _report_context_parts(payload: dict) -> list[str]:
     machine_filter = (filters.get('machine') or '').strip()
     if machine_filter:
         parts.append(machine_filter)
+    sku = (filters.get('sku') or '').strip()
+    if sku and (payload.get('report') or {}).get('slug') == 'sku-history':
+        parts.append(sku)
     kpi = (filters.get('kpi') or '').strip()
     if kpi:
         parts.append(_KPI_LABELS.get(kpi, kpi.replace('_', ' ').title()))

@@ -103,6 +103,12 @@ REPORT_CATALOG = [
         'focus': 'Planning',
     },
     {
+        'key': 'sku-history',
+        'title': 'SKU History',
+        'description': 'Search a SKU for its complete history: orders received, printed, dispatched, wastage and what is still owed, job card by job card.',
+        'focus': 'Planning',
+    },
+    {
         'key': 'plates-pending',
         'title': 'Plates Pending',
         'description': 'Open plate requests (draft / sent to vendor / received) with vendor name and days pending, so overdue plates get chased.',
@@ -2802,6 +2808,12 @@ def build_stock_report_context(request):
     }
 
 
+def _build_sku_history_context(request):
+    from reports.sku_history import build_sku_history_context
+
+    return build_sku_history_context(request)
+
+
 PLATES_PENDING_HEADERS = ['job_card_no', 'po_number', 'sku', 'job_name', 'status', 'vendor', 'machine', 'requested_on', 'days_pending']
 PLATES_PENDING_HEADER_LABELS = {
     'job_card_no': 'Job Card', 'po_number': 'PO/WO', 'sku': 'SKU', 'job_name': 'Job Name',
@@ -2888,6 +2900,7 @@ def build_report_context(report_type, request):
         'pending-work': build_pending_work_context,
         'stock-report': build_stock_report_context,
         'plates-pending': build_plates_pending_context,
+        'sku-history': _build_sku_history_context,
     }
     builder = builders.get(report_type)
     if builder is None:

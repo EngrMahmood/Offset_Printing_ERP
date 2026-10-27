@@ -15,6 +15,7 @@ from reports.services import (
     build_stock_report_context,
     build_wastage_report_context,
 )
+from reports.sku_history import build_sku_history_context
 from reports.report_registry.metadata import ReportDefinition
 from reports.report_registry.registry import registry
 
@@ -61,6 +62,10 @@ def _pending_work_executor(request, filters):
 
 def _stock_report_executor(request, filters):
     return build_stock_report_context(request)
+
+
+def _sku_history_executor(request, filters):
+    return build_sku_history_context(request)
 
 
 def _plates_pending_executor(request, filters):
@@ -277,6 +282,25 @@ registry.register(
         category='planning',
         navigation_group='operations',
         executor=_stock_report_executor,
+    )
+)
+
+registry.register(
+    ReportDefinition(
+        slug='sku-history',
+        title='SKU History',
+        description='Search a SKU for its complete history: orders received, printed, dispatched, wastage and what is still owed, job card by job card.',
+        department='planning',
+        permissions=('core.view_reports',),
+        filters=('sku',),
+        supported_exports=('csv', 'xlsx', 'pdf'),
+        supported_charts=(),
+        drilldown_support=False,
+        cache_timeout=60,
+        icon='fa-clock-rotate-left',
+        category='planning',
+        navigation_group='operations',
+        executor=_sku_history_executor,
     )
 )
 
