@@ -1,0 +1,184 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}Hourly Report — Reports{% endblock %}
+{% block header_title %}Hourly Report{% endblock %}
+{% block header_subtitle %}{{ data.date_label }} · {{ data.time_label }} · {{ data.shift_label }}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .hr-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; }
+    .hr-actions .erp-btn { min-height: 46px; padding: 0 18px; font-size: 15px; }
+    .hr-share { background: #16a34a; border-color: #16a34a; color: #fff; font-weight: 700; }
+    .hr-share:hover { background: #15803d; }
+    .hr-status { min-height: 22px; font-size: 13px; color: #475569; margin-bottom: 10px; }
+    .hr-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 14px; margin-bottom: 14px; }
+    .hr-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; }
+    .hr-card h3 { margin: 0; padding: 10px 14px; font-size: 14px; color: #fff; letter-spacing: .03em; }
+    .hr-card.printing h3 { background: #2563eb; } .hr-card.packing h3 { background: #16a34a; }
+    .hr-card.dispatch h3 { background: #ea580c; } .hr-card.planning h3 { background: #7c3aed; }
+    .hr-body { padding: 10px 14px 12px; }
+    .hr-row { display: flex; justify-content: space-between; gap: 12px; padding: 5px 0; font-size: 14px; border-bottom: 1px solid #f1f5f9; }
+    .hr-row:last-child { border-bottom: 0; }
+    .hr-row b { font-variant-numeric: tabular-nums; }
+    .hr-sub { font-size: 12px; color: #64748b; }
+    .hr-big { font-size: 26px; font-weight: 700; color: #0f172a; font-variant-numeric: tabular-nums; }
+    .hr-delta { background: #f1f5f9; border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-bottom: 14px; }
+    .hr-preview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+    @media (min-width: 900px) { .hr-preview { grid-template-columns: 1fr 1fr; } }
+    .hr-preview img { max-width: 100%; border: 1px solid #e2e8f0; border-radius: 10px; }
+    .hr-text { width: 100%; min-height: 360px; font-family: ui-monospace, Consolas, monospace; font-size: 13px; border: 1px solid #e2e8f0; border-radius: 10px; padding: 10px; background: #f8fafc; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    {% csrf_token %}
+    <section class="erp-section-shell">
+        <div class="hr-actions">
+            <button type="button" class="erp-btn hr-share" id="hr-share">Share on WhatsApp</button>
+            <button type="button" class="erp-btn erp-btn-secondary" id="hr-copy">Copy text</button>
+            <a class="erp-btn erp-btn-secondary" id="hr-download" href="{% url 'reports:hourly_report_image' %}?by=1" download="hourly-report.png">Download image</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'reports:hourly_report' %}">Refresh</a>
+        </div>
+        <div class="hr-status" id="hr-status">The picture and the text below are what WhatsApp will receive. On a phone, Share sends both; on a computer it opens the text and you attach the downloaded picture.</div>
+
+        {% if data.delta %}
+        <div class="hr-delta"><b>Since last report ({{ data.delta.since }}):</b>
+            impressions {{ data.delta.impressions|intcomma }} · packed {{ data.delta.packed_pcs|intcomma }} · dispatched {{ data.delta.dispatched_pcs|intcomma }} · released {{ data.delta.released_jobs }}
+        </div>
+        {% endif %}
+
+        <div class="hr-grid">
+            <div class="hr-card printing">
+                <h3>PRINTING — impressions</h3>
+                <div class="hr-body">
+                    <div class="hr-row"><span>This shift</span><b class="hr-big">{{ data.printing.shift_impressions|intcomma }}</b></div>
+                    <div class="hr-row"><span>Day total (both shifts)</span><b>{{ data.printing.day_impressions|intcomma }}</b></div>
+                    {% for m in data.printing.machines %}
+                    <div class="hr-row"><span>{{ m.name }}{% if m.last_entry %} <span class="hr-sub">· last entry {{ m.last_entry }}</span>{% endif %}</span><b>{{ m.impressions|intcomma }}</b></div>
+                    {% endfor %}
+                    {% if data.printing.idle_machines %}<div class="hr-sub" style="padding-top:6px;">No entry yet: {{ data.printing.idle_machines|join:", " }}</div>{% endif %}
+                </div>
+            </div>
+            <div class="hr-card packing">
+                <h3>PACKING — pcs (logged today)</h3>
+                <div class="hr-body">
+                    <div class="hr-row"><span>Packed</span><b class="hr-big">{{ data.packing.packed_pcs|intcomma }}</b></div>
+                    <div class="hr-row"><span>Sorting waste</span><b>{{ data.packing.sorting_waste_pcs|intcomma }}</b></div>
+                    <div class="hr-sub">{{ data.packing.entries }} entr{{ data.packing.entries|pluralize:"y,ies" }} since 8 am</div>
+                </div>
+            </div>
+            <div class="hr-card dispatch">
+                <h3>DISPATCH — pcs (logged today)</h3>
+                <div class="hr-body">
+                    <div class="hr-row"><span>Dispatched</span><b class="hr-big">{{ data.dispatch.pcs|intcomma }}</b></div>
+                    <div class="hr-row"><span>Delivery challans</span><b>{{ data.dispatch.dcs }}</b></div>
+                </div>
+            </div>
+            <div class="hr-card planning">
+                <h3>PLANNING — released today</h3>
+                <div class="hr-body">
+                    <div class="hr-row"><span>Jobs released</span><b class="hr-big">{{ data.planning.released_jobs }}</b></div>
+                    {% if data.planning.released_jobs %}<div class="hr-sub">{{ data.planning.released_qty_pcs|intcomma }} pcs in total</div>{% endif %}
+                    {% for r in data.planning.released %}
+                    <div class="hr-row"><span>{{ r.jc_no }} <span class="hr-sub">{{ r.sku|truncatechars:34 }}</span></span><b>{{ r.qty_pcs|intcomma }}</b></div>
+                    {% endfor %}
+                    {% if data.planning.more %}<div class="hr-sub">…and {{ data.planning.more }} more</div>{% endif %}
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="hr-preview">
+            <div>
+                <div class="hr-sub" style="margin-bottom:6px;">Picture that will be shared</div>
+                <img src="{% url 'reports:hourly_report_image' %}?t={{ data.generated_at|urlencode }}" alt="Hourly report picture">
+            </div>
+            <div>
+                <div class="hr-sub" style="margin-bottom:6px;">Message text</div>
+                <textarea class="hr-text" id="hr-text" readonly>{{ data.text }}</textarea>
+            </div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3 style="margin:0 0 8px;font-size:15px;">Shared today</h3>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Time</th><th>Shared by</th><th class="text-right">Day impressions</th><th class="text-right">Packed (pcs)</th><th class="text-right">Dispatched (pcs)</th></tr></thead>
+                <tbody>
+                    {% for h in history %}
+                    <tr><td>{{ h.time }}</td><td>{{ h.by|default:'—' }}</td><td class="text-right">{{ h.impressions|intcomma }}</td><td class="text-right">{{ h.packed|intcomma }}</td><td class="text-right">{{ h.dispatched|intcomma }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="5">Nothing shared yet today.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var shareUrl = "{% url 'reports:hourly_report_share' %}";
+    var status = document.getElementById('hr-status');
+    var token = (document.querySelector('input[name=csrfmiddlewaretoken]') || {}).value || '';
+
+    function say(message) { status.textContent = message; }
+
+    function record(channel) {
+        return fetch(shareUrl, {
+            method: 'POST', credentials: 'same-origin',
+            headers: {'X-CSRFToken': token, 'Content-Type': 'application/x-www-form-urlencoded'},
+            body: 'channel=' + encodeURIComponent(channel)
+        }).then(function (r) { return r.json(); });
+    }
+
+    document.getElementById('hr-share').addEventListener('click', function () {
+        say('Preparing the report…');
+        record('whatsapp').then(function (data) {
+            if (!data.ok) { say('Could not prepare the report. Refresh and try again.'); return; }
+            return fetch(data.image_url, {credentials: 'same-origin'})
+                .then(function (r) { return r.blob(); })
+                .then(function (blob) {
+                    var file = new File([blob], 'hourly-report.png', {type: 'image/png'});
+                    if (navigator.canShare && navigator.canShare({files: [file]})) {
+                        return navigator.share({files: [file], text: data.text}).then(function () {
+                            say('Shared. Reload the page for the next hourly report.');
+                        });
+                    }
+                    window.open('https://wa.me/?text=' + encodeURIComponent(data.text), '_blank');
+                    say('WhatsApp opened with the text. Tap "Download image" and attach the picture too.');
+                });
+        }).catch(function (err) {
+            if (err && err.name === 'AbortError') { say('Share cancelled.'); return; }
+            say('Sharing failed. Use "Copy text" and "Download image" instead.');
+        });
+    });
+
+    function legacyCopy(text) {
+        var box = document.getElementById('hr-text');
+        box.value = text; box.focus(); box.select();
+        try { return document.execCommand('copy'); } catch (e) { return false; }
+    }
+
+    document.getElementById('hr-copy').addEventListener('click', function () {
+        record('copy').then(function (data) {
+            if (!data.ok) { say('Could not prepare the report.'); return; }
+            var done = function () { say('Text copied. Paste it into the WhatsApp group.'); };
+            var fallback = function () {
+                if (legacyCopy(data.text)) { done(); } else { say('Copy failed. Select the message text and copy it by hand.'); }
+            };
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(data.text).then(done, fallback);
+            }
+            fallback();
+        }).catch(function () { say('Copy failed. Select the message text and copy it by hand.'); });
+    });
+})();
+</script>
+{% endblock %}

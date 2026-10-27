@@ -15,6 +15,7 @@ from reports.services import (
     build_stock_report_context,
     build_wastage_report_context,
 )
+from reports.hourly_report import build_hourly_report
 from reports.sku_history import build_sku_history_context
 from reports.report_registry.metadata import ReportDefinition
 from reports.report_registry.registry import registry
@@ -66,6 +67,10 @@ def _stock_report_executor(request, filters):
 
 def _sku_history_executor(request, filters):
     return build_sku_history_context(request)
+
+
+def _hourly_report_executor(request, filters):
+    return build_hourly_report()
 
 
 def _plates_pending_executor(request, filters):
@@ -301,6 +306,25 @@ registry.register(
         category='planning',
         navigation_group='operations',
         executor=_sku_history_executor,
+    )
+)
+
+registry.register(
+    ReportDefinition(
+        slug='hourly-report',
+        title='Hourly Report',
+        description='Live printing (impressions by machine), packing, dispatch and release snapshot for the shift supervisor, shared to WhatsApp as text and an image.',
+        department='production',
+        permissions=('core.view_reports',),
+        filters=(),
+        supported_exports=(),
+        supported_charts=(),
+        drilldown_support=False,
+        cache_timeout=30,
+        icon='fa-clock',
+        category='execution',
+        navigation_group='operations',
+        executor=_hourly_report_executor,
     )
 )
 

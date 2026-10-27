@@ -270,6 +270,10 @@
            class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'stock-report' %}is-active{% endif %}">
             Stock Report
         </a>
+        <a href="{% url 'reports:hourly_report' %}"
+           class="erp-subnav-link {% if url == 'hourly_report' %}is-active{% endif %}">
+            Hourly Report
+        </a>
         <a href="{% url 'reports:detail' 'sku-history' %}"
            class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'sku-history' %}is-active{% endif %}">
             SKU History

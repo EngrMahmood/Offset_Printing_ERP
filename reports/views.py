@@ -2,7 +2,7 @@ import logging
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpResponseForbidden, JsonResponse
+from django.http import Http404, HttpResponse, HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -24,6 +24,80 @@ def sku_suggest(request):
     if report is None or not _has_access(request, report.permissions):
         return JsonResponse({'results': []}, status=403)
     return JsonResponse({'results': suggest_skus(request.GET.get('q', ''))})
+
+
+def _hourly_report_allowed(request):
+    from reports.report_engine.engine import _has_access
+
+    report = registry.get('hourly-report')
+    return report is not None and _has_access(request, report.permissions)
+
+
+def hourly_report_page(request):
+    """Hourly Report: live snapshot of printing, packing, dispatch and planning, with a WhatsApp share button."""
+    from django.utils import timezone
+
+    from reports.hourly_report import build_hourly_report
+    from reports.models import HourlyReportSnapshot
+
+    if not request.user.is_authenticated:
+        return redirect('login')
+    if not _hourly_report_allowed(request):
+        return HttpResponseForbidden("You don't have access to this report.")
+    report = build_hourly_report()
+    history = [
+        {
+            'time': timezone.localtime(s.taken_at).strftime('%H:%M'),
+            'by': (s.shared_by.get_full_name() or s.shared_by.username) if s.shared_by_id else '',
+            'impressions': (s.payload.get('totals') or {}).get('day_impressions', 0),
+            'packed': (s.payload.get('totals') or {}).get('packed_pcs', 0),
+            'dispatched': (s.payload.get('totals') or {}).get('dispatched_pcs', 0),
+        }
+        for s in HourlyReportSnapshot.objects.filter(business_date=report['business_date']).select_related('shared_by')[:12]
+    ]
+    return render(request, 'reports/hourly_report_page.html', {
+        'report': registry.get('hourly-report'), 'data': report, 'history': history,
+    })
+
+
+def hourly_report_image(request):
+    """PNG of the current Hourly Report, for sharing next to the text."""
+    from reports.hourly_report import build_hourly_report, render_image
+
+    if not request.user.is_authenticated:
+        return redirect('login')
+    if not _hourly_report_allowed(request):
+        return HttpResponseForbidden("You don't have access to this report.")
+    shared_by = (request.user.get_full_name() or request.user.username) if request.GET.get('by') else ''
+    response = HttpResponse(render_image(build_hourly_report(), shared_by=shared_by), content_type='image/png')
+    response['Cache-Control'] = 'no-store'
+    response['Content-Disposition'] = 'inline; filename="hourly-report.png"'
+    return response
+
+
+@require_POST
+def hourly_report_share(request):
+    """Record that the supervisor is sharing the report now and hand back exactly what to send:
+    the figures are rebuilt here, so what is logged is what goes out."""
+    from reports.hourly_report import build_hourly_report, build_text
+    from reports.models import HourlyReportSnapshot
+
+    if not request.user.is_authenticated:
+        return JsonResponse({'ok': False}, status=401)
+    if not _hourly_report_allowed(request):
+        return JsonResponse({'ok': False}, status=403)
+    report = build_hourly_report()
+    name = request.user.get_full_name() or request.user.username
+    text = build_text(report, shared_by=name)
+    snapshot = HourlyReportSnapshot.objects.create(
+        business_date=report['business_date'], shift=report['shift'], shared_by=request.user,
+        channel=(request.POST.get('channel') or 'whatsapp')[:20],
+        payload={'totals': report['totals'], 'text': text},
+    )
+    return JsonResponse({
+        'ok': True, 'snapshot_id': snapshot.id, 'text': text,
+        'image_url': reverse('reports:hourly_report_image') + '?by=1',
+    })
 
 
 def reports_home(request):

@@ -127,3 +127,25 @@ class KPIActionNote(models.Model):
 
     def __str__(self):
         return f'{self.kpi_slug} {self.period_key}'
+
+
+class HourlyReportSnapshot(models.Model):
+    """One Hourly Report as it was shared: the figures at that moment, who shared it and when.
+
+    The next report is compared with the latest snapshot of the same business day to show what
+    changed "since the last report", and the list doubles as an audit trail of what went out."""
+
+    taken_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    business_date = models.DateField(db_index=True)
+    shift = models.CharField(max_length=1)
+    shared_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.SET_NULL, null=True, blank=True, related_name='hourly_reports_shared',
+    )
+    channel = models.CharField(max_length=20, default='whatsapp')
+    payload = models.JSONField(default=dict)
+
+    class Meta:
+        ordering = ['-taken_at']
+
+    def __str__(self):
+        return f'Hourly report {self.business_date} shift {self.shift} at {self.taken_at:%H:%M}'

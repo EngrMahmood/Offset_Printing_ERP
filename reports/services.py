@@ -104,6 +104,12 @@ REPORT_CATALOG = [
         'focus': 'Planning',
     },
     {
+        'key': 'hourly-report',
+        'title': 'Hourly Report',
+        'description': 'Live printing (impressions by machine), packing, dispatch and release snapshot for the shift supervisor, shared to WhatsApp.',
+        'focus': 'Execution',
+    },
+    {
         'key': 'sku-history',
         'title': 'SKU History',
         'description': 'Search a SKU for its complete history: orders received, printed, dispatched, wastage and what is still owed, job card by job card.',
