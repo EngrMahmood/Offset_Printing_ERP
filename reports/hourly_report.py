@@ -30,6 +30,7 @@ SHIFT_A_START = datetime.time(8, 0)
 SHIFT_B_START = datetime.time(20, 0)
 SHIFT_LABELS = {'A': 'Shift A (8 am - 8 pm)', 'B': 'Shift B (8 pm - 8 am)'}
 RELEASED_LIST_LIMIT = 10
+PRINTING_MACHINE_TYPES = ('offset_printing', 'digital_printing')
 
 
 def shift_for(now: datetime.datetime) -> tuple[str, datetime.date]:
@@ -85,8 +86,16 @@ def build_hourly_report(now: datetime.datetime | None = None) -> dict:
     ]
     machines.sort(key=lambda m: (-m['impressions'], m['name']))
     active_names = set(shift_rows)
+    # "No entry yet" is only meaningful for machines that print: offset/digital presses, plus any
+    # machine that has printed in the last two weeks. Cutting, flexo and finishing machines are left out.
+    recently_printed = set(
+        Production.objects.filter(
+            entry_type='printing', is_active=True, date__gte=business_date - datetime.timedelta(days=14),
+        ).values_list('machine__name', flat=True)
+    )
     idle_machines = sorted(
-        m.name for m in offset_machines(Machine.objects.filter(is_active=True)) if m.name not in active_names
+        m.name for m in offset_machines(Machine.objects.filter(is_active=True))
+        if m.name not in active_names and (m.machine_type in PRINTING_MACHINE_TYPES or m.name in recently_printed)
     )
 
     # --- Packing and dispatch, in pieces, as logged since 8 am.

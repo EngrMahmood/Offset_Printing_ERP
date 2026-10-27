@@ -31,7 +31,8 @@ class HourlyReportTests(TestCase):
         self.user = get_user_model().objects.create_user('supervisor', password='pw12345678', first_name='Sam', last_name='Super')
         self.machine_a, _ = Machine.objects.get_or_create(name='GTO 1A')
         self.machine_b, _ = Machine.objects.get_or_create(name='GTO 1B')
-        Machine.objects.get_or_create(name='GTO 2A')                                 # never used in the fixture: reported as idle
+        Machine.objects.get_or_create(name='GTO 2A', defaults={'machine_type': 'offset_printing'})   # never used in the fixture: reported as idle
+        Machine.objects.get_or_create(name='Lamination', defaults={'machine_type': 'other'})         # not a press: never listed as idle
         self.now = local(2026, 10, 27, 14, 0)                                        # Shift A of the 27th
         self.date = datetime.date(2026, 10, 27)
         self.card = make_card(make_job('HR1', 5000, sku='SKU-HOURLY-ONE'))
@@ -58,6 +59,7 @@ class HourlyReportTests(TestCase):
         self.assertEqual([(m['name'], m['impressions']) for m in printing['machines']], [('GTO 1A', 1500), ('GTO 1B', 300)])
         self.assertIn('GTO 2A', printing['idle_machines'])
         self.assertNotIn('GTO 1A', printing['idle_machines'])
+        self.assertNotIn('Lamination', printing['idle_machines'])
 
     def test_combined_layout_split_entries_do_not_count_impressions_twice(self):
         lead = self.printing(self.machine_a, 1000)
