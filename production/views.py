@@ -29,6 +29,7 @@ from core.models import (
     Sorter,
 )
 from core.merge_sheets import standalone_sheets_expr
+from core.machine_scope import offset_machines
 from core.views import permission_required
 from core.services import (
     add_unique_message,
@@ -518,7 +519,7 @@ def printing_production_entry(request):
         else:
             prefill_job_card_id = ''
 
-    machines = Machine.objects.filter(is_active=True)
+    machines = offset_machines(Machine.objects.filter(is_active=True))
     operators = Operator.objects.all()
     supervisors = Supervisor.objects.filter(is_active=True).order_by('name')
 
@@ -812,7 +813,7 @@ def production_records(request):
             query or shift or machine_filter or performance_status
             or date_from_raw or date_to_raw or logged_from_raw or logged_to_raw
         ),
-        'machines': Machine.objects.filter(is_active=True).order_by('name'),
+        'machines': offset_machines(Machine.objects.filter(is_active=True)).order_by('name'),
         'q': query,
         'shift': shift,
         'machine': machine_filter,
@@ -1144,7 +1145,7 @@ def production_wip(request):
 
     statuses = ProductionWipStatus.objects.filter(is_active=True).order_by('name')
     from core.models import Machine
-    machines = Machine.objects.filter(is_active=True).order_by('name')
+    machines = offset_machines(Machine.objects.filter(is_active=True)).order_by('name')
 
     params = request.GET.copy()
     params.pop('export', None)

@@ -19,6 +19,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from core.merge_sheets import piece_ups_expr, standalone_sheets_expr
+from core.machine_scope import offset_machines
 from core.models import (
     JOB_CARD_DISPATCHABLE_STATUSES,
     ChangeLog,
@@ -675,7 +676,7 @@ def build_machine_planning_context(request):
         .order_by('-total_sheet_qty', '-job_count')
     )
 
-    all_active_machines = list(Machine.objects.filter(is_active=True))
+    all_active_machines = list(offset_machines(Machine.objects.filter(is_active=True)))
     machine_map = {machine.name.lower(): machine for machine in all_active_machines}
 
     from core.machine_routing import build_pools, route_job
@@ -1154,7 +1155,7 @@ def build_machine_planning_context(request):
         'unassigned_jobs': unassigned_jobs,
         'urgent_jobs': urgent_jobs,
         'status_choices': PlanningJob._meta.get_field('status').choices,
-        'machine_choices': Machine.objects.filter(is_active=True).order_by('name').values_list('name', flat=True),
+        'machine_choices': offset_machines(Machine.objects.filter(is_active=True)).order_by('name').values_list('name', flat=True),
         'priority_choices': PlanningJob.PRIORITY_CHOICES,
         'machine_reports': machine_reports,
         'headers': headers,
@@ -1335,7 +1336,7 @@ def build_production_insights_context(request):
         )
         .order_by('-output_sheets', '-run_count')
     )
-    machine_map = {machine.name.lower(): machine for machine in Machine.objects.filter(is_active=True)}
+    machine_map = {machine.name.lower(): machine for machine in offset_machines(Machine.objects.filter(is_active=True))}
     for row in by_machine:
         machine_name = (row['machine__name'] or '').strip()
         machine = machine_map.get(machine_name.lower()) if machine_name else None
@@ -1380,7 +1381,7 @@ def build_production_insights_context(request):
         'waste_by_reason': waste_by_reason,
         'downtime_by_category': downtime_by_category,
         'top_runs': top_runs,
-        'machine_choices': Machine.objects.filter(is_active=True).order_by('name').values_list('name', flat=True),
+        'machine_choices': offset_machines(Machine.objects.filter(is_active=True)).order_by('name').values_list('name', flat=True),
         'shift_choices': Production._meta.get_field('shift').choices,
     }
 
@@ -1874,7 +1875,7 @@ def build_daily_production_context(request):
         'date_to': date_to,
         'machine_filter': machine_filter,
         'machines': list(
-            Machine.objects.filter(is_active=True).values_list('name', flat=True).order_by('name')
+            offset_machines(Machine.objects.filter(is_active=True)).values_list('name', flat=True).order_by('name')
         ),
     }
 

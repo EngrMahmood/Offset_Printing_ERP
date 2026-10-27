@@ -1,16 +1,30 @@
 {% extends 'theme/base.html' %}
-{% block title %}Flexo{% endblock %}
-{% block header_title %}Flexo Printing{% endblock %}
-{% block header_subtitle %}Planning and Job Cards for FL (labels) and SATIN (ribbon) printing.{% endblock %}
+{% block title %}Flexo Planning{% endblock %}
+{% block header_title %}Flexo Planning{% endblock %}
+{% block header_subtitle %}Order and dispatch in the SKU's unit (rolls or pcs), print in meters.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'flexo:po_upload' %}" class="erp-btn erp-btn-primary">Upload PO / WO</a>
+    <a href="{% url 'flexo:manual_po_entry' %}" class="erp-btn erp-btn-secondary">Manual Entry</a>
+{% endblock %}
 
 {% block content %}
 <div class="erp-page-stack">
     <section class="erp-section-shell">
-        <div style="display:flex; gap:16px; flex-wrap:wrap;">
-            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:planning_list' family='fl' %}">FL Planning ({{ fl_count }})</a>
-            <a class="erp-btn erp-btn-primary" href="{% url 'flexo:planning_create' family='fl' %}">New FL Job</a>
-            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:planning_list' family='satin' %}">SATIN Planning ({{ satin_count }})</a>
-            <a class="erp-btn erp-btn-primary" href="{% url 'flexo:planning_create' family='satin' %}">New SATIN Job</a>
+        <h3>Job pipeline</h3>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:8px;">
+            {% for label, count, code in status_counts %}
+            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:jobs' %}?status={{ code }}">{{ label }} ({{ count }})</a>
+            {% endfor %}
+        </div>
+    </section>
+    <section class="erp-section-shell">
+        <h3>Shortcuts</h3>
+        <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:8px;">
+            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:jobs' %}">All Active Jobs ({{ active_count }})</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:po_inbox' %}">PO / WO Inbox</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:approval_queue' %}">Approval Queue{% if pending_requests %} ({{ pending_requests }} requests){% endif %}</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:sku_recipes' %}">SKU Master{% if sku_pending %} ({{ sku_pending }} awaiting approval){% endif %}</a>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'flexo:jobs_archived' %}">Archived Jobs</a>
         </div>
     </section>
 </div>

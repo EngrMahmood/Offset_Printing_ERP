@@ -91,6 +91,7 @@ except ImportError:
 
 from core.jc_numbering import allocate_next_jc_number
 from core.models import ChangeLog, JobCard, JOB_CARD_PLANNING_EDITABLE_STATUSES, Machine
+from core.machine_scope import offset_machines
 from core.jobcard_service import job_card_queue_queryset, execute_job_card_action
 from core.views import permission_required
 from reports.export.services import export_as_pdf, export_as_xlsx
@@ -1838,7 +1839,7 @@ def planning_job_detail(request, job_id):
     )
 
     pending_change_request = JobCardChangeRequest.objects.filter(planning_job=job, status='pending').first()
-    active_machines = Machine.objects.filter(is_active=True).order_by('name')
+    active_machines = offset_machines(Machine.objects.filter(is_active=True)).order_by('name')
 
     active_recipe = job.sku_recipe
     approved_recipe = job.approved_sku_recipe

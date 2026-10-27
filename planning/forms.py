@@ -4,6 +4,7 @@ from decimal import Decimal
 from django import forms
 
 from .models import PLANNING_QC_GATE_STATUSES, PlanningJob, PURCHASE_MATERIAL_ORIGIN_CHOICES, SkuRecipe
+from core.machine_scope import offset_machines
 
 
 def _normalize_color_spec_value(raw_value):
@@ -250,7 +251,7 @@ class SkuRecipeForm(forms.ModelForm):
             attrs={'class': 'erp-select', 'style': 'flex: 1;'},
         )
 
-        machines = Machine.objects.filter(is_active=True).order_by('name')
+        machines = offset_machines(Machine.objects.filter(is_active=True)).order_by('name')
         machine_choices = [('', 'Select Machine')] + [(m.name, m.name) for m in machines]
         current_value = _current_field_value('machine_name')
         if current_value and current_value not in [m.name for m in machines]:

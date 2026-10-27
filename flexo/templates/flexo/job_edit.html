@@ -1,0 +1,51 @@
+{% extends 'theme/base.html' %}
+{% block title %}Edit {{ job.jc_number }}{% endblock %}
+{% block header_title %}Edit {{ job.jc_number }}{% endblock %}
+{% block header_subtitle %}{{ job.sku }} &middot; spec fields come from the approved SKU master{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    {% if blockers %}
+    <section class="erp-section-shell" style="border-left:4px solid #dc2626;">
+        <strong>Before this job can go to QC:</strong>
+        <ul>{% for b in blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+    <section class="erp-section-shell">
+        <form method="post">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            <div class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:12px;">
+                {% for field in form %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label">{{ field.label }}</label>
+                    {{ field }}
+                    {% for err in field.errors %}<div style="color:#dc2626; font-size:12px;">{{ err }}</div>{% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+
+            <h3 style="margin-top:20px;">Deliveries ({{ job.unit_label }})</h3>
+            {{ formset.management_form }}
+            <table class="erp-table">
+                <thead><tr><th>#</th><th>Delivery Date</th><th>DC No.</th><th>Delivered Qty ({{ job.unit_label }})</th><th>Packing</th><th>Site#</th><th>Delete</th></tr></thead>
+                <tbody>
+                {% for f in formset %}
+                    <tr>
+                        {% for hidden in f.hidden_fields %}{{ hidden }}{% endfor %}
+                        <td>{{ f.dispatch_index }}</td><td>{{ f.delivery_date }}</td><td>{{ f.dc_no }}</td><td>{{ f.delivered_qty }}</td><td>{{ f.packing }}</td><td>{{ f.site }}</td>
+                        <td>{% if f.instance.pk %}{{ f.DELETE }}{% endif %}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+
+            <div class="erp-actions" style="margin-top:16px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Save</button>
+                {% if job.status == 'draft' %}<button type="submit" name="submit_to_qc" value="1" class="erp-btn erp-btn-secondary">Save &amp; Send to QC</button>{% endif %}
+                <a href="{% url 'flexo:job_detail' job.pk %}" class="erp-btn erp-btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

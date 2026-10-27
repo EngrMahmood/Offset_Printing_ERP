@@ -1,0 +1,74 @@
+{% extends 'theme/base.html' %}
+{% block title %}{% if recipe %}{{ recipe.sku }}{% else %}New Flexo SKU{% endif %}{% endblock %}
+{% block header_title %}{% if recipe %}SKU Master &mdash; {{ recipe.sku }}{% else %}Add Flexo SKU Master{% endif %}{% endblock %}
+{% block header_subtitle %}{% if recipe %}Status: {{ recipe.get_master_data_status_display }}{% else %}New SKUs start as Draft.{% endif %}{% endblock %}
+{% block header_actions %}<a href="{% url 'flexo:sku_recipes' %}" class="erp-btn erp-btn-secondary">SKU Master</a>{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    {% if recipe and recipe.rejection_comment and recipe.master_data_status == 'draft' %}
+    <section class="erp-section-shell" style="border-left:4px solid #f59e0b;"><strong>Sent back:</strong> {{ recipe.rejection_comment }}</section>
+    {% endif %}
+    {% if missing %}
+    <section class="erp-section-shell" style="border-left:4px solid #dc2626;">Missing required fields: {{ missing|join:', ' }}</section>
+    {% endif %}
+    {% if warnings %}
+    <section class="erp-section-shell" style="border-left:4px solid #f59e0b;">Not set yet (optional): {{ warnings|join:', ' }}</section>
+    {% endif %}
+    {% if locked %}
+    <section class="erp-section-shell" style="border-left:4px solid #2563eb;">Approved SKU masters are locked. Use <em>Reopen SKU</em> to change them.</section>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <form method="post" id="sku-form">
+            {% csrf_token %}
+            {{ form.non_field_errors }}
+            <fieldset {% if locked %}disabled{% endif %} style="border:0; padding:0;">
+            <div class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:12px;">
+                {% for field in form %}
+                <div class="erp-input-group" data-field="{{ field.name }}">
+                    <label class="erp-input-label">{{ field.label }}</label>
+                    {{ field }}
+                    {% for err in field.errors %}<div style="color:#dc2626; font-size:12px;">{{ err }}</div>{% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+            </fieldset>
+
+            <div class="erp-actions" style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap;">
+                {% if not locked %}
+                <button type="submit" class="erp-btn erp-btn-primary">Save</button>
+                {% if recipe and recipe.master_data_status == 'draft' %}
+                <button type="submit" name="action" value="submit_review" class="erp-btn erp-btn-secondary">Submit for review</button>
+                {% endif %}
+                {% if recipe and recipe.master_data_status == 'pending_review' and can_review %}
+                <button type="submit" name="action" value="review" class="erp-btn erp-btn-secondary">Mark reviewed</button>
+                {% endif %}
+                {% if recipe and recipe.master_data_status == 'reviewed' and can_review %}
+                <button type="submit" name="action" value="approve" class="erp-btn erp-btn-primary">Approve</button>
+                {% endif %}
+                {% endif %}
+            </div>
+
+            {% if recipe and recipe.master_data_status == 'pending_review' or recipe and recipe.master_data_status == 'reviewed' %}
+            <div style="margin-top:12px; display:flex; gap:8px;">
+                <input type="text" name="rejection_comment" class="erp-input" placeholder="Reason for sending back to Draft" style="max-width:360px;">
+                <button type="submit" name="action" value="back_to_draft" class="erp-btn erp-btn-secondary">Back to Draft</button>
+            </div>
+            {% endif %}
+            {% if locked %}
+            <div style="margin-top:12px; display:flex; gap:8px;">
+                <input type="text" name="rejection_comment" class="erp-input" placeholder="Reason for reopening" style="max-width:360px;">
+                <button type="submit" name="action" value="reopen_sku" class="erp-btn erp-btn-secondary">Reopen SKU</button>
+            </div>
+            {% endif %}
+            {% if recipe and not locked or recipe and is_admin %}
+            <div style="margin-top:12px; display:flex; gap:8px;">
+                <input type="text" name="archive_reason" class="erp-input" placeholder="Archive reason" style="max-width:360px;">
+                <button type="submit" name="action" value="archive" class="erp-btn erp-btn-secondary">Archive</button>
+            </div>
+            {% endif %}
+        </form>
+    </section>
+</div>
+{% endblock %}

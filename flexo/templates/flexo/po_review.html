@@ -1,0 +1,54 @@
+{% extends 'theme/base.html' %}
+{% block title %}Review {{ doc.po_number }}{% endblock %}
+{% block header_title %}Review {{ doc.po_number }}{% endblock %}
+{% block header_subtitle %}{{ payload.document_type }} &middot; {{ payload.department|default:'-' }} &middot; {{ payload.delivery_location|default:'-' }}{% endblock %}
+{% block header_actions %}<a href="{% url 'flexo:po_inbox' %}" class="erp-btn erp-btn-secondary">Inbox</a>{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:8px;">
+            <div><strong>PO date:</strong> {{ payload.po_date|default:'-' }}</div>
+            <div><strong>Approval date:</strong> {{ payload.approval_date|default:'-' }}</div>
+            <div><strong>Status:</strong> {{ doc.get_status_display }}</div>
+            <div><strong>Buyer:</strong> {{ payload.buyer_name|default:'-' }}</div>
+            <div><strong>Grand total:</strong> {{ payload.grand_total|default:'-' }}</div>
+            <div><strong>Lines:</strong> {{ rows|length }}</div>
+        </div>
+        {% if payload.extraction_warning %}<p style="color:#b45309; margin-top:8px;">{{ payload.extraction_warning }}</p>{% endif %}
+    </section>
+
+    <section class="erp-section-shell">
+        <form method="post">
+            {% csrf_token %}
+            <table class="erp-table">
+                <thead><tr><th></th><th>#</th><th>SKU</th><th>Qty</th><th>Delivery</th><th>Unit cost</th><th>Remarks</th><th>SKU master</th></tr></thead>
+                <tbody>
+                {% for r in rows %}
+                    <tr>
+                        <td>{% if r.state == 'ready' %}<input type="checkbox" name="line" value="{{ r.index }}" checked>{% endif %}</td>
+                        <td>{{ r.item.line_no }}</td>
+                        <td>{{ r.item.sku }}{% if r.item.job_name and r.item.job_name != r.item.sku %}<br><small>{{ r.item.job_name }}</small>{% endif %}</td>
+                        <td>{{ r.item.quantity|floatformat:"-2" }} {{ r.item.unit }}</td>
+                        <td>{{ r.item.delivery_date|default:'-' }}</td>
+                        <td>{{ r.item.unit_cost|default:'-' }}</td>
+                        <td>{{ r.item.remarks|default:'-' }}</td>
+                        <td>
+                            {% if r.state == 'has_job' %}<span class="erp-badge erp-badge-approved">Job {{ r.existing_job.jc_number }}</span>
+                            {% elif r.state == 'ready' %}<span class="erp-badge erp-badge-approved">Ready &middot; {{ r.recipe.sku }}</span>
+                            {% elif r.state == 'unapproved' %}<span class="erp-badge erp-badge-pending">SKU master {{ r.recipe.get_master_data_status_display }}</span> <a href="{% url 'flexo:sku_recipe_edit' r.recipe.pk %}">Open</a>
+                            {% elif r.state == 'bad_unit' %}<span class="erp-badge erp-badge-rejected">Unsupported unit {{ r.item.unit }}</span>
+                            {% else %}<span class="erp-badge erp-badge-rejected">No SKU master</span>{% endif %}
+                        </td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <div class="erp-actions" style="margin-top:14px; display:flex; gap:8px; flex-wrap:wrap;">
+                {% if ready_count %}<button type="submit" name="action" value="create_jobs" class="erp-btn erp-btn-primary">Create planning jobs for selected lines</button>{% endif %}
+                {% if missing_count %}<button type="submit" name="action" value="create_draft_skus" class="erp-btn erp-btn-secondary">Create {{ missing_count }} draft SKU master(s)</button>{% endif %}
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

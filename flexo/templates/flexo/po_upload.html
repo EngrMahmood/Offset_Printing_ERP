@@ -1,0 +1,18 @@
+{% extends 'theme/base.html' %}
+{% block title %}Upload PO / WO{% endblock %}
+{% block header_title %}Upload PO / WO{% endblock %}
+{% block header_subtitle %}System-generated Utopia PO or WO PDF. Lines are matched to approved Flexo SKU masters.{% endblock %}
+{% block header_actions %}<a href="{% url 'flexo:po_inbox' %}" class="erp-btn erp-btn-secondary">PO / WO Inbox</a>{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="post" enctype="multipart/form-data" style="display:flex; gap:10px; align-items:center;">
+            {% csrf_token %}
+            <input type="file" name="po_file" accept="application/pdf,.pdf" class="erp-input" required>
+            <button type="submit" class="erp-btn erp-btn-primary">Upload &amp; read</button>
+        </form>
+        <p style="margin-top:10px; color:#64748b;">The PDF itself is not stored &mdash; only the lines read from it. Quantities keep the unit on the PO (ROLL or PIECE).</p>
+    </section>
+</div>
+{% endblock %}

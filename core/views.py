@@ -22,6 +22,7 @@ from datetime import datetime, date, timedelta
 from .bulk_upload import process_jobcard_upload, get_template_headers, get_template_example
 from .jc_numbering import allocate_next_jc_number
 from .machine_routing import MM_PER_INCH
+from .machine_scope import offset_machines
 from .models import (
     ApplicationType,
     ChangeLog,
@@ -177,7 +178,7 @@ def home(request):
 
     # Shop Floor Operations KPIs
     today = timezone.now().date()
-    active_machines = Machine.objects.filter(is_active=True).count()
+    active_machines = offset_machines(Machine.objects.filter(is_active=True)).count()
     active_operators = Operator.objects.filter(is_active=True).count()
     today_sorting_waste = Production.objects.filter(date=today, is_active=True).aggregate(total=models.Sum('sorting_waste_qty'))['total'] or 0
     today_downtime = Production.objects.filter(date=today, is_active=True).aggregate(total=models.Sum('downtime_minutes'))['total'] or 0
@@ -1863,6 +1864,18 @@ def master_data(request):
 
         elif action == 'delete_master' and record:
             record_name = record.name
+
+            # Masters are shared with the Flexo module; refuse deletes it still relies on.
+            from django.apps import apps as _apps
+            if _apps.is_installed('flexo'):
+                from flexo.master_usage import linked_flexo_records
+                flexo_links = linked_flexo_records(entity_type, record)
+                if flexo_links:
+                    messages.error(
+                        request,
+                        f'Cannot delete {entity_type.title()} {record_name}. Linked Flexo records found ({flexo_links}).'
+                    )
+                    return redirect('master_data')
 
             if entity_type == 'machine':
                 linked_jobcards = JobCard.objects.filter(machine_name=record).count()

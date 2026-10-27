@@ -1,0 +1,21 @@
+{% extends 'theme/base.html' %}
+{% block title %}Archived Flexo SKUs{% endblock %}
+{% block header_title %}Archived Flexo SKU Masters{% endblock %}
+{% block header_actions %}<a href="{% url 'flexo:sku_recipes' %}" class="erp-btn erp-btn-secondary">SKU Master</a>{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <table class="erp-table">
+            <thead><tr><th>SKU</th><th>Archived</th><th>Reason</th></tr></thead>
+            <tbody>
+            {% for r in page %}
+                <tr><td>{{ r.sku }}</td><td>{{ r.archived_at|date:'d M Y'|default:'-' }}</td><td>{{ r.archive_reason|default:'-' }}</td></tr>
+            {% empty %}
+                <tr><td colspan="3">No archived SKU masters.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

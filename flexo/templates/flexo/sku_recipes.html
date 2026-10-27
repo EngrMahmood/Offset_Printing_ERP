@@ -1,0 +1,50 @@
+{% extends 'theme/base.html' %}
+{% block title %}Flexo SKU Master{% endblock %}
+{% block header_title %}Flexo SKU Master{% endblock %}
+{% block header_subtitle %}Roll/web specs per SKU. A job can only be planned from an approved SKU.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'flexo:sku_recipe_add' %}" class="erp-btn erp-btn-primary">Add SKU</a>
+    <a href="{% url 'flexo:sku_recipes_archived' %}" class="erp-btn erp-btn-secondary">Archived</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px;">
+            {% for code, label, count in tabs %}
+            <a class="erp-btn {% if status == code %}erp-btn-primary{% else %}erp-btn-secondary{% endif %}"
+               href="{% if code == '' %}{% url 'flexo:sku_recipes' %}{% elif code == 'draft' %}{% url 'flexo:sku_recipes_draft' %}{% elif code == 'pending_review' %}{% url 'flexo:sku_recipes_pending_review' %}{% elif code == 'reviewed' %}{% url 'flexo:sku_recipes_reviewed' %}{% else %}{% url 'flexo:sku_recipes_approved' %}{% endif %}">{{ label }} ({{ count }})</a>
+            {% endfor %}
+        </div>
+        <form method="get" style="display:flex; gap:8px;">
+            <input type="text" name="q" class="erp-input" value="{{ q }}" placeholder="Search SKU / job name" style="max-width:300px;">
+            <button type="submit" class="erp-btn erp-btn-secondary">Filter</button>
+        </form>
+    </section>
+    <section class="erp-section-shell">
+        <table class="erp-table">
+            <thead><tr><th>SKU</th><th>Size</th><th>Ups</th><th>Roll Size</th><th>Machine</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+            {% for r in page %}
+                <tr>
+                    <td>{{ r.sku }}</td>
+                    <td>{{ r.size_w_mm|default:'-' }} x {{ r.size_h_mm|default:'-' }} mm</td>
+                    <td>{{ r.ups|default:'-' }}</td>
+                    <td>{{ r.roll_size|default:'-' }}</td>
+                    <td>{{ r.machine|default:'-' }}</td>
+                    <td><span class="erp-badge erp-badge-{% if r.master_data_status == 'approved' %}approved{% elif r.master_data_status == 'draft' %}draft{% else %}pending{% endif %}">{{ r.get_master_data_status_display }}</span></td>
+                    <td><a href="{% url 'flexo:sku_recipe_edit' r.pk %}" class="erp-btn erp-btn-secondary">{% if r.is_approved %}View{% else %}Edit{% endif %}</a></td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">No SKU masters here yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        <div style="margin-top:10px;">
+            {% if page.has_previous %}<a href="?page={{ page.previous_page_number }}&q={{ q }}" class="erp-btn erp-btn-secondary">Previous</a>{% endif %}
+            Page {{ page.number }} of {{ page.paginator.num_pages }}
+            {% if page.has_next %}<a href="?page={{ page.next_page_number }}&q={{ q }}" class="erp-btn erp-btn-secondary">Next</a>{% endif %}
+        </div>
+    </section>
+</div>
+{% endblock %}

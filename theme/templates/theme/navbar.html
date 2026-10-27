@@ -438,13 +438,29 @@
            class="erp-subnav-link {% if url == 'home' %}is-active{% endif %}">
             Overview
         </a>
-        <a href="{% url 'flexo:planning_list' family='fl' %}"
-           class="erp-subnav-link {% if url == 'planning_list' and request.resolver_match.kwargs.family == 'fl' %}is-active{% endif %}">
-            FL Planning
+        <a href="{% url 'flexo:jobs' %}"
+           class="erp-subnav-link {% if url == 'jobs' or url == 'job_detail' or url == 'job_edit' %}is-active{% endif %}">
+            Jobs
         </a>
-        <a href="{% url 'flexo:planning_list' family='satin' %}"
-           class="erp-subnav-link {% if url == 'planning_list' and request.resolver_match.kwargs.family == 'satin' %}is-active{% endif %}">
-            SATIN Planning
+        <a href="{% url 'flexo:po_upload' %}"
+           class="erp-subnav-link {% if url == 'po_upload' or url == 'po_inbox' or url == 'po_review' %}is-active{% endif %}">
+            PO / WO Upload
+        </a>
+        <a href="{% url 'flexo:manual_po_entry' %}"
+           class="erp-subnav-link {% if url == 'manual_po_entry' %}is-active{% endif %}">
+            Manual Entry
+        </a>
+        <a href="{% url 'flexo:approval_queue' %}"
+           class="erp-subnav-link {% if url == 'approval_queue' %}is-active{% endif %}">
+            Approval Queue
+        </a>
+        <a href="{% url 'flexo:sku_recipes' %}"
+           class="erp-subnav-link {% if url == 'sku_recipes' or url == 'sku_recipes_draft' or url == 'sku_recipes_pending_review' or url == 'sku_recipes_reviewed' or url == 'sku_recipes_approved' or url == 'sku_recipe_edit' or url == 'sku_recipe_add' %}is-active{% endif %}">
+            SKU Master
+        </a>
+        <a href="{% url 'flexo:jobs_archived' %}"
+           class="erp-subnav-link {% if url == 'jobs_archived' %}is-active{% endif %}">
+            Archived
         </a>
     </div>
 

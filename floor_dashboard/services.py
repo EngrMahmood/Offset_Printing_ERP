@@ -13,6 +13,7 @@ from django.db.models import Sum
 from django.utils import timezone
 
 from core.models import JobCard, Production, Dispatch, Machine
+from core.machine_scope import offset_machines
 from core.services import compute_job_card_wastage_metrics
 from production.services import OEECalculator
 from .models import DailyTarget
@@ -151,7 +152,7 @@ def get_plant_overview(date=None):
     waste_sheets_total = printing.aggregate(total=Sum('waste_sheets'))['total'] or 0
 
     active_machines = printing.exclude(machine__isnull=True).values('machine').distinct().count()
-    total_machines = Machine.objects.count()
+    total_machines = offset_machines().count()
     active_operators = printing.exclude(operator__isnull=True).values('operator').distinct().count()
 
     target = _resolve_target(date)

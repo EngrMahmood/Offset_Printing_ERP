@@ -1,0 +1,40 @@
+{% extends 'theme/base.html' %}
+{% block title %}Archived Flexo Jobs{% endblock %}
+{% block header_title %}Archived Flexo Jobs{% endblock %}
+{% block header_actions %}<a href="{% url 'flexo:jobs' %}" class="erp-btn erp-btn-secondary">Active Jobs</a>{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" style="display:flex; gap:8px; margin-bottom:10px;">
+            <input type="text" name="q" class="erp-input" value="{{ q }}" placeholder="Search JC / SKU / PO" style="max-width:300px;">
+            <button type="submit" class="erp-btn erp-btn-secondary">Search</button>
+        </form>
+        <table class="erp-table">
+            <thead><tr><th>JC Number</th><th>SKU</th><th>PO</th><th>Status</th><th>Archived</th><th>Reason</th><th></th></tr></thead>
+            <tbody>
+            {% for job in page %}
+                <tr>
+                    <td><a href="{% url 'flexo:job_detail' job.id %}">{{ job.jc_number }}</a></td>
+                    <td>{{ job.sku|default:'-' }}</td>
+                    <td>{{ job.po_number|default:'-' }}</td>
+                    <td>{% if job.is_cancelled %}Cancelled{% else %}{{ job.get_status_display }}{% endif %}</td>
+                    <td>{{ job.archived_at|date:'d M Y'|default:'-' }} {% if job.archived_by %}by {{ job.archived_by }}{% endif %}</td>
+                    <td>{{ job.archive_reason|default:'-' }}</td>
+                    <td>
+                        {% if can_plan and not job.is_cancelled %}
+                        <form method="post" action="{% url 'flexo:job_action' job.id %}">{% csrf_token %}
+                            <input type="hidden" name="action" value="restore">
+                            <button type="submit" class="erp-btn erp-btn-secondary">Restore</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">No archived jobs.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

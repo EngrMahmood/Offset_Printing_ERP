@@ -1,0 +1,159 @@
+{% extends 'theme/base.html' %}
+{% block title %}{{ job.jc_number }}{% endblock %}
+{% block header_title %}{{ job.jc_number }}{% endblock %}
+{% block header_subtitle %}{{ job.sku|default:'-' }} &middot; {{ status_label }}{% if job.is_on_hold %} &middot; ON HOLD{% endif %}{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'flexo:jobs' %}" class="erp-btn erp-btn-secondary">Jobs</a>
+    {% if can_plan and job.is_active and not job.is_cancelled and job.status == 'draft' or can_plan and pending_request and job.is_active %}
+    <a href="{% url 'flexo:job_edit' job.pk %}" class="erp-btn erp-btn-secondary">Edit</a>
+    {% endif %}
+    {% if job.job_card %}
+    <a href="{% url 'flexo:job_card_detail' job.job_card.pk %}" class="erp-btn erp-btn-primary">Job Card</a>
+    {% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    {% if job.status == 'draft' and blockers %}
+    <section class="erp-section-shell" style="border-left:4px solid #dc2626;">
+        <strong>Before this job can go to QC:</strong>
+        <ul>{% for b in blockers %}<li>{{ b }}</li>{% endfor %}</ul>
+    </section>
+    {% endif %}
+    {% if job.rejection_reason and job.status == 'draft' %}
+    <section class="erp-section-shell" style="border-left:4px solid #f59e0b;"><strong>Sent back by QC:</strong> {{ job.rejection_reason }}</section>
+    {% endif %}
+    {% if recipe_warnings %}
+    <section class="erp-section-shell" style="border-left:4px solid #f59e0b;">SKU master has no {{ recipe_warnings|join:', ' }} yet (optional until die/cylinder work is done).</section>
+    {% endif %}
+    {% if pending_request %}
+    <section class="erp-section-shell" style="border-left:4px solid #2563eb;">
+        Pending {% if pending_request.is_cancellation %}cancellation{% else %}reopen{% endif %} request from {{ pending_request.requested_by|default:'-' }}: {{ pending_request.reason }}
+    </section>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <h3>Order</h3>
+        <div class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:8px;">
+            <div><strong>PO:</strong> {{ job.po_number|default:'-' }}</div>
+            <div><strong>PO Received:</strong> {{ job.po_received_date|default:'-' }}</div>
+            <div><strong>Delivery Date:</strong> {{ job.delivery_date|default:'-' }}</div>
+            <div><strong>Job Name:</strong> {{ job.job_name|default:'-' }}</div>
+            <div><strong>Repeat:</strong> {{ job.repeat_flag|default:'-' }}</div>
+            <div><strong>Priority:</strong> {{ job.get_priority_display }}</div>
+            <div><strong>Order Qty:</strong> {{ job.order_qty }} {{ job.unit_label }}</div>
+            <div><strong>Stock Qty:</strong> {{ job.stock_qty }} {{ job.unit_label }}</div>
+            <div><strong>Net to Print:</strong> {{ job.net_print_qty }} {{ job.unit_label }}</div>
+            <div><strong>Destination:</strong> {{ job.destination|default:'-' }}</div>
+            <div><strong>Department:</strong> {{ job.department|default:'-' }}</div>
+            <div><strong>Machine:</strong> {{ job.machine_name|default:'-' }}</div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Specification &amp; print plan (meters)</h3>
+        <div class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:8px;">
+            <div><strong>Material:</strong> {{ job.material|default:'-' }}</div>
+            <div><strong>Color:</strong> {{ job.color_spec|default:'-' }}</div>
+            <div><strong>Size W x H (mm):</strong> {{ job.size_w_mm|default:'-' }} x {{ job.size_h_mm|default:'-' }}</div>
+            <div><strong>Ups:</strong> {{ job.ups|default:'-' }}</div>
+            <div><strong>Roll Size:</strong> {{ job.roll_size|default:'-' }}</div>
+            <div><strong>Die Code / AWC:</strong> {{ job.die_code|default:'-' }}</div>
+            <div><strong>Teeth:</strong> {{ job.teeth|default:'-' }}</div>
+            <div><strong>Meter Per Roll:</strong> {{ job.meter_per_roll|default:'-' }}</div>
+            <div><strong>Pcs Per Roll:</strong> {{ job.pcs_per_roll|default:'derived' }}</div>
+            <div><strong>Order Roll Qty:</strong> {{ job.order_roll_qty|default:'-' }}</div>
+            <div><strong>Base Meters:</strong> {{ job.base_meters|default:'-' }}</div>
+            <div><strong>Wastage ({{ job.wastage_pct }}%) Meters:</strong> {{ job.wastage_meters|default:'-' }}</div>
+            <div><strong>Total Print Meters:</strong> {{ job.print_meters|default:'-' }}</div>
+            <div><strong>Printed so far (m):</strong> {{ job.total_printed_meters }}</div>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Dispatch ({{ job.unit_label }})</h3>
+        <p>Dispatched: <strong>{{ job.total_dispatched }}</strong> of {{ job.order_qty }} {{ job.unit_label }} &middot; Balance: <strong>{{ job.balance_qty }}</strong></p>
+        <table class="erp-table">
+            <thead><tr><th>#</th><th>Delivery Date</th><th>DC No.</th><th>Delivered Qty ({{ job.unit_label }})</th><th>Packing</th><th>Site#</th></tr></thead>
+            <tbody>
+            {% for run in dispatch_runs %}
+                <tr><td>{{ run.dispatch_index }}</td><td>{{ run.delivery_date|default:'-' }}</td><td>{{ run.dc_no|default:'-' }}</td><td>{{ run.delivered_qty|default:'-' }}</td><td>{{ run.packing|default:'-' }}</td><td>{{ run.site|default:'-' }}</td></tr>
+            {% empty %}
+                <tr><td colspan="6">No deliveries recorded yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    {% if can_plan and job.is_active and not job.is_cancelled %}
+    <section class="erp-section-shell">
+        <h3>Actions</h3>
+        <div style="display:flex; gap:10px; flex-wrap:wrap; align-items:flex-start;">
+            {% if job.status == 'draft' %}
+            <form method="post" action="{% url 'flexo:job_status_update' job.pk %}">{% csrf_token %}
+                <input type="hidden" name="transition" value="submit_qc">
+                <button type="submit" class="erp-btn erp-btn-primary">Send to QC</button>
+            </form>
+            {% endif %}
+            {% if job.is_on_hold %}
+            <form method="post" action="{% url 'flexo:job_action' job.pk %}">{% csrf_token %}
+                <input type="hidden" name="action" value="release_hold">
+                <button type="submit" class="erp-btn erp-btn-secondary">Release hold</button>
+            </form>
+            {% else %}
+            <form method="post" action="{% url 'flexo:job_action' job.pk %}" style="display:flex; gap:6px;">{% csrf_token %}
+                <input type="hidden" name="action" value="hold">
+                <input type="text" name="reason" class="erp-input" placeholder="Hold reason" required>
+                <button type="submit" class="erp-btn erp-btn-secondary">Hold</button>
+            </form>
+            {% endif %}
+            <form method="post" action="{% url 'flexo:job_action' job.pk %}" style="display:flex; gap:6px;">{% csrf_token %}
+                <input type="hidden" name="action" value="archive">
+                <input type="text" name="reason" class="erp-input" placeholder="Archive reason">
+                <button type="submit" class="erp-btn erp-btn-secondary">Archive</button>
+            </form>
+            {% if job.status == 'qc_approved' or job.status == 'released' or job.status == 'in_production' %}
+            {% if not pending_request %}
+            <form method="post" action="{% url 'flexo:job_action' job.pk %}" style="display:flex; gap:6px;">{% csrf_token %}
+                <input type="hidden" name="action" value="request_reopen">
+                <input type="text" name="reason" class="erp-input" placeholder="Why reopen?" required>
+                <button type="submit" class="erp-btn erp-btn-secondary">Request reopen</button>
+            </form>
+            {% endif %}
+            {% endif %}
+        </div>
+        {% if can_cancel %}
+        <details style="margin-top:12px;">
+            <summary>Cancel job{% if not job.can_cancel_directly %} (needs Production Manager approval){% endif %}</summary>
+            <form method="post" action="{% url 'flexo:job_action' job.pk %}" style="display:flex; gap:8px; margin-top:8px;">{% csrf_token %}
+                <input type="hidden" name="action" value="cancel">
+                {{ cancel_form.cancel_reason_code }}
+                {{ cancel_form.reason }}
+                <button type="submit" class="erp-btn erp-btn-secondary">Cancel job</button>
+            </form>
+        </details>
+        {% endif %}
+        {% if is_admin and job.status == 'draft' and not job.job_card %}
+        <form method="post" action="{% url 'flexo:job_action' job.pk %}" style="margin-top:12px;" onsubmit="return confirm('Permanently delete this job?');">{% csrf_token %}
+            <input type="hidden" name="action" value="delete">
+            <button type="submit" class="erp-btn erp-btn-secondary">Delete permanently</button>
+        </form>
+        {% endif %}
+    </section>
+    {% endif %}
+
+    <section class="erp-section-shell">
+        <h3>History</h3>
+        <table class="erp-table">
+            <thead><tr><th>When</th><th>Action</th><th>From</th><th>To</th><th>By</th><th>Reason</th></tr></thead>
+            <tbody>
+            {% for e in events %}
+                <tr><td>{{ e.created_at|date:'d M Y H:i' }}</td><td>{{ e.action }}</td><td>{{ e.from_status|default:'-' }}</td><td>{{ e.to_status|default:'-' }}</td><td>{{ e.actor|default:'-' }}</td><td>{{ e.reason|default:'-' }}</td></tr>
+            {% empty %}
+                <tr><td colspan="6">No history yet.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

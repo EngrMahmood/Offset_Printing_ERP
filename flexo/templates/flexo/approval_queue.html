@@ -1,0 +1,117 @@
+{% extends 'theme/base.html' %}
+{% block title %}Flexo Approval Queue{% endblock %}
+{% block header_title %}Flexo Approval Queue{% endblock %}
+{% block header_subtitle %}Draft &rarr; QC &rarr; Release for production.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" style="display:flex; gap:8px;">
+            <input type="text" name="q" class="erp-input" value="{{ q }}" placeholder="Search JC / PO / SKU" style="max-width:300px;">
+            <button type="submit" class="erp-btn erp-btn-secondary">Search</button>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Pending QC ({{ qc_jobs|length }})</h3>
+        <table class="erp-table">
+            <thead><tr><th>JC</th><th>SKU</th><th>PO</th><th>Order Qty</th><th>Print (m)</th><th>Machine</th><th>Decision</th></tr></thead>
+            <tbody>
+            {% for job in qc_jobs %}
+                <tr>
+                    <td><a href="{% url 'flexo:job_detail' job.pk %}">{{ job.jc_number }}</a></td>
+                    <td>{{ job.sku }}</td><td>{{ job.po_number|default:'-' }}</td>
+                    <td>{{ job.order_qty }} {{ job.unit_label }}</td><td>{{ job.print_meters|default:'-' }}</td><td>{{ job.machine_name|default:'-' }}</td>
+                    <td>
+                        {% if can_qc %}
+                        <form method="post" style="display:flex; gap:6px;">{% csrf_token %}
+                            <input type="hidden" name="planning_job_id" value="{{ job.pk }}">
+                            <input type="text" name="reason" class="erp-input" placeholder="Reason (required to reject)">
+                            <button type="submit" name="action" value="approve_qc" class="erp-btn erp-btn-primary">Approve</button>
+                            <button type="submit" name="action" value="reject_qc" class="erp-btn erp-btn-secondary">Reject</button>
+                        </form>
+                        {% else %}-{% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">Nothing waiting for QC.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>QC approved &mdash; ready to release ({{ release_jobs|length }})</h3>
+        <table class="erp-table">
+            <thead><tr><th>JC</th><th>SKU</th><th>PO</th><th>Order Qty</th><th>Print (m)</th><th>Machine</th><th></th></tr></thead>
+            <tbody>
+            {% for job in release_jobs %}
+                <tr>
+                    <td><a href="{% url 'flexo:job_detail' job.pk %}">{{ job.jc_number }}</a></td>
+                    <td>{{ job.sku }}</td><td>{{ job.po_number|default:'-' }}</td>
+                    <td>{{ job.order_qty }} {{ job.unit_label }}</td><td>{{ job.print_meters|default:'-' }}</td><td>{{ job.machine_name|default:'-' }}</td>
+                    <td>
+                        {% if can_release %}
+                        <form method="post">{% csrf_token %}
+                            <input type="hidden" name="planning_job_id" value="{{ job.pk }}">
+                            <button type="submit" name="action" value="release_for_production" class="erp-btn erp-btn-primary">Release for production</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="7">Nothing waiting for release.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Change requests ({{ change_requests|length }})</h3>
+        <table class="erp-table">
+            <thead><tr><th>JC</th><th>Type</th><th>Reason</th><th>Requested by</th><th></th></tr></thead>
+            <tbody>
+            {% for cr in change_requests %}
+                <tr>
+                    <td><a href="{% url 'flexo:job_detail' cr.planning_job.pk %}">{{ cr.planning_job.jc_number }}</a></td>
+                    <td>{% if cr.is_cancellation %}Cancel job{% else %}Reopen to draft{% endif %}</td>
+                    <td>{% if cr.is_cancellation %}{{ cr.cancel_reason_code }}: {{ cr.cancel_reason_text }}{% else %}{{ cr.reason }}{% endif %}</td>
+                    <td>{{ cr.requested_by|default:'-' }}</td>
+                    <td>
+                        {% if can_pm %}
+                        <div style="display:flex; gap:6px;">
+                            <form method="post" action="{% url 'flexo:change_request_approve' cr.pk %}">{% csrf_token %}<button type="submit" class="erp-btn erp-btn-primary">Approve</button></form>
+                            <form method="post" action="{% url 'flexo:change_request_reject' cr.pk %}" style="display:flex; gap:6px;">{% csrf_token %}
+                                <input type="text" name="rejection_reason" class="erp-input" placeholder="Reason">
+                                <button type="submit" class="erp-btn erp-btn-secondary">Reject</button>
+                            </form>
+                        </div>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5">No pending change requests.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="erp-section-shell">
+        <h3>Drafts ({{ draft_jobs|length }})</h3>
+        <table class="erp-table">
+            <thead><tr><th>JC</th><th>SKU</th><th>PO</th><th>Order Qty</th><th></th></tr></thead>
+            <tbody>
+            {% for job in draft_jobs %}
+                <tr>
+                    <td><a href="{% url 'flexo:job_detail' job.pk %}">{{ job.jc_number }}</a></td>
+                    <td>{{ job.sku }}</td><td>{{ job.po_number|default:'-' }}</td><td>{{ job.order_qty }} {{ job.unit_label }}</td>
+                    <td>{% if job.rejection_reason %}<span class="erp-badge erp-badge-rejected">Sent back: {{ job.rejection_reason }}</span>{% endif %}</td>
+                </tr>
+            {% empty %}
+                <tr><td colspan="5">No drafts.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+</div>
+{% endblock %}

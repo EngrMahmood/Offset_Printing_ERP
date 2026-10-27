@@ -1,0 +1,49 @@
+{% extends 'theme/base.html' %}
+{% block title %}Flexo PO Entry{% endblock %}
+{% block header_title %}Flexo PO Entry{% endblock %}
+{% block header_subtitle %}Enter the PO header and up to 5 SKU lines. Qty is in each SKU's unit (rolls or pcs); print meters are calculated from the SKU master.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    {% if not approved_count %}
+    <section class="erp-section-shell" style="border-left:4px solid #f59e0b;">
+        No approved SKU masters yet. <a href="{% url 'flexo:sku_recipes' %}">Create and approve a SKU master first.</a>
+    </section>
+    {% endif %}
+    <section class="erp-section-shell">
+        <form method="post">
+            {% csrf_token %}
+            {{ header.non_field_errors }}
+            <div class="erp-form-grid" style="grid-template-columns:repeat(4,1fr); gap:12px;">
+                {% for field in header %}
+                <div class="erp-input-group">
+                    <label class="erp-input-label">{{ field.label }}</label>{{ field }}
+                    {% for err in field.errors %}<div style="color:#dc2626; font-size:12px;">{{ err }}</div>{% endfor %}
+                </div>
+                {% endfor %}
+            </div>
+
+            <h3 style="margin-top:20px;">SKU lines</h3>
+            {{ formset.management_form }}
+            {{ formset.non_form_errors }}
+            <table class="erp-table">
+                <thead><tr><th>SKU (approved)</th><th>Order Qty</th><th>Stock Qty</th><th>Delivery Date</th></tr></thead>
+                <tbody>
+                {% for f in formset %}
+                    <tr>
+                        <td>{{ f.sku }}{% for err in f.sku.errors %}<div style="color:#dc2626; font-size:12px;">{{ err }}</div>{% endfor %}</td>
+                        <td>{{ f.order_qty }}{% for err in f.order_qty.errors %}<div style="color:#dc2626; font-size:12px;">{{ err }}</div>{% endfor %}</td>
+                        <td>{{ f.stock_qty }}{% for err in f.stock_qty.errors %}<div style="color:#dc2626; font-size:12px;">{{ err }}</div>{% endfor %}</td>
+                        <td>{{ f.delivery_date }}</td>
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            <div class="erp-actions" style="margin-top:16px;">
+                <button type="submit" class="erp-btn erp-btn-primary">Create planning jobs</button>
+                <a href="{% url 'flexo:jobs' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+            </div>
+        </form>
+    </section>
+</div>
+{% endblock %}

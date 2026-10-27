@@ -1,0 +1,78 @@
+{% extends 'theme/base.html' %}
+{% block title %}Flexo Jobs{% endblock %}
+{% block header_title %}Flexo Planning Jobs{% endblock %}
+{% block header_subtitle %}Order qty in the SKU's unit (rolls or pcs), print qty in meters.{% endblock %}
+{% block header_actions %}
+    <a href="{% url 'flexo:manual_po_entry' %}" class="erp-btn erp-btn-primary">New PO Entry</a>
+    <a href="{% url 'flexo:jobs_archived' %}" class="erp-btn erp-btn-secondary">Archived</a>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" class="erp-form-grid" style="grid-template-columns:repeat(3,1fr); gap:12px; align-items:end;">
+            <div class="erp-input-group">
+                <label class="erp-input-label">Search (JC / PO / SKU / Job)</label>
+                <input type="text" name="q" class="erp-input" value="{{ q }}">
+            </div>
+            <div class="erp-input-group">
+                <label class="erp-input-label">Status</label>
+                <select name="status" class="erp-select">
+                    <option value="">Open (not completed)</option>
+                    {% for value, label in status_choices %}<option value="{{ value }}" {% if value in statuses %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="erp-actions">
+                <label><input type="checkbox" name="hold" value="1" {% if hold %}checked{% endif %}> On hold</label>
+                <button type="submit" class="erp-btn erp-btn-secondary">Filter</button>
+            </div>
+        </form>
+    </section>
+
+    <section class="erp-section-shell">
+        <form method="post">
+            {% csrf_token %}
+            <table class="erp-table">
+                <thead>
+                    <tr>
+                        {% if can_plan %}<th></th>{% endif %}
+                        <th>JC Number</th><th>PO</th><th>SKU</th>
+                        <th>Order Qty</th><th>Print (m)</th><th>Order Rolls</th>
+                        <th>Machine</th><th>Status</th><th>Priority</th><th></th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for job in page %}
+                    <tr>
+                        {% if can_plan %}<td><input type="checkbox" name="selected_ids" value="{{ job.id }}"></td>{% endif %}
+                        <td><a href="{% url 'flexo:job_detail' job.id %}">{{ job.jc_number }}</a>{% if job.is_on_hold %} <span class="erp-badge erp-badge-hold">On hold</span>{% endif %}</td>
+                        <td>{{ job.po_number|default:'-' }}</td>
+                        <td>{{ job.sku|default:'-' }}</td>
+                        <td>{{ job.order_qty }} {{ job.unit_label }}</td>
+                        <td>{{ job.print_meters|default:'-' }}</td>
+                        <td>{{ job.order_roll_qty|default:'-' }}</td>
+                        <td>{{ job.machine_name|default:'-' }}</td>
+                        <td><span class="erp-badge erp-badge-{% if job.status == 'draft' %}draft{% elif job.status == 'pending_qc' %}pending{% else %}approved{% endif %}">{{ job.get_status_display }}</span></td>
+                        <td>{{ job.get_priority_display }}</td>
+                        <td>{% if can_plan and job.status == 'draft' %}<a href="{% url 'flexo:job_edit' job.id %}" class="erp-btn erp-btn-secondary">Edit</a>{% endif %}</td>
+                    </tr>
+                {% empty %}
+                    <tr><td colspan="11">No planning jobs match these filters.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            {% if can_plan %}
+            <div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
+                <input type="text" name="archive_reason" class="erp-input" placeholder="Archive reason (optional)" style="max-width:280px;">
+                <button type="submit" name="action" value="bulk_archive" class="erp-btn erp-btn-secondary">Archive selected</button>
+            </div>
+            {% endif %}
+        </form>
+        <div style="margin-top:10px;">
+            {% if page.has_previous %}<a href="?{{ querystring }}&page={{ page.previous_page_number }}" class="erp-btn erp-btn-secondary">Previous</a>{% endif %}
+            Page {{ page.number }} of {{ page.paginator.num_pages }}
+            {% if page.has_next %}<a href="?{{ querystring }}&page={{ page.next_page_number }}" class="erp-btn erp-btn-secondary">Next</a>{% endif %}
+        </div>
+    </section>
+</div>
+{% endblock %}
