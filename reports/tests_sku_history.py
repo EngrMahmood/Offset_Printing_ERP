@@ -82,7 +82,7 @@ class SkuHistoryTests(TestCase):
         data = self.build('SKU-HIST-A')
         self.assertEqual(data['export_rows'], data['rows'])
         self.assertIn('jc_no', data['headers'])
-        self.assertEqual([s['title'] for s in data['extra_sheets']], ['Dispatches', 'By Month'])
+        self.assertEqual([s['title'] for s in data['extra_sheets']], ['Printing Entries', 'Packing Entries', 'Dispatches', 'By Month'])
         self.assertTrue(any('SKU-HIST-A' in note for note in data['export_notes']))
 
     def test_page_renders_with_links_and_exports_download(self):
@@ -108,3 +108,50 @@ class SkuHistoryTests(TestCase):
             self.assertEqual(response.status_code, 200, kind)
             self.assertIn(content_type, response['Content-Type'])
             self.assertIn('sku-hist-a', response['Content-Disposition'].lower())
+
+    def test_printing_and_packing_entries_are_listed_newest_first(self):
+        from core.models import Sorter
+
+        job1, card1, planned_only, cancelled = self.history_fixture()
+        Production.objects.create(job_card=card1, entry_type='printing', date='2026-07-22', shift='B',
+                                  output_sheets=5, impressions=5, created_by=self.user)
+        sorter = Sorter.objects.create(name='Sorter One')
+        Production.objects.bulk_create([
+            Production(job_card=card1, entry_type='packing', date=datetime.date(2026, 7, 23), shift='A',
+                       packing_qty=800, sorting_waste_qty=12, sorter=sorter, created_by=self.user),
+        ])
+        data = self.build('SKU-HIST-A')
+        self.assertEqual([r['date'] for r in data['printing_rows']], ['2026-07-22', '2026-07-21'])
+        newest = data['printing_rows'][0]
+        self.assertEqual((newest['shift'], newest['output_sheets'], newest['printed_pcs'], newest['added_by']),
+                         ('Shift B', 5, 20, 'sku_hist'))
+        self.assertEqual(data['printing_rows'][1]['waste_pcs'], 40)                       # 10 waste sheets x 4 ups
+        pack = data['packing_rows'][0]
+        self.assertEqual((pack['packed_pcs'], pack['sorting_waste'], pack['sorter']), (800, 12, 'Sorter One'))
+        self.assertEqual([s['title'] for s in data['extra_sheets']],
+                         ['Printing Entries', 'Packing Entries', 'Dispatches', 'By Month'])
+
+    def test_type_ahead_suggestions_rank_prefix_matches_and_count_job_cards(self):
+        from reports.sku_history import suggest_skus
+
+        make_card(make_job('TA1', 100, sku='TAG-ALPHA'))
+        make_card(make_job('TA2', 100, sku='TAG-ALPHA'))
+        make_card(make_job('TA3', 100, sku='TAG-BETA'))
+        make_job('TA4', 100, sku='HANGTAG-GAMMA')                                          # contains it, does not start with it
+        results = suggest_skus('tag')
+        self.assertEqual([r['sku'] for r in results], ['TAG-ALPHA', 'TAG-BETA', 'HANGTAG-GAMMA'])
+        self.assertEqual([r['jobs'] for r in results], [2, 1, 0])
+        self.assertEqual(suggest_skus('t'), [])                                            # too short to be useful
+        self.assertEqual(suggest_skus('zzz-nothing'), [])
+
+    def test_suggest_endpoint_is_json_and_needs_report_access(self):
+        make_card(make_job('TB1', 100, sku='TAG-ENDPOINT'))
+        url = reverse('reports:sku_suggest')
+        self.assertEqual(self.client.get(url, {'q': 'tag'}).status_code, 403)               # not signed in
+        admin = get_user_model().objects.create_superuser('sku_admin2', password='pw12345678')
+        self.client.force_login(admin)
+        response = self.client.get(url, {'q': 'tag'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['results'], [{'sku': 'TAG-ENDPOINT', 'jobs': 1}])
+        html = self.client.get(reverse('reports:detail', args=['sku-history'])).content.decode()
+        self.assertIn(url, html)                                                            # the page wires the search box to it

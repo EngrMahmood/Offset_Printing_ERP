@@ -8,7 +8,6 @@
 {% block extra_head %}
 <style>
     .sh-search { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-    .sh-search input[type=text] { min-width: 320px; flex: 1 1 320px; }
     .sh-title { font-size: 20px; font-weight: 700; color: #0f172a; margin: 0 0 4px; }
     .sh-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 0; }
     .sh-chip { background: #f1f5f9; border: 1px solid #e2e8f0; border-radius: 999px; padding: 2px 10px; font-size: 12px; color: #334155; }
@@ -29,6 +28,17 @@
     .sh-exports { display: flex; gap: 8px; margin: 4px 0 12px; flex-wrap: wrap; }
     .sh-note { font-size: 12px; color: #64748b; }
     .sh-section-title { margin: 22px 0 8px; font-size: 15px; font-weight: 700; color: #0f172a; }
+    .sh-search-box { position: relative; flex: 1 1 320px; min-width: 320px; }
+    .sh-search-box input[type=text] { width: 100%; min-width: 0; }
+    .sh-suggest { position: absolute; z-index: 30; left: 0; right: 0; top: 100%; margin-top: 4px; background: #fff;
+        border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 8px 24px rgba(15,23,42,.14); max-height: 340px; overflow-y: auto; display: none; }
+    .sh-suggest.open { display: block; }
+    .sh-suggest-item { display: flex; justify-content: space-between; gap: 12px; padding: 8px 12px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f5f9; }
+    .sh-suggest-item:last-child { border-bottom: 0; }
+    .sh-suggest-item.active, .sh-suggest-item:hover { background: #eff6ff; }
+    .sh-suggest-item mark { background: #fde68a; color: inherit; padding: 0; }
+    .sh-suggest-count { color: #64748b; font-size: 12px; white-space: nowrap; }
+    .sh-suggest-empty { padding: 10px 12px; color: #64748b; font-size: 13px; }
     .sh-match-list { display: flex; flex-direction: column; gap: 6px; margin-top: 10px; }
     .sh-match-list a { font-weight: 600; }
 </style>
@@ -38,7 +48,11 @@
 <div class="erp-page-stack">
     <section class="erp-section-shell">
         <form method="get" class="sh-search">
-            <input type="text" name="sku" value="{{ data.query }}" class="erp-input" placeholder="Type a SKU (or part of it) and press Search" autofocus>
+            <div class="sh-search-box">
+                <input type="text" name="sku" id="sh-sku-input" value="{{ data.query }}" class="erp-input" autocomplete="off"
+                       placeholder="Type a SKU (or part of it), e.g. TAG, and pick from the suggestions" autofocus>
+                <div class="sh-suggest" id="sh-suggest" role="listbox"></div>
+            </div>
             <button type="submit" class="erp-btn erp-btn-primary">Search</button>
             {% if data.query %}<a href="{% url 'reports:detail' 'sku-history' %}" class="erp-btn erp-btn-secondary">Clear</a>{% endif %}
         </form>
@@ -192,6 +206,51 @@
     </section>
 
     <section class="erp-section-shell">
+        <div class="sh-section-title" style="margin-top:0;">Printing entries ({{ data.printing_rows|length }})</div>
+        <p class="sh-note">Every printing entry for this SKU, newest first. Entries marked "System (combined layout)" are this job's share of a combined-layout run printed under another job card.</p>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Date</th><th>Shift</th><th>Job Card</th><th>Machine</th><th class="sh-num">Impressions</th><th class="sh-num">Good Sheets</th><th class="sh-num">Waste Sheets</th><th class="sh-num">Printed (pcs)</th><th class="sh-num">Waste (pcs)</th><th>Added By</th></tr></thead>
+                <tbody>
+                    {% for row in data.printing_rows %}
+                    <tr>
+                        <td>{{ row.date }}</td><td>{{ row.shift }}</td>
+                        <td>{% if row.url %}<a class="sh-link" href="{{ row.url }}" target="_blank" rel="noopener">{{ row.jc_no }}</a>{% else %}{{ row.jc_no }}{% endif %}</td>
+                        <td>{{ row.machine|default:'—' }}</td>
+                        <td class="sh-num">{{ row.impressions|intcomma }}</td><td class="sh-num">{{ row.output_sheets|intcomma }}</td>
+                        <td class="sh-num">{{ row.waste_sheets|intcomma }}</td><td class="sh-num">{{ row.printed_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.waste_pcs|intcomma }}</td><td>{{ row.added_by|default:'—' }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="10">No printing entries yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
+        <div class="sh-section-title" style="margin-top:0;">Packing entries ({{ data.packing_rows|length }})</div>
+        <div class="erp-table-wrap erp-table-dense">
+            <table class="erp-table">
+                <thead><tr><th>Date</th><th>Shift</th><th>Job Card</th><th class="sh-num">Packed (pcs)</th><th class="sh-num">Sorting Waste (pcs)</th><th>Sorter</th><th>Added By</th></tr></thead>
+                <tbody>
+                    {% for row in data.packing_rows %}
+                    <tr>
+                        <td>{{ row.date }}</td><td>{{ row.shift }}</td>
+                        <td>{% if row.url %}<a class="sh-link" href="{{ row.url }}" target="_blank" rel="noopener">{{ row.jc_no }}</a>{% else %}{{ row.jc_no }}{% endif %}</td>
+                        <td class="sh-num">{{ row.packed_pcs|intcomma }}</td><td class="sh-num">{{ row.sorting_waste|intcomma }}</td>
+                        <td>{{ row.sorter|default:'—' }}</td><td>{{ row.added_by|default:'—' }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7">No packing entries yet.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </section>
+
+    <section class="erp-section-shell">
         <div class="sh-section-title" style="margin-top:0;">By order month</div>
         <div class="erp-table-wrap erp-table-dense">
             <table class="erp-table">
@@ -231,4 +290,64 @@
     </section>
     {% endif %}
 </div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+(function () {
+    var input = document.getElementById('sh-sku-input');
+    var box = document.getElementById('sh-suggest');
+    if (!input || !box) return;
+    var url = "{% url 'reports:sku_suggest' %}";
+    var timer = null, active = -1, items = [], lastQuery = '';
+
+    function esc(text) { return text.replace(/[&<>"]/g, function (c) { return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]; }); }
+    function highlight(sku, q) {
+        var i = sku.toLowerCase().indexOf(q.toLowerCase());
+        if (i < 0) return esc(sku);
+        return esc(sku.slice(0, i)) + '<mark>' + esc(sku.slice(i, i + q.length)) + '</mark>' + esc(sku.slice(i + q.length));
+    }
+    function close() { box.classList.remove('open'); active = -1; }
+    function choose(sku) { input.value = sku; close(); input.form.submit(); }
+    function setActive(n) {
+        var nodes = box.querySelectorAll('.sh-suggest-item');
+        if (!nodes.length) return;
+        active = (n + nodes.length) % nodes.length;
+        nodes.forEach(function (node, idx) { node.classList.toggle('active', idx === active); });
+        nodes[active].scrollIntoView({block: 'nearest'});
+    }
+    function render(results, q) {
+        items = results;
+        if (!results.length) { box.innerHTML = '<div class="sh-suggest-empty">No SKU contains "' + esc(q) + '"</div>'; box.classList.add('open'); return; }
+        box.innerHTML = results.map(function (r, idx) {
+            return '<div class="sh-suggest-item" role="option" data-idx="' + idx + '"><span>' + highlight(r.sku, q) + '</span><span class="sh-suggest-count">' +
+                (r.jobs ? r.jobs + (r.jobs === 1 ? ' job card' : ' job cards') : 'no job card yet') + '</span></div>';
+        }).join('');
+        box.classList.add('open'); active = -1;
+    }
+    function fetchSuggestions() {
+        var q = input.value.trim();
+        if (q.length < 2) { close(); return; }
+        lastQuery = q;
+        fetch(url + '?q=' + encodeURIComponent(q), {credentials: 'same-origin', headers: {'Accept': 'application/json'}})
+            .then(function (r) { return r.ok ? r.json() : {results: []}; })
+            .then(function (data) { if (q === lastQuery) render(data.results || [], q); })
+            .catch(function () { close(); });
+    }
+    input.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(fetchSuggestions, 180); });
+    input.addEventListener('focus', function () { if (input.value.trim().length >= 2 && !box.classList.contains('open')) fetchSuggestions(); });
+    input.addEventListener('keydown', function (e) {
+        if (!box.classList.contains('open')) return;
+        if (e.key === 'ArrowDown') { e.preventDefault(); setActive(active + 1); }
+        else if (e.key === 'ArrowUp') { e.preventDefault(); setActive(active - 1); }
+        else if (e.key === 'Enter' && active >= 0 && items[active]) { e.preventDefault(); choose(items[active].sku); }
+        else if (e.key === 'Escape') { close(); }
+    });
+    box.addEventListener('mousedown', function (e) {
+        var node = e.target.closest('.sh-suggest-item');
+        if (node) { e.preventDefault(); choose(items[parseInt(node.getAttribute('data-idx'), 10)].sku); }
+    });
+    document.addEventListener('click', function (e) { if (!e.target.closest('.sh-search-box')) close(); });
+})();
+</script>
 {% endblock %}

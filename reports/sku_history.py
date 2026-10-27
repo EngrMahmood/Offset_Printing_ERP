@@ -11,7 +11,7 @@ from __future__ import annotations
 from datetime import date
 from urllib.parse import quote
 
-from django.db.models import Prefetch, Sum
+from django.db.models import Count, Prefetch, Sum
 from django.urls import reverse
 from django.utils import timezone
 
@@ -37,6 +37,17 @@ DISPATCH_LABELS = {
     'dispatch_date': 'Dispatch Date', 'dc_no': 'DC No', 'jc_no': 'Job Card', 'po_number': 'PO/WO',
     'dispatch_qty': 'Qty (job unit)', 'dispatch_pcs': 'Qty (pcs)',
 }
+PRINTING_HEADERS = ['date', 'shift', 'jc_no', 'machine', 'impressions', 'output_sheets', 'waste_sheets', 'printed_pcs', 'waste_pcs', 'added_by']
+PRINTING_LABELS = {
+    'date': 'Date', 'shift': 'Shift', 'jc_no': 'Job Card', 'machine': 'Machine', 'impressions': 'Impressions',
+    'output_sheets': 'Good Sheets', 'waste_sheets': 'Waste Sheets', 'printed_pcs': 'Printed (pcs)',
+    'waste_pcs': 'Waste (pcs)', 'added_by': 'Added By',
+}
+PACKING_HEADERS = ['date', 'shift', 'jc_no', 'packed_pcs', 'sorting_waste', 'sorter', 'added_by']
+PACKING_LABELS = {
+    'date': 'Date', 'shift': 'Shift', 'jc_no': 'Job Card', 'packed_pcs': 'Packed (pcs)',
+    'sorting_waste': 'Sorting Waste (pcs)', 'sorter': 'Sorter', 'added_by': 'Added By',
+}
 MONTH_HEADERS = ['month', 'jobs', 'ordered_pcs', 'dispatched_pcs', 'wastage_pcs']
 MONTH_LABELS = {
     'month': 'Order Month', 'jobs': 'Jobs', 'ordered_pcs': 'Ordered (pcs)',
@@ -58,6 +69,28 @@ def find_matching_skus(query: str, limit: int = 60) -> list[str]:
             if value:
                 found.setdefault(value.casefold(), value)
     return sorted(found.values(), key=str.casefold)[:limit]
+
+
+def suggest_skus(query: str, limit: int = 12) -> list[dict]:
+    """Type-ahead: SKUs containing the text, best first (those starting with it, then the most-ordered),
+    each with how many job cards it has."""
+    query = _clean(query)
+    if len(query) < 2:
+        return []
+    counts: dict[str, int] = {}
+    names: dict[str, str] = {}
+    for row in JobCard.objects.filter(is_active=True, SKU__icontains=query).values('SKU').annotate(n=Count('id')):
+        key = _clean(row['SKU']).casefold()
+        if key:
+            names.setdefault(key, _clean(row['SKU']))
+            counts[key] = counts.get(key, 0) + row['n']
+    for value in find_matching_skus(query, limit=200):          # planned-only and master-only SKUs
+        key = value.casefold()
+        names.setdefault(key, value)
+        counts.setdefault(key, 0)
+    needle = query.casefold()
+    ordered = sorted(names, key=lambda k: (not k.startswith(needle), -counts[k], k))
+    return [{'sku': names[k], 'jobs': counts[k]} for k in ordered[:limit]]
 
 
 def _day(value):
@@ -166,6 +199,7 @@ def _card_row(card: JobCard, base_dispatch_units: dict) -> dict:
         '_order_date': order_date,
         '_dispatches': dispatches,
         '_card': card,
+        '_productions': productions,
     }
 
 
@@ -189,7 +223,7 @@ def _planning_only_row(job: PlanningJob) -> dict:
         'dispatch_gap_pcs': 0, 'total_wastage_pcs': 0, 'wastage_pct': 0.0,
         'wastage_status': '', 'last_dispatch': '', 'lead_time_days': '',
         'note': 'Cancelled' if cancelled else 'Planned, not yet released to production',
-        '_cancelled': cancelled, '_finalized': False, '_order_date': order_date, '_dispatches': [], '_card': None,
+        '_cancelled': cancelled, '_finalized': False, '_order_date': order_date, '_dispatches': [], '_card': None, '_productions': [],
     }
 
 
@@ -214,6 +248,8 @@ def build_sku_history_context(request) -> dict:
         'export_rows': [],
         'dispatch_rows': [],
         'monthly_rows': [],
+        'printing_rows': [],
+        'packing_rows': [],
         'summary': None,
         'insights': None,
         'master': None,
@@ -237,7 +273,7 @@ def build_sku_history_context(request) -> dict:
         JobCard.objects.filter(is_active=True, SKU__iexact=sku)
         .select_related('planning_job', 'machine_name', 'parent_job_card')
         .prefetch_related(
-            Prefetch('productions', queryset=Production.objects.filter(is_active=True)),
+            Prefetch('productions', queryset=Production.objects.filter(is_active=True).select_related('machine', 'created_by', 'sorter')),
             Prefetch('dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
         )
         .order_by('created_at')
@@ -331,6 +367,34 @@ def build_sku_history_context(request) -> dict:
     for d in dispatch_rows:
         d.pop('_sort')
 
+    # Every printing and packing entry behind these job cards, newest first.
+    printing_rows, packing_rows = [], []
+    for r in rows:
+        card = r['_card']
+        if card is None:
+            continue
+        card_ups = card.ups or 1
+        for p in r['_productions']:
+            by = 'System (combined layout)' if p.merge_parent_id else (p.created_by.username if p.created_by_id else '')
+            if p.entry_type == 'printing':
+                printing_rows.append({
+                    'date': _day(p.date), 'shift': p.get_shift_display(), 'jc_no': r['jc_no'], 'url': r['url'],
+                    'machine': p.machine.name if p.machine_id else '', 'impressions': p.impressions,
+                    'output_sheets': p.output_sheets, 'waste_sheets': p.waste_sheets,
+                    'printed_pcs': int(p.pcs_produced), 'waste_pcs': int(p.waste_sheets * (p.merge_allocated_ups or card_ups)),
+                    'added_by': by, '_sort': (p.date, p.id),
+                })
+            elif p.entry_type == 'packing':
+                packing_rows.append({
+                    'date': _day(p.date), 'shift': p.get_shift_display(), 'jc_no': r['jc_no'], 'url': r['url'],
+                    'packed_pcs': p.packing_qty, 'sorting_waste': p.sorting_waste_qty,
+                    'sorter': p.sorter.name if p.sorter_id else '', 'added_by': by, '_sort': (p.date, p.id),
+                })
+    for entry_rows in (printing_rows, packing_rows):
+        entry_rows.sort(key=lambda e: e['_sort'], reverse=True)
+        for e in entry_rows:
+            e.pop('_sort')
+
     recipe = SkuRecipe.objects.filter(sku__iexact=sku).first()
     master = None
     if recipe is not None:
@@ -354,8 +418,12 @@ def build_sku_history_context(request) -> dict:
         'export_rows': public_rows,
         'dispatch_rows': dispatch_rows,
         'monthly_rows': monthly_rows,
+        'printing_rows': printing_rows,
+        'packing_rows': packing_rows,
         'export_notes': export_notes,
         'extra_sheets': [
+            {'title': 'Printing Entries', 'headers': PRINTING_HEADERS, 'labels': PRINTING_LABELS, 'rows': printing_rows},
+            {'title': 'Packing Entries', 'headers': PACKING_HEADERS, 'labels': PACKING_LABELS, 'rows': packing_rows},
             {'title': 'Dispatches', 'headers': DISPATCH_HEADERS, 'labels': DISPATCH_LABELS, 'rows': dispatch_rows},
             {'title': 'By Month', 'headers': MONTH_HEADERS, 'labels': MONTH_LABELS, 'rows': monthly_rows},
         ],

@@ -2,7 +2,7 @@ import logging
 
 from django.contrib import messages
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpResponseForbidden
+from django.http import Http404, HttpResponseForbidden, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -13,6 +13,17 @@ logger = logging.getLogger(__name__)
 
 # Ensure built-in reports are loaded.
 from reports.report_registry import builtin_reports  # noqa: F401
+
+
+def sku_suggest(request):
+    """Type-ahead for the SKU History search box: SKUs containing the typed text."""
+    from reports.report_engine.engine import _has_access
+    from reports.sku_history import suggest_skus
+
+    report = registry.get('sku-history')
+    if report is None or not _has_access(request, report.permissions):
+        return JsonResponse({'results': []}, status=403)
+    return JsonResponse({'results': suggest_skus(request.GET.get('q', ''))})
 
 
 def reports_home(request):
