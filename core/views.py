@@ -63,7 +63,7 @@ from .services import (
     sync_materials_from_planning,
     count_active_planning_jobs_for_product_type,
     build_change_summary, log_change, user_has_entity_permission,
-    user_can_archive_records, user_can_bypass_edit_lock, get_record_edit_lock_days,
+    user_can_archive_records, user_can_bypass_edit_lock, user_can_review_production_approvals, get_record_edit_lock_days,
     get_record_edit_lock_cutoff, record_is_time_locked, get_valid_override,
     ensure_edit_lock_allowed, get_accessible_entities, get_active_record_or_404,
     validate_delete_allowed,
@@ -1348,31 +1348,14 @@ def request_edit_override(request, entity_type, record_id):
 
 @login_required
 def override_requests(request):
-    """Manager/admin inbox of all override requests."""
-    if not user_can_archive_records(request.user):
-        add_unique_message(request, messages.ERROR, '❌ You do not have permission to access this feature.')
-        return redirect('home')
-
-    status_filter = (request.GET.get('status') or 'pending').strip()
-    qs_all = EditOverrideRequest.objects.select_related('requested_by', 'reviewed_by').all()
-    if status_filter in ('pending', 'approved', 'rejected'):
-        qs = qs_all.filter(status=status_filter)
-    else:
-        qs = qs_all
-        status_filter = 'all'
-
-    context = {
-        'override_list': qs,
-        'status_filter': status_filter,
-        'pending_count': qs_all.filter(status='pending').count(),
-    }
-    return render(request, 'override_requests.html', context)
+    """Moved: edit-override requests are reviewed in Production -> Approvals."""
+    return redirect(f"{reverse('production_approvals')}?tab=overrides&status={(request.GET.get('status') or 'pending').strip()}")
 
 
 @login_required
 def review_override_request(request, override_id):
     """Manager/admin approves or rejects an override request."""
-    if not user_can_archive_records(request.user):
+    if not user_can_review_production_approvals(request.user):
         add_unique_message(request, messages.ERROR, '❌ You do not have permission to access this feature.')
         return redirect('home')
 
@@ -1394,7 +1377,7 @@ def review_override_request(request, override_id):
             try:
                 edit_link = f"{reverse(entry_view_name)}?edit={override.record_id}"
             except Exception:
-                edit_link = reverse('my_override_requests')
+                edit_link = f"{reverse('production_approvals')}?tab=mine"
             if action == 'approve':
                 override.status = 'approved'
                 override.expires_at = timezone.now() + timedelta(hours=OVERRIDE_EDIT_WINDOW_HOURS)
@@ -1428,13 +1411,13 @@ def review_override_request(request, override_id):
                         f'Your request to edit {override.record_label} was rejected.'
                         + (f' Reason: {note}' if note else '')
                     ),
-                    link=reverse('my_override_requests'),
+                    link=f"{reverse('production_approvals')}?tab=mine",
                     entity_type=override.entity_type,
                     entity_id=override.record_id,
                     created_by=request.user,
                 )
             override.save()
-            return redirect('override_requests')
+            return redirect(f"{reverse('production_approvals')}?tab=overrides")
 
     context = {
         'override': override,
@@ -1445,45 +1428,8 @@ def review_override_request(request, override_id):
 
 @login_required
 def my_override_requests(request):
-    """Requester-facing list of the user's edit-override requests and status.
-
-    Shows what needs their action (approved & ready to edit), what is still
-    waiting on a manager, and a short history of resolved requests. Approved
-    items drop out of the actionable list once the edit is done (consumed_at)
-    or the window expires.
-    """
-    now = timezone.now()
-    qs = EditOverrideRequest.objects.filter(requested_by=request.user).order_by('-created_at')
-
-    def _edit_link(ov):
-        entry_view = AUDIT_CONFIG.get(ov.entity_type, {}).get(
-            'list_view', 'production_records'
-        ).replace('_records', '_entry')
-        try:
-            return f"{reverse(entry_view)}?edit={ov.record_id}"
-        except Exception:
-            return ''
-
-    actionable, pending, history = [], [], []
-    for ov in qs:
-        if ov.status == 'pending':
-            pending.append(ov)
-        elif ov.is_valid_for_edit:
-            ov.edit_link = _edit_link(ov)
-            actionable.append(ov)
-        else:
-            # rejected, consumed, or expired
-            if ov.status == 'approved' and ov.consumed_at is None and ov.expires_at and ov.expires_at <= now:
-                ov.is_expired = True
-            history.append(ov)
-
-    context = {
-        'actionable': actionable,
-        'pending': pending,
-        'history': history[:25],
-        'override_hours': OVERRIDE_EDIT_WINDOW_HOURS,
-    }
-    return render(request, 'my_override_requests.html', context)
+    """Moved: your requests are under Production -> Approvals -> My requests."""
+    return redirect(f"{reverse('production_approvals')}?tab=mine")
 
 
 def build_erp_readme_text():

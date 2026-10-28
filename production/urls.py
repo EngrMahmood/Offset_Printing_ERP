@@ -1,3 +1,4 @@
+from django.shortcuts import redirect
 from django.urls import path
 from . import views
 from .packing_entry import packing_production_entry, packing_job_card_search, packing_records
@@ -16,7 +17,8 @@ urlpatterns = [
     path('production-records/', views.production_records, name='production_records'),
     path('production-records/anomalies/', views.production_data_anomalies, name='production_data_anomalies'),
     path('production-records/packing/', packing_records, name='packing_records'),
-    path('printing-completion-requests/', views.printing_completion_requests, name='printing_completion_requests'),
+    path('production-approvals/', views.production_approvals, name='production_approvals'),
+    path('printing-completion-requests/', lambda request: redirect('production_approvals'), name='printing_completion_requests'),
     path('printing-completion-requests/<int:request_id>/review/', views.review_printing_completion, name='review_printing_completion'),
     path('set-pass-override/', views.set_pass_override, name='set_pass_override'),
     path('create-operator/', views.create_operator_ajax, name='create_operator_ajax'),

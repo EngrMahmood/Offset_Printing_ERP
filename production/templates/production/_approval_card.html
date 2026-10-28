@@ -1,0 +1,35 @@
+{% load humanize %}
+<div class="ap-card {% if ready %}ap-ready{% endif %}">
+    <div class="ap-head">
+        <span>
+            <span class="ap-kind {{ item.kind }}">{{ item.kind_label }}</span>
+            <span class="ap-title">{{ item.title }}</span>
+            {% if item.subtitle %}<span class="ap-sub">· {{ item.subtitle }}</span>{% endif %}
+        </span>
+        <span>
+            <span class="ap-badge {{ item.status }}">{{ item.status_label }}</span>
+            {% if item.consumed %}<span class="ap-badge">Edited</span>{% elif item.expired %}<span class="ap-badge">Expired</span>{% endif %}
+            <span class="ap-sub">requested by {{ item.requested_by|default:'—' }} · {{ item.created_at|date:"d M Y H:i" }}</span>
+        </span>
+    </div>
+    {% if item.facts %}
+    <div class="ap-facts">{% for label, value in item.facts %}<div>{{ label }}<b>{{ value }}</b></div>{% endfor %}</div>
+    {% endif %}
+    <div class="ap-reason"><b>Reason:</b> {{ item.reason }}</div>
+
+    {% if item.ready_link %}
+        <a class="erp-btn erp-btn-primary" href="{{ item.ready_link }}">Edit now</a>
+        <span class="ap-sub">until {{ item.expires_at|date:"d M H:i" }}</span>
+    {% endif %}
+
+    {% if item.review_url %}
+    <form method="post" action="{{ item.review_url }}" class="ap-form">
+        {% csrf_token %}
+        <input type="text" name="review_note" class="erp-input" placeholder="Note{% if item.note_required %} (required to reject){% else %} (optional){% endif %}">
+        <button type="submit" name="action" value="approve" class="erp-btn erp-btn-primary">{{ item.approve_label }}</button>
+        <button type="submit" name="action" value="reject" class="erp-btn erp-btn-secondary">{{ item.reject_label }}</button>
+    </form>
+    {% elif item.status != 'pending' %}
+    <div class="ap-sub">Reviewed by {{ item.reviewed_by|default:'—' }}{% if item.reviewed_at %} · {{ item.reviewed_at|date:"d M Y H:i" }}{% endif %}{% if item.review_note %} · “{{ item.review_note }}”{% endif %}</div>
+    {% endif %}
+</div>

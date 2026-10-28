@@ -431,6 +431,17 @@ def user_can_archive_records(user):
     return profile.can_archive_records()
 
 
+def user_can_review_production_approvals(user):
+    """Who reviews production approvals (edit overrides and printing completions): anyone who may archive
+    records, plus admins, managers and production managers by role."""
+    if not user.is_authenticated:
+        return False
+    if user_can_archive_records(user):
+        return True
+    profile = getattr(user, 'profile', None)
+    return bool(profile and (profile.role or '') in {'admin', 'manager', 'production_manager'})
+
+
 def user_can_bypass_edit_lock(user):
     return user_can_archive_records(user)
 

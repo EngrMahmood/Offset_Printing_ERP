@@ -128,7 +128,9 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         except Exception:
             return 0
 
-    can_review_overrides = is_authenticated and (is_staff or role in {'admin', 'manager', 'production_manager'})
+    from core.services import user_can_review_production_approvals
+
+    can_review_overrides = is_authenticated and (is_staff or user_can_review_production_approvals(request.user))
     # Who may set a per-job pass-count override — soft-coded (Settings -> Roles &
     # Access Control), mirrored by UserProfile.can_set_pass_override() at the view.
     can_set_pass_override = False
@@ -207,6 +209,8 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_review_overrides': can_review_overrides,
         'override_pending_count': _pending_override_reviews(),
         'printing_completion_pending_count': _pending_printing_completions(),
+        # One badge for the Approvals tab: what a reviewer must decide, or what is ready for the requester to act on.
+        'approvals_badge_count': (_pending_override_reviews() + _pending_printing_completions()) if can_review_overrides else _my_override_actionable(),
         # Supervisory set of roles who may set a per-job pass-count override.
         'can_set_pass_override': can_set_pass_override,
         # The current user's approved-and-ready override requests (for "My Requests").

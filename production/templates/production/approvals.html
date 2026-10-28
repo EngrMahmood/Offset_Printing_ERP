@@ -1,0 +1,75 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}Approvals{% endblock %}
+{% block header_title %}Production Approvals{% endblock %}
+{% block header_subtitle %}{% if can_review %}Everything waiting for a production decision, in one place.{% else %}Your requests and what has been decided on them.{% endif %}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .ap-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .ap-tab { padding: 8px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; color: #334155; text-decoration: none; font-size: 14px; font-weight: 600; }
+    .ap-tab.active { background: #1e3a5f; border-color: #1e3a5f; color: #fff; }
+    .ap-tab .n { display: inline-block; margin-left: 6px; min-width: 20px; padding: 0 6px; border-radius: 999px; background: #dc2626; color: #fff; font-size: 11px; text-align: center; }
+    .ap-status { display: flex; gap: 6px; margin-bottom: 12px; font-size: 13px; align-items: center; color: #64748b; }
+    .ap-status a { padding: 3px 10px; border-radius: 999px; background: #f1f5f9; color: #334155; text-decoration: none; }
+    .ap-status a.active { background: #1e3a5f; color: #fff; }
+    .ap-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+    .ap-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+    .ap-title { font-size: 17px; font-weight: 700; color: #0f172a; }
+    .ap-sub { font-size: 12px; color: #64748b; }
+    .ap-kind { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; margin-right: 6px; }
+    .ap-kind.override { background: #e0e7ff; color: #3730a3; } .ap-kind.printing { background: #ede9fe; color: #5b21b6; }
+    .ap-badge { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #e2e8f0; color: #334155; }
+    .ap-badge.approved { background: #dcfce7; color: #166534; } .ap-badge.rejected { background: #fee2e2; color: #991b1b; }
+    .ap-facts { display: flex; flex-wrap: wrap; gap: 22px; margin: 10px 0; }
+    .ap-facts div { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+    .ap-facts b { display: block; font-size: 16px; color: #0f172a; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+    .ap-reason { background: #f8fafc; border-left: 3px solid #cbd5e1; padding: 8px 12px; font-size: 14px; margin: 8px 0; }
+    .ap-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+    .ap-form input[type=text] { flex: 1 1 240px; }
+    .ap-ready { background: #f0fdf4; border-color: #bbf7d0; }
+    h3.ap-section { margin: 18px 0 8px; font-size: 15px; color: #0f172a; }
+    .ap-empty { padding: 12px; background: #f8fafc; border-radius: 8px; color: #64748b; font-size: 14px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="ap-tabs">
+            {% if can_review %}
+            <a class="ap-tab {% if tab == 'review' %}active{% endif %}" href="?tab=review">To review{% if counts.review %}<span class="n">{{ counts.review }}</span>{% endif %}</a>
+            <a class="ap-tab {% if tab == 'overrides' %}active{% endif %}" href="?tab=overrides">Edit overrides{% if counts.overrides %}<span class="n">{{ counts.overrides }}</span>{% endif %}</a>
+            <a class="ap-tab {% if tab == 'printing' %}active{% endif %}" href="?tab=printing">Printing completion{% if counts.printing %}<span class="n">{{ counts.printing }}</span>{% endif %}</a>
+            {% endif %}
+            <a class="ap-tab {% if tab == 'mine' %}active{% endif %}" href="?tab=mine">My requests</a>
+        </div>
+
+        {% if tab == 'overrides' or tab == 'printing' %}
+        <div class="ap-status">Show:
+            <a class="{% if status_filter == 'pending' %}active{% endif %}" href="?tab={{ tab }}&status=pending">Pending</a>
+            <a class="{% if status_filter == 'approved' %}active{% endif %}" href="?tab={{ tab }}&status=approved">Approved</a>
+            <a class="{% if status_filter == 'rejected' %}active{% endif %}" href="?tab={{ tab }}&status=rejected">Rejected</a>
+            <a class="{% if status_filter == 'all' %}active{% endif %}" href="?tab={{ tab }}&status=all">All</a>
+        </div>
+        {% endif %}
+
+        {% if tab == 'mine' %}
+            <h3 class="ap-section" style="margin-top:0;">Ready to act on {% if ready %}<span class="ap-badge approved">{{ ready|length }}</span>{% endif %}</h3>
+            <p class="ap-sub">Edit overrides a manager approved: open the record and correct it before the {{ override_hours }}-hour window ends.</p>
+            {% for item in ready %}{% include 'production/_approval_card.html' with item=item ready=True %}{% empty %}<div class="ap-empty">Nothing to edit right now.</div>{% endfor %}
+
+            <h3 class="ap-section">Waiting for approval {% if waiting %}<span class="ap-badge">{{ waiting|length }}</span>{% endif %}</h3>
+            {% for item in waiting %}{% include 'production/_approval_card.html' with item=item %}{% empty %}<div class="ap-empty">No pending requests.</div>{% endfor %}
+
+            <h3 class="ap-section">History</h3>
+            {% for item in history %}{% include 'production/_approval_card.html' with item=item %}{% empty %}<div class="ap-empty">No history yet.</div>{% endfor %}
+        {% else %}
+            {% for item in items %}{% include 'production/_approval_card.html' with item=item %}{% empty %}
+                <div class="ap-empty">{% if tab == 'review' or status_filter == 'pending' %}Nothing is waiting for approval.{% else %}Nothing here.{% endif %}</div>
+            {% endfor %}
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

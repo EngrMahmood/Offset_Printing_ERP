@@ -48,6 +48,7 @@ from core.services import (
     record_is_time_locked,
     run_bulk_permanent_delete,
     user_can_archive_records,
+    user_can_review_production_approvals,
     user_can_bypass_edit_lock,
 )
 from workflow.services import start_production
@@ -200,13 +201,7 @@ def production_entry(request):
 
 
 def _can_review_printing_completion(user):
-    """Same people who review edit-override requests: admins, managers and production managers."""
-    if not user.is_authenticated:
-        return False
-    if user.is_staff:
-        return True
-    profile = getattr(user, 'profile', None)
-    return bool(profile and (profile.role or '') in {'admin', 'manager', 'production_manager'})
+    return user_can_review_production_approvals(user)
 
 
 def _announce_completion_request(request, completion_request):
@@ -229,7 +224,7 @@ def _announce_completion_request(request, completion_request):
                 f'{completion_request.shortfall_pcs:,} pcs ({completion_request.shortfall_pct}%) short of '
                 f'{completion_request.order_pcs:,}. Reason: {completion_request.reason[:160]}'
             ),
-            link=reverse('printing_completion_requests'),
+            link=reverse('production_approvals'),
             entity_type='printing_completion_request',
             entity_id=completion_request.pk,
             actor=request.user,
@@ -238,22 +233,101 @@ def _announce_completion_request(request, completion_request):
         logger.exception('Could not notify managers about printing completion request %s', completion_request.pk)
 
 
+def _person(user):
+    return (user.get_full_name() or user.username) if user else ''
+
+
+def _override_item(ov, viewer, can_review):
+    from core.constants import AUDIT_CONFIG
+
+    entry_view = AUDIT_CONFIG.get(ov.entity_type, {}).get('list_view', 'production_records').replace('_records', '_entry')
+    try:
+        edit_link = f"{reverse(entry_view)}?edit={ov.record_id}"
+    except Exception:
+        edit_link = ''
+    return {
+        'kind': 'override', 'kind_label': 'Edit override', 'id': ov.pk, 'title': ov.record_label,
+        'subtitle': f'{ov.get_entity_type_display()} record locked for editing',
+        'facts': [],
+        'requested_by': _person(ov.requested_by), 'created_at': ov.created_at, 'reason': ov.reason,
+        'status': ov.status, 'status_label': ov.get_status_display(),
+        'reviewed_by': _person(ov.reviewed_by), 'reviewed_at': ov.reviewed_at, 'review_note': ov.review_note,
+        'review_url': reverse('review_override_request', args=[ov.pk]) if (ov.status == 'pending' and can_review) else '',
+        'note_required': False,
+        'approve_label': 'Approve: allow the edit', 'reject_label': 'Reject',
+        'expires_at': ov.expires_at,
+        'ready_link': edit_link if (ov.is_valid_for_edit and ov.requested_by_id == viewer.id) else '',
+        'consumed': bool(ov.consumed_at),
+        'expired': bool(ov.status == 'approved' and ov.consumed_at is None and ov.expires_at and ov.expires_at <= timezone.now()),
+    }
+
+
+def _printing_item(req, can_review):
+    return {
+        'kind': 'printing', 'kind_label': 'Printing completion', 'id': req.pk,
+        'title': req.job_card.job_card_no, 'subtitle': req.job_card.SKU or '',
+        'facts': [
+            ('Order', f'{req.order_pcs:,} pcs'), ('Printed', f'{req.printed_pcs:,} pcs'),
+            ('Short', f'{req.shortfall_pcs:,} pcs ({req.shortfall_pct}%)'),
+            ('Tolerance', f"{req.job_card.production_tolerance_percent or 0:g}%"),
+        ],
+        'requested_by': _person(req.requested_by), 'created_at': req.created_at, 'reason': req.reason,
+        'status': req.status, 'status_label': req.get_status_display(),
+        'reviewed_by': _person(req.reviewed_by), 'reviewed_at': req.reviewed_at, 'review_note': req.review_note,
+        'review_url': reverse('review_printing_completion', args=[req.pk]) if (req.status == 'pending' and can_review) else '',
+        'note_required': True,
+        'approve_label': 'Approve: printing is complete', 'reject_label': 'Reject: keep printing open',
+        'expires_at': None, 'ready_link': '', 'consumed': False, 'expired': False,
+    }
+
+
 @login_required
-def printing_completion_requests(request):
-    """Production Manager inbox: printing completions marked by supervisors while the job is still short."""
+def production_approvals(request):
+    """One inbox for production approvals: edit-override requests and printing completions, plus
+    "My requests" for whoever asked. Reviewers decide here; everyone else sees their own requests."""
     from core.models import PrintingCompletionRequest
 
-    if not _can_review_printing_completion(request.user):
-        messages.error(request, 'You do not have permission to access this feature.')
-        return redirect('home')
+    viewer = request.user
+    can_review = user_can_review_production_approvals(viewer)
+    tab = (request.GET.get('tab') or ('review' if can_review else 'mine')).strip()
+    if tab not in ('review', 'overrides', 'printing', 'mine') or (tab != 'mine' and not can_review):
+        tab = 'review' if can_review else 'mine'
     status_filter = (request.GET.get('status') or 'pending').strip()
-    qs_all = PrintingCompletionRequest.objects.select_related('job_card', 'requested_by', 'reviewed_by', 'production')
-    qs = qs_all.filter(status=status_filter) if status_filter in ('pending', 'approved', 'rejected') else qs_all
-    return render(request, 'production/printing_completion_requests.html', {
-        'requests_list': qs[:200],
-        'status_filter': status_filter if status_filter in ('pending', 'approved', 'rejected') else 'all',
-        'pending_count': qs_all.filter(status='pending').count(),
-    })
+    if status_filter not in ('pending', 'approved', 'rejected', 'all'):
+        status_filter = 'pending'
+
+    overrides = EditOverrideRequest.objects.select_related('requested_by', 'reviewed_by')
+    printing = PrintingCompletionRequest.objects.select_related('job_card', 'requested_by', 'reviewed_by')
+    counts = {
+        'overrides': overrides.filter(status='pending').count() if can_review else 0,
+        'printing': printing.filter(status='pending').count() if can_review else 0,
+    }
+    counts['review'] = counts['overrides'] + counts['printing']
+
+    context = {
+        'tab': tab, 'status_filter': status_filter, 'can_review': can_review, 'counts': counts,
+        'override_hours': 2,
+    }
+
+    def by_status(qs):
+        return qs if status_filter == 'all' else qs.filter(status=status_filter)
+
+    if tab == 'review':
+        items = [_override_item(o, viewer, can_review) for o in overrides.filter(status='pending')]
+        items += [_printing_item(p, can_review) for p in printing.filter(status='pending')]
+        context['items'] = sorted(items, key=lambda i: i['created_at'])
+    elif tab == 'overrides':
+        context['items'] = [_override_item(o, viewer, can_review) for o in by_status(overrides)[:200]]
+    elif tab == 'printing':
+        context['items'] = [_printing_item(p, can_review) for p in by_status(printing)[:200]]
+    else:
+        mine = [_override_item(o, viewer, can_review) for o in overrides.filter(requested_by=viewer)[:100]]
+        mine += [_printing_item(p, can_review) for p in printing.filter(requested_by=viewer)[:100]]
+        mine.sort(key=lambda i: i['created_at'], reverse=True)
+        context['ready'] = [i for i in mine if i['ready_link']]
+        context['waiting'] = [i for i in mine if i['status'] == 'pending']
+        context['history'] = [i for i in mine if i['status'] != 'pending' and not i['ready_link']][:30]
+    return render(request, 'production/approvals.html', context)
 
 
 @login_required
@@ -268,15 +342,15 @@ def review_printing_completion(request, request_id):
         return redirect('home')
     completion_request = get_object_or_404(PrintingCompletionRequest, pk=request_id, status='pending')
     if request.method != 'POST':
-        return redirect('printing_completion_requests')
+        return redirect(f"{reverse('production_approvals')}?tab=printing")
     action = (request.POST.get('action') or '').strip()
     note = (request.POST.get('review_note') or '').strip()
     if action not in ('approve', 'reject'):
         messages.error(request, 'Invalid action.')
-        return redirect('printing_completion_requests')
+        return redirect(f"{reverse('production_approvals')}?tab=printing")
     if action == 'reject' and not note:
         messages.error(request, 'Please write a note explaining the rejection.')
-        return redirect('printing_completion_requests')
+        return redirect(f"{reverse('production_approvals')}?tab=printing")
 
     job_card = completion_request.job_card
     with transaction.atomic():
@@ -298,14 +372,14 @@ def review_printing_completion(request, request_id):
                 event_type='printing_completion_reviewed',
                 title=f'Printing completion {verb}: {job_card.job_card_no}',
                 message=note,
-                link=reverse('production_wip'),
+                link=f"{reverse('production_approvals')}?tab=mine",
                 entity_type='printing_completion_request',
                 entity_id=completion_request.pk,
                 actor=request.user,
             )
         except Exception:
             logger.exception('Could not notify requester of printing completion review %s', completion_request.pk)
-    return redirect('printing_completion_requests')
+    return redirect(f"{reverse('production_approvals')}?tab=printing")
 
 
 @login_required

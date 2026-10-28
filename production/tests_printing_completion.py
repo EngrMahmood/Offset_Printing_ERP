@@ -138,7 +138,7 @@ class CompletedEntryGuardTests(TestCase):
         self.assertEqual(JobCardWipStatus.objects.get(job_card=self.card).status.name, 'Partial Printing')
 
         self.client.force_login(self.manager)
-        page = self.client.get(reverse('printing_completion_requests'))
+        page = self.client.get(reverse('production_approvals'), {'tab': 'printing'})
         self.assertEqual(page.status_code, 200)
         self.assertIn('Customer cut the order', page.content.decode())
         response = self.client.post(reverse('review_printing_completion', args=[request.id]),
@@ -168,7 +168,8 @@ class CompletedEntryGuardTests(TestCase):
         entry = self.entry(100, waste=2)
         request = guard_completed_entry(self.card, entry, self.supervisor, 'please')
         self.client.force_login(self.supervisor)
-        self.assertEqual(self.client.get(reverse('printing_completion_requests')).status_code, 302)
+        page = self.client.get(reverse('production_approvals'), {'tab': 'review'})        # not a reviewer: sees only their own requests
+        self.assertNotIn('Approve: printing is complete', page.content.decode())
         self.client.post(reverse('review_printing_completion', args=[request.id]), {'action': 'approve'})
         request.refresh_from_db()
         self.assertEqual(request.status, 'pending')
@@ -288,3 +289,89 @@ class RecalculateCommandTests(TestCase):
         self.assertEqual(name(stuck), 'Printing Completed')
         self.assertEqual(name(short), 'Partial Printing')
         self.assertEqual(name(manual), 'Partial Printing')                         # the supervisor's choice stands
+
+
+class ProductionApprovalsInboxTests(TestCase):
+    """Edit overrides, printing completions and My requests live on one page; the old pages lead there."""
+
+    def setUp(self):
+        from core.models import EditOverrideRequest
+
+        self.supervisor = get_user_model().objects.create_user('inbox_sup', password='pw12345678', first_name='Sue')
+        self.manager = get_user_model().objects.create_user('inbox_pm', password='pw12345678')
+        profile, _ = UserProfile.objects.get_or_create(user=self.manager)
+        profile.role = 'production_manager'
+        profile.save()
+        self.card = make_card(make_job('PC9', 1000, sku='SKU-INBOX'))
+        self.card.total_sheet_quantity = 260
+        self.card.save()
+        entry = Production.objects.create(job_card=self.card, entry_type='printing', date='2026-10-27', shift='A',
+                                          print_pass_number=1, output_sheets=100, waste_sheets=2, impressions=102, status='completed')
+        self.printing_request = guard_completed_entry(self.card, entry, self.supervisor, 'Customer cut the order')
+        self.override = EditOverrideRequest.objects.create(
+            entity_type='production', record_id=entry.id, record_label='Printing record #1', requested_by=self.supervisor,
+            reason='Wrong impressions typed',
+        )
+
+    def test_reviewer_sees_both_kinds_in_one_inbox_with_decision_buttons(self):
+        self.client.force_login(self.manager)
+        html = self.client.get(reverse('production_approvals')).content.decode()                  # default tab: To review
+        self.assertIn('Customer cut the order', html)
+        self.assertIn('Wrong impressions typed', html)
+        self.assertIn('Edit override', html)
+        self.assertIn('Printing completion', html)
+        self.assertIn('Approve: allow the edit', html)
+        self.assertIn('Approve: printing is complete', html)
+        only_printing = self.client.get(reverse('production_approvals'), {'tab': 'printing'}).content.decode()
+        self.assertIn('Customer cut the order', only_printing)
+        self.assertNotIn('Wrong impressions typed', only_printing)
+
+    def test_both_kinds_are_decided_from_the_inbox_and_land_back_on_it(self):
+        self.client.force_login(self.manager)
+        response = self.client.post(reverse('review_override_request', args=[self.override.id]),
+                                    {'action': 'approve', 'review_note': 'ok'})
+        self.assertEqual(response.status_code, 302)
+        self.assertIn(reverse('production_approvals'), response['Location'])
+        self.override.refresh_from_db()
+        self.assertEqual((self.override.status, self.override.reviewed_by), ('approved', self.manager))
+        response = self.client.post(reverse('review_printing_completion', args=[self.printing_request.id]),
+                                    {'action': 'approve', 'review_note': 'ok'})
+        self.assertIn(reverse('production_approvals'), response['Location'])
+        self.printing_request.refresh_from_db()
+        self.assertEqual(self.printing_request.status, 'approved')
+
+    def test_my_requests_shows_the_requesters_own_items_of_both_kinds(self):
+        self.client.force_login(self.supervisor)
+        page = self.client.get(reverse('production_approvals'))                                    # not a reviewer: lands on My requests
+        html = page.content.decode()
+        self.assertEqual(page.context['tab'], 'mine')
+        self.assertIn('Customer cut the order', html)
+        self.assertIn('Wrong impressions typed', html)
+        self.assertNotIn('Approve: allow the edit', html)                                         # no decision buttons for the requester
+        self.assertEqual(len(page.context['waiting']), 2)
+        # the review tabs are for reviewers only
+        self.assertEqual(self.client.get(reverse('production_approvals'), {'tab': 'review'}).context['tab'], 'mine')
+
+    def test_an_approved_override_shows_as_ready_to_edit_for_the_requester(self):
+        self.client.force_login(self.manager)
+        self.client.post(reverse('review_override_request', args=[self.override.id]), {'action': 'approve'})
+        self.client.force_login(self.supervisor)
+        page = self.client.get(reverse('production_approvals'), {'tab': 'mine'})
+        self.assertEqual(len(page.context['ready']), 1)
+        self.assertIn('Edit now', page.content.decode())
+
+    def test_the_old_pages_lead_to_the_new_inbox(self):
+        self.client.force_login(self.manager)
+        for name, expected in (('override_requests', 'tab=overrides'), ('my_override_requests', 'tab=mine'),
+                               ('printing_completion_requests', reverse('production_approvals'))):
+            response = self.client.get(reverse(name))
+            self.assertEqual(response.status_code, 302, name)
+            self.assertIn(expected, response['Location'], name)
+
+    def test_the_menu_has_one_approvals_tab_with_one_badge(self):
+        self.client.force_login(self.manager)
+        html = self.client.get(reverse('production_approvals')).content.decode()
+        self.assertEqual(html.count('>Approvals'), 1)
+        self.assertNotIn('Printing Approvals', html)
+        self.assertNotIn('Override Requests', html)
+        self.assertIn('2 waiting', html)                                                          # one edit override + one printing completion
