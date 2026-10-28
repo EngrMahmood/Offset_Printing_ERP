@@ -1,3 +1,5 @@
+import logging
+
 from django.shortcuts import render, get_object_or_404, redirect
 from django.http import JsonResponse, Http404, HttpResponse
 from django.contrib import messages
@@ -29,6 +31,9 @@ from core.models import (
     Sorter,
 )
 from core.merge_sheets import standalone_sheets_expr
+from production.printing_completion import guard_completed_entry
+
+logger = logging.getLogger(__name__)
 from core.machine_scope import offset_machines
 from core.views import permission_required
 from core.services import (
@@ -192,6 +197,115 @@ def create_sorter_ajax(request):
 def production_entry(request):
     """Backward-compatible alias for printing production entry."""
     return printing_production_entry(request)
+
+
+def _can_review_printing_completion(user):
+    """Same people who review edit-override requests: admins, managers and production managers."""
+    if not user.is_authenticated:
+        return False
+    if user.is_staff:
+        return True
+    profile = getattr(user, 'profile', None)
+    return bool(profile and (profile.role or '') in {'admin', 'manager', 'production_manager'})
+
+
+def _announce_completion_request(request, completion_request):
+    """Tell the supervisor their completion went for approval, and the production managers it is waiting."""
+    from core.notifications import notify_roles
+
+    job_card = completion_request.job_card
+    messages.error(
+        request,
+        f'{job_card.job_card_no}: printing is {completion_request.shortfall_pcs:,} pcs '
+        f'({completion_request.shortfall_pct}%) short, so it cannot be marked completed yet. The entry was saved as '
+        f'In Progress and the completion has been sent to the Production Manager for approval.',
+    )
+    try:
+        notify_roles(
+            ('production_manager', 'manager'),
+            event_type='printing_completion_request',
+            title=f'Printing completion needs approval: {job_card.job_card_no}',
+            message=(
+                f'{completion_request.shortfall_pcs:,} pcs ({completion_request.shortfall_pct}%) short of '
+                f'{completion_request.order_pcs:,}. Reason: {completion_request.reason[:160]}'
+            ),
+            link=reverse('printing_completion_requests'),
+            entity_type='printing_completion_request',
+            entity_id=completion_request.pk,
+            actor=request.user,
+        )
+    except Exception:
+        logger.exception('Could not notify managers about printing completion request %s', completion_request.pk)
+
+
+@login_required
+def printing_completion_requests(request):
+    """Production Manager inbox: printing completions marked by supervisors while the job is still short."""
+    from core.models import PrintingCompletionRequest
+
+    if not _can_review_printing_completion(request.user):
+        messages.error(request, 'You do not have permission to access this feature.')
+        return redirect('home')
+    status_filter = (request.GET.get('status') or 'pending').strip()
+    qs_all = PrintingCompletionRequest.objects.select_related('job_card', 'requested_by', 'reviewed_by', 'production')
+    qs = qs_all.filter(status=status_filter) if status_filter in ('pending', 'approved', 'rejected') else qs_all
+    return render(request, 'production/printing_completion_requests.html', {
+        'requests_list': qs[:200],
+        'status_filter': status_filter if status_filter in ('pending', 'approved', 'rejected') else 'all',
+        'pending_count': qs_all.filter(status='pending').count(),
+    })
+
+
+@login_required
+def review_printing_completion(request, request_id):
+    """Approve (the entry becomes completed and the job counts as Printing Completed) or reject."""
+    from core.models import PrintingCompletionRequest
+    from core.notifications import notify_users
+    from production.wip_service import evaluate_and_update_job_wip_status
+
+    if not _can_review_printing_completion(request.user):
+        messages.error(request, 'You do not have permission to access this feature.')
+        return redirect('home')
+    completion_request = get_object_or_404(PrintingCompletionRequest, pk=request_id, status='pending')
+    if request.method != 'POST':
+        return redirect('printing_completion_requests')
+    action = (request.POST.get('action') or '').strip()
+    note = (request.POST.get('review_note') or '').strip()
+    if action not in ('approve', 'reject'):
+        messages.error(request, 'Invalid action.')
+        return redirect('printing_completion_requests')
+    if action == 'reject' and not note:
+        messages.error(request, 'Please write a note explaining the rejection.')
+        return redirect('printing_completion_requests')
+
+    job_card = completion_request.job_card
+    with transaction.atomic():
+        completion_request.status = 'approved' if action == 'approve' else 'rejected'
+        completion_request.reviewed_by = request.user
+        completion_request.review_note = note
+        completion_request.reviewed_at = timezone.now()
+        completion_request.save()
+        if action == 'approve':
+            if completion_request.production_id:
+                Production.objects.filter(pk=completion_request.production_id, is_active=True).update(status='completed')
+            evaluate_and_update_job_wip_status(job_card, user=request.user)
+    verb = 'approved' if action == 'approve' else 'rejected'
+    messages.success(request, f'{job_card.job_card_no}: printing completion {verb}.')
+    if completion_request.requested_by_id:
+        try:
+            notify_users(
+                [completion_request.requested_by],
+                event_type='printing_completion_reviewed',
+                title=f'Printing completion {verb}: {job_card.job_card_no}',
+                message=note,
+                link=reverse('production_wip'),
+                entity_type='printing_completion_request',
+                entity_id=completion_request.pk,
+                actor=request.user,
+            )
+        except Exception:
+            logger.exception('Could not notify requester of printing completion review %s', completion_request.pk)
+    return redirect('printing_completion_requests')
 
 
 @login_required
@@ -434,6 +548,7 @@ def printing_production_entry(request):
                     for field_name, value in payload.items():
                         setattr(edit_record, field_name, value)
                     edit_record.save()
+                    completion_request = guard_completed_entry(job_card, edit_record, request.user, remarks)
                     edit_record.downtime_entries.all().delete()
                     if downtime_entries:
                         ProductionDowntime.objects.bulk_create([
@@ -450,6 +565,8 @@ def printing_production_entry(request):
                     messages.success(request, f'Production record updated for Job Card {job_card.job_card_no}')
                 else:
                     messages.success(request, f'No changes detected for Job Card {job_card.job_card_no}')
+                if completion_request is not None:
+                    _announce_completion_request(request, completion_request)
                 # Consume any approval this edit was made under, so it drops off
                 # the requester's "My Override Requests" list.
                 EditOverrideRequest.objects.filter(
@@ -478,10 +595,13 @@ def printing_production_entry(request):
                     ])
                 record.created_by = request.user
                 record.save(update_fields=['created_by'])
+                completion_request = guard_completed_entry(job_card, record, request.user, remarks)
             create_reason = overrun_reason or 'Initial entry created'
             log_change('production', record, {}, request.user, 'create', create_reason)
 
             messages.success(request, f'Production data saved successfully for Job Card {job_card.job_card_no}')
+            if completion_request is not None:
+                _announce_completion_request(request, completion_request)
             return redirect('printing_production_entry')
 
         except ValidationError as e:

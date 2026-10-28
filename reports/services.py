@@ -2618,6 +2618,9 @@ def build_pending_work_context(request):
             'days_pending': (today - job.created_at.date()).days if job.created_at else '',
         })
 
+    from production.printing_completion import approved_completion_job_ids, is_printing_complete
+
+    approved_completion_ids = approved_completion_job_ids()
     for job in job_cards:
         if job.status not in PENDING_WORK_RELEASED_STATUSES:
             not_released_rows.append({
@@ -2656,7 +2659,12 @@ def build_pending_work_context(request):
         days_pending = (today - last_activity_date).days if last_activity_date else None
 
         packing_limit_pcs = printed_pcs if job.is_print_job else order_qty_pcs
-        pending_printing = max(order_qty_pcs - printed_pcs, 0) if job.is_print_job else 0
+        # Printing counts as done by the shared rule (order qty reached, every planned sheet used, completed
+        # within tolerance, or Production Manager approved), the same one the WIP status uses.
+        if job.is_print_job and not is_printing_complete(job, approved_completion_ids):
+            pending_printing = max(order_qty_pcs - printed_pcs, 0)
+        else:
+            pending_printing = 0
         pending_packing = max(packing_limit_pcs - packed_pcs, 0)
         pending_dispatch = max(packed_pcs - dispatched_pcs, 0)
 

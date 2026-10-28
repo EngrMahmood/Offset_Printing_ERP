@@ -2119,6 +2119,43 @@ class EditOverrideRequest(models.Model):
         )
 
 
+class PrintingCompletionRequest(models.Model):
+    """A supervisor marked a printing entry "completed" although the job's printing is not finished by
+    the rules in production.printing_completion (order quantity reached, every planned sheet used, or
+    completed within tolerance). The completion waits here for the Production Manager: approved, the
+    entry becomes completed and the job counts as Printing Completed; rejected, printing stays open."""
+
+    STATUS_CHOICES = [
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+
+    job_card = models.ForeignKey('JobCard', on_delete=models.CASCADE, related_name='printing_completion_requests')
+    production = models.ForeignKey(
+        'Production', on_delete=models.SET_NULL, null=True, blank=True, related_name='completion_requests',
+        help_text='The printing entry the supervisor tried to mark completed.',
+    )
+    requested_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, related_name='printing_completion_requests')
+    reason = models.TextField()
+    order_pcs = models.PositiveIntegerField(default=0)
+    printed_pcs = models.PositiveIntegerField(default=0)
+    shortfall_pcs = models.PositiveIntegerField(default=0)
+    shortfall_pct = models.FloatField(default=0)
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
+    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='printing_completions_reviewed')
+    review_note = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [models.Index(fields=['status', 'created_at'])]
+
+    def __str__(self):
+        return f"{self.job_card.job_card_no} printing completion — {self.get_status_display()}"
+
+
 # =========================
 # SHIFT CONFIG
 # =========================

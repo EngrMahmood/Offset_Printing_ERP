@@ -139,6 +139,15 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
             from core.permissions import user_has_permission
             can_set_pass_override = user_has_permission(request.user, 'action.set_pass_override')
 
+    def _pending_printing_completions() -> int:
+        if not can_review_overrides:
+            return 0
+        from core.models import PrintingCompletionRequest
+        try:
+            return PrintingCompletionRequest.objects.filter(status='pending').count()
+        except Exception:
+            return 0
+
     def _pending_override_reviews() -> int:
         if not can_review_overrides:
             return 0
@@ -197,6 +206,7 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         # Managers/admins who can approve edit-lock override requests.
         'can_review_overrides': can_review_overrides,
         'override_pending_count': _pending_override_reviews(),
+        'printing_completion_pending_count': _pending_printing_completions(),
         # Supervisory set of roles who may set a per-job pass-count override.
         'can_set_pass_override': can_set_pass_override,
         # The current user's approved-and-ready override requests (for "My Requests").

@@ -321,7 +321,12 @@ def _focus_order_fulfillment(start, end):
             continue
 
         packing_limit_pcs = printed_pcs if job_card.is_print_job else order_qty
-        pending_printing = max(order_qty - printed_pcs, 0) if job_card.is_print_job else 0
+        from production.printing_completion import is_printing_complete
+
+        # Same "printing complete" rule as the WIP status and the Pending Work report.
+        pending_printing = (
+            max(order_qty - printed_pcs, 0) if (job_card.is_print_job and not is_printing_complete(job_card)) else 0
+        )
         pending_packing = max(packing_limit_pcs - packed_pcs, 0)
         pending_dispatch = max(packed_pcs - dispatched_pcs, 0)
         workflow_status = job_card.workflow_status

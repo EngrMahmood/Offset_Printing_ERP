@@ -1,0 +1,67 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}Printing Approvals{% endblock %}
+{% block header_title %}Printing Approvals{% endblock %}
+{% block header_subtitle %}Printing marked completed by a supervisor while the job is still short of its order, waiting for the Production Manager.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .pa-filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
+    .pa-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; }
+    .pa-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; align-items: baseline; }
+    .pa-jc { font-size: 17px; font-weight: 700; color: #0f172a; }
+    .pa-sub { font-size: 12px; color: #64748b; }
+    .pa-nums { display: flex; flex-wrap: wrap; gap: 22px; margin: 10px 0; }
+    .pa-nums div { font-size: 12px; color: #64748b; text-transform: uppercase; letter-spacing: .04em; }
+    .pa-nums b { display: block; font-size: 18px; color: #0f172a; text-transform: none; letter-spacing: 0; font-variant-numeric: tabular-nums; }
+    .pa-nums .short b { color: #b91c1c; }
+    .pa-reason { background: #f8fafc; border-left: 3px solid #cbd5e1; padding: 8px 12px; font-size: 14px; margin: 8px 0; }
+    .pa-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+    .pa-form input[type=text] { flex: 1 1 260px; }
+    .pa-badge { display: inline-block; padding: 1px 9px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #e2e8f0; color: #334155; }
+    .pa-badge.approved { background: #dcfce7; color: #166534; } .pa-badge.rejected { background: #fee2e2; color: #991b1b; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <div class="pa-filters">
+            <a class="erp-btn {% if status_filter == 'pending' %}erp-btn-primary{% else %}erp-btn-secondary{% endif %} sm" href="?status=pending">Pending ({{ pending_count }})</a>
+            <a class="erp-btn {% if status_filter == 'approved' %}erp-btn-primary{% else %}erp-btn-secondary{% endif %} sm" href="?status=approved">Approved</a>
+            <a class="erp-btn {% if status_filter == 'rejected' %}erp-btn-primary{% else %}erp-btn-secondary{% endif %} sm" href="?status=rejected">Rejected</a>
+            <a class="erp-btn {% if status_filter == 'all' %}erp-btn-primary{% else %}erp-btn-secondary{% endif %} sm" href="?status=all">All</a>
+        </div>
+
+        {% for item in requests_list %}
+        <div class="pa-card">
+            <div class="pa-head">
+                <span class="pa-jc">{{ item.job_card.job_card_no }} <span class="pa-sub">· {{ item.job_card.SKU }}</span></span>
+                <span><span class="pa-badge {{ item.status }}">{{ item.get_status_display }}</span>
+                    <span class="pa-sub">requested by {{ item.requested_by.get_full_name|default:item.requested_by.username|default:'—' }} · {{ item.created_at|date:"d M Y H:i" }}</span></span>
+            </div>
+            <div class="pa-nums">
+                <div>Order<b>{{ item.order_pcs|intcomma }}</b></div>
+                <div>Printed<b>{{ item.printed_pcs|intcomma }}</b></div>
+                <div class="short">Short<b>{{ item.shortfall_pcs|intcomma }} ({{ item.shortfall_pct }}%)</b></div>
+                <div>Tolerance<b>{{ item.job_card.production_tolerance_percent|default:0 }}%</b></div>
+            </div>
+            <div class="pa-reason"><b>Supervisor's reason:</b> {{ item.reason }}</div>
+            {% if item.status == 'pending' %}
+            <form method="post" action="{% url 'review_printing_completion' item.id %}" class="pa-form">
+                {% csrf_token %}
+                <input type="text" name="review_note" class="erp-input" placeholder="Note (required to reject)">
+                <button type="submit" name="action" value="approve" class="erp-btn erp-btn-primary">Approve: printing is complete</button>
+                <button type="submit" name="action" value="reject" class="erp-btn erp-btn-secondary">Reject: keep printing open</button>
+            </form>
+            {% else %}
+            <div class="pa-sub">Reviewed by {{ item.reviewed_by.get_full_name|default:item.reviewed_by.username|default:'—' }}{% if item.reviewed_at %} · {{ item.reviewed_at|date:"d M Y H:i" }}{% endif %}{% if item.review_note %} · “{{ item.review_note }}”{% endif %}</div>
+            {% endif %}
+        </div>
+        {% empty %}
+        <p class="pa-sub">Nothing {% if status_filter == 'pending' %}waiting for approval{% else %}here{% endif %}.</p>
+        {% endfor %}
+    </section>
+</div>
+{% endblock %}

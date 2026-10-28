@@ -53,14 +53,15 @@ def get_system_calculated_status_name(job_card):
     # actually be done — order_qty alone under-counted it by 10x.
     printing_records = Production.objects.filter(job_card=job_card, is_active=True, entry_type='printing')
 
-    from production.printing_pass_helpers import get_job_card_pass_count
-    total_passes = get_job_card_pass_count(job_card)
-    final_pass_started = printing_records.filter(print_pass_number=total_passes, output_sheets__gt=0).exists()
+    # "Printing Completed" follows the one shared definition (production.printing_completion): order
+    # quantity reached, every planned sheet used (good + waste), completed within tolerance, or a
+    # Production Manager approval. The bare "printed pcs >= order qty" rule left jobs whose waste used
+    # up the last sheets stuck at Partial Printing.
+    from production.printing_completion import printing_completion_status
 
-    if final_pass_started:
-        if job_card.order_qty_pcs > 0 and job_card.total_printed_pcs >= job_card.order_qty_pcs:
-            return 'Printing Completed'
-        return 'Partial Printing'
+    completion = printing_completion_status(job_card)
+    if completion['final_pass_started']:
+        return 'Printing Completed' if completion['complete'] else 'Partial Printing'
 
     if printing_records.exists() or job_card.workflow_status == 'released':
         return 'Printing'
