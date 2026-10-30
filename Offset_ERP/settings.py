@@ -53,6 +53,10 @@ BACKUP_INPROCESS_SCHEDULER = os.environ.get('BACKUP_INPROCESS_SCHEDULER', 'True'
 # the primary's database.
 MAINTENANCE_INPROCESS_SCHEDULER = os.environ.get('MAINTENANCE_INPROCESS_SCHEDULER', 'True') == 'True'
 
+# The Production Plan scheduler (18:30 draft, 08:30 re-balance, 08:45 email). It also needs
+# BOT_INPROCESS_SCHEDULER on, so the standby that must never send stays silent.
+PLAN_INPROCESS_SCHEDULER = os.environ.get('PLAN_INPROCESS_SCHEDULER', 'True') == 'True'
+
 # Housekeeping that keeps the database (and therefore every backup) small. Run before each
 # backup and by `manage.py prune_old_data`. 0 disables a rule. These are optional env overrides;
 # when unset (None) the values on the Backup Settings page are used (defaults 30 / 14 / off).
@@ -159,6 +163,7 @@ INSTALLED_APPS = [
     'bot',
     'bom',
     'flexo',
+    'production_plan',
 ]
 
 MIDDLEWARE = [
@@ -169,6 +174,7 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'production_plan.middleware.PlanApprovalGateMiddleware',
 ]
 
 ROOT_URLCONF = 'Offset_ERP.urls'

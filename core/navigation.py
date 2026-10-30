@@ -150,6 +150,19 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         except Exception:
             return 0
 
+    def _plan_awaiting_approval() -> int:
+        """1 while the evening plan draft waits for a planner (or admin) to approve it."""
+        if not is_authenticated:
+            return 0
+        try:
+            from production_plan import services as plan_services
+
+            if plan_services.can_edit_plan(request.user) and plan_services.pending_draft() is not None:
+                return 1
+        except Exception:
+            pass
+        return 0
+
     def _pending_override_reviews() -> int:
         if not can_review_overrides:
             return 0
@@ -209,6 +222,8 @@ def get_nav_permissions(request: Any) -> dict[str, bool | str]:
         'can_review_overrides': can_review_overrides,
         'override_pending_count': _pending_override_reviews(),
         'printing_completion_pending_count': _pending_printing_completions(),
+        'plan_pending_count': _plan_awaiting_approval(),
+        'can_view_plan': is_authenticated,
         # One badge for the Approvals tab: what a reviewer must decide, or what is ready for the requester to act on.
         'approvals_badge_count': (_pending_override_reviews() + _pending_printing_completions()) if can_review_overrides else _my_override_actionable(),
         # Supervisory set of roles who may set a per-job pass-count override.

@@ -1,0 +1,291 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}Production Plan{% endblock %}
+{% block header_title %}Production Plan{% endblock %}
+{% block header_subtitle %}{% if plan %}{{ plan.morning_date|date:"l d F Y" }} · day and night shifts for the next working days{% else %}No plan has been built yet{% endif %}{% endblock %}
+
+{% block extra_head %}
+<style>
+    .pp-banner { border-radius: 10px; padding: 12px 16px; margin-bottom: 14px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; justify-content: space-between; }
+    .pp-banner.draft { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; }
+    .pp-banner.approved { background: #f0fdf4; border: 1px solid #bbf7d0; color: #166534; }
+    .pp-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+    .pp-tabs { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+    .pp-tab { padding: 8px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: #fff; color: #334155; text-decoration: none; font-weight: 600; font-size: 14px; }
+    .pp-tab.active { background: #1e3a5f; border-color: #1e3a5f; color: #fff; }
+    .pp-tab small { opacity: .75; font-weight: 400; margin-left: 4px; }
+    .pp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; margin-bottom: 12px; }
+    .pp-stat { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 10px 12px; }
+    .pp-stat span { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .04em; color: #64748b; }
+    .pp-stat b { font-size: 18px; font-variant-numeric: tabular-nums; color: #0f172a; }
+    .pp-alert { background: #fffbeb; border: 1px solid #fde68a; color: #92400e; border-radius: 8px; padding: 8px 12px; margin-bottom: 10px; font-size: 13px; }
+    .pp-grid { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 1000px; }
+    .pp-grid th, .pp-grid td { border: 1px solid #e2e8f0; vertical-align: top; padding: 6px; font-size: 12px; }
+    .pp-grid th { background: #f1f5f9; text-align: left; }
+    .pp-grid th.m, .pp-grid td.m { width: 84px; font-weight: 700; font-size: 13px; }
+    .pp-grid td { overflow: hidden; }
+    .pp-jc { white-space: nowrap; }
+    .pp-bar { height: 6px; background: #e2e8f0; border-radius: 3px; margin: 3px 0 6px; overflow: hidden; }
+    .pp-bar i { display: block; height: 100%; background: #2563eb; }
+    .pp-bar.full i { background: #16a34a; } .pp-bar.over i { background: #dc2626; }
+    .pp-load { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .pp-item { border-top: 1px dashed #e2e8f0; padding: 3px 0; }
+    .pp-item summary { cursor: pointer; list-style: none; display: block; }
+    .pp-line { display: flex; justify-content: space-between; gap: 6px; min-width: 0; }
+    .pp-item summary::-webkit-details-marker { display: none; }
+    .pp-jc { font-weight: 600; color: #0f172a; }
+    .pp-sku { color: #64748b; display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+    .pp-tag { display: inline-block; font-size: 10px; font-weight: 700; padding: 0 5px; border-radius: 6px; margin-left: 3px; background: #e2e8f0; color: #334155; }
+    .pp-tag.new { background: #dbeafe; color: #1e40af; } .pp-tag.pin { background: #fef3c7; color: #92400e; } .pp-tag.chunk { background: #ede9fe; color: #5b21b6; }
+    .pp-edit { padding: 6px 0 4px; display: grid; gap: 4px; }
+    .pp-edit form { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+    .pp-edit select, .pp-edit input { max-width: 150px; font-size: 12px; }
+    .pp-panel { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; margin-top: 14px; }
+    .pp-panel h3 { margin: 0 0 8px; font-size: 15px; }
+    .pp-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+    .pp-form label { font-size: 11px; text-transform: uppercase; color: #64748b; display: block; }
+    .pp-search { position: relative; min-width: 280px; }
+    .pp-results { position: absolute; z-index: 20; left: 0; right: 0; top: 100%; background: #fff; border: 1px solid #cbd5e1; border-radius: 8px; box-shadow: 0 8px 24px rgba(15,23,42,.14); display: none; max-height: 260px; overflow-y: auto; }
+    .pp-results.open { display: block; }
+    .pp-results div { padding: 6px 10px; cursor: pointer; font-size: 13px; border-bottom: 1px solid #f1f5f9; }
+    .pp-results div:hover { background: #eff6ff; }
+    .pp-small { font-size: 12px; color: #64748b; }
+    .pp-pct { font-weight: 700; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+{% if not plan %}
+    <section class="erp-section-shell"><p>No plan has been built yet. The first draft is built automatically at {{ settings.draft_time|time:"H:i" }}.</p></section>
+{% else %}
+    <section class="erp-section-shell">
+        <div class="pp-banner {{ plan.status }}">
+            <div>
+                {% if plan.status == 'draft' %}
+                    <b>Waiting for approval.</b>
+                    {% if can_edit %}Check the plan, change what you need, then approve it. Planning stays locked for planners until it is approved.{% else %}A planner has to approve this plan before it goes out.{% endif %}
+                {% else %}
+                    <b>Approved</b>{% if plan.approved_by %} by {{ plan.approved_by.get_full_name|default:plan.approved_by.username }}{% endif %} · {{ plan.approved_at|date:"d M H:i" }}
+                {% endif %}
+                <div class="pp-small" style="color:inherit;opacity:.85">
+                    Built {{ plan.generated_at|date:"d M H:i" }}{% if plan.rebalanced_at %} · re-balanced {{ plan.rebalanced_at|date:"d M H:i" }}{% endif %}
+                    {% if plan.emailed_at %} · emailed {{ plan.emailed_at|date:"d M H:i" }}{% if plan.email_status == 'sent_unapproved' %} (not re-approved){% endif %}{% elif plan.email_status == 'failed' %} · email failed{% endif %}
+                </div>
+            </div>
+            {% if can_edit and plan.status == 'draft' %}
+            <form method="post" action="{% url 'production_plan:approve' plan.id %}">{% csrf_token %}<button class="erp-btn erp-btn-primary" type="submit">Approve the plan</button></form>
+            {% endif %}
+        </div>
+
+        <div class="pp-actions">
+            <a class="erp-btn erp-btn-secondary sm" href="{% url 'production_plan:export' plan.id 'xlsx' %}">Excel</a>
+            <a class="erp-btn erp-btn-secondary sm" href="{% url 'production_plan:export' plan.id 'pdf' %}">PDF</a>
+            <button class="erp-btn sm" id="pp-share" type="button" style="background:#16a34a;color:#fff">Share on WhatsApp</button>
+            {% if can_edit %}
+            <form method="post" action="{% url 'production_plan:recalculate' plan.id %}" style="display:inline">{% csrf_token %}<input type="hidden" name="lane" value="{{ lane }}"><button class="erp-btn erp-btn-secondary sm" type="submit" title="Keeps your changes, removes printed jobs, refills free capacity">Recalculate</button></form>
+            {% endif %}
+            {% if is_admin %}
+            <form method="post" action="{% url 'production_plan:email_now' plan.id %}" style="display:inline" onsubmit="return confirm('Send the plan email to the planners (CC printing) now?')">{% csrf_token %}<button class="erp-btn erp-btn-secondary sm" type="submit">Email now</button></form>
+            <a class="erp-btn erp-btn-secondary sm" href="{% url 'production_plan:settings' %}">Settings</a>
+            {% endif %}
+            <span class="pp-small" id="pp-status"></span>
+        </div>
+
+        <div class="pp-tabs">
+            {% for t in lane_tabs %}
+            <a class="pp-tab {% if lane == t.key %}active{% endif %}" href="?lane={{ t.key }}&tab={{ tab }}&plan={{ plan.id }}">{{ t.label }}<small>{{ t.planned|intcomma }} / {{ t.capacity|intcomma }}</small></a>
+            {% endfor %}
+        </div>
+        <div class="pp-tabs">
+            <a class="pp-tab {% if tab == 'plan' %}active{% endif %}" href="?lane={{ lane }}&tab=plan&plan={{ plan.id }}">Plan</a>
+            <a class="pp-tab {% if tab == 'actual' %}active{% endif %}" href="?lane={{ lane }}&tab=actual&plan={{ plan.id }}">Plan vs actual</a>
+            <a class="pp-tab {% if tab == 'history' %}active{% endif %}" href="?lane={{ lane }}&tab=history&plan={{ plan.id }}">History</a>
+        </div>
+
+        {% if night_missing.machines %}
+        <div class="pp-alert"><b>Night entries not logged for {{ night_missing.date|date:"D d M" }}:</b> {{ night_missing.machines|join:", " }}. Their planned jobs stay unconfirmed until the supervisors log them.</div>
+        {% endif %}
+        {% if overflow_new %}
+        <div class="pp-alert"><b>New jobs that do not fit the day shifts</b> (they never go to a night shift): {% for o in overflow_new %}{{ o.jc }} ({{ o.qty|intcomma }}){% if not forloop.last %}, {% endif %}{% endfor %}</div>
+        {% endif %}
+
+        {% if tab == 'plan' %}
+            {% if stats %}
+            <div class="pp-stats">
+                <div class="pp-stat"><span>Planned / capacity</span><b>{{ stats.planned|intcomma }} / {{ stats.capacity|intcomma }}</b></div>
+                <div class="pp-stat"><span>Jobs in plan</span><b>{{ stats.jobs_planned }}</b></div>
+                <div class="pp-stat"><span>Waiting after this plan</span><b>{{ stats.unplanned|intcomma }}</b></div>
+                <div class="pp-stat"><span>Backlog at the 40k target</span><b>{{ stats.backlog_days_at_target|default:"-" }} days</b></div>
+            </div>
+            {% endif %}
+
+            <div class="erp-table-wrap" style="overflow-x:auto">
+            <table class="pp-grid">
+                <thead><tr><th class="m">Machine</th>{% for h in slot_headers %}<th>{{ h.label }}</th>{% endfor %}</tr></thead>
+                <tbody>
+                {% for row in rows %}
+                <tr>
+                    <td class="m">{{ row.machine.name }}</td>
+                    {% for c in row.cells %}
+                    <td>
+                        {% if c.blocked %}<span class="pp-tag" style="background:#fee2e2;color:#991b1b">blocked</span>
+                        {% else %}
+                        <span class="pp-load">{{ c.total|intcomma }}</span> <span class="pp-small">/ {{ c.cap|intcomma }}</span>
+                        <div class="pp-bar {% if c.over %}over{% elif c.pct >= 90 %}full{% endif %}"><i style="width:{{ c.pct }}%"></i></div>
+                        {% endif %}
+                        {% for it in c.items %}
+                        <details class="pp-item">
+                            <summary>
+                                <div class="pp-line"><span class="pp-jc">{{ it.jc_number }}</span><span class="pp-load">{{ it.qty|intcomma }}</span></div>
+                                <div>{% if it.is_new %}<span class="pp-tag new">NEW</span>{% endif %}{% if it.pinned %}<span class="pp-tag pin">PIN</span>{% endif %}{% if it.is_chunk %}<span class="pp-tag chunk">PART</span>{% endif %}<span class="pp-sku">{{ it.sku|truncatechars:34 }}</span></div>
+                            </summary>
+                            <div class="pp-small">Ordered {{ it.order_date|date:"d M Y" }}{% if it.fifo_reason %} · FIFO jump: {{ it.fifo_reason }}{% endif %}</div>
+                            {% if can_edit %}
+                            <div class="pp-edit">
+                                <form method="post" action="{% url 'production_plan:item_move' plan.id it.id %}">{% csrf_token %}
+                                    <select name="machine_id" class="erp-select">{% for m in grid.machines %}<option value="{{ m.id }}" {% if m.id == it.machine_id %}selected{% endif %}>{{ m.name }}</option>{% endfor %}</select>
+                                    <select name="slot" class="erp-select">{% for o in slot_options %}<option value="{{ o.value }}" {% if o.value == c.slot_value %}selected{% endif %}>{{ o.label }}</option>{% endfor %}</select>
+                                    <input type="number" name="qty" value="{{ it.qty }}" min="1" max="{{ it.qty }}" class="erp-input">
+                                    <button class="erp-btn erp-btn-secondary sm" type="submit">Move</button>
+                                </form>
+                                <form method="post" action="{% url 'production_plan:item_pin' plan.id it.id %}" style="display:inline">{% csrf_token %}<button class="erp-btn erp-btn-secondary sm" type="submit">{% if it.pinned %}Unpin{% else %}Pin{% endif %}</button></form>
+                                <form method="post" action="{% url 'production_plan:item_remove' plan.id it.id %}" style="display:inline" onsubmit="return confirm('Remove {{ it.jc_number }} from this slot?')">{% csrf_token %}<button class="erp-btn erp-btn-secondary sm" type="submit">Remove</button></form>
+                            </div>
+                            {% endif %}
+                        </details>
+                        {% endfor %}
+                    </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+
+            {% if can_edit %}
+            <div class="pp-panel">
+                <h3>Add a job to the plan, or set its priority</h3>
+                <div class="pp-form">
+                    <div class="pp-search"><label>Job card or SKU</label>
+                        <input type="text" id="pp-job-q" class="erp-input" autocomplete="off" placeholder="Type 2+ characters" style="width:100%">
+                        <div class="pp-results" id="pp-job-results"></div>
+                    </div>
+                    <span class="pp-small" id="pp-job-picked">No job picked</span>
+                </div>
+                <form method="post" action="{% url 'production_plan:item_add' plan.id %}" class="pp-form" style="margin-top:8px">{% csrf_token %}
+                    <input type="hidden" name="lane" value="{{ lane }}"><input type="hidden" name="job_id" id="pp-job-id">
+                    <div><label>Machine</label><select name="machine_id" class="erp-select">{% for m in grid.machines %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
+                    <div><label>Shift</label><select name="slot" class="erp-select">{% for o in slot_options %}<option value="{{ o.value }}">{{ o.label }}</option>{% endfor %}</select></div>
+                    <div><label>Impressions</label><input type="number" name="qty" min="1" class="erp-input" id="pp-qty"></div>
+                    <div><label>Reason (only if ahead of FIFO)</label><input type="text" name="fifo_reason" class="erp-input" style="min-width:220px"></div>
+                    <button class="erp-btn erp-btn-primary" type="submit">Add to plan</button>
+                </form>
+                <form method="post" action="{% url 'production_plan:set_priority' plan.id %}" class="pp-form" style="margin-top:8px">{% csrf_token %}
+                    <input type="hidden" name="lane" value="{{ lane }}"><input type="hidden" name="job_id" id="pp-job-id2">
+                    <div><label>Priority of the picked job</label><select name="priority" class="erp-select">{% for v, l in priority_choices %}<option value="{{ v }}" {% if v == 1 %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></div>
+                    <button class="erp-btn erp-btn-secondary" type="submit">Set priority</button>
+                    <span class="pp-small">Higher priority goes ahead of age when jobs are chosen. Recalculate to apply it.</span>
+                </form>
+            </div>
+
+            <div class="pp-panel">
+                <h3>Block a machine (maintenance, breakdown)</h3>
+                <form method="post" action="{% url 'production_plan:block_add' plan.id %}" class="pp-form">{% csrf_token %}
+                    <input type="hidden" name="lane" value="{{ lane }}">
+                    <div><label>Machine</label><select name="machine_id" class="erp-select">{% for m in machines_all %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
+                    <div><label>Date</label><input type="date" name="date" class="erp-input" required></div>
+                    <div><label>Shift</label><select name="shift" class="erp-select"><option value="D">Day</option><option value="N">Night</option><option value="B">Both</option></select></div>
+                    <div><label>Reason</label><input type="text" name="reason" class="erp-input"></div>
+                    <button class="erp-btn erp-btn-secondary" type="submit">Block</button>
+                </form>
+                {% if blocks %}<div class="pp-small" style="margin-top:8px">Upcoming blocks:
+                    {% for b in blocks %}<form method="post" action="{% url 'production_plan:block_remove' plan.id b.id %}" style="display:inline">{% csrf_token %}<input type="hidden" name="lane" value="{{ lane }}">{{ b.machine.name }} {{ b.date|date:"d M" }} {{ b.get_shift_display }}{% if b.reason %} ({{ b.reason }}){% endif %} <button class="erp-btn erp-btn-secondary sm" type="submit">x</button></form>{% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+                <div class="pp-small" style="margin-top:6px">Preventive-maintenance days from the Maintenance module block automatically.</div>
+            </div>
+            {% endif %}
+
+            {% if diff.removed_printed or diff.reduced %}
+            <div class="pp-panel"><h3>Changed at the last re-balance</h3>
+                {% if diff.removed_printed %}<div class="pp-small">Removed, already printed: {{ diff.removed_printed|join:", " }}</div>{% endif %}
+                {% if diff.reduced %}<div class="pp-small">Reduced to what was left: {% for r in diff.reduced %}{{ r.jc }} ({{ r.from|intcomma }} to {{ r.to|intcomma }}){% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
+            </div>
+            {% endif %}
+
+        {% elif tab == 'actual' %}
+            <div class="erp-table-wrap erp-table-dense"><table class="erp-table">
+                <thead><tr><th>Date</th><th>Shift</th><th>Machine</th><th class="text-right">Planned</th><th class="text-right">Printed</th><th class="text-right">Of plan</th></tr></thead>
+                <tbody>
+                {% for r in actual_rows %}
+                <tr><td>{{ r.date|date:"D d M" }}</td><td>{% if r.shift == 'D' %}Day{% else %}Night{% endif %}</td><td>{{ r.machine }}</td>
+                    <td class="text-right">{{ r.planned|intcomma }}</td>
+                    <td class="text-right">{% if r.started %}{{ r.actual|intcomma }}{% else %}-{% endif %}</td>
+                    <td class="text-right pp-pct" style="color:{% if not r.started %}#94a3b8{% elif r.pct >= 90 %}#166534{% elif r.pct >= 60 %}#92400e{% else %}#991b1b{% endif %}">{% if r.started %}{{ r.pct }}%{% else %}not started{% endif %}</td></tr>
+                {% empty %}<tr><td colspan="6">Nothing planned in this lane.</td></tr>{% endfor %}
+                </tbody></table></div>
+            <p class="pp-small">Printed = impressions entered for the machine and shift (night entries come from the supervisors, so a night can read low until they are logged).</p>
+        {% else %}
+            <div class="erp-table-wrap erp-table-dense"><table class="erp-table">
+                <thead><tr><th>When</th><th>Who</th><th>What</th><th>Detail</th></tr></thead>
+                <tbody>{% for e in events %}<tr><td>{{ e.at|date:"d M H:i" }}</td><td>{% if e.user %}{{ e.user.get_full_name|default:e.user.username }}{% else %}system{% endif %}</td><td>{{ e.action }}</td><td>{{ e.detail|truncatechars:160 }}</td></tr>{% empty %}<tr><td colspan="4">Nothing yet.</td></tr>{% endfor %}</tbody>
+            </table></div>
+        {% endif %}
+    </section>
+{% endif %}
+</div>
+{% endblock %}
+
+{% block extra_js %}
+{% if plan %}
+<script>
+(function () {
+    var status = document.getElementById('pp-status');
+    function say(t) { if (status) status.textContent = t; }
+    var share = document.getElementById('pp-share');
+    if (share) share.addEventListener('click', function () {
+        say('Preparing...');
+        fetch("{% url 'production_plan:share_text' plan.id %}", {credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (data) {
+            return fetch(data.image_url, {credentials: 'same-origin'}).then(function (r) { return r.blob(); }).then(function (blob) {
+                var file = new File([blob], 'production-plan.png', {type: 'image/png'});
+                if (navigator.canShare && navigator.canShare({files: [file]})) {
+                    return navigator.share({files: [file], text: data.text}).then(function () { say('Shared.'); });
+                }
+                window.open('https://wa.me/?text=' + encodeURIComponent(data.text), '_blank');
+                say('WhatsApp opened with the text. Download the PDF/Excel for the full job list.');
+            });
+        }).catch(function (e) { say(e && e.name === 'AbortError' ? 'Cancelled.' : 'Sharing failed.'); });
+    });
+
+    var q = document.getElementById('pp-job-q'), box = document.getElementById('pp-job-results');
+    if (!q) return;
+    var timer = null;
+    function pick(r) {
+        document.getElementById('pp-job-id').value = r.id;
+        document.getElementById('pp-job-id2').value = r.id;
+        document.getElementById('pp-job-picked').textContent = r.jc + ' - ' + r.sku + ' (' + r.remaining.toLocaleString() + ' left' + (r.new ? ', NEW job' : '') + ')';
+        document.getElementById('pp-qty').value = Math.min(r.remaining, 40000);
+        box.classList.remove('open'); q.value = r.jc;
+    }
+    q.addEventListener('input', function () {
+        clearTimeout(timer);
+        timer = setTimeout(function () {
+            var v = q.value.trim();
+            if (v.length < 2) { box.classList.remove('open'); return; }
+            fetch("{% url 'production_plan:job_search' %}?q=" + encodeURIComponent(v), {credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (d) {
+                box.innerHTML = '';
+                (d.results || []).forEach(function (r) {
+                    var el = document.createElement('div');
+                    el.textContent = r.jc + ' - ' + r.sku + ' - ' + r.remaining.toLocaleString() + ' left (' + r.lane + ', ordered ' + r.order_date + ')';
+                    el.addEventListener('mousedown', function (e) { e.preventDefault(); pick(r); });
+                    box.appendChild(el);
+                });
+                box.classList.toggle('open', box.children.length > 0);
+            });
+        }, 200);
+    });
+    document.addEventListener('click', function (e) { if (!e.target.closest('.pp-search')) box.classList.remove('open'); });
+})();
+</script>
+{% endif %}
+{% endblock %}
