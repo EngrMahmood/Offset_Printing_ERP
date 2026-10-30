@@ -287,10 +287,14 @@
     if (share) share.addEventListener('click', function () {
         say('Preparing...');
         fetch("{% url 'production_plan:share_text' plan.id %}", {credentials: 'same-origin'}).then(function (r) { return r.json(); }).then(function (data) {
-            return fetch(data.image_url, {credentials: 'same-origin'}).then(function (r) { return r.blob(); }).then(function (blob) {
-                var file = new File([blob], 'production-plan.png', {type: 'image/png'});
-                if (navigator.canShare && navigator.canShare({files: [file]})) {
-                    return navigator.share({files: [file], text: data.text}).then(function () { say('Shared.'); });
+            function get(u) { return fetch(u, {credentials: 'same-origin'}).then(function (r) { return r.blob(); }); }
+            return Promise.all([get(data.image_url), get(data.pdf_url)]).then(function (blobs) {
+                var png = new File([blobs[0]], 'production-plan.png', {type: 'image/png'});
+                var pdf = new File([blobs[1]], 'production-plan.pdf', {type: 'application/pdf'});
+                var files = [png, pdf];
+                if (!(navigator.canShare && navigator.canShare({files: files}))) files = [png];
+                if (navigator.canShare && navigator.canShare({files: files})) {
+                    return navigator.share({files: files, text: data.text}).then(function () { say(files.length > 1 ? 'Shared picture and PDF.' : 'Shared the picture only (this phone cannot share the PDF too).'); });
                 }
                 window.open('https://wa.me/?text=' + encodeURIComponent(data.text), '_blank');
                 say('WhatsApp opened with the text. Download the PDF/Excel for the full job list.');

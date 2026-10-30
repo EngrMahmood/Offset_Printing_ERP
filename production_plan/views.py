@@ -176,6 +176,7 @@ def _add_job(plan, user, post):
         remaining_at_plan=info['remaining'], priority=info['priority'], is_new=info['is_new'], pinned=True, manual=True,
         fifo_reason=reason if job_id not in window_jobs else '',
     )
+    services.resequence(plan)
     services.log_event(plan, user, 'item_added', f"{info['job'].jc_number} {qty:,} on {machine.name} {date_text} {shift}" + (f' (FIFO jump: {reason})' if reason else ''))
     return info['job'], qty, machine
 
@@ -256,6 +257,7 @@ def item_move(request, plan_id, item_id):
         else:
             item.qty -= qty
             item.save(update_fields=['qty'])
+        services.resequence(plan)
         services.log_event(plan, request.user, 'item_moved', f'{item.jc_number} {qty:,} to {machine.name} {date_text} {shift}')
         messages.success(request, f'Moved {qty:,} impressions of {item.jc_number} to {machine.name}.')
     except (ValueError, Machine.DoesNotExist) as exc:
@@ -297,8 +299,9 @@ def set_priority(request, plan_id):
     job.priority = priority
     job.save(update_fields=['priority'])
     plan.items.filter(planning_job=job).update(priority=priority)
+    services.resequence(plan)
     services.log_event(plan, request.user, 'priority', f'{job.jc_number}: {PRIORITY_LABELS.get(old, old)} -> {PRIORITY_LABELS[priority]}')
-    messages.success(request, f'{job.jc_number} is now {PRIORITY_LABELS[priority]} priority. Recalculate to apply it to free capacity.')
+    messages.success(request, f'{job.jc_number} is now {PRIORITY_LABELS[priority]} priority. The rows are re-ordered now; Recalculate to also let it take free capacity.')
     return _back(request.POST.get('lane', ''))
 
 
@@ -425,7 +428,8 @@ def export(request, plan_id, kind):
 def share_text(request, plan_id):
     """The WhatsApp message for a plan (text); the picture comes from share_image."""
     plan = get_object_or_404(ProductionPlan, pk=plan_id)
-    return JsonResponse({'text': services.whatsapp_text(plan), 'image_url': reverse('production_plan:share_image', args=[plan.pk])})
+    return JsonResponse({'text': services.whatsapp_text(plan), 'image_url': reverse('production_plan:share_image', args=[plan.pk]),
+                         'pdf_url': reverse('production_plan:export', args=[plan.pk, 'pdf'])})
 
 
 @login_required

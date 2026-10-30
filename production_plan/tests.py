@@ -519,3 +519,30 @@ class HoldWindowTests(ViewTests):
         job.refresh_from_db()
         self.assertFalse(job.is_on_hold)
         self.assertIn(job.id, engine.load_jobs(self.cfg, MON))
+
+
+class PriorityOrderTests(ViewTests):
+    def test_setting_priority_reorders_rows_at_once_and_exports_follow(self):
+        self.client.force_login(self.planner)
+        cell = None
+        for key in {(i.machine_id, i.plan_date, i.shift) for i in self.plan.items.all()}:
+            rows = list(self.plan.items.filter(machine_id=key[0], plan_date=key[1], shift=key[2]))
+            if len(rows) >= 2 and len({r.planning_job_id for r in rows}) >= 2:
+                cell = rows
+                break
+        self.assertIsNotNone(cell, 'fixture needs a shift with two jobs')
+        last = cell[-1]
+        self.client.post(reverse('production_plan:set_priority', args=[self.plan.id]), {'job_id': last.planning_job_id, 'priority': 4})
+        rows = list(self.plan.items.filter(machine_id=last.machine_id, plan_date=last.plan_date, shift=last.shift))
+        self.assertEqual(rows[0].planning_job_id, last.planning_job_id)
+        priorities = [r.priority for r in rows]
+        self.assertEqual(priorities, sorted(priorities, reverse=True))
+        self.assertEqual([r.sequence for r in rows], list(range(1, len(rows) + 1)))
+        payload = services.export_payload(self.plan)['data']['export_rows']
+        first = [r for r in payload if r['machine'] == last.machine.name and r['sequence'] == 1 and r['date'].startswith(f'{last.plan_date:%a %d %b}') and r['shift'] == engine.SHIFT_LABELS[last.shift]]
+        self.assertEqual(first[0]['jc_number'], last.jc_number)
+
+    def test_share_carries_the_pdf_link(self):
+        self.client.force_login(self.planner)
+        data = self.client.get(reverse('production_plan:share_text', args=[self.plan.id])).json()
+        self.assertTrue(data['pdf_url'].endswith('/pdf/'))

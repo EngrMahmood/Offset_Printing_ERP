@@ -70,6 +70,22 @@ def _items_as_dicts(plan):
     return [{f: getattr(item, f) for f in ITEM_FIELDS} for item in plan.items.all()]
 
 
+def resequence(plan):
+    """Inside every machine/shift the rows follow priority (Urgent first), then the engine's own order."""
+    cells = defaultdict(list)
+    for item in plan.items.all():
+        cells[(item.machine_id, item.plan_date, item.shift)].append(item)
+    changed = []
+    for items in cells.values():
+        items.sort(key=lambda i: (-i.priority, i.sequence, i.id))
+        for n, item in enumerate(items, start=1):
+            if item.sequence != n:
+                item.sequence = n
+                changed.append(item)
+    if changed:
+        PlanItem.objects.bulk_update(changed, ['sequence'])
+
+
 def _save_build(plan, build, replace=True):
     kept = {key: (plan.summary or {})[key] for key in ('notified',) if key in (plan.summary or {})}
     with transaction.atomic():
@@ -79,6 +95,7 @@ def _save_build(plan, build, replace=True):
         plan.horizon_dates = [d.isoformat() for d in build.dates]
         plan.summary = {**build.summary, 'diff': build.diff, **kept}
         plan.save(update_fields=['horizon_dates', 'summary'])
+        resequence(plan)
 
 
 # ----------------------------------------------------------------------------- lifecycle
