@@ -47,9 +47,13 @@ def can_edit_plan(user):
 
 
 def pending_draft():
-    """The latest plan if it is still waiting for approval."""
+    """The latest plan if it is a draft the planners have been asked to approve."""
     plan = ProductionPlan.objects.exclude(status='superseded').order_by('-morning_date', '-id').first()
-    return plan if plan is not None and plan.status == 'draft' else None
+    # A draft only waits for approval (red tag, planner lock) once the planners have been notified; a preview
+    # built by an admin earlier in the day stays quiet until the evening run notifies them.
+    if plan is not None and plan.status == 'draft' and (plan.summary or {}).get('notified'):
+        return plan
+    return None
 
 
 def current_plan():
@@ -67,12 +71,13 @@ def _items_as_dicts(plan):
 
 
 def _save_build(plan, build, replace=True):
+    kept = {key: (plan.summary or {})[key] for key in ('notified',) if key in (plan.summary or {})}
     with transaction.atomic():
         if replace:
             plan.items.all().delete()
         PlanItem.objects.bulk_create([PlanItem(plan=plan, **{k: v for k, v in item.items() if k in ITEM_FIELDS}) for item in build.items])
         plan.horizon_dates = [d.isoformat() for d in build.dates]
-        plan.summary = {**build.summary, 'diff': build.diff}
+        plan.summary = {**build.summary, 'diff': build.diff, **kept}
         plan.save(update_fields=['horizon_dates', 'summary'])
 
 
@@ -86,6 +91,9 @@ def build_draft(today=None, settings_obj=None, notify=True):
     morning = engine.next_working_day(today, settings_obj)
     existing = ProductionPlan.objects.filter(morning_date=morning).exclude(status='superseded').first()
     if existing is not None:
+        if notify and existing.status == 'draft' and not (existing.summary or {}).get('notified'):
+            rebalance(existing, settings_obj, today)                 # a preview built earlier: refresh it, then ask for approval
+            notify_draft(existing)
         return existing
     base = ProductionPlan.objects.exclude(status='superseded').filter(morning_date__lt=morning).order_by('-morning_date', '-id').first()
     build = engine.build_plan(morning, settings_obj, base_items=_items_as_dicts(base) if base else None, today=today)
@@ -100,6 +108,8 @@ def build_draft(today=None, settings_obj=None, notify=True):
 
 
 def notify_draft(plan):
+    plan.summary = {**(plan.summary or {}), 'notified': True}
+    plan.save(update_fields=['summary'])
     link = reverse('production_plan:board')
     for user in planner_users():
         Notification.objects.create(

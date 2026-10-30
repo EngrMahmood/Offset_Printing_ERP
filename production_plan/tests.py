@@ -264,9 +264,23 @@ class LifecycleAndGateTests(PlanTestBase):
         if item.plan_date >= WED:
             self.assertTrue(second.items.filter(planning_job_id=item.planning_job_id, pinned=True).exists())
 
+    def test_a_preview_built_by_an_admin_does_not_lock_anyone_until_the_evening_run_notifies(self):
+        self.client.force_login(self.planner)
+        preview = services.build_draft(today=MON, settings_obj=self.cfg, notify=False)
+        self.assertIsNone(services.pending_draft())                                                    # no red tag, no lock
+        self.assertNotEqual(self.client.get(reverse('planning:home')).status_code, 302)
+        self.assertFalse(Notification.objects.filter(event_type='production_plan.draft').exists())
+        late = self.job(100, datetime.date(2026, 11, 2), new=True)                                     # released after the preview
+        evening = services.build_draft(today=MON, settings_obj=self.cfg)                               # the 18:30 run
+        self.assertEqual(evening.pk, preview.pk)                                                        # same plan, refreshed
+        self.assertIn(late.jc_number, [o['jc'] for o in evening.summary['overflow_new']])              # seen by the refresh (the day shifts are full)
+        self.assertIsNotNone(services.pending_draft())
+        self.assertTrue(Notification.objects.filter(user=self.planner, event_type='production_plan.draft').exists())
+        self.assertEqual(self.client.get(reverse('planning:home')).status_code, 302)
+
     def test_planners_are_locked_out_of_planning_until_the_plan_is_approved(self):
         self.client.force_login(self.planner)
-        plan = services.build_draft(today=MON, settings_obj=self.cfg, notify=False)
+        plan = services.build_draft(today=MON, settings_obj=self.cfg)
         blocked = self.client.get(reverse('planning:home'))
         self.assertEqual(blocked.status_code, 302)
         self.assertEqual(blocked['Location'], reverse('production_plan:board'))
@@ -280,7 +294,7 @@ class LifecycleAndGateTests(PlanTestBase):
         self.assertNotEqual(self.client.get(reverse('planning:home')).status_code, 302)               # planning is open again
 
     def test_the_gate_can_be_switched_off(self):
-        services.build_draft(today=MON, settings_obj=self.cfg, notify=False)
+        services.build_draft(today=MON, settings_obj=self.cfg)
         self.cfg.gate_enabled = False
         self.cfg.save()
         self.client.force_login(self.planner)
@@ -367,7 +381,7 @@ class ViewTests(PlanTestBase):
         self.admin = User.objects.create_superuser('view_admin', password='pw12345678')
         self.jobs = [self.job(700, datetime.date(2026, 10, 1 + i)) for i in range(5)]
         self.extra = self.job(300, datetime.date(2026, 11, 1))
-        self.plan = services.build_draft(today=MON, settings_obj=self.cfg, notify=False)
+        self.plan = services.build_draft(today=MON, settings_obj=self.cfg)
 
     def test_board_exports_and_sharing(self):
         self.client.force_login(self.planner)
@@ -468,3 +482,4 @@ class ViewTests(PlanTestBase):
         self.assertEqual((day['actual'], day['started']), (500, True))
         future = [r for r in rows if r['date'] == WED and r['shift'] == 'N'][0]
         self.assertFalse(future['started'])
+
