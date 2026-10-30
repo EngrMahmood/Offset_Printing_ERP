@@ -39,7 +39,7 @@ def board(request):
     plan = plan or services.current_plan()
     can_edit = services.can_edit_plan(request.user)
     lane = request.GET.get('lane') if request.GET.get('lane') in engine.LANES else 'black'
-    tab = request.GET.get('tab') if request.GET.get('tab') in ('plan', 'actual', 'history') else 'plan'
+    tab = request.GET.get('tab') if request.GET.get('tab') in ('plan', 'actual', 'history', 'hold') else 'plan'
     context = {
         'plan': plan, 'can_edit': can_edit, 'is_admin': request.user.is_superuser or request.user.is_staff,
         'lane': lane, 'tab': tab, 'lanes': [(k, engine.LANE_LABELS[k]) for k in engine.LANES],
@@ -66,6 +66,11 @@ def board(request):
         cells.append(row)
     context['rows'] = cells
     context['slot_headers'] = [{'date': d, 'shift': sh, 'label': services.slot_label(d, sh)} for d, sh in grid[lane]['slots']]
+    context['hold_count'] = PlanningJob.objects.filter(
+        is_active=True, is_on_hold=True, status__in=('released', 'in_production'),
+    ).exclude(job_process_type='cut_and_pack').count()
+    if tab == 'hold':
+        context['held'] = _held_rows(plan, settings_obj)
     if tab == 'actual':
         context['actual_rows'] = [r for r in services.plan_vs_actual(plan, settings_obj) if r['lane'] == lane]
     if tab == 'history':
@@ -73,6 +78,26 @@ def board(request):
     night_date, missing = services.night_entries_missing(plan.morning_date, settings_obj)
     context['night_missing'] = {'date': night_date, 'machines': missing}
     return render(request, 'production_plan/board.html', context)
+
+
+def _held_rows(plan, settings_obj):
+    """Jobs on hold that would otherwise be planned, with what is needed to put them back."""
+    info = engine.load_jobs(settings_obj, timezone.localdate(), only_held=True)
+    machines = engine.lane_machines(settings_obj)
+    cap = int(settings_obj.shift_capacity)
+    rows = []
+    for job_id, v in info.items():
+        job = v['job']
+        lane = v['lane']
+        rows.append({
+            'job': job, 'lane': lane, 'lane_label': engine.LANE_LABELS.get(lane, 'No colour data'), 'remaining': v['remaining'],
+            'order_date': v['order_date'], 'is_new': v['is_new'], 'priority': PRIORITY_LABELS.get(v['priority'], v['priority']),
+            'reason': job.hold_reason, 'held_by': (job.hold_by.get_full_name() or job.hold_by.username) if job.hold_by_id else '',
+            'held_at': job.hold_at, 'machines': machines.get(lane, []), 'default_qty': min(v['remaining'], cap),
+            'can_add': bool(lane) and v['remaining'] > 0,
+        })
+    rows.sort(key=lambda r: (r['order_date'], r['job'].jc_number))
+    return rows
 
 
 def _require_editor(request):
@@ -119,6 +144,42 @@ def _job_remaining(job_id):
     return info
 
 
+def _add_job(plan, user, post):
+    """Put a job into a slot of the plan from form data. Raises ValueError with a message the planner can act on."""
+    settings_obj = PlanSettings.get()
+    try:
+        job_id = int(post.get('job_id') or 0)
+        info = _job_remaining(job_id)
+        if info is None or not info['lane']:
+            raise ValueError('That job cannot be planned: it must be released, have its plates, and not be on hold or merged under another job.')
+        date_text, shift = (post.get('slot') or '').split('|')
+        day = datetime.date.fromisoformat(date_text)
+        machine = Machine.objects.get(pk=int(post.get('machine_id')))
+        qty = int(post.get('qty') or 0)
+    except (TypeError, ValueError, Machine.DoesNotExist) as exc:
+        raise ValueError(str(exc) if isinstance(exc, ValueError) and str(exc).startswith('That job') else 'Pick the job, machine, shift and quantity.')
+    if qty <= 0:
+        raise ValueError('Enter how many impressions to plan.')
+    already = sum(i.qty for i in plan.items.filter(planning_job_id=job_id))
+    if qty > max(info['remaining'] - already, 0):
+        raise ValueError(f"Only {max(info['remaining'] - already, 0):,} impressions of {info['job'].jc_number} are left to plan.")
+    if shift == 'N' and info['is_new']:
+        raise ValueError('A new job runs in a day shift. Move it to a day shift.')
+    reason = (post.get('fifo_reason') or '').strip()
+    window_jobs = _fifo_window_jobs(plan, info['lane'], settings_obj)
+    if job_id not in window_jobs and not reason:
+        raise ValueError('This job is outside the FIFO order for its lane. Write the reason in the FIFO reason box to plan it anyway.')
+    last = plan.items.filter(machine=machine, plan_date=day, shift=shift).order_by('-sequence').first()
+    PlanItem.objects.create(
+        plan=plan, lane=info['lane'], machine=machine, plan_date=day, shift=shift, sequence=(last.sequence + 1) if last else 1,
+        planning_job=info['job'], jc_number=info['job'].jc_number, sku=info['job'].sku or '', order_date=info['order_date'], qty=qty,
+        remaining_at_plan=info['remaining'], priority=info['priority'], is_new=info['is_new'], pinned=True, manual=True,
+        fifo_reason=reason if job_id not in window_jobs else '',
+    )
+    services.log_event(plan, user, 'item_added', f"{info['job'].jc_number} {qty:,} on {machine.name} {date_text} {shift}" + (f' (FIFO jump: {reason})' if reason else ''))
+    return info['job'], qty, machine
+
+
 @login_required
 @require_POST
 def item_add(request, plan_id):
@@ -127,37 +188,9 @@ def item_add(request, plan_id):
         return denied
     lane = request.POST.get('lane', '')
     try:
-        plan = _editable_plan(plan_id)
-        settings_obj = PlanSettings.get()
-        job_id = int(request.POST.get('job_id') or 0)
-        info = _job_remaining(job_id)
-        if info is None or not info['lane']:
-            raise ValueError('That job cannot be planned: it must be released, have its plates, and not be on hold or merged under another job.')
-        date_text, shift = (request.POST.get('slot') or '').split('|')
-        day = datetime.date.fromisoformat(date_text)
-        machine = Machine.objects.get(pk=int(request.POST.get('machine_id')))
-        qty = int(request.POST.get('qty') or 0)
-        if qty <= 0:
-            raise ValueError('Enter how many impressions to plan.')
-        already = sum(i.qty for i in plan.items.filter(planning_job_id=job_id))
-        if qty > max(info['remaining'] - already, 0):
-            raise ValueError(f"Only {max(info['remaining'] - already, 0):,} impressions of {info['job'].jc_number} are left to plan.")
-        if shift == 'N' and info['is_new']:
-            raise ValueError('A new job runs in a day shift. Move it to a day shift.')
-        reason = (request.POST.get('fifo_reason') or '').strip()
-        window_jobs = _fifo_window_jobs(plan, info['lane'], settings_obj)
-        if job_id not in window_jobs and not reason:
-            raise ValueError('This job is outside the FIFO order for its lane. Write the reason in the FIFO reason box to plan it anyway.')
-        last = plan.items.filter(machine=machine, plan_date=day, shift=shift).order_by('-sequence').first()
-        PlanItem.objects.create(
-            plan=plan, lane=info['lane'], machine=machine, plan_date=day, shift=shift, sequence=(last.sequence + 1) if last else 1,
-            planning_job=info['job'], jc_number=info['job'].jc_number, sku=info['job'].sku or '', order_date=info['order_date'], qty=qty,
-            remaining_at_plan=info['remaining'], priority=info['priority'], is_new=info['is_new'], pinned=True, manual=True,
-            fifo_reason=reason if job_id not in window_jobs else '',
-        )
-        services.log_event(plan, request.user, 'item_added', f"{info['job'].jc_number} {qty:,} on {machine.name} {date_text} {shift}" + (f' (FIFO jump: {reason})' if reason else ''))
-        messages.success(request, f"Added {info['job'].jc_number}: {qty:,} impressions on {machine.name}.")
-    except (ValueError, Machine.DoesNotExist) as exc:
+        job, qty, machine = _add_job(_editable_plan(plan_id), request.user, request.POST)
+        messages.success(request, f'Added {job.jc_number}: {qty:,} impressions on {machine.name}.')
+    except ValueError as exc:
         messages.error(request, str(exc) or 'Could not add the job.')
     return _back(lane)
 
@@ -299,6 +332,57 @@ def block_remove(request, plan_id, block_id):
     PlanBlock.objects.filter(pk=block_id).delete()
     services.log_event(plan, request.user, 'block_removed', str(block_id))
     return _back(request.POST.get('lane', ''))
+
+
+@login_required
+@require_POST
+def item_hold(request, plan_id, item_id):
+    """Remove the job from the plan and put it on hold, so no recalculation brings it back."""
+    denied = _require_editor(request)
+    if denied:
+        return denied
+    plan = get_object_or_404(ProductionPlan, pk=plan_id)
+    item = get_object_or_404(PlanItem, pk=item_id, plan=plan)
+    job, lane = item.planning_job, item.lane
+    if job is None:
+        messages.error(request, 'This entry has no planning job to hold.')
+        return _back(lane)
+    reason = (request.POST.get('reason') or '').strip() or 'Kept out of the production plan'
+    job.is_on_hold = True
+    job.hold_reason = reason[:500]
+    job.hold_by = request.user
+    job.hold_at = timezone.now()
+    job.save(update_fields=['is_on_hold', 'hold_reason', 'hold_by', 'hold_at', 'updated_at'])
+    removed = plan.items.filter(planning_job=job).delete()[0]
+    services.log_event(plan, request.user, 'job_held', f'{job.jc_number}: {reason} ({removed} entr{"y" if removed == 1 else "ies"} removed)')
+    messages.success(request, f'{job.jc_number} was removed from the plan and put on hold. Release it from the "On hold" tab to plan it again.')
+    return _back(lane)
+
+
+@login_required
+@require_POST
+def hold_release(request, plan_id, job_id):
+    """Take a job off hold; with a machine, shift and quantity it is also added straight to the plan."""
+    denied = _require_editor(request)
+    if denied:
+        return denied
+    plan = get_object_or_404(ProductionPlan, pk=plan_id)
+    job = get_object_or_404(PlanningJob, pk=job_id, is_on_hold=True)
+    job.is_on_hold = False
+    job.hold_reason = ''
+    job.hold_by = None
+    job.hold_at = None
+    job.save(update_fields=['is_on_hold', 'hold_reason', 'hold_by', 'hold_at', 'updated_at'])
+    services.log_event(plan, request.user, 'hold_released', job.jc_number)
+    if request.POST.get('mode') == 'add':
+        try:
+            _, qty, machine = _add_job(_editable_plan(plan_id), request.user, {**request.POST.dict(), 'job_id': job.id})
+            messages.success(request, f'{job.jc_number}: hold released and {qty:,} impressions added on {machine.name}.')
+        except ValueError as exc:
+            messages.warning(request, f'{job.jc_number}: hold released, but it was not added to the plan. {exc}')
+    else:
+        messages.success(request, f'{job.jc_number}: hold released. It is eligible again and joins the plan at the next recalculation.')
+    return redirect(f"{reverse('production_plan:board')}?tab=hold")
 
 
 @login_required

@@ -101,6 +101,7 @@
         <div class="pp-tabs">
             <a class="pp-tab {% if tab == 'plan' %}active{% endif %}" href="?lane={{ lane }}&tab=plan&plan={{ plan.id }}">Plan</a>
             <a class="pp-tab {% if tab == 'actual' %}active{% endif %}" href="?lane={{ lane }}&tab=actual&plan={{ plan.id }}">Plan vs actual</a>
+            <a class="pp-tab {% if tab == 'hold' %}active{% endif %}" href="?lane={{ lane }}&tab=hold&plan={{ plan.id }}">On hold{% if hold_count %}<small>{{ hold_count }}</small>{% endif %}</a>
             <a class="pp-tab {% if tab == 'history' %}active{% endif %}" href="?lane={{ lane }}&tab=history&plan={{ plan.id }}">History</a>
         </div>
 
@@ -150,8 +151,19 @@
                                     <input type="number" name="qty" value="{{ it.qty }}" min="1" max="{{ it.qty }}" class="erp-input">
                                     <button class="erp-btn erp-btn-secondary sm" type="submit">Move</button>
                                 </form>
-                                <form method="post" action="{% url 'production_plan:item_pin' plan.id it.id %}" style="display:inline">{% csrf_token %}<button class="erp-btn erp-btn-secondary sm" type="submit">{% if it.pinned %}Unpin{% else %}Pin{% endif %}</button></form>
-                                <form method="post" action="{% url 'production_plan:item_remove' plan.id it.id %}" style="display:inline" onsubmit="return confirm('Remove {{ it.jc_number }} from this slot?')">{% csrf_token %}<button class="erp-btn erp-btn-secondary sm" type="submit">Remove</button></form>
+                                <form method="post" action="{% url 'production_plan:set_priority' plan.id %}">{% csrf_token %}
+                                    <input type="hidden" name="lane" value="{{ lane }}"><input type="hidden" name="job_id" value="{{ it.planning_job_id }}">
+                                    <select name="priority" class="erp-select">{% for v, l in priority_choices %}<option value="{{ v }}" {% if v == it.priority %}selected{% endif %}>{{ l }}</option>{% endfor %}</select>
+                                    <button class="erp-btn erp-btn-secondary sm" type="submit" title="Higher priority goes ahead of age when free capacity is filled">Set priority</button>
+                                </form>
+                                <div>
+                                    <form method="post" action="{% url 'production_plan:item_pin' plan.id it.id %}" style="display:inline">{% csrf_token %}<button class="erp-btn erp-btn-secondary sm" type="submit" title="Keep this entry in this slot, even if the machine is blocked later">{% if it.pinned %}Unpin{% else %}Pin{% endif %}</button></form>
+                                    <form method="post" action="{% url 'production_plan:item_remove' plan.id it.id %}" style="display:inline" onsubmit="return confirm('Remove {{ it.jc_number }} from this slot? It may come back at the next recalculation.')">{% csrf_token %}<button class="erp-btn erp-btn-secondary sm" type="submit" title="Take it out of this slot only">Remove</button></form>
+                                </div>
+                                <form method="post" action="{% url 'production_plan:item_hold' plan.id it.id %}" onsubmit="return confirm('Remove {{ it.jc_number }} from the whole plan and put it on hold?')">{% csrf_token %}
+                                    <input type="text" name="reason" class="erp-input" placeholder="Why keep it out?" style="max-width:150px">
+                                    <button class="erp-btn erp-btn-secondary sm" type="submit" title="Removes every entry of this job from the plan and puts the job on hold, so it does not come back">Remove and keep out</button>
+                                </form>
                             </div>
                             {% endif %}
                         </details>
@@ -212,6 +224,35 @@
                 {% if diff.reduced %}<div class="pp-small">Reduced to what was left: {% for r in diff.reduced %}{{ r.jc }} ({{ r.from|intcomma }} to {{ r.to|intcomma }}){% if not forloop.last %}, {% endif %}{% endfor %}</div>{% endif %}
             </div>
             {% endif %}
+
+        {% elif tab == 'hold' %}
+            <p class="pp-small">Jobs held back from the plan. A held job is never planned. Release the hold to make it eligible again, or release it and put it straight into a shift.</p>
+            {% for h in held %}
+            <div class="pp-panel" style="margin-top:10px">
+                <div class="pp-line"><span><b>{{ h.job.jc_number }}</b> <span class="pp-small">{{ h.job.sku|truncatechars:50 }}</span> {% if h.is_new %}<span class="pp-tag new">NEW</span>{% endif %}</span>
+                    <span class="pp-load">{{ h.remaining|intcomma }} left</span></div>
+                <div class="pp-small">{{ h.lane_label }} · ordered {{ h.order_date|date:"d M Y" }} · priority {{ h.priority }}
+                    · held{% if h.held_by %} by {{ h.held_by }}{% endif %}{% if h.held_at %} on {{ h.held_at|date:"d M H:i" }}{% endif %}{% if h.reason %} · "{{ h.reason }}"{% endif %}</div>
+                {% if can_edit %}
+                <div class="pp-form" style="margin-top:8px">
+                    <form method="post" action="{% url 'production_plan:hold_release' plan.id h.job.id %}" style="display:inline">{% csrf_token %}
+                        <button class="erp-btn erp-btn-secondary sm" type="submit">Release hold</button></form>
+                    {% if h.can_add %}
+                    <form method="post" action="{% url 'production_plan:hold_release' plan.id h.job.id %}" class="pp-form">{% csrf_token %}
+                        <input type="hidden" name="mode" value="add">
+                        <div><label>Machine</label><select name="machine_id" class="erp-select">{% for m in h.machines %}<option value="{{ m.id }}">{{ m.name }}</option>{% endfor %}</select></div>
+                        <div><label>Shift</label><select name="slot" class="erp-select">{% for o in slot_options %}<option value="{{ o.value }}">{{ o.label }}</option>{% endfor %}</select></div>
+                        <div><label>Impressions</label><input type="number" name="qty" value="{{ h.default_qty }}" min="1" class="erp-input"></div>
+                        <div><label>Reason (only if ahead of FIFO)</label><input type="text" name="fifo_reason" class="erp-input"></div>
+                        <button class="erp-btn erp-btn-primary sm" type="submit">Release and add to plan</button>
+                    </form>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+            {% empty %}
+            <div class="pp-alert" style="background:#f8fafc;border-color:#e2e8f0;color:#475569">No job is on hold.</div>
+            {% endfor %}
 
         {% elif tab == 'actual' %}
             <div class="erp-table-wrap erp-table-dense"><table class="erp-table">

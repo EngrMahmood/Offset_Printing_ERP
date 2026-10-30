@@ -483,3 +483,39 @@ class ViewTests(PlanTestBase):
         future = [r for r in rows if r['date'] == WED and r['shift'] == 'N'][0]
         self.assertFalse(future['started'])
 
+
+
+class HoldWindowTests(ViewTests):
+    def test_remove_and_keep_out_then_release_and_add_back(self):
+        self.client.force_login(self.planner)
+        item = self.plan.items.first()
+        job = item.planning_job
+        self.client.post(reverse('production_plan:item_hold', args=[self.plan.id, item.id]), {'reason': 'artwork pending'})
+        job.refresh_from_db()
+        self.assertTrue(job.is_on_hold)
+        self.assertEqual((job.hold_reason, job.hold_by), ('artwork pending', self.planner))
+        self.assertFalse(self.plan.items.filter(planning_job=job).exists())
+        self.assertNotIn(job.id, engine.load_jobs(self.cfg, MON))                                      # a recalculation leaves it out
+        board = self.client.get(reverse('production_plan:board'), {'tab': 'hold'})
+        self.assertEqual(board.status_code, 200)
+        self.assertIn(job.jc_number, board.content.decode())
+        self.assertEqual(board.context['hold_count'], 1)
+        slot = f'{TUE.isoformat()}|D'
+        self.client.post(reverse('production_plan:hold_release', args=[self.plan.id, job.id]),
+                         {'mode': 'add', 'machine_id': self.machines['GTO 1A'].id, 'slot': slot, 'qty': 100, 'fifo_reason': 'back from hold'})
+        job.refresh_from_db()
+        self.assertFalse(job.is_on_hold)
+        self.assertEqual((job.hold_reason, job.hold_by, job.hold_at), ('', None, None))
+        self.assertTrue(self.plan.items.filter(planning_job=job, qty=100, manual=True).exists())
+
+    def test_release_alone_and_viewer_blocked(self):
+        item = self.plan.items.first()
+        job = item.planning_job
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.post(reverse('production_plan:item_hold', args=[self.plan.id, item.id])).status_code, 403)
+        self.client.force_login(self.planner)
+        self.client.post(reverse('production_plan:item_hold', args=[self.plan.id, item.id]))
+        self.client.post(reverse('production_plan:hold_release', args=[self.plan.id, job.id]))
+        job.refresh_from_db()
+        self.assertFalse(job.is_on_hold)
+        self.assertIn(job.id, engine.load_jobs(self.cfg, MON))

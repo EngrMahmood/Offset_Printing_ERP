@@ -142,18 +142,18 @@ def lane_of(job, settings_obj):
     return 'colour_sm' if big else 'colour_gto'
 
 
-def load_jobs(settings_obj, today):
+def load_jobs(settings_obj, today, only_held=False):
     """Every job that could be planned, as {job_id: info}, with its remaining impressions.
 
     Eligible: released or in production, plates ready, not on hold, not cut-and-pack, not opted out of
-    machine planning. A combined-layout follower prints with its lead, so only the lead is planned."""
+    machine planning. A combined-layout follower prints with its lead, so only the lead is planned.
+    ``only_held=True`` returns the jobs that would be eligible but are on hold (the plan's "On hold" window)."""
     from planning.models import MergeGroupItem, PlanningJob, MERGE_GROUP_OPEN_STATUSES
     from reports.models import MachinePlanningJcSelection
 
-    jobs = list(
-        PlanningJob.objects.filter(is_active=True, status__in=('released', 'in_production'))
-        .exclude(job_process_type='cut_and_pack').exclude(is_on_hold=True).select_related('job_card')
-    )
+    queryset = PlanningJob.objects.filter(is_active=True, status__in=('released', 'in_production')).exclude(job_process_type='cut_and_pack')
+    queryset = queryset.filter(is_on_hold=True) if only_held else queryset.exclude(is_on_hold=True)
+    jobs = list(queryset.select_related('job_card', 'hold_by'))
     excluded = set(MachinePlanningJcSelection.objects.filter(is_excluded=True).values_list('jc_number', flat=True))
     open_items = MergeGroupItem.objects.filter(merge_group__status__in=MERGE_GROUP_OPEN_STATUSES).select_related('merge_group')
     followers = {i.planning_job_id for i in open_items if not i.is_lead}
