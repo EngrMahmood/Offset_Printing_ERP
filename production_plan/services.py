@@ -272,7 +272,9 @@ EXPORT_LABELS = {
 def export_payload(plan, settings_obj=None):
     settings_obj = settings_obj or PlanSettings.get()
     rows = []
-    for item in plan.items.select_related('machine'):
+    lane_order = {lane: n for n, lane in enumerate(engine.LANE_LABELS)}
+    items = sorted(plan.items.select_related('machine'), key=lambda i: (lane_order.get(i.lane, 99), i.plan_date, i.shift, i.machine.name, i.sequence, i.id))
+    for item in items:
         note = []
         if item.is_chunk:
             note.append('part of a job bigger than one shift')
@@ -281,12 +283,13 @@ def export_payload(plan, settings_obj=None):
         if item.manual:
             note.append('planner change')
         rows.append({
-            'lane': engine.LANE_LABELS[item.lane], 'date': f'{item.plan_date:%a %d %b %Y}', 'shift': engine.SHIFT_LABELS[item.shift],
+            '_lane': item.lane, 'lane': engine.LANE_LABELS[item.lane], 'date': f'{item.plan_date:%a %d %b %Y}', 'shift': engine.SHIFT_LABELS[item.shift],
             'machine': item.machine.name, 'sequence': item.sequence, 'jc_number': item.jc_number, 'sku': item.sku,
             'order_date': item.order_date.isoformat() if item.order_date else '', 'qty': item.qty,
             'priority': PRIORITY_LABELS.get(item.priority, item.priority), 'new_job': 'Yes' if item.is_new else '',
             'pinned': 'Yes' if item.pinned else '', 'note': '; '.join(note),
         })
+    sections = [{'title': engine.LANE_LABELS[lane], 'rows': [r for r in rows if r['_lane'] == lane]} for lane in engine.LANE_LABELS]
     summary_rows = []
     grid = plan_grid(plan, settings_obj)
     for lane, g in grid.items():
@@ -302,7 +305,7 @@ def export_payload(plan, settings_obj=None):
         'report': {'title': f'Production Plan - {plan.morning_date:%a %d %b %Y}', 'slug': 'production-plan'},
         'generated_at': timezone.localtime(plan.rebalanced_at or plan.generated_at).strftime('%Y-%m-%d %H:%M'),
         'data': {
-            'export_rows': rows, 'headers': EXPORT_HEADERS, 'header_labels': EXPORT_LABELS,
+            'export_rows': rows, 'sections': sections, 'headers': EXPORT_HEADERS, 'header_labels': EXPORT_LABELS,
             'export_notes': [f'Status: {status}', 'Horizon: ' + ', '.join(plan.horizon_dates)],
             'extra_sheets': [{
                 'title': 'Load by machine and shift',

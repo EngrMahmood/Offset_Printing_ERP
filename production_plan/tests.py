@@ -546,3 +546,22 @@ class PriorityOrderTests(ViewTests):
         self.client.force_login(self.planner)
         data = self.client.get(reverse('production_plan:share_text', args=[self.plan.id])).json()
         self.assertTrue(data['pdf_url'].endswith('/pdf/'))
+
+
+class LaneSheetsTests(ViewTests):
+    def test_export_has_one_sheet_and_pdf_section_per_lane(self):
+        import io
+
+        from openpyxl import load_workbook
+
+        from reports.export.services import export_as_pdf, export_as_xlsx
+
+        payload = services.export_payload(self.plan)
+        sections = payload['data']['sections']
+        self.assertEqual([s['title'] for s in sections], list(engine.LANE_LABELS.values()))
+        for sec in sections:
+            lane_rows = {r['lane'] for r in sec['rows']}
+            self.assertLessEqual(lane_rows, {sec['title']})
+        names = load_workbook(io.BytesIO(export_as_xlsx(payload))).sheetnames
+        self.assertEqual(names[:3], [t[:31] for t in engine.LANE_LABELS.values()])
+        self.assertTrue(export_as_pdf(payload).startswith(b'%PDF'))

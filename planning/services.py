@@ -1,5 +1,6 @@
 import io
 import json
+import math
 import re
 from datetime import datetime, date
 from decimal import Decimal, ROUND_HALF_UP
@@ -1392,6 +1393,11 @@ def build_job_card_merge_context(job):
         'planned_produced_qty': item.planned_produced_qty,
         'total_sheet_ups': group.total_sheet_ups,
         'run_sheets': group.run_sheets,
+        'total_run_sheets': group.total_run_sheets,
+        'purchase_sheet_required': (
+            math.ceil(group.total_run_sheets / job.purchase_sheet_ups_display)
+            if group.total_run_sheets and job.purchase_sheet_ups_display else None
+        ),
         'combined_impressions': group.combined_impressions(),
         'print_sheet_size': group.print_sheet_size,
         'member_count': len(members),
@@ -1586,7 +1592,7 @@ def _build_job_card_pdf_bytes(job, scan_url):
          _format_job_value(f"{merge['total_sheet_ups']} (this SKU: {merge['allocated_ups']})" if merge else job.ups),
          Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
         [Paragraph('ACTUAL SHEETS', label_style),
-         _format_job_value(f"{merge['run_sheets']} (combined run)" if merge else job.calculated_sheets_required),
+         _format_job_value(f"{merge['total_run_sheets']} (combined run)" if merge else job.calculated_sheets_required),
          Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
         [Paragraph('PURCHASE ORIGIN', label_style), _format_job_value(job.purchase_material_origin), Paragraph('PURCHASE SHEET SIZE', label_style), _format_job_value(job.purchase_sheet_size)],
         [Paragraph('PURCHASE SHEET UPS', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('PURCHASE REQ', label_style), _format_job_value(job.purchase_sheet_required)],

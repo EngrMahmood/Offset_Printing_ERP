@@ -119,6 +119,13 @@ def _extra_sheets(payload: dict) -> list[dict]:
     return [sheet for sheet in sheets if isinstance(sheet, dict) and sheet.get('rows')]
 
 
+def _sections(payload: dict) -> list[dict]:
+    """Optional 'sections': [{title, rows}] - one worksheet / PDF section each instead of one merged table."""
+    data = payload.get('data')
+    sections = (data.get('sections') if isinstance(data, dict) else None) or []
+    return [sec for sec in sections if isinstance(sec, dict)]
+
+
 def _slugify(text: str) -> str:
     slug = re.sub(r'[^A-Za-z0-9]+', '-', text).strip('-').lower()
     return slug or 'report'
@@ -244,42 +251,46 @@ def export_as_xlsx(payload: dict) -> bytes:
     except Exception as exc:
         raise RuntimeError('XLSX export requires openpyxl package.') from exc
 
+    sections = _sections(payload)
     rows = _rowset_from_payload(payload)
     report_title = build_report_title(payload)
+    blocks = [{'title': sec.get('title') or 'Report', 'rows': sec.get('rows') or []} for sec in sections] or [{'title': 'Report', 'rows': rows}]
 
     workbook = Workbook()
-    sheet = workbook.active
-    sheet.title = 'Report'
-    sheet.append([report_title])
-    sheet['A1'].font = Font(bold=True, size=13, color=BRAND_PRIMARY_STRONG.lstrip('#'))
-    sheet.append(['generated_at', payload.get('generated_at', '')])
-    for note in _export_notes(payload):
-        sheet.append([note])
-    totals_line = _report_totals_line(payload, rows)
-    if totals_line:
-        sheet.append([totals_line])
-    sheet.append([])
+    for block_index, block in enumerate(blocks):
+        sheet = workbook.active if block_index == 0 else workbook.create_sheet()
+        sheet.title = re.sub(r'[\/*?:\[\]]', ' ', str(block['title']))[:31]
+        rows = block['rows']
+        sheet.append([report_title if not sections else f"{report_title} - {block['title']}"])
+        sheet['A1'].font = Font(bold=True, size=13, color=BRAND_PRIMARY_STRONG.lstrip('#'))
+        sheet.append(['generated_at', payload.get('generated_at', '')])
+        for note in _export_notes(payload):
+            sheet.append([note])
+        totals_line = _report_totals_line(payload, rows)
+        if totals_line:
+            sheet.append([totals_line])
+        sheet.append([])
 
-    if not rows:
-        sheet.append(['message', 'No tabular rows available for export'])
-    else:
-        headers = payload.get('headers') or (payload.get('data') or {}).get('headers')
-        if not headers:
-            headers = sorted({key for row in rows for key in row.keys()})
-        labels = payload.get('header_labels') or (payload.get('data') or {}).get('header_labels') or {}
-        headers, labels = _headers_with_row_numbers(headers, labels)
-        sheet.append([labels.get(header, header) for header in headers])
-        header_row_index = sheet.max_row
-        header_fill = PatternFill('solid', fgColor=BRAND_PRIMARY.lstrip('#'))
-        header_font = Font(bold=True, color='FFFFFF')
-        for col_index in range(1, len(headers) + 1):
-            cell = sheet.cell(row=header_row_index, column=col_index)
-            cell.fill = header_fill
-            cell.font = header_font
-            cell.alignment = Alignment(vertical='center')
-        for idx, row in enumerate(rows, start=1):
-            sheet.append([_cell_value(header, idx, row) for header in headers])
-        sheet.freeze_panes = sheet.cell(row=header_row_index + 1, column=1).coordinate
+        if not rows:
+            sheet.append(['message', 'No tabular rows available for export' if not sections else 'No jobs planned'])
+        else:
+            headers = payload.get('headers') or (payload.get('data') or {}).get('headers')
+            if not headers:
+                headers = sorted({key for row in rows for key in row.keys()})
+            labels = payload.get('header_labels') or (payload.get('data') or {}).get('header_labels') or {}
+            headers, labels = _headers_with_row_numbers(headers, labels)
+            sheet.append([labels.get(header, header) for header in headers])
+            header_row_index = sheet.max_row
+            header_fill = PatternFill('solid', fgColor=BRAND_PRIMARY.lstrip('#'))
+            header_font = Font(bold=True, color='FFFFFF')
+            for col_index in range(1, len(headers) + 1):
+                cell = sheet.cell(row=header_row_index, column=col_index)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(vertical='center')
+            for idx, row in enumerate(rows, start=1):
+                sheet.append([_cell_value(header, idx, row) for header in headers])
+            sheet.freeze_panes = sheet.cell(row=header_row_index + 1, column=1).coordinate
 
     # Further worksheets (e.g. the job-level "backend" data behind a summary).
     header_fill = PatternFill('solid', fgColor=BRAND_PRIMARY.lstrip('#'))
@@ -321,7 +332,10 @@ def export_as_pdf(payload: dict) -> bytes:
     except Exception as exc:
         raise RuntimeError('PDF export requires reportlab package.') from exc
 
+    sections = _sections(payload)
     rows = _rowset_from_payload(payload)
+    if sections:
+        rows = [row for sec in sections for row in (sec.get('rows') or [])]
     report_title = build_report_title(payload)
     generated_at = payload.get('generated_at', '')
     row_count = len(rows)
@@ -419,55 +433,70 @@ def export_as_pdf(payload: dict) -> bytes:
         story.append(Paragraph(totals_line, meta_style))
     story.append(Paragraph('<br/>', meta_style))
 
-    for chunk_index, chunk_headers in enumerate(header_chunks):
-        table_data = [
-            [Paragraph(xml_escape(str(labels.get(header, header))), header_style) for header in chunk_headers]
-        ]
-        for idx, row in enumerate(rows, start=1):
-            table_data.append([cell_paragraph(header, idx, row) for header in chunk_headers])
-
-        # Column widths follow actual content length (header label vs. widest
-        # cell seen, sampled) instead of a hand-maintained per-report map, so
-        # every report - including ones added later - gets sensible widths:
-        # short numeric/status columns stay narrow, long free-text columns
-        # (SKU, remarks) get the room they need without leaving other columns
-        # padded with empty space. Weights are floored/capped so one very
-        # long value can't starve the rest of the row, then normalized to
-        # exactly fill the page width.
-        MIN_CHARS, MAX_CHARS = 4, 38
-        weights = []
-        for header in chunk_headers:
-            max_len = len(str(labels.get(header, header)))
-            for row in rows[:row_count_for_widths]:
-                cell = _cell_value(header, 1, row)
-                if cell and len(cell) > max_len:
-                    max_len = len(cell)
-            weights.append(min(max(max_len, MIN_CHARS), MAX_CHARS))
-        total_weight = sum(weights) or len(chunk_headers)
-        col_widths = [w / total_weight * usable_width for w in weights]
-
-        table_style_commands = [
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 6),
-            ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#cbd5e1')),
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(BRAND_PRIMARY)),
-            ('LEFTPADDING', (0, 0), (-1, -1), 3),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 3),
-            ('TOPPADDING', (0, 0), (-1, -1), 3),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
-        ]
-        # Zebra striping on body rows makes a wide table scannable at a
-        # glance instead of reading as an undifferentiated block of text.
-        for row_index in range(2, len(table_data), 2):
-            table_style_commands.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor(BRAND_PRIMARY_SOFT)))
-
-        table = Table(table_data, colWidths=col_widths, repeatRows=1)
-        table.setStyle(TableStyle(table_style_commands))
-        story.append(table)
-        if chunk_index < len(header_chunks) - 1:
+    section_style = ParagraphStyle(
+        'sectionTitle', fontName='Helvetica-Bold', fontSize=11, leading=14, spaceBefore=4, spaceAfter=4,
+        textColor=colors.HexColor(BRAND_PRIMARY_STRONG),
+    )
+    blocks = [{'title': sec.get('title') or '', 'rows': sec.get('rows') or []} for sec in sections] or [{'title': '', 'rows': rows}]
+    for block_index, block in enumerate(blocks):
+        rows = block['rows']
+        row_count_for_widths = min(len(rows), 2000)
+        if block_index:
             story.append(PageBreak())
+        if sections:
+            story.append(Paragraph(f"{xml_escape(block['title'])} - {len(rows)} row(s)", section_style))
+            if not rows:
+                story.append(Paragraph('No jobs planned', meta_style))
+                continue
+        for chunk_index, chunk_headers in enumerate(header_chunks):
+            table_data = [
+                [Paragraph(xml_escape(str(labels.get(header, header))), header_style) for header in chunk_headers]
+            ]
+            for idx, row in enumerate(rows, start=1):
+                table_data.append([cell_paragraph(header, idx, row) for header in chunk_headers])
+
+            # Column widths follow actual content length (header label vs. widest
+            # cell seen, sampled) instead of a hand-maintained per-report map, so
+            # every report - including ones added later - gets sensible widths:
+            # short numeric/status columns stay narrow, long free-text columns
+            # (SKU, remarks) get the room they need without leaving other columns
+            # padded with empty space. Weights are floored/capped so one very
+            # long value can't starve the rest of the row, then normalized to
+            # exactly fill the page width.
+            MIN_CHARS, MAX_CHARS = 4, 38
+            weights = []
+            for header in chunk_headers:
+                max_len = len(str(labels.get(header, header)))
+                for row in rows[:row_count_for_widths]:
+                    cell = _cell_value(header, 1, row)
+                    if cell and len(cell) > max_len:
+                        max_len = len(cell)
+                weights.append(min(max(max_len, MIN_CHARS), MAX_CHARS))
+            total_weight = sum(weights) or len(chunk_headers)
+            col_widths = [w / total_weight * usable_width for w in weights]
+
+            table_style_commands = [
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 6),
+                ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#cbd5e1')),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(BRAND_PRIMARY)),
+                ('LEFTPADDING', (0, 0), (-1, -1), 3),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 3),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ]
+            # Zebra striping on body rows makes a wide table scannable at a
+            # glance instead of reading as an undifferentiated block of text.
+            for row_index in range(2, len(table_data), 2):
+                table_style_commands.append(('BACKGROUND', (0, row_index), (-1, row_index), colors.HexColor(BRAND_PRIMARY_SOFT)))
+
+            table = Table(table_data, colWidths=col_widths, repeatRows=1)
+            table.setStyle(TableStyle(table_style_commands))
+            story.append(table)
+            if chunk_index < len(header_chunks) - 1:
+                story.append(PageBreak())
 
     doc.build(story, onFirstPage=draw_page_chrome, onLaterPages=draw_page_chrome)
     return buffer.getvalue()
