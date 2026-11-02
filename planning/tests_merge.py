@@ -137,7 +137,7 @@ class MergeBoardViewTests(TestCase):
         make_job('JC2', 5000)
         make_job('JC3', 5000)
         PlanningPrintRun.objects.create(planning_job=job, run_index=1, print_qty=100)
-        response = self.client.get(reverse('planning:merge_board'))
+        response = self.client.get(reverse('planning:merge_board'), {'tab': 'suggestions'})
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response.context['eligible_count'], 2)
 
@@ -154,7 +154,7 @@ class MergeBoardViewTests(TestCase):
         self.assertEqual(group.run_sheets, 5000)
         self.assertEqual(jobs[0].active_merge_group, group)
 
-        board = self.client.get(reverse('planning:merge_board'))
+        board = self.client.get(reverse('planning:merge_board'), {'tab': 'suggestions'})
         self.assertEqual(board.context['eligible_count'], 0)
         self.assertEqual(board.context['suggestions'], [])
 
@@ -172,7 +172,7 @@ class MergeBoardViewTests(TestCase):
         set_awc(make_job('JC1', 10000), 'A-111')
         set_awc(make_job('JC2', 5000), 'A-222')
         set_awc(make_job('JC3', 5000), 'A-333')
-        response = self.client.get(reverse('planning:merge_board'))
+        response = self.client.get(reverse('planning:merge_board'), {'tab': 'suggestions'})
         body = response.content.decode()
         self.assertIn('25x36', body)      # print sheet size
         self.assertIn('A-111', body)      # member source AWC
@@ -191,7 +191,7 @@ class MergeBoardViewTests(TestCase):
         self.client.post(reverse('planning:merge_cancel', args=[group.id]), follow=True)
         group.refresh_from_db()
         self.assertEqual(group.status, 'cancelled')
-        board = self.client.get(reverse('planning:merge_board'))
+        board = self.client.get(reverse('planning:merge_board'), {'tab': 'suggestions'})
         self.assertEqual(board.context['eligible_count'], 3)
 
 
@@ -291,7 +291,7 @@ class MergeEvaluateTests(TestCase):
         make_job('JC1', 10000)
         make_job('JC2', 5000)
         make_job('JC3', 5000)
-        body = self.client.get(reverse('planning:merge_board')).content.decode()
+        body = self.client.get(reverse('planning:merge_board'), {'tab': 'suggestions'}).content.decode()
         self.assertEqual(body.count('name="job_ids"'), 3)
 
     def test_accept_only_merges_the_ticked_jobs(self):
@@ -672,7 +672,7 @@ class MergeEligibilityPlateGuardTests(TestCase):
         make_job('JC2', 5000)
         make_job('JC3', 5000)
         plate = PlateRequest.objects.create(planning_job=job, status=PlateRequest.STATUS_SENT)
-        response = self.client.get(reverse('planning:merge_board'))
+        response = self.client.get(reverse('planning:merge_board'), {'tab': 'suggestions'})
         self.assertEqual(response.context['eligible_count'], 3)
         offered = {
             item['job'].id: item['job']
@@ -687,7 +687,7 @@ class MergeEligibilityPlateGuardTests(TestCase):
         make_job('JC2', 5000)
         make_job('JC3', 5000)
         PlateRequest.objects.create(planning_job=job, status=PlateRequest.STATUS_ARCHIVED)
-        response = self.client.get(reverse('planning:merge_board'))
+        response = self.client.get(reverse('planning:merge_board'), {'tab': 'suggestions'})
         self.assertEqual(response.context['eligible_count'], 3)
 
     def test_detail_warns_about_preexisting_member_plates(self):
@@ -725,7 +725,7 @@ class MergePlateDispositionTests(TestCase):
 
     def test_plated_jobs_are_offered_again(self):
         jobs, _ = self._jobs_with_plates()
-        response = self.client.get(reverse('planning:merge_board'))
+        response = self.client.get(reverse('planning:merge_board'), {'tab': 'suggestions'})
         self.assertEqual(response.context['eligible_count'], 3)
         self.assertTrue(response.context['suggestions'])
 
@@ -830,7 +830,7 @@ class MergeBlockerTests(TestCase):
         make_job('JC2', 5000)
         make_job('JC3', 5000)
         make_job('JC-BAD', 5000, ups=None)   # same size/material, missing ups
-        response = self.client.get(reverse('planning:merge_board'))
+        response = self.client.get(reverse('planning:merge_board'), {'tab': 'blocked'})
         rows = response.context['blocked_rows']
         self.assertEqual([row['job'].jc_number for row in rows], ['JC-BAD'])
         self.assertTrue(any('UPS missing' in r for r in rows[0]['reasons']))
