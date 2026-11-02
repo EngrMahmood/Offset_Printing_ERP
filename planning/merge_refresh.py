@@ -43,8 +43,8 @@ def current_numbers(group):
 
 def stale_changes(group):
     """Human-readable differences between the stored group and today's job quantities (empty = up to date)."""
-    if group.status not in MERGE_GROUP_OPEN_STATUSES:
-        return []
+    if group.status not in MERGE_GROUP_OPEN_STATUSES or printing_started(group):
+        return []                                  # once printing has started the group is history, not out of date
     fresh = current_numbers(group)
     if not fresh:
         return []
