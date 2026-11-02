@@ -41,7 +41,8 @@ def board(request):
     lane = request.GET.get('lane') if request.GET.get('lane') in engine.LANES else 'black'
     tab = request.GET.get('tab') if request.GET.get('tab') in ('plan', 'actual', 'history', 'hold', 'near') else 'plan'
     context = {
-        'plan': plan, 'can_edit': can_edit, 'is_admin': request.user.is_superuser or request.user.is_staff,
+        'plan': plan, 'can_edit': can_edit, 'can_cant_run': services.can_report_cant_run(request.user),
+        'cant_run_reasons': list(services.CANT_RUN_REASONS.items()), 'is_admin': request.user.is_superuser or request.user.is_staff,
         'lane': lane, 'tab': tab, 'lanes': [(k, engine.LANE_LABELS[k]) for k in engine.LANES],
         'priority_choices': sorted(PRIORITY_LABELS.items()), 'settings': settings_obj,
         'gated': services.pending_draft() is not None,
@@ -71,6 +72,7 @@ def board(request):
     ).exclude(job_process_type='cut_and_pack').count()
     if tab == 'hold':
         context['held'] = _held_rows(plan, settings_obj)
+    context['standby'] = services.standby_list(plan, settings_obj, limit=6).get(lane, [])
     near = _near_rows(settings_obj)
     context['near_count'] = len(near)
     if tab == 'near':
@@ -353,6 +355,91 @@ def block_remove(request, plan_id, block_id):
     PlanBlock.objects.filter(pk=block_id).delete()
     services.log_event(plan, request.user, 'block_removed', str(block_id))
     return _back(request.POST.get('lane', ''))
+
+
+def _notify_cant_run(plan, user, title, message):
+    from core.notifications import notify_roles
+
+    try:
+        notify_roles(
+            ['planner', 'admin', 'manager', 'production_manager', 'production'], event_type='production_plan.cant_run',
+            title=title, message=message, link=reverse('production_plan:board'), entity_type='production_plan', entity_id=plan.pk, actor=user,
+        )
+    except Exception:  # noqa: BLE001 - a notification failure must never undo the swap
+        pass
+
+
+@login_required
+@require_POST
+def item_cant_run(request, plan_id, item_id):
+    """A planned job cannot run (plate, material, machine): keep it out and fill the freed shift from the standby list.
+
+    Plate / material / other: the job is put on hold with the reason (it stays out until released) and every shift it
+    held is refilled with the first jobs on the standby list. Machine: that machine is blocked for the shift and its
+    jobs move to another machine of the lane that has room (what does not fit is taken out for the next recalculation)."""
+    if not services.can_report_cant_run(request.user):
+        return HttpResponseForbidden('Only planners, admins and the production side can report a job that cannot run.')
+    plan = get_object_or_404(ProductionPlan, pk=plan_id)
+    if plan.status == 'superseded':
+        messages.error(request, 'This plan has been replaced by a newer one; open the current plan.')
+        return _back()
+    item = get_object_or_404(PlanItem, pk=item_id, plan=plan)
+    key = request.POST.get('reason') if request.POST.get('reason') in services.CANT_RUN_REASONS else 'other'
+    label = services.CANT_RUN_REASONS[key]
+    note = (request.POST.get('note') or '').strip()[:150]
+    why = f'{label}: {note}' if note else label
+    machine, day, shift, lane, job, jc = item.machine, item.plan_date, item.shift, item.lane, item.planning_job, item.jc_number
+    slot_text = services.slot_label(day, shift)
+    settings_obj = PlanSettings.get()
+
+    if key == 'machine':
+        PlanBlock.objects.get_or_create(machine=machine, date=day, shift=shift, defaults={'reason': why[:200], 'created_by': request.user})
+        siblings = list(plan.items.filter(machine=machine, plan_date=day, shift=shift).order_by('sequence'))
+        others = [m for m in engine.lane_machines(settings_obj).get(lane, []) if m.id != machine.id]
+        moved, dropped = [], []
+        for it in siblings:
+            target = None
+            for m in others:
+                used = sum(i.qty for i in plan.items.filter(machine=m, plan_date=day, shift=shift))
+                if engine.slot_capacity(day, shift, settings_obj) - used >= it.qty:
+                    target = m
+                    break
+            if target is None:
+                dropped.append(it.jc_number)
+                it.delete()
+                continue
+            last = plan.items.filter(machine=target, plan_date=day, shift=shift).order_by('-sequence').first()
+            it.machine, it.sequence, it.pinned, it.manual = target, (last.sequence + 1) if last else 1, True, True
+            it.save(update_fields=['machine', 'sequence', 'pinned', 'manual'])
+            moved.append(f'{it.jc_number} to {target.name}')
+        services.resequence(plan)
+        detail = f'{machine.name} cannot run {slot_text} ({why}). Moved: {", ".join(moved) or "none"}.' + (f' No room for: {", ".join(dropped)}.' if dropped else '')
+        services.log_event(plan, request.user, 'cant_run', detail)
+        _notify_cant_run(plan, request.user, f'{machine.name} cannot run {slot_text}', detail)
+        messages.success(request, detail + (' Recalculate to re-place the jobs that had no room.' if dropped else ''))
+        return _back(lane)
+
+    if job is not None:
+        job.is_on_hold = True
+        job.hold_reason = why[:500]
+        job.hold_by = request.user
+        job.hold_at = timezone.now()
+        job.save(update_fields=['is_on_hold', 'hold_reason', 'hold_by', 'hold_at', 'updated_at'])
+    freed = sorted(plan.items.filter(planning_job=job).values_list('machine_id', 'plan_date', 'shift', 'qty'), key=lambda r: (r[1], r[2])) if job else [(machine.id, day, shift, item.qty)]
+    if job:
+        plan.items.filter(planning_job=job).delete()
+    else:
+        item.delete()
+    placed = []
+    for machine_id, d, sh, qty in freed:
+        placed += [(d, sh, jc2, q) for jc2, q in services.swap_in_standby(plan, request.user, Machine.objects.get(pk=machine_id), d, sh, qty, f'{jc} {label.lower()}', settings_obj)]
+    services.resequence(plan)
+    swapped = ', '.join(f'{jc2} {q:,} ({services.slot_label(d, sh)})' for d, sh, jc2, q in placed) or 'nothing fitted from the standby list'
+    detail = f'{jc} cannot run ({why}); put on hold. Standby in: {swapped}.'
+    services.log_event(plan, request.user, 'cant_run', detail)
+    _notify_cant_run(plan, request.user, f'{jc} cannot run on {machine.name}, {slot_text}', detail)
+    messages.success(request, detail + ' Release it from the "On hold" tab when the problem is fixed.')
+    return _back(lane)
 
 
 @login_required

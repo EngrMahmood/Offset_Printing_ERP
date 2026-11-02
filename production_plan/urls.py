@@ -14,6 +14,7 @@ urlpatterns = [
     path('<int:plan_id>/items/<int:item_id>/remove/', views.item_remove, name='item_remove'),
     path('<int:plan_id>/items/<int:item_id>/move/', views.item_move, name='item_move'),
     path('<int:plan_id>/items/<int:item_id>/pin/', views.item_pin, name='item_pin'),
+    path('<int:plan_id>/items/<int:item_id>/cant-run/', views.item_cant_run, name='item_cant_run'),
     path('<int:plan_id>/items/<int:item_id>/hold/', views.item_hold, name='item_hold'),
     path('<int:plan_id>/hold/<int:job_id>/release/', views.hold_release, name='hold_release'),
     path('<int:plan_id>/priority/', views.set_priority, name='set_priority'),

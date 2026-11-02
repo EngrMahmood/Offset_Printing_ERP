@@ -982,7 +982,9 @@ class MergeLifecycleTests(TestCase):
                 card.status = 'qc_approved'
                 card.save(update_fields=['status'])
             cards[job.id] = card
-        self._release_card(cards[group.lead_job_id])
+        self._release_card(cards[group.lead_job_id])          # releasing the lead releases the group; undo that for the followers
+        from core.models import JobCard
+        JobCard.objects.exclude(pk=cards[group.lead_job_id].pk).filter(planning_job__in=jobs).update(status='qc_approved')
         with self.assertRaises(Exception):
             Production.objects.create(
                 job_card=cards[group.lead_job_id], entry_type='printing',
@@ -1036,6 +1038,29 @@ class MergeLayoutApprovalTests(TestCase):
         self.client.post(reverse('planning:merge_accept'), {'job_ids': [j.id for j in jobs]}, follow=True)
         return MergeGroup.objects.get(), jobs
 
+    def _approve_through_qc_and_pm(self, group):
+        from core.jobcard_service import approve_pm, approve_qc
+
+        lead = group.lead_job.job_card
+        lead.refresh_from_db()
+        approve_qc(lead)
+        approve_pm(lead)
+
+    def test_releasing_the_lead_before_approval_is_refused_and_a_rejection_moves_the_whole_group(self):
+        from core.jobcard_service import reject_qc, release_to_production
+        from django.core.exceptions import ValidationError
+
+        group, jobs = self._accepted_group()
+        self._approve(group)
+        lead = group.lead_job.job_card
+        lead.refresh_from_db()
+        with self.assertRaises(ValidationError):
+            release_to_production(lead)
+        reject_qc(lead, reason='spec')
+        for item in group.items.select_related('planning_job__job_card'):
+            item.planning_job.job_card.refresh_from_db()
+            self.assertEqual(item.planning_job.job_card.workflow_status, 'qc_rejected')
+
     def _approve(self, group):
         return self.client.post(
             reverse('planning:merge_approve_layout', args=[group.id]),
@@ -1072,11 +1097,11 @@ class MergeLayoutApprovalTests(TestCase):
         group, jobs = self._accepted_group()
         self._approve(group)
         group.refresh_from_db()
-        # Approval production-approves members AND auto-creates the combined plate
-        # into the designer's queue; the group is handed to design.
+        # Approval submits the combined layout to the approval queue (QC next, as one item: every card follows
+        # the lead) AND auto-creates the combined plate into the designer's queue.
         self.assertEqual(group.status, 'artwork_requested')
         for item in group.items.select_related('planning_job__job_card'):
-            self.assertEqual(item.planning_job.job_card.workflow_status, 'production_approved')
+            self.assertEqual(item.planning_job.job_card.workflow_status, 'pending_qc')
         plate = PlateRequest.objects.filter(planning_job=group.lead_job_id).exclude(
             status=PlateRequest.STATUS_ARCHIVED
         ).first()
@@ -1101,12 +1126,20 @@ class MergeLayoutApprovalTests(TestCase):
         ).first()
         plate.status = PlateRequest.STATUS_AVAILABLE
         plate.save()
-        for item in group.items.select_related('planning_job__job_card'):          # plates received: waiting for the planner
+        for item in group.items.select_related('planning_job__job_card'):          # plates received: still waiting for QC / PM / planner
             item.planning_job.job_card.refresh_from_db()
-            self.assertNotEqual(item.planning_job.job_card.workflow_status, 'released')
+            self.assertEqual(item.planning_job.job_card.workflow_status, 'pending_qc')
         from printing_plates.services import release_merge_group_to_production
 
-        release_merge_group_to_production(group)
+        released, blocked = release_merge_group_to_production(group)               # not approved yet: nothing is forced
+        self.assertEqual(released, [])
+        self.assertTrue(blocked)
+        self._approve_through_qc_and_pm(group)
+        for item in group.items.select_related('planning_job__job_card'):          # QC and PM approval of the lead moved every card
+            item.planning_job.job_card.refresh_from_db()
+            self.assertEqual(item.planning_job.job_card.workflow_status, 'production_approved')
+        released, blocked = release_merge_group_to_production(group)               # the planner releases ONE item: all go at once
+        self.assertEqual((len(released), blocked), (len(jobs), []))
         for item in group.items.select_related('planning_job__job_card'):
             item.planning_job.job_card.refresh_from_db()
             self.assertEqual(item.planning_job.job_card.workflow_status, 'released')
@@ -1159,7 +1192,8 @@ class MergeLayoutApprovalTests(TestCase):
         plate.save()
         from printing_plates.services import release_merge_group_to_production
 
-        release_merge_group_to_production(group)  # the planner releases all member cards
+        self._approve_through_qc_and_pm(group)
+        release_merge_group_to_production(group)  # the planner releases the combined run: all member cards
 
         lead_card = group.lead_job.job_card
         lead_card.refresh_from_db()

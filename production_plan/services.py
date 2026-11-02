@@ -46,6 +46,20 @@ def can_edit_plan(user):
     return bool(profile and profile.role in ('planner', 'admin'))
 
 
+CANT_RUN_REASONS = {'plate': 'Plate damaged', 'material': 'Material not available', 'machine': 'Machine problem', 'other': 'Other'}
+CANT_RUN_ROLES = ('planner', 'admin', 'manager', 'production_manager', 'production')
+
+
+def can_report_cant_run(user):
+    """Planners and admins, and the production side (supervisor, production manager, manager) who stand at the machine."""
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser or user.is_staff:
+        return True
+    profile = getattr(user, 'profile', None)
+    return bool(profile and profile.role in CANT_RUN_ROLES)
+
+
 def pending_draft():
     """The latest plan if it is a draft the planners have been asked to approve."""
     plan = ProductionPlan.objects.exclude(status='superseded').order_by('-morning_date', '-id').first()
@@ -185,6 +199,59 @@ def rebalance_today(today=None, settings_obj=None):
 
 
 # ----------------------------------------------------------------------------- reading a plan
+
+def standby_list(plan, settings_obj=None, limit=None):
+    """{lane: [rows]}: eligible jobs that are not in the plan, oldest / highest priority first - the jobs to reach for
+    when a planned job cannot run. Plates are ready (jobs still in plate making are never eligible), none is on hold."""
+    settings_obj = settings_obj or PlanSettings.get()
+    info = engine.load_jobs(settings_obj, timezone.localdate())
+    in_plan = set(plan.items.values_list('planning_job_id', flat=True))
+    cap = int(settings_obj.shift_capacity)
+    out = {lane: [] for lane in engine.LANES}
+    for job_id, v in info.items():
+        if job_id in in_plan or not v['lane'] or v['remaining'] <= 0:
+            continue
+        out[v['lane']].append({
+            'job': v['job'], 'job_id': job_id, 'jc': v['job'].jc_number, 'sku': v['job'].sku or '', 'remaining': v['remaining'],
+            'order_date': v['order_date'], 'priority': v['priority'], 'priority_label': PRIORITY_LABELS.get(v['priority'], v['priority']),
+            'is_new': v['is_new'], 'one_shift': min(v['remaining'], cap),
+        })
+    for rows in out.values():
+        rows.sort(key=lambda r: (-r['priority'], r['order_date'], r['jc']))
+    return {lane: (rows[:limit] if limit else rows) for lane, rows in out.items()}
+
+
+def swap_in_standby(plan, user, machine, day, shift, free, note, settings_obj=None):
+    """Fill ``free`` impressions of one machine/shift from the standby list, first in line first.
+    A new job never goes into a night shift; a job is never cut into a sliver (a fifth of a shift) to use up the last bit.
+    Returns [(jc_number, qty)]."""
+    settings_obj = settings_obj or PlanSettings.get()
+    lane = next((l for l, ms in engine.lane_machines(settings_obj).items() if any(m.id == machine.id for m in ms)), None)
+    if lane is None or free <= 0:
+        return []
+    cap = int(settings_obj.shift_capacity)
+    placed = []
+    for cand in standby_list(plan, settings_obj)[lane]:
+        if free <= 0:
+            break
+        if shift == 'N' and cand['is_new']:
+            continue
+        take = min(cand['remaining'], free)
+        if take < min(cand['remaining'], max(cap // 5, 1)):
+            continue
+        last = plan.items.filter(machine=machine, plan_date=day, shift=shift).order_by('-sequence').first()
+        PlanItem.objects.create(
+            plan=plan, lane=lane, machine=machine, plan_date=day, shift=shift, sequence=(last.sequence + 1) if last else 1,
+            planning_job=cand['job'], jc_number=cand['jc'], sku=cand['sku'], order_date=cand['order_date'], qty=take,
+            remaining_at_plan=cand['remaining'], priority=cand['priority'], is_new=cand['is_new'], is_chunk=cand['remaining'] > cap,
+            pinned=True, manual=True, fifo_reason=f'Standby: {note}'[:200],
+        )
+        placed.append((cand['jc'], take))
+        free -= take
+    if placed:
+        resequence(plan)
+    return placed
+
 
 def slot_label(day, shift):
     return f"{day:%a %d %b} {engine.SHIFT_LABELS[shift]}"

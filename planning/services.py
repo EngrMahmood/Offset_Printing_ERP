@@ -1459,7 +1459,7 @@ def approve_merge_layout(group, actor=None, combined_wastage=None, material_orig
     """
     from django.core.exceptions import ValidationError
 
-    from core.jobcard_service import approve_card_for_merged_run, ensure_job_card_from_planning_job
+    from core.jobcard_service import ensure_job_card_from_planning_job, submit_to_qc
 
     if group.status == 'cancelled':
         raise ValidationError('This merge group is cancelled.')
@@ -1505,7 +1505,12 @@ def approve_merge_layout(group, actor=None, combined_wastage=None, material_orig
             job.save(update_fields=['wastage_sheets', 'purchase_material_origin', 'updated_at'])
 
             job_card, _ = ensure_job_card_from_planning_job(job, actor=actor)
-            approve_card_for_merged_run(job_card, group, actor=actor)
+
+        # The combined layout now goes through the regular approval queue (QC, then Production Manager, then the
+        # planner's release) as ONE item: the lead card is submitted, every member card follows it, and releasing
+        # the lead releases the whole combined run (core.jobcard_service._follow_merge_group).
+        lead_job = next(item.planning_job for item in items if item.planning_job_id == group.lead_job_id)
+        submit_to_qc(lead_job.job_card, actor=actor, reason=f'Combined layout {group.code} approved by the planner')
 
         # Hand off to the graphics designer: create the one combined plate request
         # into their queue and move the group to 'artwork_requested'. The designer

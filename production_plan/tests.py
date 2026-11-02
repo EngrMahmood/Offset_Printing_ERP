@@ -614,3 +614,51 @@ class NearCompleteTests(ViewTests):
         job = self.plan.items.first().planning_job
         self.assertIn(job.id, engine.load_jobs(self.cfg, MON))
         self.assertNotIn(job.id, engine.load_jobs(self.cfg, MON, only_near=True))
+
+
+class CantRunTests(ViewTests):
+    def supervisor(self):
+        user = User.objects.create_user('shop_sup', password='pw12345678')
+        UserProfile.objects.update_or_create(user=user, defaults={'role': 'production'})
+        return user
+
+    def test_plate_problem_holds_the_job_and_the_standby_takes_its_shift(self):
+        standby = self.job(600, datetime.date(2026, 11, 1))                       # made after the plan was built: not in it
+        item = self.plan.items.filter(qty__gte=600).first()
+        job, machine, day, shift = item.planning_job, item.machine, item.plan_date, item.shift
+        board = self.client.force_login(self.supervisor()) or self.client.get(reverse('production_plan:board'))
+        self.assertContains(board, standby.jc_number)                              # visible in the standby list
+        self.assertContains(board, "Can&#x27;t run" if "Can&#x27;t run" in board.content.decode() else "Can't run")
+        r = self.client.post(reverse('production_plan:item_cant_run', args=[self.plan.id, item.id]), {'reason': 'plate', 'note': 'cracked'})
+        self.assertEqual(r.status_code, 302)
+        job.refresh_from_db()
+        self.assertTrue(job.is_on_hold)
+        self.assertIn('Plate damaged', job.hold_reason)
+        self.assertFalse(self.plan.items.filter(planning_job=job).exists())
+        swapped = self.plan.items.filter(planning_job=standby, machine=machine, plan_date=day, shift=shift)
+        self.assertTrue(swapped.exists())
+        self.assertTrue(swapped.first().manual and swapped.first().pinned)
+        self.assertTrue(self.plan.events.filter(action='cant_run').exists())
+
+    def test_a_new_job_is_never_swapped_into_a_night_shift(self):
+        newbie = self.job(600, datetime.date(2026, 10, 1), new=True)
+        item = self.plan.items.filter(shift='N', qty__gte=600).first()
+        self.client.force_login(self.admin)
+        self.client.post(reverse('production_plan:item_cant_run', args=[self.plan.id, item.id]), {'reason': 'material'})
+        self.assertFalse(self.plan.items.filter(planning_job=newbie, shift='N').exists())
+
+    def test_machine_problem_blocks_the_shift_and_clears_the_machine(self):
+        item = self.plan.items.first()
+        machine, day, shift = item.machine, item.plan_date, item.shift
+        self.client.force_login(self.planner)
+        self.client.post(reverse('production_plan:item_cant_run', args=[self.plan.id, item.id]), {'reason': 'machine', 'note': 'feeder'})
+        self.assertTrue(PlanBlock.objects.filter(machine=machine, date=day, shift=shift).exists())
+        self.assertFalse(self.plan.items.filter(machine=machine, plan_date=day, shift=shift).exists())
+        item.planning_job.refresh_from_db()
+        self.assertFalse(item.planning_job.is_on_hold)                                # the job is fine, the machine is not
+
+    def test_viewers_cannot_report_a_job_that_cannot_run(self):
+        item = self.plan.items.first()
+        self.client.force_login(self.viewer)
+        self.assertEqual(self.client.post(reverse('production_plan:item_cant_run', args=[self.plan.id, item.id]), {'reason': 'plate'}).status_code, 403)
+        self.assertTrue(PlanItem.objects.filter(pk=item.pk).exists())

@@ -123,6 +123,12 @@
             </div>
             {% endif %}
 
+            <div class="pp-panel" style="margin-bottom:10px">
+                <h3 style="margin:0 0 4px">Standby for {{ grid.machines.0.name|default:'this lane' }} lane &middot; next in line if a planned job cannot run</h3>
+                <p class="pp-small" style="margin:0 0 6px">Plates ready, not in this plan, oldest first (higher priority ahead). A new job never goes to a night shift. Press <b>Can't run</b> on a job (open it in the grid) and the first of these takes its shift.</p>
+                {% for sb in standby %}<span class="pp-tag" style="background:#eff6ff;color:#1e40af;margin:2px 4px 2px 0;display:inline-block;padding:3px 8px">{{ sb.jc }} &middot; {{ sb.one_shift|intcomma }}{% if sb.remaining > sb.one_shift %} of {{ sb.remaining|intcomma }}{% endif %} &middot; {{ sb.priority_label }}{% if sb.is_new %} &middot; NEW (day only){% endif %}</span>
+                {% empty %}<span class="pp-small">No standby job: every eligible job in this lane is already in the plan.</span>{% endfor %}
+            </div>
             <div class="erp-table-wrap" style="overflow-x:auto">
             <table class="pp-grid">
                 <thead><tr><th class="m">Machine</th>{% for h in slot_headers %}<th>{{ h.label }}</th>{% endfor %}</tr></thead>
@@ -144,8 +150,22 @@
                                 <div>{% if it.is_new %}<span class="pp-tag new">NEW</span>{% endif %}{% if it.pinned %}<span class="pp-tag pin">PIN</span>{% endif %}{% if it.is_chunk %}<span class="pp-tag chunk">PART</span>{% endif %}<span class="pp-sku">{{ it.sku|truncatechars:34 }}</span></div>
                             </summary>
                             <div class="pp-small">Ordered {{ it.order_date|date:"d M Y" }}{% if it.fifo_reason %} · FIFO jump: {{ it.fifo_reason }}{% endif %}</div>
+                            {% if can_cant_run and not can_edit %}
+                            <div class="pp-edit">
+                                <form method="post" action="{% url 'production_plan:item_cant_run' plan.id it.id %}" onsubmit="return confirm('{{ it.jc_number }} cannot run? It will be taken out and the next standby job put in.')">{% csrf_token %}
+                                    <select name="reason" class="erp-select">{% for k, l in cant_run_reasons %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select>
+                                    <input type="text" name="note" class="erp-input" placeholder="Details" style="max-width:150px">
+                                    <button class="erp-btn sm" type="submit" style="background:#dc2626;color:#fff">Can't run</button>
+                                </form>
+                            </div>
+                            {% endif %}
                             {% if can_edit %}
                             <div class="pp-edit">
+                                <form method="post" action="{% url 'production_plan:item_cant_run' plan.id it.id %}" onsubmit="return confirm('{{ it.jc_number }} cannot run? It will be taken out and the next standby job put in (a machine problem blocks the machine for this shift).')">{% csrf_token %}
+                                    <select name="reason" class="erp-select">{% for k, l in cant_run_reasons %}<option value="{{ k }}">{{ l }}</option>{% endfor %}</select>
+                                    <input type="text" name="note" class="erp-input" placeholder="Details" style="max-width:150px">
+                                    <button class="erp-btn sm" type="submit" style="background:#dc2626;color:#fff" title="Plate damaged, material missing or machine down: puts the next standby job into this shift">Can't run</button>
+                                </form>
                                 <form method="post" action="{% url 'production_plan:item_move' plan.id it.id %}">{% csrf_token %}
                                     <select name="machine_id" class="erp-select">{% for m in grid.machines %}<option value="{{ m.id }}" {% if m.id == it.machine_id %}selected{% endif %}>{{ m.name }}</option>{% endfor %}</select>
                                     <select name="slot" class="erp-select">{% for o in slot_options %}<option value="{{ o.value }}" {% if o.value == c.slot_value %}selected{% endif %}>{{ o.label }}</option>{% endfor %}</select>

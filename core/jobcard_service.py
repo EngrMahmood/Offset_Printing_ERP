@@ -332,6 +332,51 @@ def _cascade_to_child_forms(base_card, target_status, before_status, actor):
         )
 
 
+MERGE_FOLLOWED_STATUSES = {
+    'planning_approved', 'pending_qc', 'qc_rejected', 'qc_approved', 'pending_pm_approval', 'pm_rejected',
+    'production_approved', 'released',
+}
+MERGE_APPROVAL_PHASE = {
+    'draft', 'planning_approved', 'pending_qc', 'qc_rejected', 'qc_approved', 'pending_pm_approval', 'pm_rejected', 'production_approved',
+}
+
+
+def _follow_merge_group(job_card, target_status, before_status, actor):
+    """A combined layout is one approval and one release: every job card of the group moves with the one acted on.
+
+    Approving (planning, QC, PM) or rejecting any card of an open group moves all of them; releasing it releases the
+    whole combined run to production at once. A card already past release (in production or later) is never pulled
+    back, and a reopen to draft is only followed while the group is still in its approval phase."""
+    planning_job = job_card.planning_job
+    group = planning_job.active_merge_group if planning_job else None
+    if not group:
+        return
+    if target_status == 'draft':
+        if before_status not in MERGE_APPROVAL_PHASE:
+            return
+    elif target_status not in MERGE_FOLLOWED_STATUSES:
+        return
+    for item in group.items.select_related('planning_job'):
+        if item.planning_job_id == planning_job.id:
+            continue
+        try:
+            card = item.planning_job.job_card
+        except JobCard.DoesNotExist:
+            continue
+        if card.workflow_status == target_status or card.workflow_status in ('in_production', 'completed', 'closed'):
+            continue
+        if target_status != 'released' and card.workflow_status == 'released':
+            continue
+        try:
+            transition_job_card_status(
+                card, target_status, actor=actor, _system_cascade=True,
+                reason=f'System: combined layout {group.code} follows {job_card.job_card_no} ({target_status})',
+            )
+        except ValidationError as exc:
+            detail = '; '.join(exc.messages) if hasattr(exc, 'messages') else str(exc)
+            raise ValidationError({'status': f'{card.job_card_no} (in combined layout {group.code}): {detail}'})
+
+
 def transition_job_card_status(job_card: JobCard, target_status, actor=None, reason='', _system_cascade=False):
     target_status = normalize_job_card_status(target_status, default='')
     if not target_status:
@@ -452,6 +497,7 @@ def transition_job_card_status(job_card: JobCard, target_status, actor=None, rea
         )
         if not _system_cascade:
             _cascade_to_child_forms(job_card, target_status, before_status, actor)
+            _follow_merge_group(job_card, target_status, before_status, actor)
 
         # Reopening a job that already has production/dispatch recorded is a
         # deliberate, permission-gated feature (planners can correct a
