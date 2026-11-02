@@ -110,6 +110,12 @@ REPORT_CATALOG = [
         'focus': 'Execution',
     },
     {
+        'key': 'operator-efficiency',
+        'title': 'Operator Efficiency',
+        'description': 'Ranking of press operators by impressions, speed, waste and lost time against operators on the same machines, with a notice-board print.',
+        'focus': 'Execution',
+    },
+    {
         'key': 'sku-history',
         'title': 'SKU History',
         'description': 'Search a SKU for its complete history: orders received, printed, dispatched, wastage and what is still owed, job card by job card.',
@@ -2916,6 +2922,7 @@ def build_report_context(report_type, request):
         'stock-report': build_stock_report_context,
         'plates-pending': build_plates_pending_context,
         'sku-history': _build_sku_history_context,
+        'operator-efficiency': lambda request: __import__('reports.operator_efficiency', fromlist=['build_context']).build_context(request),
     }
     builder = builders.get(report_type)
     if builder is None:

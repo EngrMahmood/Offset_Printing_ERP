@@ -17,6 +17,7 @@ from reports.services import (
 )
 from reports.hourly_report import build_hourly_report
 from reports.sku_history import build_sku_history_context
+from reports.operator_efficiency import build_context as build_operator_efficiency_context
 from reports.report_registry.metadata import ReportDefinition
 from reports.report_registry.registry import registry
 
@@ -67,6 +68,10 @@ def _stock_report_executor(request, filters):
 
 def _sku_history_executor(request, filters):
     return build_sku_history_context(request)
+
+
+def _operator_efficiency_executor(request, filters):
+    return build_operator_efficiency_context(request)
 
 
 def _hourly_report_executor(request, filters):
@@ -306,6 +311,25 @@ registry.register(
         category='planning',
         navigation_group='operations',
         executor=_sku_history_executor,
+    )
+)
+
+registry.register(
+    ReportDefinition(
+        slug='operator-efficiency',
+        title='Operator Efficiency',
+        description='Ranking of press operators by impressions, speed per run hour, waste and lost time against operators on the same machines, with a notice-board print.',
+        department='production',
+        permissions=('core.view_reports',),
+        filters=('period', 'date_from', 'date_to', 'machine', 'shift', 'operator'),
+        supported_exports=('csv', 'xlsx', 'pdf'),
+        supported_charts=(),
+        drilldown_support=False,
+        cache_timeout=120,
+        icon='fa-ranking-star',
+        category='execution',
+        navigation_group='operations',
+        executor=_operator_efficiency_executor,
     )
 )
 

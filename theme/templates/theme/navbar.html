@@ -281,6 +281,10 @@
            class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'sku-history' %}is-active{% endif %}">
             SKU History
         </a>
+        <a href="{% url 'reports:detail' 'operator-efficiency' %}"
+           class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'operator-efficiency' %}is-active{% endif %}">
+            Operator Efficiency
+        </a>
         <a href="{% url 'reports:detail' 'kpi-scorecard' %}"
            class="erp-subnav-link {% if url == 'detail' and request.resolver_match.kwargs.report_type == 'kpi-scorecard' %}is-active{% endif %}">
             KPI Scorecard

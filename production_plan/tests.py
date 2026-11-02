@@ -565,3 +565,26 @@ class LaneSheetsTests(ViewTests):
         names = load_workbook(io.BytesIO(export_as_xlsx(payload))).sheetnames
         self.assertEqual(names[:3], [t[:31] for t in engine.LANE_LABELS.values()])
         self.assertTrue(export_as_pdf(payload).startswith(b'%PDF'))
+
+
+class NearCompleteTests(ViewTests):
+    def test_part_printed_job_inside_tolerance_is_not_planned_but_listed(self):
+        from core.models import Production
+
+        job = self.job(1000, datetime.date(2026, 9, 1))
+        card = self.card(job)
+        total = 1000
+        printed = 970                                                      # 3% left: inside the 5% tolerance
+        Production.objects.bulk_create([Production(job_card=card, entry_type='printing', date=MON, shift='A', impressions=printed, output_sheets=printed)])
+        self.assertNotIn(job.id, engine.load_jobs(self.cfg, MON))
+        near = engine.load_jobs(self.cfg, MON, only_near=True)
+        self.assertEqual(near[job.id]['remaining'], total - printed)
+        self.client.force_login(self.planner)
+        board = self.client.get(reverse('production_plan:board'), {'tab': 'near'})
+        self.assertContains(board, job.jc_number)
+        self.assertEqual(board.context['near_count'], 1)
+
+    def test_untouched_or_far_from_done_jobs_stay_in_the_plan(self):
+        job = self.plan.items.first().planning_job
+        self.assertIn(job.id, engine.load_jobs(self.cfg, MON))
+        self.assertNotIn(job.id, engine.load_jobs(self.cfg, MON, only_near=True))

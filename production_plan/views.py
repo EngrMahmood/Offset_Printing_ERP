@@ -39,7 +39,7 @@ def board(request):
     plan = plan or services.current_plan()
     can_edit = services.can_edit_plan(request.user)
     lane = request.GET.get('lane') if request.GET.get('lane') in engine.LANES else 'black'
-    tab = request.GET.get('tab') if request.GET.get('tab') in ('plan', 'actual', 'history', 'hold') else 'plan'
+    tab = request.GET.get('tab') if request.GET.get('tab') in ('plan', 'actual', 'history', 'hold', 'near') else 'plan'
     context = {
         'plan': plan, 'can_edit': can_edit, 'is_admin': request.user.is_superuser or request.user.is_staff,
         'lane': lane, 'tab': tab, 'lanes': [(k, engine.LANE_LABELS[k]) for k in engine.LANES],
@@ -71,6 +71,10 @@ def board(request):
     ).exclude(job_process_type='cut_and_pack').count()
     if tab == 'hold':
         context['held'] = _held_rows(plan, settings_obj)
+    near = _near_rows(settings_obj)
+    context['near_count'] = len(near)
+    if tab == 'near':
+        context['near'] = near
     if tab == 'actual':
         context['actual_rows'] = [r for r in services.plan_vs_actual(plan, settings_obj) if r['lane'] == lane]
     if tab == 'history':
@@ -78,6 +82,20 @@ def board(request):
     night_date, missing = services.night_entries_missing(plan.morning_date, settings_obj)
     context['night_missing'] = {'date': night_date, 'machines': missing}
     return render(request, 'production_plan/board.html', context)
+
+
+def _near_rows(settings_obj):
+    """Part-printed jobs whose remainder is inside the close tolerance: not planned, to be checked and closed by hand."""
+    info = engine.load_jobs(settings_obj, timezone.localdate(), only_near=True)
+    rows = []
+    for v in info.values():
+        planned = v['planned'] or 1
+        rows.append({
+            'job': v['job'], 'lane_label': engine.LANE_LABELS.get(v['lane'], 'No colour data'), 'planned': v['planned'], 'printed': v['printed'],
+            'remaining': v['remaining'], 'pct_left': round(v['remaining'] * 100 / planned, 1), 'order_date': v['order_date'],
+        })
+    rows.sort(key=lambda r: (r['order_date'], r['job'].jc_number))
+    return rows
 
 
 def _held_rows(plan, settings_obj):

@@ -192,3 +192,17 @@ def kpi_scorecard_save_note(request):
     if query:
         redirect_url = f'{redirect_url}?{query}'
     return redirect(redirect_url)
+
+def operator_board(request):
+    """Print-ready notice board: podium, ranking and champions for the chosen period."""
+    from django.shortcuts import redirect
+
+    from reports.operator_efficiency import build_context
+    from reports.report_engine.engine import _has_access
+
+    if not request.user.is_authenticated:
+        return redirect('login')
+    report = registry.get('operator-efficiency')
+    if report is None or not _has_access(request, report.permissions):
+        return HttpResponseForbidden("You don't have access to this report.")
+    return render(request, 'reports/operator_board.html', {'report': report, 'data': build_context(request)})

@@ -1,0 +1,118 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}{{ report.title }} — Reports{% endblock %}
+{% block header_title %}{{ report.title }}{% endblock %}
+{% block header_subtitle %}Who prints the most, how fast and how cleanly, compared with operators on the same machines.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .oe-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: end; }
+    .oe-filters label { display: flex; flex-direction: column; font-size: 11px; font-weight: 700; color: #64748b; text-transform: uppercase; gap: 3px; }
+    .oe-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 12px; margin: 14px 0; }
+    .oe-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px 14px; }
+    .oe-card .l { font-size: 11px; text-transform: uppercase; color: #64748b; font-weight: 700; letter-spacing: .04em; }
+    .oe-card .v { font-size: 20px; font-weight: 700; color: #0f172a; margin-top: 3px; }
+    .oe-card .s { font-size: 12px; color: #64748b; margin-top: 2px; }
+    .oe-podium { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 14px 0; }
+    .oe-medal { border-radius: 10px; padding: 14px; text-align: center; border: 2px solid; }
+    .oe-medal.m1 { background: #fef9c3; border-color: #eab308; } .oe-medal.m2 { background: #f1f5f9; border-color: #94a3b8; } .oe-medal.m3 { background: #ffedd5; border-color: #f97316; }
+    .oe-medal .n { font-size: 30px; font-weight: 800; } .oe-medal .who { font-size: 18px; font-weight: 700; } .oe-medal .sc { font-size: 13px; color: #475569; }
+    table.oe { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.oe th { text-align: left; background: #f1f5f9; padding: 7px 8px; font-size: 11px; text-transform: uppercase; color: #475569; white-space: nowrap; }
+    table.oe td { padding: 6px 8px; border-bottom: 1px solid #e2e8f0; }
+    table.oe td.n, table.oe th.n { text-align: right; font-variant-numeric: tabular-nums; }
+    .oe-good { color: #15803d; font-weight: 700; } .oe-mid { color: #b45309; font-weight: 700; } .oe-low { color: #b91c1c; font-weight: 700; }
+    .oe-title { margin: 22px 0 8px; font-size: 15px; font-weight: 700; color: #0f172a; }
+    .oe-note { font-size: 12px; color: #64748b; }
+    .oe-exports { display: flex; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+<section class="erp-section-shell">
+    <form method="get" class="oe-filters">
+        <label>Period
+            <select name="period" class="erp-input">
+                {% for key, label in data.period_choices %}<option value="{{ key }}" {% if data.filters.period == key %}selected{% endif %}>{{ label }}</option>{% endfor %}
+            </select></label>
+        <label>From<input type="date" name="date_from" value="{{ data.filters.date_from }}" class="erp-input"></label>
+        <label>To<input type="date" name="date_to" value="{{ data.filters.date_to }}" class="erp-input"></label>
+        <label>Machine
+            <select name="machine" class="erp-input"><option value="">All machines</option>
+                {% for m in data.machine_names %}<option value="{{ m }}" {% if data.filters.machine == m %}selected{% endif %}>{{ m }}</option>{% endfor %}
+            </select></label>
+        <label>Shift
+            <select name="shift" class="erp-input"><option value="">Both</option>
+                <option value="A" {% if data.filters.shift == 'A' %}selected{% endif %}>Shift A</option>
+                <option value="B" {% if data.filters.shift == 'B' %}selected{% endif %}>Shift B</option></select></label>
+        <button class="erp-btn erp-btn-primary" type="submit">Show</button>
+        <a class="erp-btn erp-btn-secondary" href="{% url 'reports:detail' 'operator-efficiency' %}">Reset</a>
+    </form>
+    <p class="oe-note">Showing {{ data.start|date:"d M Y" }} to {{ data.end|date:"d M Y" }}. A preset period ignores the From/To dates; choose "Custom dates" to use them.</p>
+    <div class="oe-exports">
+        <a class="erp-btn erp-btn-primary sm" href="{% url 'reports:operator_board' %}?period={{ data.filters.period }}&amp;date_from={{ data.filters.date_from }}&amp;date_to={{ data.filters.date_to }}&amp;machine={{ data.filters.machine|urlencode }}&amp;shift={{ data.filters.shift }}" target="_blank">Print notice board</a>
+        <a class="erp-btn erp-btn-secondary sm" href="{% url 'reports:reports_api:export_report' 'operator-efficiency' %}?type=xlsx&amp;period={{ data.filters.period }}&amp;date_from={{ data.filters.date_from }}&amp;date_to={{ data.filters.date_to }}&amp;machine={{ data.filters.machine|urlencode }}&amp;shift={{ data.filters.shift }}">Export Excel</a>
+        <a class="erp-btn erp-btn-secondary sm" href="{% url 'reports:reports_api:export_report' 'operator-efficiency' %}?type=pdf&amp;period={{ data.filters.period }}&amp;date_from={{ data.filters.date_from }}&amp;date_to={{ data.filters.date_to }}&amp;machine={{ data.filters.machine|urlencode }}&amp;shift={{ data.filters.shift }}">Export PDF</a>
+    </div>
+
+    {% if not data.rows %}
+        <p class="oe-note">No printing entries with an operator in this period.</p>
+    {% else %}
+    <div class="oe-grid">
+        <div class="oe-card"><div class="l">Operators</div><div class="v">{{ data.summary.operators }}</div><div class="s">{{ data.summary.ranked }} ranked (at least {{ data.min_shifts }} shifts)</div></div>
+        <div class="oe-card"><div class="l">Impressions</div><div class="v">{{ data.summary.impressions|intcomma }}</div><div class="s">{{ data.summary.shifts|intcomma }} operator-shifts</div></div>
+        {% for c in data.champions %}<div class="oe-card"><div class="l">{{ c.title }}</div><div class="v" style="font-size:16px">{{ c.name }}</div><div class="s">{{ c.detail }}</div></div>{% endfor %}
+    </div>
+
+    {% if data.top3 %}
+    <div class="oe-podium">
+        {% for r in data.top3 %}<div class="oe-medal m{{ r.rank }}"><div class="n">#{{ r.rank }}</div><div class="who">{{ r.operator }}</div><div class="sc">Score {{ r.score }} &middot; {{ r.impressions|intcomma }} impressions</div></div>{% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="oe-title">Ranking</div>
+    <div style="overflow-x:auto">
+    <table class="oe">
+        <thead><tr><th>#</th><th>Operator</th><th>Machines</th><th class="n">Shifts</th><th class="n">Jobs</th><th class="n">Impressions</th><th class="n">Run h</th>
+            <th class="n">Impr / run h</th><th class="n">Impr / shift</th><th class="n">Waste %</th><th class="n">Downtime h</th><th class="n">Running %</th><th class="n">Make-ready min/job</th>
+            <th class="n">Speed</th><th class="n">Volume</th><th class="n">Quality</th><th class="n">Score</th></tr></thead>
+        <tbody>
+        {% for r in data.rows %}
+        <tr {% if not r.ranked %}style="color:#94a3b8"{% endif %}>
+            <td><b>{{ r.rank|default:"-" }}</b></td>
+            <td><a href="?period={{ data.filters.period }}&amp;date_from={{ data.filters.date_from }}&amp;date_to={{ data.filters.date_to }}&amp;machine={{ data.filters.machine|urlencode }}&amp;shift={{ data.filters.shift }}&amp;operator={{ r.operator_id }}#detail"><b>{{ r.operator }}</b></a></td>
+            <td>{{ r.machines }}</td><td class="n">{{ r.shifts }}</td><td class="n">{{ r.jobs }}</td><td class="n">{{ r.impressions|intcomma }}</td><td class="n">{{ r.run_hours }}</td>
+            <td class="n">{{ r.impressions_per_hour|intcomma }}</td><td class="n">{{ r.impressions_per_shift|intcomma }}</td><td class="n">{{ r.waste_pct }}</td>
+            <td class="n">{{ r.downtime_hours }}</td><td class="n">{{ r.utilisation_pct }}</td><td class="n">{{ r.make_ready_min_per_job }}</td>
+            <td class="n">{{ r.speed_index }}</td><td class="n">{{ r.volume_index }}</td><td class="n">{{ r.quality_index }}</td>
+            <td class="n {% if r.score >= 105 %}oe-good{% elif r.score >= 90 %}oe-mid{% else %}oe-low{% endif %}">{{ r.score }}</td>
+        </tr>
+        {% endfor %}
+        </tbody>
+    </table></div>
+    <p class="oe-note">Speed, Volume and Quality are indexes where 100 = the average of operators on the same machines. Score = 40% speed (impressions per run hour) + 30% volume (impressions per shift) + 30% quality (waste). Operators with fewer than {{ data.min_shifts }} shifts are listed but not ranked. Click an operator for the details.</p>
+
+    <div class="oe-title">Machine benchmarks (what "average" means here)</div>
+    <table class="oe" style="max-width:760px">
+        <thead><tr><th>Machine</th><th class="n">Impressions</th><th class="n">Run h</th><th class="n">Impr / run h</th><th class="n">Impr / shift</th><th class="n">Waste %</th></tr></thead>
+        <tbody>{% for m in data.machines %}<tr><td>{{ m.name }}</td><td class="n">{{ m.impressions|intcomma }}</td><td class="n">{{ m.run_hours }}</td><td class="n">{{ m.impressions_per_hour|intcomma }}</td><td class="n">{{ m.impressions_per_shift|intcomma }}</td><td class="n">{{ m.waste_pct }}</td></tr>{% endfor %}</tbody>
+    </table>
+
+    {% if data.detail %}
+    <div id="detail"></div>
+    <div class="oe-title">{{ data.detail.name }} &mdash; details</div>
+    <table class="oe" style="max-width:760px"><thead><tr><th>Machine</th><th class="n">Shifts</th><th class="n">Impressions</th><th class="n">Run h</th><th class="n">Impr / run h</th><th class="n">Waste %</th></tr></thead>
+        <tbody>{% for m in data.detail.machines %}<tr><td>{{ m.name }}</td><td class="n">{{ m.shifts }}</td><td class="n">{{ m.impressions|intcomma }}</td><td class="n">{{ m.run_hours }}</td><td class="n">{{ m.impressions_per_hour|intcomma }}</td><td class="n">{{ m.waste_pct }}</td></tr>{% endfor %}</tbody></table>
+    <div class="oe-title">Day by day</div>
+    <table class="oe" style="max-width:760px"><thead><tr><th>Date</th><th>Shift</th><th class="n">Impressions</th><th class="n">Run h</th><th class="n">Impr / run h</th></tr></thead>
+        <tbody>{% for d in data.detail.days %}<tr><td>{{ d.date|date:"D d M" }}</td><td>{{ d.shifts }}</td><td class="n">{{ d.impressions|intcomma }}</td><td class="n">{{ d.run_hours }}</td><td class="n">{{ d.impressions_per_hour|intcomma }}</td></tr>{% endfor %}</tbody></table>
+    <div class="oe-title">Jobs printed</div>
+    <table class="oe"><thead><tr><th>Job card</th><th>SKU</th><th class="n">Impressions</th><th class="n">Run h</th><th class="n">Impr / run h</th><th class="n">Waste %</th></tr></thead>
+        <tbody>{% for j in data.detail.jobs %}<tr><td>{% if j.url %}<a href="{{ j.url }}" target="_blank" rel="noopener">{{ j.jc }}</a>{% else %}{{ j.jc }}{% endif %}</td><td>{{ j.sku }}</td><td class="n">{{ j.impressions|intcomma }}</td><td class="n">{{ j.run_hours }}</td><td class="n">{{ j.impressions_per_hour|intcomma }}</td><td class="n">{{ j.waste_pct }}</td></tr>{% endfor %}</tbody></table>
+    {% endif %}
+    {% endif %}
+</section>
+</div>
+{% endblock %}

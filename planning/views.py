@@ -78,6 +78,7 @@ from django.http import Http404, HttpResponse, JsonResponse
 from django.utils import timezone
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.views.decorators.http import require_POST
 
 try:
     from reportlab.lib import colors
@@ -155,6 +156,7 @@ from .models import (
     MERGE_GROUP_OPEN_STATUSES,
     MergeGroup,
     MergeGroupItem,
+    MERGE_GROUP_STATUS_CHOICES,
     PlanningDispatchRun,
     PlanningJob,
     PlanningPrintRun,
@@ -5820,26 +5822,89 @@ def _near_miss_blocked_jobs(jobs, cfg, limit=50):
 @login_required
 @permission_required('can_view_planning_queue')
 def planning_merge_board(request):
+    from planning.merge_refresh import stale_changes
+
     cfg = _merge_config_from_request(request)
-    jobs = _annotate_existing_plate_requests(list(_eligible_merge_jobs(request)))
-    suggestions = build_suggestions(jobs, cfg)
-    open_groups = (
-        MergeGroup.objects.filter(status__in=MERGE_GROUP_OPEN_STATUSES)
-        .prefetch_related('items__planning_job')
-    )
-    context = {
-        'suggestions': suggestions,
-        'open_groups': open_groups,
-        'eligible_count': len(jobs),
-        'blocked_rows': _near_miss_blocked_jobs(jobs, cfg),
-        'config': cfg,
-        'filters': {
-            'material': (request.GET.get('material') or '').strip(),
-            'plan_month': (request.GET.get('plan_month') or '').strip(),
-            'delivery_window': cfg.delivery_window_days or '',
-        },
+    tab = request.GET.get('tab') if request.GET.get('tab') in ('groups', 'suggestions', 'blocked', 'closed') else 'groups'
+    q = (request.GET.get('q') or '').strip()
+    filters = {
+        'material': (request.GET.get('material') or '').strip(),
+        'plan_month': (request.GET.get('plan_month') or '').strip(),
+        'delivery_window': cfg.delivery_window_days or '',
+        'q': q,
+        'status': (request.GET.get('status') or '').strip(),
+        'reason': (request.GET.get('reason') or '').strip(),
+        'partner_only': request.GET.get('partner_only') == '1',
     }
+    context = {
+        'tab': tab, 'config': cfg, 'filters': filters,
+        'tab_links': [('groups', 'Accepted groups'), ('suggestions', 'Recommended merges'), ('blocked', 'Not eligible jobs'), ('closed', 'Cancelled')],
+        'reason_choices': ['Piece size', 'Material', 'Print sheet size', 'UPS', 'Colour', 'passes'],
+    }
+    # Each tab only does its own work: the suggestion search and the master-data scan are the slow parts.
+    open_qs = MergeGroup.objects.filter(status__in=MERGE_GROUP_OPEN_STATUSES)
+    context['open_count'] = open_qs.count()
+    context['closed_count'] = MergeGroup.objects.exclude(status__in=MERGE_GROUP_OPEN_STATUSES).count()
+
+    def group_filter(queryset):
+        if q:
+            queryset = queryset.filter(
+                Q(code__icontains=q) | Q(items__planning_job__jc_number__icontains=q) | Q(items__planning_job__sku__icontains=q)
+            ).distinct()
+        if filters['status']:
+            queryset = queryset.filter(status=filters['status'])
+        return queryset
+
+    if tab == 'groups':
+        groups = list(group_filter(open_qs).prefetch_related('items__planning_job').order_by('-code'))
+        for group in groups:
+            group.stale = stale_changes(group)
+        context['open_groups'] = groups
+        context['open_status_choices'] = [(k, v) for k, v in MERGE_GROUP_STATUS_CHOICES if k in MERGE_GROUP_OPEN_STATUSES]
+        context['stale_count'] = sum(1 for g in groups if g.stale)
+    elif tab == 'closed':
+        context['closed_groups'] = list(
+            group_filter(MergeGroup.objects.exclude(status__in=MERGE_GROUP_OPEN_STATUSES)).prefetch_related('items__planning_job').order_by('-code')[:200]
+        )
+    else:
+        jobs = _annotate_existing_plate_requests(list(_eligible_merge_jobs(request)))
+        context['eligible_count'] = len(jobs)
+        if tab == 'suggestions':
+            context['suggestions'] = build_suggestions(jobs, cfg)
+        else:
+            rows = _near_miss_blocked_jobs(jobs, cfg, limit=500)
+            if q:
+                rows = [r for r in rows if q.lower() in (r['job'].jc_number or '').lower() or q.lower() in (r['job'].sku or '').lower()]
+            if filters['reason']:
+                rows = [r for r in rows if any(filters['reason'].lower() in reason.lower() for reason in r['reasons'])]
+            if filters['partner_only']:
+                rows = [r for r in rows if r['is_near_miss']]
+            context['blocked_rows'] = rows
     return render(request, 'planning/planning_merge_board.html', context)
+
+
+@login_required
+@permission_required('can_plan')
+@require_POST
+def planning_merge_refresh(request):
+    """Re-read the members' current quantities into one open group (group_id) or every open group."""
+    from planning.merge_refresh import refresh_group, refresh_open_groups
+
+    group_id = request.POST.get('group_id')
+    if group_id and group_id.isdigit():
+        group = get_object_or_404(MergeGroup, pk=int(group_id))
+        results = [(group, *refresh_group(group))]
+    else:
+        results = refresh_open_groups()
+    updated = [msg for _g, status, msg in results if status == 'updated']
+    locked = [msg for _g, status, msg in results if status == 'locked']
+    for msg in updated:
+        messages.success(request, msg)
+    if not updated:
+        messages.info(request, 'Every open group already matches its jobs.' if not locked else locked[0])
+    if locked and updated:
+        messages.warning(request, f'{len(locked)} group(s) were left alone because printing has started.')
+    return redirect(request.POST.get('next') or 'planning:merge_board')
 
 
 MERGE_MAX_TOLERANCE_PCT = 50.0
@@ -6137,6 +6202,7 @@ def planning_merge_detail(request, group_id):
         'group': group,
         'preexisting_plate_requests': preexisting,
         'new_artwork_count': sum(1 for item in items if not (item.source_awc_no or '').strip()),
+        'stale_changes': __import__('planning.merge_refresh', fromlist=['stale_changes']).stale_changes(group),
         'member_count': len(items),
         'combined_plate': combined_plate,
         'combined_plate_issued': group_combined_plate_issued(group),

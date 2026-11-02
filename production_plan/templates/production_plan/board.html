@@ -102,6 +102,7 @@
             <a class="pp-tab {% if tab == 'plan' %}active{% endif %}" href="?lane={{ lane }}&tab=plan&plan={{ plan.id }}">Plan</a>
             <a class="pp-tab {% if tab == 'actual' %}active{% endif %}" href="?lane={{ lane }}&tab=actual&plan={{ plan.id }}">Plan vs actual</a>
             <a class="pp-tab {% if tab == 'hold' %}active{% endif %}" href="?lane={{ lane }}&tab=hold&plan={{ plan.id }}">On hold{% if hold_count %}<small>{{ hold_count }}</small>{% endif %}</a>
+            <a class="pp-tab {% if tab == 'near' %}active{% endif %}" href="?lane={{ lane }}&tab=near&plan={{ plan.id }}">Near complete{% if near_count %}<small>{{ near_count }}</small>{% endif %}</a>
             <a class="pp-tab {% if tab == 'history' %}active{% endif %}" href="?lane={{ lane }}&tab=history&plan={{ plan.id }}">History</a>
         </div>
 
@@ -253,6 +254,16 @@
             {% empty %}
             <div class="pp-alert" style="background:#f8fafc;border-color:#e2e8f0;color:#475569">No job is on hold.</div>
             {% endfor %}
+
+        {% elif tab == 'near' %}
+            <p class="pp-small">Part-printed jobs with {{ settings.close_tolerance_pct }}% or less of their impressions left. They are not planned (a few leftover impressions are not worth a slot). Open each job to check it and close it manually; the tolerance is in the plan settings.</p>
+            <div class="erp-table-wrap erp-table-dense"><table class="erp-table">
+                <thead><tr><th>Job card</th><th>SKU</th><th>Lane</th><th>Ordered</th><th style="text-align:right">Planned</th><th style="text-align:right">Printed</th><th style="text-align:right">Left</th><th style="text-align:right">% left</th><th></th></tr></thead>
+                <tbody>{% for n in near %}<tr><td><b>{{ n.job.jc_number }}</b></td><td>{{ n.job.sku|truncatechars:48 }}</td><td>{{ n.lane_label }}</td><td>{{ n.order_date|date:"d M Y" }}</td>
+                    <td style="text-align:right">{{ n.planned|intcomma }}</td><td style="text-align:right">{{ n.printed|intcomma }}</td><td style="text-align:right"><b>{{ n.remaining|intcomma }}</b></td><td style="text-align:right">{{ n.pct_left }}%</td>
+                    <td><a class="erp-btn erp-btn-secondary sm" href="{% url 'planning:job_detail' n.job.id %}" target="_blank" rel="noopener">Open job</a></td></tr>
+                {% empty %}<tr><td colspan="9" class="pp-small">No part-printed job is within the tolerance.</td></tr>{% endfor %}</tbody>
+            </table></div>
 
         {% elif tab == 'actual' %}
             <div class="erp-table-wrap erp-table-dense"><table class="erp-table">

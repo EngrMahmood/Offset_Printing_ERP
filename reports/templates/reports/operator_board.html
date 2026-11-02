@@ -1,0 +1,41 @@
+{% load humanize %}<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Operator Ranking - Notice Board</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+    @page { size: A4 portrait; margin: 10mm; }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, Helvetica, sans-serif; color: #0f172a; margin: 0; background: #fff; }
+    .head { background: #0f172a; color: #fff; padding: 18px 24px; text-align: center; }
+    .head h1 { margin: 0; font-size: 34px; letter-spacing: .06em; } .head p { margin: 6px 0 0; font-size: 16px; color: #cbd5e1; }
+    .podium { display: flex; gap: 14px; justify-content: center; align-items: flex-end; padding: 22px 12px 10px; }
+    .pod { flex: 1; max-width: 230px; text-align: center; border: 3px solid; border-radius: 12px; padding: 14px 8px; }
+    .pod.p1 { background: #fef9c3; border-color: #eab308; padding-bottom: 30px; } .pod.p2 { background: #f1f5f9; border-color: #94a3b8; } .pod.p3 { background: #ffedd5; border-color: #f97316; }
+    .pod .no { font-size: 44px; font-weight: 800; } .pod .who { font-size: 22px; font-weight: 800; margin: 4px 0; } .pod .st { font-size: 14px; color: #334155; }
+    .champs { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; padding: 10px 14px; }
+    .champ { border: 2px solid #2563eb; background: #eff6ff; border-radius: 10px; padding: 8px 14px; text-align: center; min-width: 190px; }
+    .champ .t { font-size: 12px; text-transform: uppercase; font-weight: 700; color: #1d4ed8; } .champ .w { font-size: 18px; font-weight: 800; } .champ .d { font-size: 12px; color: #475569; }
+    table { width: calc(100% - 28px); margin: 12px 14px; border-collapse: collapse; font-size: 15px; }
+    th { background: #0f172a; color: #fff; padding: 8px 6px; font-size: 12px; text-transform: uppercase; text-align: left; }
+    td { padding: 7px 6px; border-bottom: 1px solid #cbd5e1; } td.n, th.n { text-align: right; }
+    tr.top td { background: #fefce8; font-weight: 700; }
+    .foot { text-align: center; font-size: 12px; color: #64748b; padding: 6px 20px 16px; }
+    .tools { text-align: center; padding: 10px; } .tools button { font-size: 15px; padding: 8px 18px; }
+    @media print { .tools { display: none; } .head, th { -webkit-print-color-adjust: exact; print-color-adjust: exact; } .pod, .champ, tr.top td { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
+</style></head><body>
+<div class="tools"><button onclick="window.print()">Print this board</button></div>
+<div class="head"><h1>OPERATOR RANKING</h1>
+    <p>{{ data.start|date:"d M Y" }} &ndash; {{ data.end|date:"d M Y" }}{% if data.filters.machine %} &middot; {{ data.filters.machine }}{% endif %}{% if data.filters.shift %} &middot; Shift {{ data.filters.shift }}{% endif %}</p></div>
+{% if data.top3 %}
+<div class="podium">
+    {% for r in data.top3 %}{% if r.rank == 2 %}<div class="pod p2"><div class="no">2</div><div class="who">{{ r.operator }}</div><div class="st">{{ r.impressions|intcomma }} impressions<br>{{ r.impressions_per_hour|intcomma }} / run hour<br>Score {{ r.score }}</div></div>{% endif %}{% endfor %}
+    {% for r in data.top3 %}{% if r.rank == 1 %}<div class="pod p1"><div class="no">1</div><div class="who">{{ r.operator }}</div><div class="st">{{ r.impressions|intcomma }} impressions<br>{{ r.impressions_per_hour|intcomma }} / run hour<br>Score {{ r.score }}</div></div>{% endif %}{% endfor %}
+    {% for r in data.top3 %}{% if r.rank == 3 %}<div class="pod p3"><div class="no">3</div><div class="who">{{ r.operator }}</div><div class="st">{{ r.impressions|intcomma }} impressions<br>{{ r.impressions_per_hour|intcomma }} / run hour<br>Score {{ r.score }}</div></div>{% endif %}{% endfor %}
+</div>
+<div class="champs">{% for c in data.champions %}<div class="champ"><div class="t">{{ c.title }}</div><div class="w">{{ c.name }}</div><div class="d">{{ c.detail }}</div></div>{% endfor %}</div>
+{% else %}<p style="text-align:center;padding:30px">No ranked operators in this period.</p>{% endif %}
+<table>
+    <thead><tr><th>#</th><th>Operator</th><th class="n">Impressions</th><th class="n">Per run hour</th><th class="n">Per shift</th><th class="n">Waste %</th><th class="n">Score</th></tr></thead>
+    <tbody>{% for r in data.rows %}{% if r.ranked %}<tr {% if r.rank <= 3 %}class="top"{% endif %}><td>{{ r.rank }}</td><td>{{ r.operator }}</td><td class="n">{{ r.impressions|intcomma }}</td><td class="n">{{ r.impressions_per_hour|intcomma }}</td><td class="n">{{ r.impressions_per_shift|intcomma }}</td><td class="n">{{ r.waste_pct }}</td><td class="n"><b>{{ r.score }}</b></td></tr>{% endif %}{% endfor %}</tbody>
+</table>
+<div class="foot">Score 100 = average of operators on the same machines. 40% speed &middot; 30% impressions per shift &middot; 30% low waste. Ranked from {{ data.min_shifts }} shifts. Keep it up!</div>
+</body></html>

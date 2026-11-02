@@ -142,12 +142,14 @@ def lane_of(job, settings_obj):
     return 'colour_sm' if big else 'colour_gto'
 
 
-def load_jobs(settings_obj, today, only_held=False):
+def load_jobs(settings_obj, today, only_held=False, only_near=False):
     """Every job that could be planned, as {job_id: info}, with its remaining impressions.
 
     Eligible: released or in production, plates ready, not on hold, not cut-and-pack, not opted out of
     machine planning. A combined-layout follower prints with its lead, so only the lead is planned.
-    ``only_held=True`` returns the jobs that would be eligible but are on hold (the plan's "On hold" window)."""
+    ``only_held=True`` returns the jobs that would be eligible but are on hold (the plan's "On hold" window).
+    A part-printed job whose remainder is within the close tolerance is never planned: ``only_near=True`` returns those
+    (the "Near complete" window), otherwise they are left out."""
     from planning.models import MergeGroupItem, PlanningJob, MERGE_GROUP_OPEN_STATUSES
     from reports.models import MachinePlanningJcSelection
 
@@ -173,10 +175,14 @@ def load_jobs(settings_obj, today, only_held=False):
         if group is not None and group.combined_impressions():
             planned = group.combined_impressions()
         remaining = max(int(planned or 0) - printed.get(job.id, 0), 0)
+        near = bool(printed.get(job.id)) and 0 < remaining <= int(planned or 0) * int(settings_obj.close_tolerance_pct or 0) / 100
+        if near != only_near:
+            continue
         lane = lane_of(job, settings_obj)
         info[job.id] = {
             'job': job, 'lane': lane, 'remaining': remaining, 'order_date': order_date_of(job, today),
             'is_new': (job.repeat_flag or '').strip().lower() == 'new', 'priority': int(job.priority or 0),
+            'planned': int(planned or 0), 'printed': printed.get(job.id, 0),
         }
     return info
 

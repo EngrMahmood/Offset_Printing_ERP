@@ -34,6 +34,17 @@
 
 {% block content %}
 <div class="erp-page-stack">
+    {% if stale_changes %}
+    <section class="erp-section-shell" style="border-left:4px solid #f59e0b;background:#fffbeb">
+        <b>This group no longer matches its jobs.</b> An order quantity or carried-forward stock changed after it was accepted:
+        <ul style="margin:6px 0 8px 18px">{% for c in stale_changes %}<li>{{ c }}</li>{% endfor %}</ul>
+        <form method="post" action="{% url 'planning:merge_refresh' %}">{% csrf_token %}
+            <input type="hidden" name="group_id" value="{{ group.id }}"><input type="hidden" name="next" value="{% url 'planning:merge_detail' group.id %}">
+            <button class="erp-btn erp-btn-primary" type="submit">Update the group from its jobs</button>
+            <span class="erp-section-desc">The ups split stays as approved; run sheets and quantities are recalculated. Not possible once printing has started.</span>
+        </form>
+    </section>
+    {% endif %}
     <section class="erp-section-shell">
         <div class="merge-lifecycle">
             <div class="merge-lifecycle__step is-done">

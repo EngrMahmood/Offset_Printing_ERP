@@ -16,6 +16,9 @@ class PlanSettings(models.Model):
     """Single-row configuration for the Production Plan (id=1)."""
 
     shift_capacity = models.PositiveIntegerField(default=40000, help_text='Impressions per machine per shift.')
+    close_tolerance_pct = models.PositiveSmallIntegerField(
+        default=5, help_text='A part-printed job with this % (or less) of its impressions left is not planned; it is listed under "Near complete" to be checked and closed by hand.',
+    )
     friday_day_capacity = models.PositiveIntegerField(
         default=35000, help_text='Friday day-shift capacity (1.5 hours go to lunch and Jumma prayer).',
     )

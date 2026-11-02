@@ -12,6 +12,7 @@ urlpatterns = [
     path('hourly-report/', views.hourly_report_page, name='hourly_report'),
     path('hourly-report/image/', views.hourly_report_image, name='hourly_report_image'),
     path('hourly-report/share/', views.hourly_report_share, name='hourly_report_share'),
+    path('operator-efficiency/board/', views.operator_board, name='operator_board'),
     path('sku-history/suggest/', views.sku_suggest, name='sku_suggest'),
     path('<slug:report_type>/', views.report_detail, name='detail'),
 ]
