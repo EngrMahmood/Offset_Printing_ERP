@@ -34,8 +34,8 @@
 <div class="champs">{% for c in data.champions %}<div class="champ"><div class="t">{{ c.title }}</div><div class="w">{{ c.name }}</div><div class="d">{{ c.detail }}</div></div>{% endfor %}</div>
 {% else %}<p style="text-align:center;padding:30px">No ranked operators in this period.</p>{% endif %}
 <table>
-    <thead><tr><th>#</th><th>Operator</th><th class="n">Impressions</th><th class="n">Per run hour</th><th class="n">Per shift</th><th class="n">Waste %</th><th class="n">Score</th></tr></thead>
-    <tbody>{% for r in data.rows %}{% if r.ranked %}<tr {% if r.rank <= 3 %}class="top"{% endif %}><td>{{ r.rank }}</td><td>{{ r.operator }}</td><td class="n">{{ r.impressions|intcomma }}</td><td class="n">{{ r.impressions_per_hour|intcomma }}</td><td class="n">{{ r.impressions_per_shift|intcomma }}</td><td class="n">{{ r.waste_pct }}</td><td class="n"><b>{{ r.score }}</b></td></tr>{% endif %}{% endfor %}</tbody>
+    <thead><tr><th>#</th><th>Operator</th><th class="n">Shifts</th><th class="n">Impressions</th><th class="n">Per run hour</th><th class="n">Per shift</th><th class="n">Waste %</th><th class="n">Score</th></tr></thead>
+    <tbody>{% for r in data.rows %}{% if r.ranked %}<tr {% if r.rank <= 3 %}class="top"{% endif %}><td>{{ r.rank }}</td><td>{{ r.operator }}</td><td class="n">{{ r.shifts }}</td><td class="n">{{ r.impressions|intcomma }}</td><td class="n">{{ r.impressions_per_hour|intcomma }}</td><td class="n">{{ r.impressions_per_shift|intcomma }}</td><td class="n">{{ r.waste_pct }}</td><td class="n"><b>{{ r.score }}</b></td></tr>{% endif %}{% endfor %}</tbody>
 </table>
-<div class="foot">Score 100 = average of operators on the same machines. 40% speed &middot; 30% impressions per shift &middot; 30% low waste. Ranked from {{ data.min_shifts }} shifts. Keep it up!</div>
+<div class="foot">Score 100 = average of operators on the same machines: 30% speed &middot; 25% output per shift &middot; 20% low waste &middot; 15% quick changeovers &middot; 10% press running. Only operators with {{ data.min_shifts }}+ shifts are ranked. Keep it up!</div>
 </body></html>

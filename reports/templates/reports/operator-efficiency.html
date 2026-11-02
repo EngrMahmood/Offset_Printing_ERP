@@ -75,29 +75,30 @@
     <div class="oe-title">Ranking</div>
     <div style="overflow-x:auto">
     <table class="oe">
-        <thead><tr><th>#</th><th>Operator</th><th>Machines</th><th class="n">Shifts</th><th class="n">Jobs</th><th class="n">Impressions</th><th class="n">Run h</th>
-            <th class="n">Impr / run h</th><th class="n">Impr / shift</th><th class="n">Waste %</th><th class="n">Downtime h</th><th class="n">Running %</th><th class="n">Make-ready min/job</th>
-            <th class="n">Speed</th><th class="n">Volume</th><th class="n">Quality</th><th class="n">Score</th></tr></thead>
+        <thead><tr><th>#</th><th>Operator</th><th>Machines</th><th class="n">Days</th><th class="n">Shifts</th><th class="n">Attend. %</th><th class="n">Jobs</th><th class="n">Change-overs</th><th class="n">Impressions</th><th class="n">Run h</th><th class="n">Run h / shift</th>
+            <th class="n">Impr / run h</th><th class="n">Impr / shift</th><th class="n">Waste %</th><th class="n">Downtime h</th><th class="n">Running %</th><th class="n">Make-ready min / change</th>
+            <th class="n" title="Impressions per run hour vs same-machine peers">Speed</th><th class="n" title="Impressions per shift vs peers">Output</th><th class="n" title="Waste vs peers">Quality</th><th class="n" title="Make-ready time vs peers">Change</th><th class="n" title="Press running time vs peers">Uptime</th><th class="n">Score</th></tr></thead>
         <tbody>
         {% for r in data.rows %}
         <tr {% if not r.ranked %}style="color:#94a3b8"{% endif %}>
             <td><b>{{ r.rank|default:"-" }}</b></td>
             <td><a href="?period={{ data.filters.period }}&amp;date_from={{ data.filters.date_from }}&amp;date_to={{ data.filters.date_to }}&amp;machine={{ data.filters.machine|urlencode }}&amp;shift={{ data.filters.shift }}&amp;operator={{ r.operator_id }}#detail"><b>{{ r.operator }}</b></a></td>
-            <td>{{ r.machines }}</td><td class="n">{{ r.shifts }}</td><td class="n">{{ r.jobs }}</td><td class="n">{{ r.impressions|intcomma }}</td><td class="n">{{ r.run_hours }}</td>
+            <td>{{ r.machines }}</td><td class="n">{{ r.days }}</td><td class="n">{{ r.shifts }}</td><td class="n">{{ r.attendance_pct }}%</td><td class="n">{{ r.jobs }}</td><td class="n">{{ r.changeovers }}</td><td class="n">{{ r.impressions|intcomma }}</td><td class="n">{{ r.run_hours }}</td><td class="n">{{ r.run_hours_per_shift }}</td>
             <td class="n">{{ r.impressions_per_hour|intcomma }}</td><td class="n">{{ r.impressions_per_shift|intcomma }}</td><td class="n">{{ r.waste_pct }}</td>
-            <td class="n">{{ r.downtime_hours }}</td><td class="n">{{ r.utilisation_pct }}</td><td class="n">{{ r.make_ready_min_per_job }}</td>
-            <td class="n">{{ r.speed_index }}</td><td class="n">{{ r.volume_index }}</td><td class="n">{{ r.quality_index }}</td>
+            <td class="n">{{ r.downtime_hours }}</td><td class="n">{{ r.running_pct }}</td><td class="n">{{ r.make_ready_min_per_changeover }}</td>
+            <td class="n">{{ r.speed_index }}</td><td class="n">{{ r.throughput_index }}</td><td class="n">{{ r.quality_index }}</td><td class="n">{{ r.changeover_index }}</td><td class="n">{{ r.running_index }}</td>
             <td class="n {% if r.score >= 105 %}oe-good{% elif r.score >= 90 %}oe-mid{% else %}oe-low{% endif %}">{{ r.score }}</td>
         </tr>
         {% endfor %}
         </tbody>
     </table></div>
-    <p class="oe-note">Speed, Volume and Quality are indexes where 100 = the average of operators on the same machines. Score = 40% speed (impressions per run hour) + 30% volume (impressions per shift) + 30% quality (waste). Operators with fewer than {{ data.min_shifts }} shifts are listed but not ranked. Click an operator for the details.</p>
+    <p class="oe-note"><b>How the ranking works.</b> Every column to the right of "Make-ready" is an index where 100 = the average of operators on the same machines. Score = 30% Speed (impressions per run hour) + 25% Output (impressions per shift) + 20% Quality (low waste) + 15% Change (short make-ready per job changeover) + 10% Uptime (press running time per shift).
+        <b>Fairness:</b> only rates are compared, not totals, and an operator needs at least {{ data.min_shifts }} shifts in the period ({{ data.qualify_pct }}% of the shifts of the operators who turned up most) to be ranked; others are listed greyed out. Attendance % is shifts worked against those most-present operators. A changeover is one operator starting one job on one shift. Click an operator for the details.</p>
 
     <div class="oe-title">Machine benchmarks (what "average" means here)</div>
     <table class="oe" style="max-width:760px">
-        <thead><tr><th>Machine</th><th class="n">Impressions</th><th class="n">Run h</th><th class="n">Impr / run h</th><th class="n">Impr / shift</th><th class="n">Waste %</th></tr></thead>
-        <tbody>{% for m in data.machines %}<tr><td>{{ m.name }}</td><td class="n">{{ m.impressions|intcomma }}</td><td class="n">{{ m.run_hours }}</td><td class="n">{{ m.impressions_per_hour|intcomma }}</td><td class="n">{{ m.impressions_per_shift|intcomma }}</td><td class="n">{{ m.waste_pct }}</td></tr>{% endfor %}</tbody>
+        <thead><tr><th>Machine</th><th class="n">Impressions</th><th class="n">Run h</th><th class="n">Impr / run h</th><th class="n">Impr / shift</th><th class="n">Waste %</th><th class="n">Make-ready min</th></tr></thead>
+        <tbody>{% for m in data.machines %}<tr><td>{{ m.name }}</td><td class="n">{{ m.impressions|intcomma }}</td><td class="n">{{ m.run_hours }}</td><td class="n">{{ m.impressions_per_hour|intcomma }}</td><td class="n">{{ m.impressions_per_shift|intcomma }}</td><td class="n">{{ m.waste_pct }}</td><td class="n">{{ m.make_ready_min }}</td></tr>{% endfor %}</tbody>
     </table>
 
     {% if data.detail %}

@@ -141,6 +141,16 @@ class GeneratorRuleTests(PlanTestBase):
         self.assertIn(urgent.id, planned)
         self.assertEqual(len(planned), 4)                                                               # 4,000 capacity: urgent + 3 oldest
 
+    def test_urgent_jobs_take_the_earliest_slots_of_the_lane_even_when_big(self):
+        for i in range(6):
+            self.job(200, datetime.date(2026, 9, 1 + i))                                              # small old jobs: the day shift's usual diet
+        urgent = self.job(900, datetime.date(2026, 11, 1), priority=4)                                # big and urgent: normally a night job
+        build = self.build()
+        mine = [i for i in build.items if i['planning_job_id'] == urgent.id]
+        first_day = min(i['plan_date'] for i in build.items)
+        self.assertTrue(mine and all(i['plan_date'] == first_day and i['shift'] == 'D' for i in mine))
+        self.assertEqual(sum(i['qty'] for i in mine), 900)
+
     def test_a_job_bigger_than_one_shift_is_cut_into_shift_sized_chunks(self):
         giant = self.job(3500, datetime.date(2026, 9, 1))
         items = [i for i in self.build().items if i['planning_job_id'] == giant.id]

@@ -64,3 +64,27 @@ class OperatorEfficiencyTests(TestCase):
         for kind in ('xlsx', 'pdf'):
             r = self.client.get(reverse('reports:reports_api:export_report', args=['operator-efficiency']), {**q, 'type': kind})
             self.assertEqual(r.status_code, 200, kind)
+
+
+class OperatorFairnessTests(OperatorEfficiencyTests):
+    def test_an_operator_who_was_mostly_absent_is_not_ranked_however_fast(self):
+        fresh = [Operator.objects.create(name=f'Regular {n}') for n in range(3)]
+        for n in range(20):
+            for op in fresh:
+                self.entry(op, DAY + datetime.timedelta(days=n), 20000, 400)
+        for n in range(6):                                               # 6 shifts: over the minimum, but under half of 20
+            self.entry(self.fast, DAY + datetime.timedelta(days=n), 40000, 300)
+        result = oe.compute(DAY, DAY + datetime.timedelta(days=30))
+        by = {r['operator']: r for r in result['rows']}
+        self.assertFalse(by['Fast Fahad']['ranked'])
+        self.assertTrue(all(by[f'Regular {n}']['ranked'] for n in range(3)))
+        self.assertEqual(by['Fast Fahad']['attendance_pct'], 30)         # 6 of the 20 shifts the regulars worked
+
+    def test_changeovers_and_make_ready_are_counted_per_job_started(self):
+        other = make_card(make_job('OE2', 9000, sku='SKU-OE2'), prefix='OE2')
+        self.entry(self.fast, DAY, 10000, 200, make_ready_time=30)
+        Production.objects.bulk_create([Production(job_card=other, entry_type='printing', date=DAY, shift='A', machine=self.machine,
+                                                   operator=self.fast, output_sheets=5000, impressions=5000, run_time=100, make_ready_time=60)])
+        row = next(r for r in oe.compute(DAY, DAY)['rows'] if r['operator'] == 'Fast Fahad')
+        self.assertEqual((row['changeovers'], row['jobs'], row['shifts']), (2, 2, 1))
+        self.assertEqual(row['make_ready_min_per_changeover'], 45)
