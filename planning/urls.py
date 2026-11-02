@@ -26,6 +26,7 @@ urlpatterns = [
     path('merge/', views.planning_merge_board, name='merge_board'),
     path('merge/accept/', views.planning_merge_accept, name='merge_accept'),
     path('merge/refresh/', views.planning_merge_refresh, name='merge_refresh'),
+    path('merge/<int:group_id>/release/', views.planning_merge_release, name='merge_release'),
     path('merge/evaluate/', views.planning_merge_evaluate, name='merge_evaluate'),
     path('merge/<int:group_id>/', views.planning_merge_detail, name='merge_detail'),
     path('merge/<int:group_id>/combined-sheet/', views.planning_merge_combined_sheet, name='merge_combined_sheet'),

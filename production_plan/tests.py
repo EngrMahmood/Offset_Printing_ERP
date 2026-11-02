@@ -151,6 +151,22 @@ class GeneratorRuleTests(PlanTestBase):
         self.assertTrue(mine and all(i['plan_date'] == first_day and i['shift'] == 'D' for i in mine))
         self.assertEqual(sum(i['qty'] for i in mine), 900)
 
+    def test_priorities_are_followed_in_order_urgent_high_medium_then_the_rest(self):
+        for i in range(4):
+            self.job(200, datetime.date(2026, 9, 1 + i))                                              # Normal
+        medium = self.job(900, datetime.date(2026, 10, 1), priority=2)
+        high = self.job(900, datetime.date(2026, 10, 2), priority=3)
+        urgent = self.job(900, datetime.date(2026, 10, 3), priority=4)
+        build = self.build()
+        slot = {}
+        for item in build.items:
+            slot.setdefault(item['planning_job_id'], (item['plan_date'], 0 if item['shift'] == 'D' else 1))
+        self.assertLessEqual(slot[urgent.id], slot[high.id])                                          # earlier or the same shift on another machine
+        self.assertLessEqual(slot[high.id], slot[medium.id])
+        normal_first = min(v for j, v in slot.items() if j not in (urgent.id, high.id, medium.id))
+        self.assertLessEqual(slot[medium.id], max(normal_first, slot[medium.id]))
+        self.assertEqual(slot[urgent.id], min(slot.values()))                                         # urgent is in the very first shift
+
     def test_a_job_bigger_than_one_shift_is_cut_into_shift_sized_chunks(self):
         giant = self.job(3500, datetime.date(2026, 9, 1))
         items = [i for i in self.build().items if i['planning_job_id'] == giant.id]

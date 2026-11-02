@@ -1592,7 +1592,7 @@ def _build_job_card_pdf_bytes(job, scan_url):
          _format_job_value(f"{merge['total_sheet_ups']} (this SKU: {merge['allocated_ups']})" if merge else job.ups),
          Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
         [Paragraph('ACTUAL SHEETS', label_style),
-         _format_job_value(f"{merge['total_run_sheets']} (combined run)" if merge else job.calculated_sheets_required),
+         _format_job_value(f"{merge['run_sheets']} (combined run)" if merge else job.calculated_sheets_required),
          Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
         [Paragraph('PURCHASE ORIGIN', label_style), _format_job_value(job.purchase_material_origin), Paragraph('PURCHASE SHEET SIZE', label_style), _format_job_value(job.purchase_sheet_size)],
         [Paragraph('PURCHASE SHEET UPS', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('PURCHASE REQ', label_style), _format_job_value(job.purchase_sheet_required)],

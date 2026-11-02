@@ -208,7 +208,7 @@ def make_units(info_by_job, job_ids, settings_obj, deduct=None):
     return units
 
 
-URGENT_PRIORITY = 4
+DEFAULT_PRIORITY = 1           # Normal
 
 
 def fifo_key(unit):
@@ -338,15 +338,18 @@ def build_plan(morning, settings_obj, base_items=None, today=None):
     overflow_new = []
     for lane, slots in slots_by_lane.items():
         units = sorted(pool.get(lane, []), key=fifo_key)
-        # Urgent jobs go first in the whole lane, on whichever machine has room, day or night, earliest slot first
-        # (a new job still never takes a night shift). Everything else follows the day/night rules below.
-        urgent = [u for u in units if u.priority >= URGENT_PRIORITY]
-        units = [u for u in units if u.priority < URGENT_PRIORITY]
+        # Jobs the planner raised above Normal (Urgent, High, Medium) go first in the whole lane, in that order, on whichever
+        # machine has room, day or night, earliest slot first (a new job still never takes a night shift). Normal and
+        # Low jobs follow the day/night rules below, Low after Normal.
+        urgent = [u for u in units if u.priority > DEFAULT_PRIORITY]                      # Urgent, High, Medium: in that order
+        units = [u for u in units if u.priority <= DEFAULT_PRIORITY]                     # Normal, then Low, by the day/night rules
         in_order = [[s for s in slots if s.date == d and s.shift == sh] for d in dates for sh in SHIFTS]
         in_order = [layer for layer in in_order if layer]
-        for u in _place([u for u in urgent if u.is_new], [l for l in in_order if l[0].shift == 'D'], build.items, lane, seq):
-            overflow_new.append({'jc': u.jc, 'qty': u.size, 'lane': lane})
-        _place([u for u in urgent if not u.is_new], in_order, build.items, lane, seq)
+        for tier in sorted({u.priority for u in urgent}, reverse=True):
+            tier_units = [u for u in urgent if u.priority == tier]
+            for u in _place([u for u in tier_units if u.is_new], [l for l in in_order if l[0].shift == 'D'], build.items, lane, seq):
+                overflow_new.append({'jc': u.jc, 'qty': u.size, 'lane': lane})
+            _place([u for u in tier_units if not u.is_new], in_order, build.items, lane, seq)
         day_slots = [s for s in slots if s.shift == 'D']
         night_slots = [s for s in slots if s.shift == 'N']
         day_free, night_free = sum(s.free for s in day_slots), sum(s.free for s in night_slots)

@@ -5886,6 +5886,29 @@ def planning_merge_board(request):
 @login_required
 @permission_required('can_plan')
 @require_POST
+def planning_merge_release(request, group_id):
+    """The planner releases a combined run to production once its plates have landed (the regular release step)."""
+    from printing_plates.services import group_combined_plate_issued, release_merge_group_to_production
+
+    group = get_object_or_404(MergeGroup, id=group_id)
+    if group.status not in MERGE_GROUP_OPEN_STATUSES:
+        messages.error(request, f'{group.code} is not open.')
+    elif not group_combined_plate_issued(group):
+        messages.error(request, f'The combined plate for {group.code} has not been received yet.')
+    else:
+        released, blocked = release_merge_group_to_production(group, actor=request.user)
+        if released:
+            messages.success(request, f'Released {len(released)} job card(s) of {group.code} to production.')
+        for reason in blocked:
+            messages.error(request, reason)
+        if not released and not blocked:
+            messages.info(request, f'Every job card of {group.code} is already released.')
+    return redirect('planning:merge_detail', group_id=group.id)
+
+
+@login_required
+@permission_required('can_plan')
+@require_POST
 def planning_merge_refresh(request):
     """Re-read the members' current quantities into one open group (group_id) or every open group."""
     from planning.merge_refresh import refresh_group, refresh_open_groups

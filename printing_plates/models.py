@@ -233,10 +233,9 @@ class PlateRequest(models.Model):
                 if planning_job:
                     merge_group = planning_job.active_merge_group
                     if merge_group and merge_group.lead_job_id == planning_job.id:
+                        # The plates landing only marks the group ready: the planner releases the
+                        # combined run to production (planning:merge_release), as for any other job.
                         merge_group.propagate_planning_stage('plate_received')
-                        from printing_plates.services import release_merge_group_to_production
-
-                        release_merge_group_to_production(merge_group, actor=self.received_by)
                     # If a plate set for this SKU was parked for reuse, this run
                     # is the one that picks it back up.
                     if not self.retained_for_reuse:

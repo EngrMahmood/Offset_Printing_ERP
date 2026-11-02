@@ -283,10 +283,13 @@
 
         {% if unreleased_members and combined_plate_issued %}
         <p class="erp-alert erp-alert-warning" style="margin-top:12px;">
-            Waiting on {{ unreleased_members|length }} member card{{ unreleased_members|length|pluralize }} to
-            release before printing can be recorded:
+            The combined plates have been received. {{ unreleased_members|length }} job card{{ unreleased_members|length|pluralize }}
+            still need{{ unreleased_members|length|pluralize:"s," }} the planner's release before printing can be recorded:
             {% for item in unreleased_members %}{{ item.planning_job.jc_number }}{% if not forloop.last %}, {% endif %}{% endfor %}
         </p>
+        <form method="post" action="{% url 'planning:merge_release' group.id %}" style="margin-top:8px">{% csrf_token %}
+            <button type="submit" class="erp-btn erp-btn-primary" onclick="return confirm('Release the whole combined run to production? All its job cards are released together.')">Release combined run to production</button>
+        </form>
         {% endif %}
 
         <form method="post" action="{% url 'planning:merge_cancel' group.id %}" style="margin-top:16px;">

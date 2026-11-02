@@ -958,6 +958,12 @@ class MergeLifecycleTests(TestCase):
         plate.status = PlateRequest.STATUS_AVAILABLE
         plate.save()
 
+        for job in jobs:                                   # the plates landing does not release anything by itself
+            cards[job.id].refresh_from_db()
+            self.assertEqual(cards[job.id].workflow_status, 'production_approved')
+        from printing_plates.services import release_merge_group_to_production
+
+        release_merge_group_to_production(group)           # the planner's release
         for job in jobs:
             cards[job.id].refresh_from_db()
             self.assertEqual(cards[job.id].workflow_status, 'released')
@@ -1095,6 +1101,12 @@ class MergeLayoutApprovalTests(TestCase):
         ).first()
         plate.status = PlateRequest.STATUS_AVAILABLE
         plate.save()
+        for item in group.items.select_related('planning_job__job_card'):          # plates received: waiting for the planner
+            item.planning_job.job_card.refresh_from_db()
+            self.assertNotEqual(item.planning_job.job_card.workflow_status, 'released')
+        from printing_plates.services import release_merge_group_to_production
+
+        release_merge_group_to_production(group)
         for item in group.items.select_related('planning_job__job_card'):
             item.planning_job.job_card.refresh_from_db()
             self.assertEqual(item.planning_job.job_card.workflow_status, 'released')
@@ -1144,7 +1156,10 @@ class MergeLayoutApprovalTests(TestCase):
             status=PlateRequest.STATUS_ARCHIVED
         ).first()
         plate.status = PlateRequest.STATUS_AVAILABLE
-        plate.save()  # releases all member cards
+        plate.save()
+        from printing_plates.services import release_merge_group_to_production
+
+        release_merge_group_to_production(group)  # the planner releases all member cards
 
         lead_card = group.lead_job.job_card
         lead_card.refresh_from_db()
