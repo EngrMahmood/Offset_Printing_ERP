@@ -168,7 +168,7 @@
                 <thead>
                     <tr>
                         <th>Job Card</th><th>PO/WO</th><th>Order Date</th><th>Status</th><th>Machine</th>
-                        <th class="sh-num">Ordered</th><th class="sh-num">Printed</th><th class="sh-num">Printing Waste</th>
+                        <th class="sh-num">Ordered</th><th class="sh-num">Printed</th><th class="sh-num" title="UV / varnish coating, in sheets">Coated (sheets)</th><th class="sh-num">Printing Waste</th>
                         <th class="sh-num">Packed</th><th class="sh-num">Sorting Waste</th><th class="sh-num">Dispatched</th>
                         <th class="sh-num">Still Owed</th><th class="sh-num">Dispatch Gap</th>
                         <th class="sh-num">Total Wastage</th><th class="sh-num">Wastage %</th>
@@ -185,6 +185,7 @@
                         <td>{{ row.machine|default:'—' }}</td>
                         <td class="sh-num">{{ row.order_qty_pcs|intcomma }}</td>
                         <td class="sh-num">{{ row.printed_pcs|intcomma }}</td>
+                        <td class="sh-num">{{ row.coated_sheets|intcomma }}</td>
                         <td class="sh-num">{{ row.printing_waste_pcs|intcomma }}</td>
                         <td class="sh-num">{{ row.packed_pcs|intcomma }}</td>
                         <td class="sh-num">{{ row.sorting_waste_pcs|intcomma }}</td>

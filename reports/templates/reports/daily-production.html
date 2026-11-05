@@ -132,7 +132,17 @@
             <div class="dp-card">
                 <div class="dp-card-label">Impressions</div>
                 <div class="dp-card-value">{{ data.totals.impressions|intcomma }}</div>
-                <div class="dp-card-sub">{{ data.totals.avg_impressions_per_day|intcomma }} / day avg</div>
+                <div class="dp-card-sub">{{ data.totals.avg_impressions_per_day|intcomma }} / day avg &middot; printing only</div>
+            </div>
+            <div class="dp-card">
+                <div class="dp-card-label">Coating Impressions</div>
+                <div class="dp-card-value">{{ data.totals.coating_impressions|intcomma }}</div>
+                <div class="dp-card-sub">{{ data.totals.coating_sheets|intcomma }} sheets coated &middot; {{ data.totals.coating_runs }} runs</div>
+            </div>
+            <div class="dp-card">
+                <div class="dp-card-label">Total Impressions</div>
+                <div class="dp-card-value">{{ data.totals.total_impressions|intcomma }}</div>
+                <div class="dp-card-sub">printing + coating</div>
             </div>
             <div class="dp-card">
                 <div class="dp-card-label">Printed Sheets</div>
@@ -195,6 +205,9 @@
             <button type="button" class="erp-tab-btn" data-target="dp-tab-printing" data-tab-name="printing">
                 <i class="fa fa-print"></i> Printing
             </button>
+            <button type="button" class="erp-tab-btn" data-target="dp-tab-coating" data-tab-name="coating">
+                <i class="fa fa-paint-roller"></i> Coating
+            </button>
             <button type="button" class="erp-tab-btn" data-target="dp-tab-packing" data-tab-name="packing">
                 <i class="fa fa-box"></i> Packing
             </button>
@@ -216,7 +229,9 @@
                             <th>Date</th>
                             <th class="dp-num">Jobs Released</th>
                             <th class="dp-num">Released Qty</th>
-                            <th class="dp-num">Impressions</th>
+                            <th class="dp-num">Printing Impressions</th>
+                            <th class="dp-num">Coating Impressions</th>
+                            <th class="dp-num">Total Impressions</th>
                             <th class="dp-num">Printed Sheets</th>
                             <th class="dp-num">Printing Waste</th>
                             <th class="dp-num">Packed Pcs</th>
@@ -235,7 +250,9 @@
                                    title="Open Production Records for {{ row.date_label }} in a new tab">{{ row.date_label }}</a></td>
                             <td class="dp-num">{{ row.released_count }}</td>
                             <td class="dp-num">{{ row.released_qty|intcomma }}</td>
-                            <td class="dp-num">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num" title="Printing {{ row.impressions|intcomma }} + coating {{ row.coating_impressions|intcomma }} = {{ row.total_impressions|intcomma }}">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num">{{ row.coating_impressions|intcomma }}</td>
+                            <td class="dp-num"><strong>{{ row.total_impressions|intcomma }}</strong></td>
                             <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
                             <td class="dp-num">{{ row.printing_waste|intcomma }}</td>
                             <td class="dp-num">{{ row.packing_qty|intcomma }}</td>
@@ -246,7 +263,7 @@
                             <td class="dp-num">{{ row.process_wastage_pct }}%</td>
                         </tr>
                         {% empty %}
-                        <tr><td colspan="12">No production or dispatch recorded in this period.</td></tr>
+                        <tr><td colspan="14">No production or dispatch recorded in this period.</td></tr>
                         {% endfor %}
                     </tbody>
                     {% if data.overview_rows %}
@@ -256,6 +273,8 @@
                             <th class="dp-num">{{ data.totals.released_jobs|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.released_qty|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.impressions|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.coating_impressions|intcomma }}</th>
+                            <th class="dp-num">{{ data.totals.total_impressions|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.output_sheets|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.printing_waste|intcomma }}</th>
                             <th class="dp-num">{{ data.totals.packing_qty|intcomma }}</th>
@@ -319,10 +338,10 @@
             </div>
             <div class="erp-table-wrap erp-table-dense">
                 <table class="erp-table">
-                    <thead><tr><th>Date</th><th>Shift</th><th class="dp-num">Impressions</th><th class="dp-num">Printed Sheets</th><th class="dp-num">Printing Waste</th><th class="dp-num">Packed Pcs</th><th class="dp-num">Packing Waste</th></tr></thead>
+                    <thead><tr><th>Date</th><th>Shift</th><th class="dp-num">Printing Impressions</th><th class="dp-num">Coating Impressions</th><th class="dp-num">Total Impressions</th><th class="dp-num">Printed Sheets</th><th class="dp-num">Printing Waste</th><th class="dp-num">Packed Pcs</th><th class="dp-num">Packing Waste</th></tr></thead>
                     <tbody>
                         {% for row in data.overview_shift_rows %}
-                        <tr><td><a class="dp-date-link" target="_blank" rel="noopener" href="{% url 'production_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}&amp;shift={{ row.shift }}">{{ row.date_label }}</a></td><td>{{ row.shift_label }}</td><td class="dp-num">{{ row.impressions|intcomma }}</td><td class="dp-num">{{ row.output_sheets|intcomma }}</td><td class="dp-num">{{ row.printing_waste|intcomma }}</td><td class="dp-num">{{ row.packing_qty|intcomma }}</td><td class="dp-num">{{ row.packing_waste|intcomma }}</td></tr>
+                        <tr><td><a class="dp-date-link" target="_blank" rel="noopener" href="{% url 'production_records' %}?date_from={{ row.date }}&amp;date_to={{ row.date }}&amp;shift={{ row.shift }}">{{ row.date_label }}</a></td><td>{{ row.shift_label }}</td><td class="dp-num" title="Printing {{ row.impressions|intcomma }} + coating {{ row.coating_impressions|intcomma }} = {{ row.total_impressions|intcomma }}">{{ row.impressions|intcomma }}</td><td class="dp-num">{{ row.coating_impressions|intcomma }}</td><td class="dp-num"><strong>{{ row.total_impressions|intcomma }}</strong></td><td class="dp-num">{{ row.output_sheets|intcomma }}</td><td class="dp-num">{{ row.printing_waste|intcomma }}</td><td class="dp-num">{{ row.packing_qty|intcomma }}</td><td class="dp-num">{{ row.packing_waste|intcomma }}</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>
@@ -398,7 +417,9 @@
                         <tr>
                             <th>Shift</th>
                             <th class="dp-num">Entries</th>
-                            <th class="dp-num">Impressions</th>
+                            <th class="dp-num">Printing Impressions</th>
+                            <th class="dp-num">Coating Impressions</th>
+                            <th class="dp-num">Total Impressions</th>
                             <th class="dp-num">Output Sheets</th>
                             <th class="dp-num">Waste Sheets</th>
                             <th class="dp-num">Changeovers</th>
@@ -410,7 +431,9 @@
                         <tr>
                             <td>{{ row.shift_label }}</td>
                             <td class="dp-num">{{ row.entries }}</td>
-                            <td class="dp-num">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num" title="Printing {{ row.impressions|intcomma }} + coating {{ row.coating_impressions|intcomma }} = {{ row.total_impressions|intcomma }}">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num">{{ row.coating_impressions|intcomma }}</td>
+                            <td class="dp-num"><strong>{{ row.total_impressions|intcomma }}</strong></td>
                             <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
                             <td class="dp-num">{{ row.waste_sheets|intcomma }}</td>
                             <td class="dp-num">{{ row.changeover_count }}</td>
@@ -431,7 +454,9 @@
                     <thead>
                         <tr>
                             <th>Machine</th>
-                            <th class="dp-num">Impressions</th>
+                            <th class="dp-num">Printing Impressions</th>
+                            <th class="dp-num">Coating Impressions</th>
+                            <th class="dp-num">Total Impressions</th>
                             <th class="dp-num">Output Sheets</th>
                             <th class="dp-num">Waste Sheets</th>
                             <th class="dp-num">Changeovers</th>
@@ -442,12 +467,71 @@
                         {% for row in data.printing_by_machine %}
                         <tr>
                             <td>{{ row.machine__name|default:'—' }}</td>
-                            <td class="dp-num">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num" title="Printing {{ row.impressions|intcomma }} + coating {{ row.coating_impressions|intcomma }} = {{ row.total_impressions|intcomma }}">{{ row.impressions|intcomma }}</td>
+                            <td class="dp-num">{{ row.coating_impressions|intcomma }}</td>
+                            <td class="dp-num"><strong>{{ row.total_impressions|intcomma }}</strong></td>
                             <td class="dp-num">{{ row.output_sheets|intcomma }}</td>
                             <td class="dp-num">{{ row.waste_sheets|intcomma }}</td>
                             <td class="dp-num">{{ row.changeover_count }}</td>
                             <td class="dp-num">{{ row.make_ready_time|floatformat:0 }}</td>
                         </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+        </div>
+
+        <!-- COATING -->
+        <div id="dp-tab-coating" class="erp-tab-content" style="display:none;">
+            {% include 'reports/_daily_production_exports.html' with slug=report.slug tab='coating' qs=qs %}
+            <p class="erp-card-subtitle" style="margin-bottom:8px;">UV and varnish coating run through the press. Recorded apart from printing, so it is not part of the Impressions or Efficiency figures; the Overview shows both and their total.</p>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Date</th><th class="dp-num">Runs</th><th class="dp-num">Sheets Coated</th><th class="dp-num">Waste Sheets</th><th class="dp-num">Waste %</th><th class="dp-num">Coating Impressions</th><th class="dp-num">Run Minutes</th></tr></thead>
+                    <tbody>
+                        {% for row in data.coating_rows %}
+                        <tr><td>{{ row.date_label }}</td><td class="dp-num">{{ row.entries }}</td><td class="dp-num">{{ row.sheets|intcomma }}</td><td class="dp-num">{{ row.waste_sheets|intcomma }}</td><td class="dp-num">{{ row.waste_pct }}%</td><td class="dp-num">{{ row.impressions|intcomma }}</td><td class="dp-num">{{ row.minutes|floatformat:0 }}</td></tr>
+                        {% empty %}
+                        <tr><td colspan="7">No coating recorded in this period.</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% if data.coating_day_shift_rows %}
+            <div class="erp-card-header mb-4 mt-4"><h3 class="erp-section-title">By Date and Shift</h3></div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Date</th><th>Shift</th><th class="dp-num">Runs</th><th class="dp-num">Sheets Coated</th><th class="dp-num">Waste Sheets</th><th class="dp-num">Coating Impressions</th></tr></thead>
+                    <tbody>
+                        {% for row in data.coating_day_shift_rows %}
+                        <tr><td>{{ row.date_label }}</td><td>{{ row.shift_label }}</td><td class="dp-num">{{ row.entries }}</td><td class="dp-num">{{ row.sheets|intcomma }}</td><td class="dp-num">{{ row.waste_sheets|intcomma }}</td><td class="dp-num">{{ row.impressions|intcomma }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            {% if data.coating_by_machine %}
+            <div class="erp-card-header mb-4 mt-4"><h3 class="erp-section-title">By Machine</h3></div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Machine</th><th class="dp-num">Runs</th><th class="dp-num">Sheets Coated</th><th class="dp-num">Waste Sheets</th><th class="dp-num">Coating Impressions</th><th class="dp-num">Run Minutes</th></tr></thead>
+                    <tbody>
+                        {% for row in data.coating_by_machine %}
+                        <tr><td>{{ row.machine__name|default:'—' }}</td><td class="dp-num">{{ row.entries }}</td><td class="dp-num">{{ row.sheets|intcomma }}</td><td class="dp-num">{{ row.waste_sheets|intcomma }}</td><td class="dp-num">{{ row.impressions|intcomma }}</td><td class="dp-num">{{ row.minutes|floatformat:0 }}</td></tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% endif %}
+            {% if data.coating_by_operator %}
+            <div class="erp-card-header mb-4 mt-4"><h3 class="erp-section-title">By Operator</h3></div>
+            <div class="erp-table-wrap erp-table-dense">
+                <table class="erp-table">
+                    <thead><tr><th>Operator</th><th class="dp-num">Runs</th><th class="dp-num">Sheets Coated</th><th class="dp-num">Waste Sheets</th><th class="dp-num">Coating Impressions</th><th class="dp-num">Run Minutes</th></tr></thead>
+                    <tbody>
+                        {% for row in data.coating_by_operator %}
+                        <tr><td>{{ row.operator__name|default:'—' }}</td><td class="dp-num">{{ row.entries }}</td><td class="dp-num">{{ row.sheets|intcomma }}</td><td class="dp-num">{{ row.waste_sheets|intcomma }}</td><td class="dp-num">{{ row.impressions|intcomma }}</td><td class="dp-num">{{ row.minutes|floatformat:0 }}</td></tr>
                         {% endfor %}
                     </tbody>
                 </table>

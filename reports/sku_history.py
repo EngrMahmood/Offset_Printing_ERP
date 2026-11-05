@@ -20,13 +20,13 @@ from planning.models import PlanningJob, SkuRecipe
 
 ROW_HEADERS = [
     'jc_no', 'po_number', 'order_date', 'status', 'machine', 'order_qty_pcs', 'planned_pcs', 'printed_pcs',
-    'printing_waste_pcs', 'packed_pcs', 'sorting_waste_pcs', 'dispatched_pcs', 'stock_pcs', 'pending_pcs',
+    'coated_sheets', 'printing_waste_pcs', 'packed_pcs', 'sorting_waste_pcs', 'dispatched_pcs', 'stock_pcs', 'pending_pcs',
     'dispatch_gap_pcs', 'total_wastage_pcs', 'wastage_pct', 'wastage_status', 'last_dispatch', 'lead_time_days', 'note',
 ]
 ROW_LABELS = {
     'jc_no': 'Job Card', 'po_number': 'PO/WO', 'order_date': 'Order Date', 'status': 'Status', 'machine': 'Machine',
     'order_qty_pcs': 'Order Qty (pcs)', 'planned_pcs': 'Planned (pcs)', 'printed_pcs': 'Printed (pcs)',
-    'printing_waste_pcs': 'Printing Waste (pcs)', 'packed_pcs': 'Packed (pcs)', 'sorting_waste_pcs': 'Sorting Waste (pcs)',
+    'coated_sheets': 'Coated (sheets)', 'printing_waste_pcs': 'Printing Waste (pcs)', 'packed_pcs': 'Packed (pcs)', 'sorting_waste_pcs': 'Sorting Waste (pcs)',
     'dispatched_pcs': 'Dispatched (pcs)', 'stock_pcs': 'Carried To Stock (pcs)', 'pending_pcs': 'Still Owed (pcs)',
     'dispatch_gap_pcs': 'Dispatch Gap (pcs)', 'total_wastage_pcs': 'Total Wastage (pcs)', 'wastage_pct': 'Wastage %',
     'wastage_status': 'Wastage Status', 'last_dispatch': 'Last Dispatch', 'lead_time_days': 'Order To Last Dispatch (days)',
@@ -131,6 +131,7 @@ def _card_row(card: JobCard, base_dispatch_units: dict) -> dict:
     printing = [p for p in productions if p.entry_type == 'printing']
     packing = [p for p in productions if p.entry_type == 'packing']
     dispatches = [d for d in card.dispatch_set.all() if d.is_active]
+    coated_sheets = sum(c.sheets_coated for c in card.coating_runs.all() if c.is_active)     # UV / varnish, apart from printing
 
     order_pcs = int(card.order_qty_pcs)
     planned_pcs = int(card.total_sheets_planned * ups)
@@ -181,6 +182,7 @@ def _card_row(card: JobCard, base_dispatch_units: dict) -> dict:
         'order_qty_pcs': order_pcs,
         'planned_pcs': planned_pcs,
         'printed_pcs': int(printed_pcs),
+        'coated_sheets': int(coated_sheets),
         'printing_waste_pcs': int(printing_waste_pcs),
         'packed_pcs': int(packed_pcs),
         'sorting_waste_pcs': int(sorting_waste_pcs),
@@ -217,7 +219,7 @@ def _planning_only_row(job: PlanningJob) -> dict:
         'status': 'Cancelled' if cancelled else f'{job.get_status_display()} (no job card yet)',
         'machine': job.machine_name or '',
         'order_qty_pcs': order_pcs,
-        'planned_pcs': 0, 'printed_pcs': 0, 'printing_waste_pcs': 0, 'packed_pcs': 0, 'sorting_waste_pcs': 0,
+        'planned_pcs': 0, 'printed_pcs': 0, 'coated_sheets': 0, 'printing_waste_pcs': 0, 'packed_pcs': 0, 'sorting_waste_pcs': 0,
         'dispatched_pcs': 0, 'stock_pcs': int(job.stock_qty or 0),
         'pending_pcs': 0 if cancelled else max(order_pcs - int(job.stock_qty or 0), 0),
         'dispatch_gap_pcs': 0, 'total_wastage_pcs': 0, 'wastage_pct': 0.0,
@@ -275,6 +277,7 @@ def build_sku_history_context(request) -> dict:
         .prefetch_related(
             Prefetch('productions', queryset=Production.objects.filter(is_active=True).select_related('machine', 'created_by', 'sorter')),
             Prefetch('dispatch_set', queryset=Dispatch.objects.filter(is_active=True)),
+            'coating_runs',
         )
         .order_by('created_at')
     )
@@ -307,6 +310,7 @@ def build_sku_history_context(request) -> dict:
         'open_jobs': sum(1 for r in live if not r['_finalized']),
         'ordered_pcs': ordered,
         'printed_pcs': sum(r['printed_pcs'] for r in live),
+        'coated_sheets': sum(r['coated_sheets'] for r in live),
         'packed_pcs': sum(r['packed_pcs'] for r in live),
         'dispatched_pcs': dispatched,
         'pending_pcs': pending,

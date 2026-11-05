@@ -273,7 +273,27 @@ def build_context(request):
     from core.models import Machine
 
     total_imp = sum(r['impressions'] for r in result['rows'])
+    from django.db.models import Count, ExpressionWrapper, F, IntegerField, Sum
+
+    from coating.models import CoatingRun
+
+    coating_qs = CoatingRun.objects.filter(is_active=True, date__gte=start, date__lte=end)
+    if machine:
+        coating_qs = coating_qs.filter(machine__name=machine)
+    if shift in ('A', 'B'):
+        coating_qs = coating_qs.filter(shift=shift)
+    coating = list(
+        coating_qs.values('operator__name').annotate(
+            runs=Count('id'), sheets=Sum('sheets_coated'), waste=Sum('waste_sheets'), minutes=Sum('run_minutes'),
+            impressions=Sum(ExpressionWrapper((F('sheets_coated') + F('waste_sheets')) * F('coats'), output_field=IntegerField())),
+        ).order_by('-impressions')
+    )
+    for row in coating:
+        row['operator'] = row.pop('operator__name') or 'No operator'
+        row['run_hours'] = round((row['minutes'] or 0) / 60, 1)
+        row['per_hour'] = round((row['impressions'] or 0) / row['run_hours']) if row['run_hours'] else ''
     return {
+        'coating': coating,
         'filters': {'period': period, 'date_from': start.isoformat(), 'date_to': end.isoformat(), 'machine': machine, 'shift': shift},
         'period_label': PERIOD_LABELS[period], 'start': start, 'end': end,
         'headers': ROW_HEADERS, 'header_labels': ROW_LABELS,

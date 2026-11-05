@@ -8,6 +8,7 @@ from django.db.models import (
     ExpressionWrapper,
     F,
     FloatField,
+    IntegerField,
     OuterRef,
     Prefetch,
     Q,
@@ -1547,6 +1548,49 @@ def build_daily_production_context(request):
         expected = row['expected_impressions'] or 0
         row['efficiency_pct'] = round((row['impressions'] or 0) * 100.0 / expected, 2) if expected else None
 
+    # Coating (UV / varnish) runs live in their own table so they never mix into the printing figures above;
+    # they are lined up next to them here. Same period, machine and shift filters as printing.
+    from coating.models import CoatingRun
+
+    coatings = CoatingRun.objects.filter(is_active=True)
+    if start and end:
+        coatings = coatings.filter(date__range=(start, end))
+    if machine_filter:
+        coatings = coatings.filter(machine__name=machine_filter)
+    if shift_filter:
+        coatings = coatings.filter(shift=shift_filter)
+    coating_impr_expr = ExpressionWrapper(
+        (F('sheets_coated') + F('waste_sheets')) * F('coats'), output_field=IntegerField(),
+    )
+
+    def _coating_by(*group_fields):
+        return list(
+            coatings.values(*group_fields)
+            .annotate(
+                impressions=Coalesce(Sum(coating_impr_expr), Value(0)),
+                sheets=Coalesce(Sum('sheets_coated'), Value(0)),
+                waste_sheets=Coalesce(Sum('waste_sheets'), Value(0)),
+                minutes=Coalesce(Sum('run_minutes'), Value(0.0)),
+                entries=Count('id'),
+            )
+            .order_by('-impressions' if 'date' not in group_fields else '-date', *group_fields[1:])
+        )
+
+    coating_rows = _coating_by('date')
+    coating_day_shift_rows = _coating_by('date', 'shift')
+    coating_by_machine = _coating_by('machine__name')
+    coating_by_operator = _coating_by('operator__name')
+    coating_by_shift = _coating_by('shift')
+    for row in coating_rows + coating_day_shift_rows:
+        row['date_label'] = _label(row['date'])
+        if 'shift' in row:
+            row['shift_label'] = shift_names.get(row['shift'], row['shift'])
+        gross = (row['sheets'] or 0) + (row['waste_sheets'] or 0)
+        row['waste_pct'] = round((row['waste_sheets'] or 0) * 100.0 / gross, 2) if gross else 0.0
+    for row in coating_by_shift:
+        row['shift_label'] = shift_names.get(row['shift'], row['shift'])
+    coating_by_date = {r['date']: r for r in coating_rows}
+
     packing_rows = list(
         productions.filter(entry_type='packing')
         .values('date')
@@ -1583,11 +1627,16 @@ def build_daily_production_context(request):
     for row in packing_day_shift_rows:
         bucket = overview_shift_map.setdefault((row['date'], row['shift']), {})
         bucket.update(packing_qty=row['packing_qty'], packing_waste=row['sorting_waste_qty'])
+    for row in coating_day_shift_rows:
+        bucket = overview_shift_map.setdefault((row['date'], row['shift']), {})
+        bucket.update(coating_impressions=row['impressions'])
     overview_shift_rows = [
         {'date': day, 'date_label': _label(day), 'shift': shift, 'shift_label': shift_names.get(shift, shift),
-         'impressions': 0, 'output_sheets': 0, 'printing_waste': 0, 'packing_qty': 0, 'packing_waste': 0, **vals}
+         'impressions': 0, 'coating_impressions': 0, 'output_sheets': 0, 'printing_waste': 0, 'packing_qty': 0, 'packing_waste': 0, **vals}
         for (day, shift), vals in sorted(overview_shift_map.items(), key=lambda kv: (kv[0][0], ), reverse=True)
     ]
+    for row in overview_shift_rows:
+        row['total_impressions'] = (row['impressions'] or 0) + (row['coating_impressions'] or 0)
     overview_shift_rows.sort(key=lambda r: r['shift'])
     overview_shift_rows.sort(key=lambda r: r['date'], reverse=True)
 
@@ -1648,7 +1697,7 @@ def build_daily_production_context(request):
     dispatch_by_date = {r['dispatch_date']: r for r in dispatch_rows}
 
     overview_rows = []
-    for day in sorted(set(printing_by_date) | set(packing_by_date) | set(dispatch_by_date) | set(released_by_date), reverse=True):
+    for day in sorted(set(printing_by_date) | set(packing_by_date) | set(dispatch_by_date) | set(released_by_date) | set(coating_by_date), reverse=True):
         printing = printing_by_date.get(day, {})
         packing = packing_by_date.get(day, {})
         dispatch = dispatch_by_date.get(day, {})
@@ -1661,6 +1710,8 @@ def build_daily_production_context(request):
             'released_count': released.get('released_count', 0),
             'released_qty': released.get('released_qty', 0),
             'impressions': printing.get('impressions', 0),
+            'coating_impressions': coating_by_date.get(day, {}).get('impressions', 0),
+            'total_impressions': (printing.get('impressions', 0) or 0) + coating_by_date.get(day, {}).get('impressions', 0),
             'output_sheets': printing.get('output_sheets', 0),
             'printing_waste': printing.get('waste_sheets', 0),
             'packing_qty': packing.get('packing_qty', 0),
@@ -1690,6 +1741,11 @@ def build_daily_production_context(request):
         'days': len(overview_rows),
     }
     totals['avg_impressions_per_day'] = round(totals['impressions'] / totals['days']) if totals['days'] else 0
+    totals['coating_impressions'] = _total(coating_rows, 'impressions')
+    totals['coating_sheets'] = _total(coating_rows, 'sheets')
+    totals['coating_waste'] = _total(coating_rows, 'waste_sheets')
+    totals['coating_runs'] = _total(coating_rows, 'entries')
+    totals['total_impressions'] = totals['impressions'] + totals['coating_impressions']
 
     # Process Wastage = printing waste (pcs) + sorting waste (pcs), as logged
     # in real time on production entries. Deliberately excludes dispatch-gap
@@ -1795,6 +1851,22 @@ def build_daily_production_context(request):
         )
         .order_by('shift')
     )
+    def _add_coating(rows, coating_rows_by_key, key):
+        seen = set()
+        for row in rows:
+            coat = coating_rows_by_key.get(row[key], {})
+            row['coating_impressions'] = coat.get('impressions', 0)
+            row['total_impressions'] = (row['impressions'] or 0) + row['coating_impressions']
+            seen.add(row[key])
+        for k, coat in coating_rows_by_key.items():                      # a machine / shift that only coated
+            if k not in seen:
+                rows.append({key: k, 'impressions': 0, 'output_sheets': 0, 'waste_sheets': 0, 'changeover_count': 0,
+                             'make_ready_time': 0.0, 'entries': 0, 'coating_impressions': coat['impressions'],
+                             'total_impressions': coat['impressions']})
+        return rows
+
+    _add_coating(printing_by_machine, {r['machine__name']: r for r in coating_by_machine}, 'machine__name')
+    _add_coating(printing_by_shift, {r['shift']: r for r in coating_by_shift}, 'shift')
     packing_by_shift = list(
         productions.filter(entry_type='packing')
         .values('shift')
@@ -1825,10 +1897,14 @@ def build_daily_production_context(request):
     export_tabs = {
         'overview': (_with_shift_rows(overview_rows, overview_shift_rows), [
             ('date_label', 'Date'), ('shift_label', 'Shift'), ('released_count', 'Jobs Released'), ('released_qty', 'Released Qty'),
-            ('impressions', 'Impressions'),
+            ('impressions', 'Printing Impressions'), ('coating_impressions', 'Coating Impressions'), ('total_impressions', 'Total Impressions'),
             ('output_sheets', 'Printed Sheets'), ('printing_waste', 'Printing Waste'),
             ('packing_qty', 'Packed Pcs'), ('packing_waste', 'Packing Waste'),
             ('dispatch_qty', 'Dispatched Pcs'), ('dc_count', 'Dispatch Challans (DCs)'),
+        ]),
+        'coating': (_with_shift_rows(coating_rows, coating_day_shift_rows), [
+            ('date_label', 'Date'), ('shift_label', 'Shift'), ('entries', 'Runs'), ('sheets', 'Sheets Coated'),
+            ('waste_sheets', 'Waste Sheets'), ('waste_pct', 'Waste %'), ('impressions', 'Coating Impressions'), ('minutes', 'Run Minutes'),
         ]),
         'released': (released_rows, [
             ('date_label', 'Date'), ('released_time', 'Time'), ('job_card_no', 'JC No'),
@@ -1875,6 +1951,10 @@ def build_daily_production_context(request):
         'printing_day_shift_rows': printing_day_shift_rows,
         'packing_day_shift_rows': packing_day_shift_rows,
         'overview_shift_rows': overview_shift_rows,
+        'coating_rows': coating_rows,
+        'coating_day_shift_rows': coating_day_shift_rows,
+        'coating_by_machine': coating_by_machine,
+        'coating_by_operator': coating_by_operator,
         'dispatch_rows': dispatch_rows,
         'released_rows': released_rows,
         'process_wastage_rows': process_wastage_rows,

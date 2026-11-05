@@ -101,6 +101,12 @@
         <tbody>{% for m in data.machines %}<tr><td>{{ m.name }}</td><td class="n">{{ m.impressions|intcomma }}</td><td class="n">{{ m.run_hours }}</td><td class="n">{{ m.impressions_per_hour|intcomma }}</td><td class="n">{{ m.impressions_per_shift|intcomma }}</td><td class="n">{{ m.waste_pct }}</td><td class="n">{{ m.make_ready_min }}</td></tr>{% endfor %}</tbody>
     </table>
 
+    {% if data.coating %}
+    <div class="oe-title">Coating work (UV / varnish) <span style="font-weight:400;color:#64748b">- shown beside the score, not part of it</span></div>
+    <div style="overflow-x:auto"><table class="oe" style="max-width:760px"><thead><tr><th>Operator</th><th class="n">Runs</th><th class="n">Sheets coated</th><th class="n">Waste</th><th class="n">Impressions</th><th class="n">Run h</th><th class="n">Impr / run h</th></tr></thead>
+        <tbody>{% for c in data.coating %}<tr><td>{{ c.operator }}</td><td class="n">{{ c.runs }}</td><td class="n">{{ c.sheets|intcomma }}</td><td class="n">{{ c.waste|intcomma }}</td><td class="n">{{ c.impressions|intcomma }}</td><td class="n">{{ c.run_hours }}</td><td class="n">{{ c.per_hour|default:'-'|intcomma }}</td></tr>{% endfor %}</tbody></table></div>
+    {% endif %}
+
     {% if data.detail %}
     <div id="detail"></div>
     <div class="oe-title">{{ data.detail.name }} &mdash; details</div>

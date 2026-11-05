@@ -13,7 +13,7 @@ from planning.tests_merge import make_card, make_job
 DAY = datetime.date(2026, 10, 20)
 
 
-class CoatingTests(TestCase):
+class CoatingBase(TestCase):
     def setUp(self):
         patcher = mock.patch.object(UserProfile, '_has_permission', return_value=True)    # role matrix is not seeded in tests
         patcher.start()
@@ -41,6 +41,8 @@ class CoatingTests(TestCase):
         data.update(extra)
         return self.client.post(reverse('coating_entry'), data)
 
+
+class CoatingTests(CoatingBase):
     def test_kinds(self):
         self.assertEqual(services.coating_kind('UV'), 'uv')
         self.assertEqual(services.coating_kind('MATT VARNISH'), 'matt_varnish')
@@ -110,3 +112,67 @@ class CoatingTests(TestCase):
         self.post()
         page = self.client.get(reverse('planning:job_detail', args=[self.job.pk]))
         self.assertContains(page, '4,000 of 10,000 printed sheets coated')
+
+
+class CoatingInReportsTests(CoatingBase):
+    """Coating shows beside printing in the reports and never inside the printing figures."""
+
+    def setUp(self):
+        super().setUp()
+        Production.objects.filter(job_card=self.card).update(operator=self.operator)
+        self.post(sheets_coated=4000, waste_sheets=100)             # 4,100 coating impressions
+
+    def q(self):
+        return {'period': 'custom', 'date_from': '2026-10-01', 'date_to': '2026-10-31'}
+
+    def test_daily_production_lines_up_printing_coating_and_total(self):
+        from reports.services import build_daily_production_context
+        from django.test import RequestFactory
+
+        request = RequestFactory().get('/', self.q())
+        request.user = self.user
+        data = build_daily_production_context(request)
+        row = next(r for r in data['overview_rows'] if str(r['date']) == DAY.isoformat())
+        self.assertEqual((row['impressions'], row['coating_impressions'], row['total_impressions']), (10000, 4100, 14100))
+        self.assertEqual((data['totals']['impressions'], data['totals']['coating_impressions'], data['totals']['total_impressions']), (10000, 4100, 14100))
+        self.assertEqual(data['coating_by_machine'][0]['impressions'], 4100)
+        machine = next(m for m in data['printing_by_machine'] if m['machine__name'] == 'GTO 1A')
+        self.assertEqual((machine['impressions'], machine['coating_impressions'], machine['total_impressions']), (10000, 4100, 14100))
+        data_coating = build_daily_production_context(RequestFactory().get('/', {**self.q(), 'tab': 'coating'}))
+        self.assertEqual(data_coating['export_rows'][0]['impressions'], 4100)
+
+    def test_daily_production_page_and_exports(self):
+        page = self.client.get(reverse('reports:detail', args=['daily-production']), self.q())
+        self.assertContains(page, 'Total Impressions')
+        self.assertContains(page, 'dp-tab-coating')
+        for tab in ('overview', 'coating'):
+            for kind in ('xlsx', 'pdf'):
+                r = self.client.get(reverse('reports:reports_api:export_report', args=['daily-production']), {**self.q(), 'type': kind, 'tab': tab})
+                self.assertEqual(r.status_code, 200, (tab, kind))
+
+    def test_coating_never_reaches_operator_score_or_printing_impressions(self):
+        from reports import operator_efficiency as oe
+
+        rows = oe.compute(DAY, DAY)['rows']
+        self.assertEqual(rows[0]['impressions'], 10000)
+        page = self.client.get(reverse('reports:detail', args=['operator-efficiency']), self.q())
+        self.assertContains(page, 'Coating work (UV / varnish)')
+        self.assertContains(page, '4,100')
+
+    def test_sku_history_shows_coated_sheets(self):
+        page = self.client.get(reverse('reports:detail', args=['sku-history']), {'sku': 'SKU-CT'})
+        self.assertContains(page, 'Coated (sheets)')
+
+    def test_hourly_report_mentions_coating(self):
+        from reports import hourly_report
+
+        day = datetime.datetime(2026, 10, 20, 12, 0, tzinfo=datetime.timezone.utc)
+        report = hourly_report.build_hourly_report(day)
+        self.assertEqual(report['printing']['coating_day_impressions'], 4100)
+        self.assertIn('Coating (UV/varnish)', report['text'])
+
+    def test_production_dashboard_shows_coating_beside_printing(self):
+        page = self.client.get(reverse('production_dashboard'), {'start_date': '2026-10-01', 'end_date': '2026-10-31'})
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.context['coating_impressions'], 4100)
+        self.assertEqual(page.context['all_impressions'], page.context['total_impressions'] + 4100)

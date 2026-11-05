@@ -98,6 +98,20 @@ def build_hourly_report(now: datetime.datetime | None = None) -> dict:
         if m.name not in active_names and (m.machine_type in PRINTING_MACHINE_TYPES or m.name in recently_printed)
     )
 
+    # --- Coating (UV / varnish): kept apart from printing, shown beside it.
+    from coating.models import CoatingRun
+
+    coating_impr = ExpressionWrapper((F('sheets_coated') + F('waste_sheets')) * F('coats'), output_field=IntegerField())
+    coating_day = CoatingRun.objects.filter(is_active=True, date=business_date)
+    coating_shift_impressions = _n(coating_day.filter(shift=shift).aggregate(total=Sum(coating_impr))['total'])
+    coating_day_impressions = _n(coating_day.aggregate(total=Sum(coating_impr))['total'])
+    coating_machines = [
+        {'name': row['machine__name'] or 'No machine', 'impressions': _n(row['impressions'])}
+        for row in coating_day.filter(shift=shift).values('machine__name').annotate(impressions=Sum(coating_impr))
+        if _n(row['impressions'])
+    ]
+    coating_machines.sort(key=lambda m: (-m['impressions'], m['name']))
+
     # --- Packing and dispatch, in pieces, as logged since 8 am.
     packing = Production.objects.filter(is_active=True, entry_type='packing', created_at__gte=day_start).aggregate(
         packed=Coalesce(Sum('packing_qty'), Value(0)), waste=Coalesce(Sum('sorting_waste_qty'), Value(0)),
@@ -158,6 +172,10 @@ def build_hourly_report(now: datetime.datetime | None = None) -> dict:
         'printing': {
             'shift_impressions': shift_impressions, 'day_impressions': day_impressions,
             'machines': machines, 'idle_machines': idle_machines,
+            'coating_shift_impressions': coating_shift_impressions, 'coating_day_impressions': coating_day_impressions,
+            'coating_machines': coating_machines,
+            'total_shift_impressions': shift_impressions + coating_shift_impressions,
+            'total_day_impressions': day_impressions + coating_day_impressions,
         },
         'packing': {'packed_pcs': _n(packing['packed']), 'sorting_waste_pcs': _n(packing['waste']), 'entries': packing['entries']},
         'dispatch': {'pcs': _n(dispatch['pcs']), 'dcs': dispatch['dcs'], 'entries': dispatch['entries']},
@@ -190,6 +208,11 @@ def build_text(report: dict, shared_by: str = '') -> str:
         lines.append(f"- {m['name']}: {_fmt(m['impressions'])}" + (f" (last entry {m['last_entry']})" if m['last_entry'] else ''))
     if p['idle_machines']:
         lines.append(f"No entry yet: {', '.join(p['idle_machines'])}")
+    if p.get('coating_day_impressions'):
+        lines.append(f"Coating (UV/varnish): shift {_fmt(p['coating_shift_impressions'])}   |   Day: {_fmt(p['coating_day_impressions'])}")
+        for m in p['coating_machines']:
+            lines.append(f"- {m['name']} coating: {_fmt(m['impressions'])}")
+        lines.append(f"Total with coating: shift {_fmt(p['total_shift_impressions'])}   |   Day: {_fmt(p['total_day_impressions'])}")
     lines += [
         '',
         '*PACKING - pcs (logged today)*',
@@ -284,6 +307,11 @@ def render_image(report: dict, shared_by: str = '') -> bytes:
     if p['idle_machines']:
         draw.text((pad + 8, y), 'No entry yet: ' + ', '.join(p['idle_machines']), font=small, fill=grey)
         y += 34
+    if p.get('coating_day_impressions'):
+        rule()
+        kv('Coating - this shift', _fmt(p['coating_shift_impressions']), strong=False)
+        kv('Coating - day', _fmt(p['coating_day_impressions']), strong=False)
+        kv('Total with coating - day', _fmt(p['total_day_impressions']))
     y += 18
 
     section('PACKING - pcs (logged today)', 'packing')

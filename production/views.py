@@ -5,7 +5,7 @@ from django.http import JsonResponse, Http404, HttpResponse
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.utils import timezone
-from django.db.models import Q, Sum, Count, F
+from django.db.models import Q, Sum, Count, F, ExpressionWrapper, IntegerField
 from django.db import transaction
 from django.core.exceptions import ValidationError
 from django.core.paginator import Paginator
@@ -1401,6 +1401,13 @@ def production_dashboard(request):
     period_dispatches = Dispatch.objects.filter(is_active=True, job_card__is_active=True, dispatch_date__gte=start_date, dispatch_date__lte=end_date)
 
     total_impressions = period_productions.filter(merge_parent__isnull=True).aggregate(total=Sum('impressions'))['total'] or 0
+    # UV / varnish coating is recorded apart from printing (coating app); shown beside it, never inside the OEE figures.
+    from coating.models import CoatingRun
+    coating_totals = CoatingRun.objects.filter(is_active=True, date__gte=start_date, date__lte=end_date).aggregate(
+        sheets=Sum('sheets_coated'), waste=Sum('waste_sheets'),
+        impressions=Sum(ExpressionWrapper((F('sheets_coated') + F('waste_sheets')) * F('coats'), output_field=IntegerField())),
+    )
+    coating_impressions = coating_totals['impressions'] or 0
     total_downtime = period_productions.aggregate(total=Sum('downtime_minutes'))['total'] or 0
     # Real press runs only: combined-layout split entries repeat the lead's sheets on every member job.
     total_output = period_productions.filter(merge_parent__isnull=True).aggregate(total=Sum('output_sheets'))['total'] or 0
@@ -1438,6 +1445,9 @@ def production_dashboard(request):
         'performance_value': performance_value,
         'quality_value': quality_value,
         'total_impressions': total_impressions,
+        'coating_impressions': coating_impressions,
+        'coating_sheets': coating_totals['sheets'] or 0,
+        'all_impressions': total_impressions + coating_impressions,
         'total_output': total_output,
         'total_waste': total_waste,
         'total_downtime': total_downtime,

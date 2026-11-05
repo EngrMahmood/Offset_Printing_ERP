@@ -67,6 +67,14 @@
                 <div class="pd-metric-value">{{ total_impressions|floatformat:0 }}</div>
             </div>
             <div class="pd-metric-card">
+                <div class="pd-metric-label">{{ period_label }} Coating Impressions</div>
+                <div class="pd-metric-value">{{ coating_impressions|floatformat:0 }}</div>
+            </div>
+            <div class="pd-metric-card">
+                <div class="pd-metric-label">{{ period_label }} Total Impressions (printing + coating)</div>
+                <div class="pd-metric-value">{{ all_impressions|floatformat:0 }}</div>
+            </div>
+            <div class="pd-metric-card">
                 <div class="pd-metric-label">{{ period_label }} Output</div>
                 <div class="pd-metric-value">{{ total_output|floatformat:0 }}</div>
             </div>
