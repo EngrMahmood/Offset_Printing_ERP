@@ -2,7 +2,7 @@
   Layer 3: Production entry context — printing vs packing (entry screens only).
 {% endcomment %}
 {% with url=request.resolver_match.url_name %}
-{% if url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' %}
+{% if url == 'production_entry' or url == 'printing_production_entry' or url == 'packing_production_entry' or url == 'coating_entry' %}
 <div class="erp-subnav erp-subnav-context" aria-label="Production entry navigation">
     <span class="erp-subnav-context-label">Entry Type</span>
     <a href="{% url 'printing_production_entry' %}"
@@ -13,8 +13,12 @@
        class="erp-subnav-link erp-subnav-context-link {% if url == 'packing_production_entry' %}is-active{% endif %}">
         Packing Entry
     </a>
+    <a href="{% url 'coating_entry' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'coating_entry' %}is-active{% endif %}">
+        Coating Entry
+    </a>
 </div>
-{% elif url == 'production_records' or url == 'packing_records' %}
+{% elif url == 'production_records' or url == 'packing_records' or url == 'coating_records' %}
 <div class="erp-subnav erp-subnav-context" aria-label="Production records navigation">
     <span class="erp-subnav-context-label">Ledger Type</span>
     <a href="{% url 'production_records' %}"
@@ -24,6 +28,10 @@
     <a href="{% url 'packing_records' %}"
        class="erp-subnav-link erp-subnav-context-link {% if url == 'packing_records' %}is-active{% endif %}">
         Packing Records
+    </a>
+    <a href="{% url 'coating_records' %}"
+       class="erp-subnav-link erp-subnav-context-link {% if url == 'coating_records' %}is-active{% endif %}">
+        Coating Records
     </a>
 </div>
 {% endif %}

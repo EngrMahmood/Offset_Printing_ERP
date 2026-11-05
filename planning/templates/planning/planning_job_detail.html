@@ -1,5 +1,5 @@
 {% extends 'theme/base.html' %}
-{% load static humanize theme_tags %}
+{% load static humanize theme_tags coating_tags %}
 
 {% block title %}Job {{ job.jc_number }} - Offset Printing ERP{% endblock %}
 {% block header_title %}Job Detail - {{ job.jc_number }}{% endblock %}
@@ -655,5 +655,6 @@
         </section>
     </div>
 
+    {% coating_panel job.job_card %}
 </div>
 {% endblock %}

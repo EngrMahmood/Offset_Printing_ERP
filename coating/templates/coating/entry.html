@@ -1,0 +1,147 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}Coating Entry - Offset ERP{% endblock %}
+{% block header_title %}{% if is_view %}View Coating Record{% elif record %}Edit Coating Record{% else %}Coating Entry (UV / Varnish){% endif %}{% endblock %}
+{% block header_subtitle %}Log sheets put through the press for UV or varnish coating, on any machine, any day after printing.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    {% for message in messages %}
+        <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ message }}</div>
+    {% endfor %}
+
+    <div class="erp-card-shell" id="coating_context" style="display:none;">
+        <div class="erp-card-header"><h2 class="erp-section-title">Job Context</h2></div>
+        <div style="display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:.75rem 1rem;">
+            <div><strong>Application</strong><div id="cx_app"></div></div>
+            <div><strong>Printed (good sheets)</strong><div id="cx_printed"></div></div>
+            <div><strong>Already coated</strong><div id="cx_coated"></div></div>
+            <div><strong>Left to coat</strong><div id="cx_left"></div></div>
+        </div>
+    </div>
+
+    <form method="POST" action="{% url 'coating_entry' %}" id="coating_form">
+        {% csrf_token %}
+        <input type="hidden" name="edit_id" value="{{ record.id|default:'' }}">
+        <div class="erp-card-shell">
+            <div class="erp-card-header">
+                <h2 class="erp-section-title">Coating Entry</h2>
+                {% if not record %}
+                <a class="erp-btn erp-btn-secondary" href="?{% if show_all %}{% else %}all=1{% endif %}">{% if show_all %}Only coating jobs{% else %}Show all printed jobs{% endif %}</a>
+                {% endif %}
+            </div>
+            <fieldset class="erp-form-grid" style="border:0;padding:0;margin:0;" {% if is_view %}disabled{% endif %}>
+                <div class="erp-form-field erp-form-grid__full">
+                    <label for="job_card">Job Card <span>*</span></label>
+                    <select id="job_card" name="job_card" class="erp-select" required>
+                        <option value="">Select job card</option>
+                        {% for card in cards %}
+                        <option value="{{ card.id }}" {% if prefill == card.id %}selected{% endif %}>{{ card.job_card_no }} - {{ card.SKU }}{% if card.planning_job %} - {{ card.planning_job.job_name|truncatechars:40 }}{% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="erp-help-text">{% if show_all %}All job cards with a printing entry.{% else %}Only jobs whose application is UV or varnish and that have printing entries.{% endif %}</p>
+                </div>
+                <div class="erp-form-field">
+                    <label for="coating_type">Coating</label>
+                    <select id="coating_type" name="coating_type" class="erp-select">
+                        {% for value, label in types %}<option value="{{ value }}" {% if record.coating_type == value %}selected{% endif %}>{{ label }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="erp-form-field">
+                    <label for="date">Date <span>*</span></label>
+                    <input id="date" name="date" type="date" class="erp-input" value="{{ today|date:'Y-m-d' }}" required>
+                </div>
+                <div class="erp-form-field">
+                    <label for="shift">Shift <span>*</span></label>
+                    <select id="shift" name="shift" class="erp-select" required>
+                        <option value="">Choose shift</option>
+                        <option value="A" {% if record.shift == 'A' %}selected{% endif %}>Shift A</option>
+                        <option value="B" {% if record.shift == 'B' %}selected{% endif %}>Shift B</option>
+                    </select>
+                </div>
+                <div class="erp-form-field">
+                    <label for="machine">Machine</label>
+                    <select id="machine" name="machine" class="erp-select">
+                        <option value="">-</option>
+                        {% for m in machines %}<option value="{{ m.id }}" {% if record.machine_id == m.id %}selected{% endif %}>{{ m.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="erp-form-field">
+                    <label for="operator">Operator</label>
+                    <select id="operator" name="operator" class="erp-select">
+                        <option value="">-</option>
+                        {% for o in operators %}<option value="{{ o.id }}" {% if record.operator_id == o.id %}selected{% endif %}>{{ o.name }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="erp-form-field">
+                    <label for="sheets_coated">Sheets coated (good) <span>*</span></label>
+                    <input id="sheets_coated" name="sheets_coated" type="number" min="0" class="erp-input" value="{{ record.sheets_coated|default:'' }}">
+                </div>
+                <div class="erp-form-field">
+                    <label for="waste_sheets">Waste sheets</label>
+                    <input id="waste_sheets" name="waste_sheets" type="number" min="0" class="erp-input" value="{{ record.waste_sheets|default:0 }}">
+                </div>
+                <div class="erp-form-field">
+                    <label for="coats">Coats per sheet</label>
+                    <input id="coats" name="coats" type="number" min="1" class="erp-input" value="{{ record.coats|default:1 }}">
+                </div>
+                <div class="erp-form-field">
+                    <label for="start_time">Start time</label>
+                    <input id="start_time" name="start_time" type="time" class="erp-input" value="{{ record.start_time|time:'H:i' }}">
+                </div>
+                <div class="erp-form-field">
+                    <label for="end_time">End time</label>
+                    <input id="end_time" name="end_time" type="time" class="erp-input" value="{{ record.end_time|time:'H:i' }}">
+                </div>
+                <div class="erp-form-field">
+                    <label for="run_minutes">Run minutes <span class="erp-help-text">(blank = start to end)</span></label>
+                    <input id="run_minutes" name="run_minutes" type="number" min="0" step="any" class="erp-input" value="{% if record.run_minutes %}{{ record.run_minutes }}{% endif %}">
+                </div>
+                <div class="erp-form-field">
+                    <label for="status">Coating status</label>
+                    <select id="status" name="status" class="erp-select">
+                        <option value="in_progress" {% if record.status != 'completed' %}selected{% endif %}>In Progress</option>
+                        <option value="completed" {% if record.status == 'completed' %}selected{% endif %}>Completed (no more coating for this job)</option>
+                    </select>
+                </div>
+                <div class="erp-form-field erp-form-grid__full">
+                    <label for="remarks">Remarks</label>
+                    <textarea id="remarks" name="remarks" rows="2" class="erp-textarea">{{ record.remark_notes }}</textarea>
+                </div>
+                {% if record %}
+                <div class="erp-form-field erp-form-grid__full">
+                    <label for="change_reason">Change Reason <span>*</span></label>
+                    <textarea id="change_reason" name="change_reason" rows="2" class="erp-textarea" required></textarea>
+                </div>
+                {% endif %}
+            </fieldset>
+        </div>
+        <div class="sticky-actions" style="margin-top:12px;">
+            {% if not is_view %}<button type="submit" class="erp-btn erp-btn-primary">Save Coating Entry</button>{% endif %}
+            <a href="{% url 'coating_records' %}" class="erp-btn erp-btn-secondary">Coating Records</a>
+        </div>
+    </form>
+</div>
+<script>
+(function () {
+    var info = {{ info_json|safe }};
+    var sel = document.getElementById('job_card');
+    var box = document.getElementById('coating_context');
+    function fmt(n) { return Number(n).toLocaleString(); }
+    function show() {
+        var d = info[sel.value];
+        if (!d) { box.style.display = 'none'; return; }
+        box.style.display = '';
+        document.getElementById('cx_app').textContent = d.application;
+        document.getElementById('cx_printed').textContent = fmt(d.printed);
+        document.getElementById('cx_coated').textContent = fmt(d.coated) + ' (' + d.pct + '%)';
+        document.getElementById('cx_left').textContent = fmt(d.remaining);
+        var type = document.getElementById('coating_type');
+        if (!{{ record|yesno:'true,false' }} && type) { type.value = d.kind; }
+    }
+    sel.addEventListener('change', show);
+    show();
+})();
+</script>
+{% endblock %}

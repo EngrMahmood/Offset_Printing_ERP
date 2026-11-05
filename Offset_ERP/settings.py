@@ -164,6 +164,7 @@ INSTALLED_APPS = [
     'bom',
     'flexo',
     'production_plan',
+    'coating',
 ]
 
 MIDDLEWARE = [

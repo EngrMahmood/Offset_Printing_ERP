@@ -1,0 +1,15 @@
+{% load humanize %}
+{% if show %}
+<div class="erp-card-shell" style="margin-top:12px;">
+    <div class="erp-card-header">
+        <div class="erp-card-title-stack">
+            <h2 class="erp-section-title">Coating</h2>
+            <p class="erp-card-subtitle">
+                {{ coated|intcomma }} of {{ printed|intcomma }} printed sheets coated ({{ pct }}%){% if waste %}, {{ waste|intcomma }} waste{% endif %}
+                {% if marked_done %}<span class="erp-badge">Coating done</span>{% elif remaining %}<span class="erp-badge">{{ remaining|intcomma }} sheets pending</span>{% endif %}
+            </p>
+        </div>
+        <a class="erp-btn erp-btn-secondary" href="{% url 'coating_entry' %}?job_card={{ job_card.id }}">Log coating</a>
+    </div>
+</div>
+{% endif %}

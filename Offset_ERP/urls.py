@@ -59,6 +59,7 @@ urlpatterns = [
         name='jobcard_template_download'   # âœ… ADD THIS
     ),
 
+    path('', include('coating.urls')),
     path('', include('production.urls')),
     path('job-card-entry/', views.job_card_entry, name='job_card_entry'),
     path('job-card-records/', views.job_card_records, name='job_card_records'),

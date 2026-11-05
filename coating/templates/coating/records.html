@@ -1,0 +1,105 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}Coating Records - Offset ERP{% endblock %}
+{% block header_title %}Coating Records{% endblock %}
+{% block header_subtitle %}UV and varnish coating runs and the jobs still waiting for coating.{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    {% for message in messages %}
+        <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ message }}</div>
+    {% endfor %}
+
+    <div class="erp-subnav erp-subnav-context">
+        <a class="erp-subnav-link erp-subnav-context-link {% if tab == 'records' %}is-active{% endif %}" href="{% url 'coating_records' %}">Coating Records</a>
+        <a class="erp-subnav-link erp-subnav-context-link {% if tab == 'pending' %}is-active{% endif %}" href="{% url 'coating_records' %}?tab=pending">Pending Coating</a>
+        {% if can_edit %}<a class="erp-subnav-link erp-subnav-context-link" href="{% url 'coating_entry' %}">+ New Coating Entry</a>{% endif %}
+    </div>
+
+    {% if tab == 'pending' %}
+    <div class="erp-card-shell">
+        <div class="erp-card-header">
+            <div class="erp-card-title-stack">
+                <h2 class="erp-section-title">Printed, waiting for coating</h2>
+                <p class="erp-card-subtitle">{{ pending|length }} jobs, {{ pending_sheets|intcomma }} sheets still to coat. Oldest first.</p>
+            </div>
+        </div>
+        <div class="erp-table-wrapper">
+            <table class="erp-table">
+                <thead><tr><th>Job Card</th><th>SKU</th><th>Coating</th><th>Printed</th><th>Coated</th><th>Left</th><th>Done %</th><th></th></tr></thead>
+                <tbody>
+                {% for r in pending %}
+                <tr>
+                    <td>{{ r.job_card.job_card_no }}</td><td>{{ r.job_card.SKU }}</td><td>{{ r.kind|upper }}</td>
+                    <td>{{ r.printed|intcomma }}</td><td>{{ r.coated|intcomma }}</td><td><strong>{{ r.remaining|intcomma }}</strong></td><td>{{ r.pct }}%</td>
+                    <td>{% if can_edit %}<a class="erp-btn erp-btn-secondary" href="{% url 'coating_entry' %}?job_card={{ r.job_card.id }}">Log coating</a>{% endif %}</td>
+                </tr>
+                {% empty %}<tr><td colspan="8">No printed job is waiting for coating.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% else %}
+    <form method="get" class="erp-card-shell" style="display:flex;flex-wrap:wrap;gap:8px;align-items:end;">
+        <label>From <input type="date" name="from" value="{{ date_from }}" class="erp-input"></label>
+        <label>To <input type="date" name="to" value="{{ date_to }}" class="erp-input"></label>
+        <label>Job card <input type="text" name="q" value="{{ filters.q }}" class="erp-input" placeholder="JC no"></label>
+        <label>Machine <select name="machine" class="erp-select"><option value="">All</option>{% for m in machines %}<option value="{{ m.id }}" {% if filters.machine == m.id|stringformat:'s' %}selected{% endif %}>{{ m.name }}</option>{% endfor %}</select></label>
+        <label>Operator <select name="operator" class="erp-select"><option value="">All</option>{% for o in operators %}<option value="{{ o.id }}" {% if filters.operator == o.id|stringformat:'s' %}selected{% endif %}>{{ o.name }}</option>{% endfor %}</select></label>
+        <label>Coating <select name="type" class="erp-select"><option value="">All</option>{% for v, l in types %}<option value="{{ v }}" {% if filters.type == v %}selected{% endif %}>{{ l }}</option>{% endfor %}</select></label>
+        <label>Shift <select name="shift" class="erp-select"><option value="">All</option><option value="A" {% if filters.shift == 'A' %}selected{% endif %}>A</option><option value="B" {% if filters.shift == 'B' %}selected{% endif %}>B</option></select></label>
+        <button class="erp-btn erp-btn-primary" type="submit">Apply</button>
+        <button class="erp-btn erp-btn-secondary" type="submit" name="export" value="csv">Export CSV</button>
+    </form>
+
+    <div class="erp-card-shell">
+        <strong>{{ totals.n|default:0 }}</strong> runs &nbsp;|&nbsp; <strong>{{ totals.sheets|default:0|intcomma }}</strong> sheets coated
+        &nbsp;|&nbsp; <strong>{{ totals.waste|default:0|intcomma }}</strong> waste &nbsp;|&nbsp; <strong>{{ impressions|intcomma }}</strong> impressions
+        &nbsp;|&nbsp; <strong>{{ totals.minutes|default:0|floatformat:0 }}</strong> run minutes
+    </div>
+
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px;">
+        <div class="erp-card-shell"><h3 class="erp-section-title">By day</h3>
+            <table class="erp-table"><thead><tr><th>Date</th><th>Runs</th><th>Sheets</th><th>Waste</th></tr></thead><tbody>
+            {% for r in by_day %}<tr><td>{{ r.date }}</td><td>{{ r.n }}</td><td>{{ r.sheets|intcomma }}</td><td>{{ r.waste|intcomma }}</td></tr>{% empty %}<tr><td colspan="4">No data</td></tr>{% endfor %}
+            </tbody></table></div>
+        <div class="erp-card-shell"><h3 class="erp-section-title">By operator</h3>
+            <table class="erp-table"><thead><tr><th>Operator</th><th>Runs</th><th>Sheets</th><th>Waste</th><th>Min</th></tr></thead><tbody>
+            {% for r in by_operator %}<tr><td>{{ r.operator__name|default:'-' }}</td><td>{{ r.n }}</td><td>{{ r.sheets|intcomma }}</td><td>{{ r.waste|intcomma }}</td><td>{{ r.minutes|floatformat:0 }}</td></tr>{% empty %}<tr><td colspan="5">No data</td></tr>{% endfor %}
+            </tbody></table></div>
+        <div class="erp-card-shell"><h3 class="erp-section-title">By machine</h3>
+            <table class="erp-table"><thead><tr><th>Machine</th><th>Runs</th><th>Sheets</th><th>Waste</th><th>Min</th></tr></thead><tbody>
+            {% for r in by_machine %}<tr><td>{{ r.machine__name|default:'-' }}</td><td>{{ r.n }}</td><td>{{ r.sheets|intcomma }}</td><td>{{ r.waste|intcomma }}</td><td>{{ r.minutes|floatformat:0 }}</td></tr>{% empty %}<tr><td colspan="5">No data</td></tr>{% endfor %}
+            </tbody></table></div>
+    </div>
+
+    <div class="erp-card-shell">
+        <div class="erp-table-wrapper">
+            <table class="erp-table">
+                <thead><tr><th>Date</th><th>Shift</th><th>Job Card</th><th>Coating</th><th>Machine</th><th>Operator</th><th>Sheets</th><th>Waste</th><th>Min</th><th>Status</th><th></th></tr></thead>
+                <tbody>
+                {% for r in runs %}
+                <tr>
+                    <td>{{ r.date }}</td><td>{{ r.shift }}</td><td>{{ r.job_card.job_card_no }}</td><td>{{ r.get_coating_type_display }}</td>
+                    <td>{{ r.machine|default:'-' }}</td><td>{{ r.operator|default:'-' }}</td>
+                    <td>{{ r.sheets_coated|intcomma }}</td><td>{{ r.waste_sheets|intcomma }}</td><td>{{ r.run_minutes|floatformat:0 }}</td><td>{{ r.get_status_display }}</td>
+                    <td style="white-space:nowrap;">
+                        <a class="erp-btn erp-btn-secondary" href="{% url 'coating_entry' %}?view={{ r.id }}">View</a>
+                        {% if can_edit %}
+                        <a class="erp-btn erp-btn-warning" href="{% url 'coating_entry' %}?edit={{ r.id }}">Edit</a>
+                        <form method="post" style="display:inline;" onsubmit="var r = prompt('Reason for removing this record?'); if (!r) { return false; } this.reason.value = r; return true;">
+                            {% csrf_token %}<input type="hidden" name="run_id" value="{{ r.id }}"><input type="hidden" name="reason">
+                            <button class="erp-btn erp-btn-secondary" type="submit">Remove</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}<tr><td colspan="11">No coating records in this period.</td></tr>{% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}
