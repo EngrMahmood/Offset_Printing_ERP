@@ -25,6 +25,7 @@ class CoatingRun(models.Model):
     operator = models.ForeignKey('core.Operator', on_delete=models.SET_NULL, null=True, blank=True, related_name='coating_runs')
     coating_type = models.CharField(max_length=20, choices=TYPE_CHOICES, default='uv')
     coats = models.PositiveSmallIntegerField(default=1, help_text='Coats applied to each sheet (normally 1).')
+    sides = models.PositiveSmallIntegerField(default=1, help_text='2 when the job is coated on front and back (each sheet then runs twice).')
     sheets_coated = models.PositiveIntegerField(default=0, help_text='Good sheets coated.')
     waste_sheets = models.PositiveIntegerField(default=0)
     start_time = models.TimeField(null=True, blank=True)

@@ -43,7 +43,7 @@ def sides_from_application(application):
     return 2 if any(word in text for word in BOTH_SIDE_WORDS) else 1
 
 
-def summary(job_card, exclude_run_id=None, new_coats=1):
+def summary(job_card, exclude_run_id=None, new_coats=1, new_sides=1):
     """Printed good sheets vs coated so far for one job card.
 
     A sheet coated on both sides (front and back) is two passes through the press, so the limit is counted in
@@ -52,11 +52,11 @@ def summary(job_card, exclude_run_id=None, new_coats=1):
     runs = job_card.coating_runs.filter(is_active=True)
     if exclude_run_id:
         runs = runs.exclude(pk=exclude_run_id)
-    rows = list(runs.values_list('sheets_coated', 'waste_sheets', 'coats', 'status'))
+    rows = list(runs.values_list('sheets_coated', 'waste_sheets', 'coats', 'status', 'sides'))
     printed = int(job_card.total_production or 0)
     passes = sum(r[0] * r[2] for r in rows)
     waste = sum(r[1] for r in rows)
-    sides = max([sides_from_application(job_application(job_card)), int(new_coats or 1)] + [r[2] for r in rows])
+    sides = max([sides_from_application(job_application(job_card)), int(new_coats or 1), int(new_sides or 1)] + [max(r[2], r[4]) for r in rows])
     coated = -(-passes // sides) if passes else 0                      # sheets fully coated, whatever the sides
     overrun = (printed * OVERRUN_PCT + 99) // 100
     pass_limit = printed * sides + overrun * sides

@@ -1,3 +1,5 @@
+import json
+
 from django.conf import settings
 from core.navigation import get_nav_permissions
 
@@ -29,3 +31,22 @@ def ai_features(request):
     except Exception:
         enabled = False
     return {'ask_ai_widget_enabled': enabled}
+
+
+_REPOST_SKIP = ('csrfmiddlewaretoken', 'password', 'pass', 'token')
+
+
+def form_repost(request):
+    """When a form POST comes back as a page (validation error), give the page what was typed so the form can be
+    refilled instead of showing blank. Successful saves redirect, so this only fires on an error re-render."""
+    if request.method != 'POST':
+        return {}
+    data = {}
+    for key in request.POST.keys():
+        if any(word in key.lower() for word in _REPOST_SKIP):
+            continue
+        values = request.POST.getlist(key)
+        data[key] = values if (key.endswith('[]') or len(values) > 1) else values[0]
+    if not data:
+        return {}
+    return {'repost_json': json.dumps({'path': request.path, 'data': data})}

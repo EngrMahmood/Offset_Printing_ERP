@@ -87,6 +87,13 @@
                     <input id="waste_sheets" name="waste_sheets" type="number" min="0" class="erp-input" value="{{ record.waste_sheets|default:0 }}">
                 </div>
                 <div class="erp-form-field">
+                    <label for="sides">Coated on</label>
+                    <select id="sides" name="sides" class="erp-select">
+                        <option value="1" {% if record.sides != 2 %}selected{% endif %}>One side</option>
+                        <option value="2" {% if record.sides == 2 %}selected{% endif %}>Front and back (both sides)</option>
+                    </select>
+                </div>
+                <div class="erp-form-field">
                     <label for="coats">Coats per sheet</label>
                     <input id="coats" name="coats" type="number" min="1" class="erp-input" value="{{ record.coats|default:1 }}">
                 </div>

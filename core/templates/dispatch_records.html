@@ -544,6 +544,7 @@
                                     <td>
 
                                         <strong>{{ row.dc_no }}</strong>
+                                        <a href="{% url 'dispatch_dc_pdf' %}?dc_no={{ row.dc_no|urlencode }}" target="_blank" title="Print delivery challan {{ row.dc_no }}" style="margin-left:6px;"><i class="fas fa-print"></i></a>
 
                                         {% if row.dc_bundle.line_count > 1 or row.dc_bundle.sku_count > 1 %}
 

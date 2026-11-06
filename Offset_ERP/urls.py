@@ -70,6 +70,7 @@ urlpatterns = [
     path('dispatch-job-card-search/', views.dispatch_job_card_search, name='dispatch_job_card_search'),
     path('dispatch-dc-duplicate-check/', views.dispatch_dc_duplicate_check, name='dispatch_dc_duplicate_check'),
     path('dispatch-records/', views.dispatch_records, name='dispatch_records'),
+    path('dispatch/dc-pdf/', views.dispatch_dc_pdf, name='dispatch_dc_pdf'),
     path('dispatch/<int:dispatch_id>/request-change/', views.request_dispatch_change, name='request_dispatch_change'),
     path('dispatch/change-requests/', views.dispatch_change_queue, name='dispatch_change_queue'),
     path('dispatch/change-requests/<int:request_id>/approve/', views.approve_dispatch_change_request, name='approve_dispatch_change_request'),

@@ -284,7 +284,7 @@ def packing_production_entry(request):
 
     job_cards = list(_packing_eligible_job_cards_queryset(edit_record).order_by('-created_at')[:200])
 
-    prefill_job_card_id = '' if edit_record else (request.GET.get('job_card') or '').strip()
+    prefill_job_card_id = '' if edit_record else str((request.POST.get('job_card') if request.method == 'POST' else request.GET.get('job_card')) or '').strip()
     if prefill_job_card_id and not any(str(jc.id) == prefill_job_card_id for jc in job_cards):
         prefilled_jc = _packing_eligible_job_cards_queryset().filter(pk=prefill_job_card_id).first()
         if prefilled_jc:

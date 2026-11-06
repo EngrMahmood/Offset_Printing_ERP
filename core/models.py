@@ -1590,6 +1590,11 @@ class Dispatch(models.Model):
 
     dispatch_qty = models.IntegerField(default=0)
 
+    foc_qty = models.PositiveIntegerField(
+        default=0,
+        help_text='Free-of-charge quantity: extra produced and sent without a WO/PO. Printed on the DC; not counted against the order qty.',
+    )
+
     created_by = models.ForeignKey(
         'auth.User',
         on_delete=models.SET_NULL,
@@ -1633,8 +1638,8 @@ class Dispatch(models.Model):
                 'Dispatch can only be created after the Job Card has entered production execution.'
             )
 
-        if self.dispatch_qty <= 0:
-            errors['dispatch_qty'] = "Dispatch must be greater than 0"
+        if self.dispatch_qty < 0 or (self.dispatch_qty == 0 and not self.foc_qty):
+            errors['dispatch_qty'] = "Dispatch must be greater than 0 (or enter an FOC quantity)"
 
         # A ply/form job card (part of a multi-form book) is not itself the
         # deliverable — the finished, collated book is. Dispatch is recorded

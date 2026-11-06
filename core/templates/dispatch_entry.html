@@ -333,9 +333,10 @@
 
                                 <label for="dc_no">DC No <span class="required">*</span></label>
 
-                                <input id="dc_no" name="dc_no" class="erp-input" value="{% if edit_record %}{{ edit_record.dc_no }}{% else %}{{ prefill_dc_no }}{% endif %}" placeholder="DC-2026-001" required {% if is_view_mode %}disabled{% endif %}>
+                                <input id="dc_no" name="dc_no" class="erp-input" value="{% if edit_record %}{{ edit_record.dc_no }}{% else %}{{ prefill_dc_no }}{% endif %}" placeholder="PP-4848-26" required {% if is_view_mode %}disabled{% endif %}>
 
-                                <p class="erp-help-text">One DC can cover multiple job cards and SKUs. Duplicate DC on the same job card is blocked.</p>
+                                <p class="erp-help-text">The next DC number is filled in for you{% if next_dc_no %} ({{ next_dc_no }}){% endif %}. To add another job card to a DC already made, type or keep that DC number. Duplicate DC on the same job card is blocked.</p>
+                                {% if prefill_dc_no and not edit_record %}<a href="{% url 'dispatch_dc_pdf' %}?dc_no={{ prefill_dc_no|urlencode }}" target="_blank" class="erp-btn erp-btn-secondary" style="margin-top:6px;">Print this DC</a>{% endif %}
 
                             </div>
 
@@ -352,8 +353,14 @@
                                 <label for="dispatch_qty">Dispatch Qty (<span id="dispatch_qty_unit">pcs</span>)</label>
                                 <div id="dispatch_qty_unit_hint" class="erp-help-text" style="display:none;"></div>
 
-                                <input id="dispatch_qty" name="dispatch_qty" type="number" min="1" class="erp-input" value="{{ edit_record.dispatch_qty|default:'' }}" placeholder="Enter quantity" required {% if is_view_mode %}disabled{% endif %}>
+                                <input id="dispatch_qty" name="dispatch_qty" type="number" min="0" class="erp-input" value="{{ edit_record.dispatch_qty|default:'' }}" placeholder="Enter quantity" {% if is_view_mode %}disabled{% endif %}>
 
+                            </div>
+
+                            <div class="erp-form-field">
+                                <label for="foc_qty">FOC Qty</label>
+                                <input id="foc_qty" name="foc_qty" type="number" min="0" class="erp-input" value="{{ edit_record.foc_qty|default:'' }}" placeholder="0" {% if is_view_mode %}disabled{% endif %}>
+                                <p class="erp-help-text">Free of charge: extra produced and sent without a WO/PO. Printed on the DC, not counted against the order quantity.</p>
                             </div>
 
                             {% if edit_record %}

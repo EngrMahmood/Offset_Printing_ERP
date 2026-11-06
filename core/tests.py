@@ -1,4 +1,5 @@
 from datetime import date, timedelta
+from unittest import mock
 
 from django.core.exceptions import ValidationError
 from django.test import TestCase, Client
@@ -8,7 +9,7 @@ from django.utils import timezone
 
 from .jc_numbering import allocate_next_jc_number
 from .jobcard_service import execute_job_card_action
-from .models import DeliveryLocation, JobCard, Machine, Production, Dispatch, SequenceCounter
+from .models import UserProfile, DeliveryLocation, JobCard, Machine, Production, Dispatch, SequenceCounter
 from .services import sync_delivery_locations_from_planning
 from .views import _dispatch_remaining_badge
 from planning.models import PlanningJob
@@ -671,6 +672,43 @@ class DispatchFeatureTests(TestCase):
         })
         self.assertEqual(response.status_code, 200)
         self.assertEqual(Dispatch.objects.filter(job_card=self.job_card).count(), 0)
+
+    def test_dc_numbers_follow_the_pp_series(self):
+        from core.dc import next_dc_no
+        self.assertEqual(next_dc_no(date(2026, 11, 6)), 'PP-4848-26')
+        Dispatch.objects.create(job_card=self.job_card, dc_no='PP-4851-26', dispatch_date=timezone.now().date(), dispatch_qty=5, created_by=self.user)
+        self.assertEqual(next_dc_no(date(2026, 11, 6)), 'PP-4852-26')
+        self.assertEqual(next_dc_no(date(2027, 1, 4)), 'PP-4852-27')
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_new_dispatch_form_offers_the_next_dc_number(self, _perm):
+        self.client.login(username='dispatch_user', password='testpass')
+        response = self.client.get(reverse('dispatch_entry'))
+        self.assertContains(response, 'PP-4848-')
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_foc_is_saved_and_not_counted_against_order_qty(self, _perm):
+        self.client.login(username='dispatch_user', password='testpass')
+        response = self.client.post(reverse('dispatch_entry'), {
+            'job_card': self.job_card.id, 'dc_no': 'PP-4848-26', 'dispatch_date': '2026-01-03',
+            'dispatch_qty': 100, 'foc_qty': 40,
+        })
+        self.assertEqual(response.status_code, 302)
+        record = Dispatch.objects.get(job_card=self.job_card)
+        self.assertEqual((record.dispatch_qty, record.foc_qty), (100, 40))
+        self.assertEqual(self.job_card.total_dispatch, 100)
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_dc_pdf_prints_both_copies(self, _perm):
+        Dispatch.objects.create(job_card=self.job_card, dc_no='PP-4848-26', dispatch_date=timezone.now().date(), dispatch_qty=60, foc_qty=5, created_by=self.user)
+        self.client.login(username='dispatch_user', password='testpass')
+        response = self.client.get(reverse('dispatch_dc_pdf'), {'dc_no': 'PP-4848-26'})
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response['Content-Type'], 'application/pdf')
+        self.assertTrue(response.content.startswith(b'%PDF'))
+        from core.dc import dc_data
+        data = dc_data('PP-4848-26')
+        self.assertEqual((data['po_no'], data['customer'], data['rows'][0]['qty'], data['rows'][0]['foc']), ('PO-1001', 'Acme Corp', 60, 5))
 
     def test_dispatch_remaining_badge_states(self):
         complete = _dispatch_remaining_badge(100, 100)

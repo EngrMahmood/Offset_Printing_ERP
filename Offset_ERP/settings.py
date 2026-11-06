@@ -197,6 +197,7 @@ TEMPLATES = [
                 'core.context_processors.software_version',
                 'core.context_processors.navigation_permissions',
                 'core.context_processors.ai_features',
+                'core.context_processors.form_repost',
             ],
         },
     },

@@ -13,6 +13,7 @@ from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator
 from django.urls import reverse
+from urllib.parse import quote
 from functools import wraps
 import csv
 import json
@@ -590,6 +591,7 @@ def dispatch_entry(request):
             dc_no = (request.POST.get('dc_no') or '').strip()
             dispatch_date_raw = request.POST.get('dispatch_date')
             dispatch_qty = int(request.POST.get('dispatch_qty') or 0)
+            foc_qty = int(request.POST.get('foc_qty') or 0)
 
             if edit_record and not change_reason:
                 raise ValueError('Change reason is required when editing dispatch')
@@ -597,8 +599,10 @@ def dispatch_entry(request):
                 raise ValueError('Job card is required')
             if not dc_no:
                 raise ValueError('DC / DR number is required')
-            if dispatch_qty <= 0:
-                raise ValueError('Dispatch quantity must be greater than 0')
+            if foc_qty < 0 or dispatch_qty < 0:
+                raise ValueError('Quantities cannot be negative')
+            if dispatch_qty <= 0 and foc_qty <= 0:
+                raise ValueError('Dispatch quantity must be greater than 0 (or enter an FOC quantity)')
 
             job_card = get_active_record_or_404(JobCard, job_card_id)
             if not (job_card.PO_No or '').strip():
@@ -610,6 +614,7 @@ def dispatch_entry(request):
                 'dc_no': dc_no,
                 'dispatch_date': dispatch_date,
                 'dispatch_qty': dispatch_qty,
+                'foc_qty': foc_qty,
             }
 
             if edit_record:
@@ -629,14 +634,14 @@ def dispatch_entry(request):
             record.save(update_fields=['created_by'])
             log_change('dispatch', record, {}, request.user, 'create', 'Initial entry created')
 
-            messages.success(request, f'Dispatch saved for {job_card.job_card_no}')
-            return redirect('dispatch_entry')
+            messages.success(request, f'Dispatch saved for {job_card.job_card_no} on DC {record.dc_no}.')
+            return redirect(f"{reverse('dispatch_entry')}?dc_no={quote(record.dc_no)}")
         except Exception as e:
             messages.error(request, f'Error saving dispatch: {str(e)}')
 
     dispatch_jobs = list(_dispatchable_job_cards_queryset(edit_record).order_by('-created_at')[:200])
 
-    prefill_job_card_id = (request.GET.get('job_card') or '').strip()
+    prefill_job_card_id = str((request.POST.get('job_card') if request.method == 'POST' else request.GET.get('job_card')) or '').strip()
     if edit_record:
         prefill_job_card_id = str(edit_record.job_card_id)
     if prefill_job_card_id and not any(str(jc.id) == prefill_job_card_id for jc in dispatch_jobs):
@@ -653,6 +658,12 @@ def dispatch_entry(request):
     prefill_dc_no = (request.GET.get('dc_no') or '').strip()
     if edit_record and not prefill_dc_no:
         prefill_dc_no = edit_record.dc_no or ''
+    next_dc_no = ''
+    if not edit_record and not is_view_mode:
+        from core.dc import next_dc_no as _next_dc_no
+        next_dc_no = _next_dc_no()
+        if not prefill_dc_no and request.method != 'POST':
+            prefill_dc_no = next_dc_no
 
     context = {
         'job_cards': dispatch_jobs,
@@ -663,6 +674,7 @@ def dispatch_entry(request):
         'edit_lock_applies': bool(edit_record and record_is_time_locked('dispatch', edit_record)),
         'is_view_mode': is_view_mode,
         'prefill_dc_no': prefill_dc_no,
+        'next_dc_no': next_dc_no,
         'prefill_job_card_id': prefill_job_card_id,
     }
     return render(request, 'dispatch_entry.html', context)
@@ -898,6 +910,23 @@ def reject_dispatch_change_request(request, request_id):
     change_request.save(update_fields=['status', 'rejection_reason', 'approved_by', 'approved_at'])
     messages.success(request, 'Change request rejected.')
     return redirect('dispatch_change_queue')
+
+
+@login_required
+@permission_required('can_view_dispatch_records')
+def dispatch_dc_pdf(request):
+    """Printable delivery challan (Store copy + Depart copy) for one DC number."""
+    from core.dc import build_dc_pdf
+
+    dc_no = (request.GET.get('dc_no') or '').strip()
+    pdf = build_dc_pdf(dc_no) if dc_no else None
+    if pdf is None:
+        messages.error(request, f'No active dispatch lines found for DC "{dc_no}".')
+        return redirect('dispatch_records')
+    response = HttpResponse(pdf, content_type='application/pdf')
+    safe = ''.join(ch if ch.isalnum() or ch in '-_' else '_' for ch in dc_no)
+    response['Content-Disposition'] = f'inline; filename="DC_{safe}.pdf"'
+    return response
 
 
 @login_required
