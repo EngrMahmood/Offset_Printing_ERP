@@ -636,7 +636,7 @@ def dispatch_entry(request):
 
     dispatch_jobs = list(_dispatchable_job_cards_queryset(edit_record).order_by('-created_at')[:200])
 
-    prefill_job_card_id = (request.GET.get('job_card') or '').strip()
+    prefill_job_card_id = str((request.POST.get('job_card') if request.method == 'POST' else request.GET.get('job_card')) or '').strip()
     if edit_record:
         prefill_job_card_id = str(edit_record.job_card_id)
     if prefill_job_card_id and not any(str(jc.id) == prefill_job_card_id for jc in dispatch_jobs):

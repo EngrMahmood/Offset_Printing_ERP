@@ -705,7 +705,7 @@ def printing_production_entry(request):
         if edited_jc:
             job_cards.insert(0, edited_jc)
 
-    prefill_job_card_id = '' if edit_record else (request.GET.get('job_card') or '').strip()
+    prefill_job_card_id = '' if edit_record else str((request.POST.get('job_card') if request.method == 'POST' else request.GET.get('job_card')) or '').strip()
     if prefill_job_card_id and not any(str(jc.id) == prefill_job_card_id for jc in job_cards):
         prefilled_jc = JobCard.objects.filter(pk=prefill_job_card_id).first()
         if prefilled_jc:

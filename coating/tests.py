@@ -89,6 +89,22 @@ class CoatingTests(CoatingBase):
         self.assertEqual(self.post(sheets_coated=10000, coats=1).status_code, 302)    # back
         self.assertEqual(services.summary(self.card)['remaining'], 0)
 
+    def test_front_and_back_chosen_on_the_form_for_a_plain_varnish_job(self):
+        self.job.application = 'MATT VARNISH'
+        self.job.save(update_fields=['application'])
+        self.card.refresh_from_db()
+        self.assertEqual(self.post(sheets_coated=10000, sides=2).status_code, 302)    # front
+        self.assertEqual(self.post(sheets_coated=10000, sides=2).status_code, 302)    # back
+        self.assertEqual(services.summary(self.card)['remaining'], 0)
+        self.assertEqual(self.post(sheets_coated=500, sides=2).status_code, 200)       # nothing left
+
+    def test_error_page_hands_back_what_was_typed(self):
+        r = self.post(sheets_coated=99999, waste_sheets=7)
+        self.assertEqual(r.status_code, 200)
+        self.assertContains(r, 'id="repost-data"')
+        self.assertContains(r, '99999')
+        self.assertContains(r, 'form_repost.js')
+
     def test_job_search(self):
         r = self.client.get(reverse('coating_job_search'), {'q': self.card.job_card_no})
         self.assertEqual([x['id'] for x in r.json()['results']], [self.card.pk])

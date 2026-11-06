@@ -62,7 +62,8 @@ def _save_from_post(request, record):
     if record and not (post.get('change_reason') or '').strip():
         raise ValueError('Change reason is required when editing a coating record.')
 
-    info = services.summary(job_card, exclude_run_id=record.pk if record else None, new_coats=coats)
+    sides = 2 if (post.get('sides') == '2' or coats >= 2) else 1
+    info = services.summary(job_card, exclude_run_id=record.pk if record else None, new_coats=coats, new_sides=sides)
     if sheets > info['sheet_cap']:
         raise ValueError(
             f'{sheets:,} sheets coated in one run is more than the {info["printed"]:,} good sheets printed for this job card.'
@@ -71,7 +72,7 @@ def _save_from_post(request, record):
         raise ValueError(
             f'Coating passes would reach {info["passes"] + sheets * coats:,} (sheets x coats) but the limit is {info["pass_limit"]:,} '
             f'({info["printed"]:,} printed sheets x {info["sides"]} side{"s" if info["sides"] > 1 else ""}); '
-            f'{info["allowed_more"]:,} can still be entered. For front and back coating use coats = 2.'
+            f'{info["allowed_more"]:,} can still be entered. If this job is coated on front and back, choose "Front and back" in "Coated on".'
         )
 
     start, end = _parse_time(post.get('start_time')), _parse_time(post.get('end_time'))
@@ -81,7 +82,7 @@ def _save_from_post(request, record):
     values = {
         'job_card': job_card, 'date': post.get('date'), 'shift': shift, 'machine': machine, 'operator': operator,
         'coating_type': post.get('coating_type') or services.coating_kind(services.job_application(job_card)) or 'other',
-        'coats': coats, 'sheets_coated': sheets, 'waste_sheets': waste, 'start_time': start, 'end_time': end,
+        'coats': coats, 'sides': sides, 'sheets_coated': sheets, 'waste_sheets': waste, 'start_time': start, 'end_time': end,
         'run_minutes': run_minutes, 'status': post.get('status') or 'in_progress',
         'remark_notes': (post.get('remarks') or '').strip(),
     }
@@ -115,7 +116,7 @@ def coating_entry(request):
 
     show_all = request.GET.get('all') == '1'
     cards = list(services.coating_jobs(include_all=show_all).order_by('-created_at')[:300])
-    prefill = (request.GET.get('job_card') or '').strip()
+    prefill = str((request.POST.get('job_card') if request.method == 'POST' else request.GET.get('job_card')) or '').strip()
     wanted = record.job_card_id if record else (int(prefill) if prefill.isdigit() else None)
     if wanted and all(c.pk != wanted for c in cards):
         extra = JobCard.objects.filter(pk=wanted).select_related('planning_job', 'material').first()
