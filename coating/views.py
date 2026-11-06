@@ -4,8 +4,8 @@ from datetime import date, datetime, timedelta
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count, Sum
-from django.http import HttpResponse
+from django.db.models import Count, Q, Sum
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 
@@ -62,11 +62,16 @@ def _save_from_post(request, record):
     if record and not (post.get('change_reason') or '').strip():
         raise ValueError('Change reason is required when editing a coating record.')
 
-    info = services.summary(job_card, exclude_run_id=record.pk if record else None)
-    if sheets > info['allowed_more']:
+    info = services.summary(job_card, exclude_run_id=record.pk if record else None, new_coats=coats)
+    if sheets > info['sheet_cap']:
         raise ValueError(
-            f'Coated sheets would reach {info["coated"] + sheets:,} but only {info["printed"]:,} good sheets were printed '
-            f'({info["allowed_more"]:,} can still be entered).'
+            f'{sheets:,} sheets coated in one run is more than the {info["printed"]:,} good sheets printed for this job card.'
+        )
+    if sheets * coats > info['allowed_more']:
+        raise ValueError(
+            f'Coating passes would reach {info["passes"] + sheets * coats:,} (sheets x coats) but the limit is {info["pass_limit"]:,} '
+            f'({info["printed"]:,} printed sheets x {info["sides"]} side{"s" if info["sides"] > 1 else ""}); '
+            f'{info["allowed_more"]:,} can still be entered. For front and back coating use coats = 2.'
         )
 
     start, end = _parse_time(post.get('start_time')), _parse_time(post.get('end_time'))
@@ -129,6 +134,31 @@ def coating_entry(request):
         'operators': Operator.objects.filter(is_active=True).order_by('name'),
         'types': CoatingRun.TYPE_CHOICES, 'today': record.date if record else timezone.now().date(),
     })
+
+
+@login_required
+@permission_required('can_edit_production')
+def coating_job_search(request):
+    """Search printed job cards by job card no, SKU, PO, customer or job name (coating jobs first)."""
+    query = (request.GET.get('q') or '').strip()
+    if len(query) < 2:
+        return JsonResponse({'results': []})
+    match = (Q(job_card_no__icontains=query) | Q(SKU__icontains=query) | Q(PO_No__icontains=query)
+             | Q(destination__icontains=query) | Q(planning_job__job_name__icontains=query))
+    coating_ids = set(services.coating_jobs().values_list('pk', flat=True))
+    cards = list(services.coating_jobs(include_all=True).filter(match).order_by('-created_at')[:40])
+    cards.sort(key=lambda c: c.pk not in coating_ids)
+    results = []
+    for card in cards:
+        data = services.summary(card)
+        data['kind'] = services.coating_kind(services.job_application(card)) or 'other'
+        data['application'] = services.job_application(card) or '-'
+        results.append({
+            'id': card.pk,
+            'label': f'{card.job_card_no} - {card.SKU}' + (f' - {card.planning_job.job_name[:40]}' if card.planning_job else ''),
+            'is_coating': card.pk in coating_ids, 'info': data,
+        })
+    return JsonResponse({'results': results})
 
 
 @login_required

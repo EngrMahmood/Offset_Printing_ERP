@@ -66,8 +66,33 @@ class CoatingTests(CoatingBase):
         self.post(sheets_coated=9000)
         r = self.post(sheets_coated=2000)                       # 11,000 against 10,000 printed
         self.assertEqual(r.status_code, 200)
-        self.assertContains(r, 'only 10,000 good sheets were printed')
+        self.assertContains(r, 'limit is 10,100')
         self.assertEqual(CoatingRun.objects.count(), 1)
+
+    def test_front_and_back_coating_counts_two_passes_per_sheet(self):
+        self.job.application = 'Front Back Matt Varnish'
+        self.job.save(update_fields=['application'])
+        self.card.refresh_from_db()
+        r = self.post(sheets_coated=10000, coats=2)                 # one run, both sides: fine
+        self.assertEqual(r.status_code, 302)
+        info = services.summary(self.card)
+        self.assertEqual((info['coated'], info['remaining'], info['sides']), (10000, 0, 2))
+        r = self.post(sheets_coated=500, coats=2)                   # nothing left beyond the 1% tolerance
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(CoatingRun.objects.count(), 1)
+
+    def test_front_and_back_as_two_single_runs(self):
+        self.job.application = 'Front Back Matt Varnish'
+        self.job.save(update_fields=['application'])
+        self.card.refresh_from_db()
+        self.assertEqual(self.post(sheets_coated=10000, coats=1).status_code, 302)    # front
+        self.assertEqual(self.post(sheets_coated=10000, coats=1).status_code, 302)    # back
+        self.assertEqual(services.summary(self.card)['remaining'], 0)
+
+    def test_job_search(self):
+        r = self.client.get(reverse('coating_job_search'), {'q': self.card.job_card_no})
+        self.assertEqual([x['id'] for x in r.json()['results']], [self.card.pk])
+        self.assertEqual(self.client.get(reverse('coating_job_search'), {'q': 'x'}).json()['results'], [])
 
     def test_no_coating_before_printing(self):
         other = make_card(make_job('CT2', 5000, sku='SKU-CT2'))
