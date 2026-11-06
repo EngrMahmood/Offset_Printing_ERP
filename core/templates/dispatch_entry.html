@@ -333,7 +333,7 @@
 
                                 <label for="dc_no">DC No <span class="required">*</span></label>
 
-                                <input id="dc_no" name="dc_no" class="erp-input" value="{% if edit_record %}{{ edit_record.dc_no }}{% else %}{{ prefill_dc_no }}{% endif %}" placeholder="PP-4848-26" required {% if is_view_mode %}disabled{% endif %}>
+                                <input id="dc_no" name="dc_no" class="erp-input" value="{% if edit_record %}{{ edit_record.dc_no }}{% else %}{{ prefill_dc_no }}{% endif %}" placeholder="PP-0001-26" required {% if is_view_mode %}disabled{% endif %}>
 
                                 <p class="erp-help-text">The next DC number is filled in for you{% if next_dc_no %} ({{ next_dc_no }}){% endif %}. To add another job card to a DC already made, type or keep that DC number. Duplicate DC on the same job card is blocked.</p>
                                 {% if prefill_dc_no and not edit_record %}<a href="{% url 'dispatch_dc_pdf' %}?dc_no={{ prefill_dc_no|urlencode }}" target="_blank" class="erp-btn erp-btn-secondary" style="margin-top:6px;">Print this DC</a>{% endif %}

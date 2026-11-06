@@ -12,7 +12,7 @@ from datetime import date
 from django.contrib.staticfiles import finders
 
 DC_PREFIX = 'PP'
-DC_FIRST_NUMBER = 4848          # the paper series stopped at 4847-26
+DC_FIRST_NUMBER = 1             # the ERP series starts from 0001
 DC_PATTERN = re.compile(r'^PP-(\d+)-(\d{2})$', re.IGNORECASE)
 COMPANY_NAME = 'UTOPIA PRINTING & PACKAGING'
 COMPANY_SUPPLIER_CODE = 'SUP-1471'
@@ -21,7 +21,7 @@ MIN_ROWS = 10
 
 
 def next_dc_no(today: date | None = None) -> str:
-    """Next number in the series, e.g. PP-4848-26. The number keeps counting across years; the suffix is the year."""
+    """Next number in the series, e.g. PP-0001-26. The number keeps counting across years; the suffix is the year."""
     from core.models import Dispatch
 
     today = today or date.today()
@@ -30,7 +30,7 @@ def next_dc_no(today: date | None = None) -> str:
         match = DC_PATTERN.match((number or '').strip())
         if match:
             highest = max(highest, int(match.group(1)))
-    return f'{DC_PREFIX}-{highest + 1}-{today:%y}'
+    return f'{DC_PREFIX}-{highest + 1:04d}-{today:%y}'
 
 
 def dc_lines(dc_no: str):
@@ -51,9 +51,11 @@ def dc_data(dc_no: str) -> dict | None:
     lines = dc_lines(dc_no)
     if not lines:
         return None
-    po_numbers, customers = [], []
+    po_numbers, departments, destinations = [], [], []
     for line in lines:
-        for bucket, value in ((po_numbers, line.job_card.PO_No), (customers, line.job_card.destination)):
+        card = line.job_card
+        department = card.department.name if card.department_id else (getattr(card.planning_job, 'department', '') if card.planning_job else '')
+        for bucket, value in ((po_numbers, card.PO_No), (departments, department), (destinations, card.destination)):
             value = _clean(value)
             if value and value not in bucket:
                 bucket.append(value)
@@ -62,13 +64,13 @@ def dc_data(dc_no: str) -> dict | None:
         'dc_no': lines[0].dc_no,
         'date': min(l.dispatch_date for l in lines),
         'po_no': ', '.join(po_numbers),
-        'customer': ', '.join(customers),
+        'department': ', '.join(departments),
+        'destination': ', '.join(destinations),
         'prepared_by': (preparer.get_full_name() or preparer.username) if preparer else '',
         'rows': [
             {
                 'jc': line.job_card.job_card_no,
                 'item': _clean(line.job_card.SKU),
-                'foc': int(getattr(line, 'foc_qty', 0) or 0),
                 'qty': int(line.dispatch_qty or 0),
             }
             for line in lines
@@ -109,10 +111,11 @@ def _draw_copy(c, data, label, left, top, width, height):
     row_h = 22
     y = top - header_h
     cells = [
-        ('Date', f'{data["date"]:%d-%m-%Y}', 0.17),
-        ('DC NO.', data['dc_no'], 0.20),
-        ('PO NO.', data['po_no'], 0.25),
-        ('Customer', data['customer'], 0.38),
+        ('Date', f'{data["date"]:%d-%m-%Y}', 0.14),
+        ('DC NO.', data['dc_no'], 0.17),
+        ('PO NO.', data['po_no'], 0.21),
+        ('Department', data['department'], 0.24),
+        ('Destination', data['destination'], 0.24),
     ]
     x = left
     for index, (caption, value, share) in enumerate(cells):
@@ -131,7 +134,7 @@ def _draw_copy(c, data, label, left, top, width, height):
     c.drawRightString(left + width - 6, top - 12, label)
 
     # --- item table
-    cols = [(28, 'S.#', 'c'), (104, 'JC #', 'l'), (width - 28 - 104 - 56 - 78, 'ITEM NAME', 'l'), (56, 'FOC Qty', 'r'), (78, 'Quantity', 'r')]
+    cols = [(28, 'S.#', 'c'), (110, 'JC #', 'l'), (width - 28 - 110 - 90, 'ITEM NAME', 'l'), (90, 'Quantity', 'r')]
     y = y - row_h
     head_h = 16
     c.setFillColor(colors.HexColor('#e8edf3'))
@@ -158,7 +161,7 @@ def _draw_copy(c, data, label, left, top, width, height):
         x = left
         c.setFont('Helvetica', 8)
         values = [str(index + 1), row['jc'] if row else '', row['item'] if row else '',
-                  (f'{row["foc"]:,}' if row and row['foc'] else ''), (f'{row["qty"]:,}' if row and row['qty'] else '')]
+                  (f'{row["qty"]:,}' if row and row['qty'] else '')]
         for (w, _title, align), value in zip(cols, values):
             if value:
                 size = _fit(c, value, 'Helvetica', 8, w - 8)
@@ -186,9 +189,7 @@ def _draw_copy(c, data, label, left, top, width, height):
     c.setFont('Helvetica-Bold', 8.5)
     c.line(left, y, left + width, y)
     c.drawString(left + 32, y - 12, 'TOTAL')
-    total_foc = sum(r['foc'] for r in rows)
     total_qty = sum(r['qty'] for r in rows)
-    c.drawRightString(left + width - 78 - 4, y - 12, f'{total_foc:,}' if total_foc else '')
     c.drawRightString(left + width - 4, y - 12, f'{total_qty:,}')
     y -= 17
     c.line(left, y, left + width, y)

@@ -675,16 +675,16 @@ class DispatchFeatureTests(TestCase):
 
     def test_dc_numbers_follow_the_pp_series(self):
         from core.dc import next_dc_no
-        self.assertEqual(next_dc_no(date(2026, 11, 6)), 'PP-4848-26')
-        Dispatch.objects.create(job_card=self.job_card, dc_no='PP-4851-26', dispatch_date=timezone.now().date(), dispatch_qty=5, created_by=self.user)
-        self.assertEqual(next_dc_no(date(2026, 11, 6)), 'PP-4852-26')
-        self.assertEqual(next_dc_no(date(2027, 1, 4)), 'PP-4852-27')
+        self.assertEqual(next_dc_no(date(2026, 11, 6)), 'PP-0001-26')
+        Dispatch.objects.create(job_card=self.job_card, dc_no='PP-0007-26', dispatch_date=timezone.now().date(), dispatch_qty=5, created_by=self.user)
+        self.assertEqual(next_dc_no(date(2026, 11, 6)), 'PP-0008-26')
+        self.assertEqual(next_dc_no(date(2027, 1, 4)), 'PP-0008-27')
 
     @mock.patch.object(UserProfile, '_has_permission', return_value=True)
     def test_new_dispatch_form_offers_the_next_dc_number(self, _perm):
         self.client.login(username='dispatch_user', password='testpass')
         response = self.client.get(reverse('dispatch_entry'))
-        self.assertContains(response, 'PP-4848-')
+        self.assertContains(response, 'PP-0001-')
 
     @mock.patch.object(UserProfile, '_has_permission', return_value=True)
     def test_foc_is_saved_and_not_counted_against_order_qty(self, _perm):
@@ -708,7 +708,7 @@ class DispatchFeatureTests(TestCase):
         self.assertTrue(response.content.startswith(b'%PDF'))
         from core.dc import dc_data
         data = dc_data('PP-4848-26')
-        self.assertEqual((data['po_no'], data['customer'], data['rows'][0]['qty'], data['rows'][0]['foc']), ('PO-1001', 'Acme Corp', 60, 5))
+        self.assertEqual((data['po_no'], data['destination'], data['rows'][0]['qty']), ('PO-1001', 'Acme Corp', 60))
 
     def test_dispatch_remaining_badge_states(self):
         complete = _dispatch_remaining_badge(100, 100)
