@@ -1,0 +1,239 @@
+{% extends 'theme/base.html' %}
+{% load static %}
+
+{% block title %}New Delivery Challan - Offset ERP{% endblock %}
+{% block header_title %}New Delivery Challan (DC){% endblock %}
+{% block header_subtitle %}Put one or more job cards on a single DC, then print it.{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dc-steps { display:flex; flex-wrap:wrap; gap:8px 22px; margin:0; padding:0; list-style:none; color:#475569; font-size:13px; }
+    .dc-steps b { display:inline-block; width:20px; height:20px; line-height:20px; text-align:center; border-radius:50%; background:#1d4ed8; color:#fff; font-size:12px; margin-right:6px; }
+    .dc-head-grid { display:grid; grid-template-columns:minmax(220px,1fr) minmax(180px,240px); gap:14px 20px; }
+    .dc-table { width:100%; border-collapse:collapse; }
+    .dc-table th { text-align:left; font-size:12px; text-transform:uppercase; letter-spacing:.03em; color:#475569; padding:6px 8px; border-bottom:2px solid #d6dee8; white-space:nowrap; }
+    .dc-table td { padding:8px; border-bottom:1px solid #e5eaf1; vertical-align:top; font-size:13px; }
+    .dc-table .num { text-align:right; white-space:nowrap; }
+    .dc-search-wrap { position:relative; min-width:260px; }
+    .dc-results { position:absolute; z-index:30; left:0; right:0; top:100%; background:#fff; border:1px solid #c9d3df; border-radius:8px; max-height:260px; overflow:auto; box-shadow:0 8px 20px rgba(15,23,42,.15); display:none; }
+    .dc-results div { padding:8px 10px; cursor:pointer; border-bottom:1px solid #eef2f7; }
+    .dc-results div:hover { background:#f1f6ff; }
+    .dc-results small { color:#64748b; display:block; }
+    .dc-warn { color:#b91c1c; font-size:12px; margin-top:3px; }
+    .dc-muted { color:#64748b; font-size:12px; }
+    .dc-total td { font-weight:700; background:#f6f8fb; border-top:2px solid #d6dee8; }
+    .dc-banner { border-left:4px solid #16a34a; background:#f0fdf4; padding:12px 16px; border-radius:8px; display:flex; flex-wrap:wrap; gap:10px 18px; align-items:center; }
+    @media (max-width: 800px) { .dc-head-grid { grid-template-columns:1fr; } .dc-table-wrap { overflow-x:auto; } }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    {% for message in messages %}
+        <div class="alert {% if message.tags == 'success' %}alert-success{% else %}alert-error{% endif %}">{{ message }}</div>
+    {% endfor %}
+
+    {% if created_dc %}
+    <div class="dc-banner">
+        <div><strong>DC {{ created_dc }} is saved.</strong> Print it now, or start the next DC below.</div>
+        <a href="{% url 'dispatch_dc_pdf' %}?dc_no={{ created_dc|urlencode }}" target="_blank" class="erp-btn erp-btn-primary"><i class="fas fa-print"></i> Print DC {{ created_dc }}</a>
+        <a href="{% url 'dispatch_records' %}?dc_no={{ created_dc|urlencode }}" class="erp-btn erp-btn-secondary">View in records</a>
+    </div>
+    {% endif %}
+
+    <div class="erp-card-shell">
+        <ol class="dc-steps">
+            <li><b>1</b>Check the DC number and date</li>
+            <li><b>2</b>Add each job card and the quantity going out</li>
+            <li><b>3</b>Save, then print (Store copy and Depart copy)</li>
+        </ol>
+    </div>
+
+    <form method="POST" action="{% url 'dispatch_dc_create' %}" id="dc_form" autocomplete="off">
+        {% csrf_token %}
+
+        <div class="erp-card-shell">
+            <div class="erp-card-header"><h2 class="erp-section-title">1. DC details</h2></div>
+            <div class="dc-head-grid">
+                <div class="erp-form-field">
+                    <label for="dc_no">DC number <span class="required">*</span></label>
+                    <input id="dc_no" name="dc_no" class="erp-input" value="{{ dc_no }}" required>
+                    <p class="erp-help-text">
+                        Filled in automatically{% if next_dc_no %} (next is <strong>{{ next_dc_no }}</strong>){% endif %}.
+                        Only change it to add more job cards to a DC that already exists.
+                    </p>
+                </div>
+                <div class="erp-form-field">
+                    <label for="dispatch_date">Date <span class="required">*</span></label>
+                    <input id="dispatch_date" name="dispatch_date" type="date" class="erp-input" value="{{ dispatch_date|date:'Y-m-d' }}" required>
+                </div>
+            </div>
+            {% if existing_lines %}
+            <p class="erp-help-text" style="margin-top:10px;">
+                DC {{ dc_no }} already has {{ existing_lines|length }} line{{ existing_lines|length|pluralize }}:
+                {% for line in existing_lines %}{{ line.job_card.job_card_no }} ({{ line.dispatch_qty }}){% if not forloop.last %}, {% endif %}{% endfor %}.
+                The ones you add below go on the same DC.
+            </p>
+            {% endif %}
+        </div>
+
+        <div class="erp-card-shell" style="margin-top:14px;">
+            <div class="erp-card-header">
+                <h2 class="erp-section-title">2. Job cards on this DC</h2>
+                <button type="button" class="erp-btn erp-btn-secondary" id="add_line"><i class="fas fa-plus"></i> Add job card</button>
+            </div>
+            <div class="dc-table-wrap">
+                <table class="dc-table" id="dc_table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>Job card (type JC no, SKU or PO)</th>
+                            <th>PO</th>
+                            <th>Department</th>
+                            <th>Destination</th>
+                            <th class="num">Left to send</th>
+                            <th class="num">Qty to send now</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="dc_rows"></tbody>
+                    <tfoot>
+                        <tr class="dc-total">
+                            <td colspan="6" class="num">Total on this DC (<span id="total_lines">0</span> job card<span id="total_plural">s</span>)</td>
+                            <td class="num" id="total_qty">0</td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <p class="erp-help-text" style="margin-top:8px;">Quantity is in the job's own unit (pieces, rims, books or boxes), as in the normal dispatch form. The balance shown is what is still left of the order.</p>
+        </div>
+
+        <div class="sticky-actions" style="margin-top:12px;">
+            <button type="submit" class="erp-btn erp-btn-primary"><i class="fas fa-save"></i> Save DC</button>
+            <a href="{% url 'dispatch_records' %}" class="erp-btn erp-btn-secondary">Cancel</a>
+        </div>
+    </form>
+</div>
+
+<script>
+(function () {
+    var info = {{ info_json|safe }};
+    var initialRows = {{ rows_json|safe }};
+    var body = document.getElementById('dc_rows');
+    var SEARCH_URL = "{% url 'dispatch_job_card_search' %}";
+    var nf = new Intl.NumberFormat();
+
+    function esc(text) {
+        return String(text == null ? '' : text).replace(/[&<>"']/g, function (ch) {
+            return {'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[ch];
+        });
+    }
+
+    function renumber() {
+        var rows = body.querySelectorAll('tr');
+        rows.forEach(function (row, index) { row.querySelector('.line-no').textContent = index + 1; });
+        var total = 0, count = 0;
+        rows.forEach(function (row) {
+            var qty = parseInt(row.querySelector('.qty').value || '0', 10);
+            if (row.querySelector('.jc-id').value) { count += 1; }
+            if (qty > 0) { total += qty; }
+        });
+        document.getElementById('total_qty').textContent = nf.format(total);
+        document.getElementById('total_lines').textContent = count;
+        document.getElementById('total_plural').style.display = count === 1 ? 'none' : '';
+    }
+
+    function fill(row, data) {
+        row.querySelector('.c-po').textContent = data ? data.po_no : '';
+        row.querySelector('.c-dept').textContent = data ? data.department : '';
+        row.querySelector('.c-dest').textContent = data ? data.destination : '';
+        var left = row.querySelector('.c-left');
+        left.textContent = data ? nf.format(data.remaining) + ' ' + (data.unit_label || '') : '';
+        row.dataset.left = data ? data.remaining : '';
+        row.querySelector('.qty').placeholder = data ? 'max ' + nf.format(data.remaining) : '';
+        check(row);
+    }
+
+    function check(row) {
+        var warn = row.querySelector('.dc-warn');
+        var qty = parseInt(row.querySelector('.qty').value || '0', 10);
+        var left = row.dataset.left === '' ? null : parseInt(row.dataset.left, 10);
+        if (left !== null && qty > left) {
+            warn.textContent = 'More than the ' + nf.format(left) + ' still left on this job card.';
+        } else if (row.querySelector('.jc-id').value && !(row.dataset.po || '')) {
+            warn.textContent = '';
+        } else {
+            warn.textContent = '';
+        }
+    }
+
+    function choose(row, item) {
+        info[item.id] = item.info;
+        row.querySelector('.jc-id').value = item.id;
+        row.querySelector('.jc-search').value = item.label;
+        row.querySelector('.dc-results').style.display = 'none';
+        fill(row, item.info);
+        row.querySelector('.qty').focus();
+        renumber();
+    }
+
+    function addRow(initial) {
+        var row = document.createElement('tr');
+        row.innerHTML =
+            '<td class="line-no"></td>' +
+            '<td><div class="dc-search-wrap"><input type="text" class="erp-input jc-search" placeholder="Type JC no, SKU or PO...">' +
+            '<input type="hidden" name="job_card[]" class="jc-id"><div class="dc-results"></div></div></td>' +
+            '<td class="c-po"></td><td class="c-dept"></td><td class="c-dest"></td>' +
+            '<td class="num c-left"></td>' +
+            '<td class="num"><input type="number" name="dispatch_qty[]" min="1" class="erp-input qty" style="width:130px;text-align:right;"><div class="dc-warn"></div></td>' +
+            '<td><button type="button" class="erp-btn erp-btn-secondary rm" title="Remove this line">&times;</button></td>';
+        body.appendChild(row);
+
+        var search = row.querySelector('.jc-search'), list = row.querySelector('.dc-results'), timer = null;
+        search.addEventListener('input', function () {
+            row.querySelector('.jc-id').value = '';
+            fill(row, null);
+            clearTimeout(timer);
+            var q = search.value.trim();
+            if (q.length < 2) { list.style.display = 'none'; renumber(); return; }
+            timer = setTimeout(function () {
+                fetch(SEARCH_URL + '?q=' + encodeURIComponent(q), {credentials: 'same-origin'})
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        list.innerHTML = '';
+                        list.style.display = 'block';
+                        if (!data.results.length) { list.innerHTML = '<div>No job card ready for dispatch matches.</div>'; return; }
+                        data.results.forEach(function (item) {
+                            var opt = document.createElement('div');
+                            opt.innerHTML = esc(item.label) + '<small>PO ' + esc(item.info.po_no) + ' &middot; ' + esc(item.info.destination) + ' &middot; left ' + esc(item.remaining_display) + '</small>';
+                            opt.addEventListener('mousedown', function (ev) { ev.preventDefault(); choose(row, item); });
+                            list.appendChild(opt);
+                        });
+                    });
+            }, 250);
+            renumber();
+        });
+        search.addEventListener('blur', function () { setTimeout(function () { list.style.display = 'none'; }, 150); });
+        row.querySelector('.qty').addEventListener('input', function () { check(row); renumber(); });
+        row.querySelector('.rm').addEventListener('click', function () {
+            row.remove();
+            if (!body.querySelector('tr')) { addRow(); }
+            renumber();
+        });
+
+        if (initial && initial.id && info[initial.id]) {
+            row.querySelector('.jc-id').value = initial.id;
+            search.value = info[initial.id].label || info[initial.id].job_card_no;
+            fill(row, info[initial.id]);
+        }
+        if (initial && initial.qty) { row.querySelector('.qty').value = initial.qty; check(row); }
+        renumber();
+        return row;
+    }
+
+    document.getElementById('add_line').addEventListener('click', function () { addRow().querySelector('.jc-search').focus(); });
+    if (initialRows.length) { initialRows.forEach(addRow); } else { addRow(); }
+})();
+</script>
+{% endblock %}

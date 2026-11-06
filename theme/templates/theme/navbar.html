@@ -94,7 +94,7 @@
             {% endif %}
             {% if nav.can_access_dispatch %}
             <a href="{% url 'dispatch_records' %}" data-nav-key="dispatch" data-nav-label="Dispatch"
-                    class="erp-topnav-module {% if url == 'dispatch_records' or url == 'dispatch_entry' or entity == 'dispatch' %}is-active{% endif %}">
+                    class="erp-topnav-module {% if url == 'dispatch_records' or url == 'dispatch_entry' or url == 'dispatch_dc_create' or entity == 'dispatch' %}is-active{% endif %}">
                 Dispatch
             </a>
             {% endif %}
@@ -551,7 +551,7 @@
     {% include 'theme/production_context_nav.html' %}
 
 
-    {% elif url == 'dispatch_records' or url == 'dispatch_entry' %}
+    {% elif url == 'dispatch_records' or url == 'dispatch_entry' or url == 'dispatch_dc_create' %}
     <div class="erp-subnav">
         <a href="{% url 'dispatch_records' %}"
            class="erp-subnav-link {% if url == 'dispatch_records' %}is-active{% endif %}">
@@ -560,6 +560,10 @@
         <a href="{% url 'dispatch_entry' %}"
            class="erp-subnav-link {% if url == 'dispatch_entry' %}is-active{% endif %}">
             New Dispatch
+        </a>
+        <a href="{% url 'dispatch_dc_create' %}"
+           class="erp-subnav-link {% if url == 'dispatch_dc_create' %}is-active{% endif %}">
+            New DC (many job cards)
         </a>
     </div>
 

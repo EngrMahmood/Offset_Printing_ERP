@@ -67,6 +67,7 @@ urlpatterns = [
     path('q/k/<int:job_card_id>/', views.qr_redirect_packing, name='qr_redirect_packing'),
     path('q/d/<int:job_card_id>/', views.qr_redirect_dispatch, name='qr_redirect_dispatch'),
     path('dispatch-entry/', views.dispatch_entry, name='dispatch_entry'),
+    path('dispatch/new-dc/', views.dispatch_dc_create, name='dispatch_dc_create'),
     path('dispatch-job-card-search/', views.dispatch_job_card_search, name='dispatch_job_card_search'),
     path('dispatch-dc-duplicate-check/', views.dispatch_dc_duplicate_check, name='dispatch_dc_duplicate_check'),
     path('dispatch-records/', views.dispatch_records, name='dispatch_records'),

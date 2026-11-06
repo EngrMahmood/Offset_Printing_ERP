@@ -686,21 +686,57 @@ class DispatchFeatureTests(TestCase):
         response = self.client.get(reverse('dispatch_entry'))
         self.assertContains(response, 'PP-0001-')
 
+    def _second_job_card(self, order_qty=50):
+        return JobCard.objects.create(
+            job_card_no='JC-03-26-0002', SKU='SKU-DISP-2', order_qty=order_qty, ups=5, is_print_job=False,
+            status='in_production', po_date=date(2026, 1, 1), PO_No='PO-1002', destination='Other Corp',
+            total_sheet_quantity=10, total_colors=4, plate_set_no='PLATE-2', machine_name=self.machine,
+        )
+
     @mock.patch.object(UserProfile, '_has_permission', return_value=True)
-    def test_foc_is_saved_and_not_counted_against_order_qty(self, _perm):
+    def test_one_dc_can_carry_several_job_cards(self, _perm):
+        other = self._second_job_card()
         self.client.login(username='dispatch_user', password='testpass')
-        response = self.client.post(reverse('dispatch_entry'), {
-            'job_card': self.job_card.id, 'dc_no': 'PP-4848-26', 'dispatch_date': '2026-01-03',
-            'dispatch_qty': 100, 'foc_qty': 40,
+        response = self.client.post(reverse('dispatch_dc_create'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': '2026-01-03',
+            'job_card[]': [self.job_card.id, other.id], 'dispatch_qty[]': ['60', '20'],
         })
         self.assertEqual(response.status_code, 302)
-        record = Dispatch.objects.get(job_card=self.job_card)
-        self.assertEqual((record.dispatch_qty, record.foc_qty), (100, 40))
-        self.assertEqual(self.job_card.total_dispatch, 100)
+        self.assertIn('created=PP-0001-26', response['Location'])
+        lines = Dispatch.objects.filter(dc_no='PP-0001-26')
+        self.assertEqual(sorted((l.job_card.job_card_no, l.dispatch_qty, l.created_by_id) for l in lines),
+                         [('JC-03-26-0001', 60, self.user.id), ('JC-03-26-0002', 20, self.user.id)])
+        from core.dc import dc_data
+        self.assertEqual(len(dc_data('PP-0001-26')['rows']), 2)
+        self.assertContains(self.client.get(reverse('dispatch_dc_create'), {'created': 'PP-0001-26'}), 'Print DC PP-0001-26')
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_a_bad_line_saves_nothing_and_keeps_what_was_typed(self, _perm):
+        other = self._second_job_card(order_qty=50)
+        self.client.login(username='dispatch_user', password='testpass')
+        response = self.client.post(reverse('dispatch_dc_create'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': '2026-01-03',
+            'job_card[]': [self.job_card.id, other.id], 'dispatch_qty[]': ['60', '500'],      # 500 is more than the order
+        })
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(Dispatch.objects.count(), 0)                        # the good first line was rolled back too
+        self.assertContains(response, 'Nothing was saved')
+        self.assertContains(response, 'Line 2 (JC-03-26-0002)')
+        self.assertContains(response, '"qty": "500"')                        # the rows come back filled
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_same_job_card_twice_on_one_dc_is_refused(self, _perm):
+        self.client.login(username='dispatch_user', password='testpass')
+        response = self.client.post(reverse('dispatch_dc_create'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': '2026-01-03',
+            'job_card[]': [self.job_card.id, self.job_card.id], 'dispatch_qty[]': ['10', '10'],
+        })
+        self.assertContains(response, 'listed twice')
+        self.assertEqual(Dispatch.objects.count(), 0)
 
     @mock.patch.object(UserProfile, '_has_permission', return_value=True)
     def test_dc_pdf_prints_both_copies(self, _perm):
-        Dispatch.objects.create(job_card=self.job_card, dc_no='PP-4848-26', dispatch_date=timezone.now().date(), dispatch_qty=60, foc_qty=5, created_by=self.user)
+        Dispatch.objects.create(job_card=self.job_card, dc_no='PP-4848-26', dispatch_date=timezone.now().date(), dispatch_qty=60, created_by=self.user)
         self.client.login(username='dispatch_user', password='testpass')
         response = self.client.get(reverse('dispatch_dc_pdf'), {'dc_no': 'PP-4848-26'})
         self.assertEqual(response.status_code, 200)

@@ -200,7 +200,8 @@
 
     {% if user.profile.can_approve_dispatch %}
 
-    <a href="{% url 'dispatch_entry' %}" class="erp-btn erp-btn-primary"><i class="fas fa-plus"></i> Add Dispatch</a>
+    <a href="{% url 'dispatch_dc_create' %}" class="erp-btn erp-btn-primary"><i class="fas fa-file-invoice"></i> New DC (many job cards)</a>
+    <a href="{% url 'dispatch_entry' %}" class="erp-btn erp-btn-secondary"><i class="fas fa-plus"></i> Add Dispatch</a>
 
     {% endif %}
 

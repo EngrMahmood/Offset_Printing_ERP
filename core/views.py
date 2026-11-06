@@ -9,6 +9,7 @@ from django.utils import timezone
 from django.views.decorators.http import require_GET, require_POST
 from django.db.models import Prefetch, Q, Sum, Min, Max, F
 from django.db import transaction
+from django.core.exceptions import ValidationError
 from django.db.models.deletion import ProtectedError
 from django.db.models.functions import Coalesce
 from django.core.paginator import Paginator
@@ -508,6 +509,8 @@ def _build_dispatch_job_card_info(job_card, edit_record_id=None):
         'job_card_no': job_card.job_card_no,
         'sku': job_card.SKU or '-',
         'customer': job_card.destination or '-',
+        'destination': job_card.destination or '-',
+        'department': (job_card.department.name if job_card.department_id else (getattr(job_card.planning_job, 'department', '') if job_card.planning_job else '')) or '-',
         'po_no': job_card.PO_No or '-',
         'order_qty': job_card.order_qty,
         'order_qty_display': f'{job_card.order_qty:,}',
@@ -575,6 +578,103 @@ def qr_redirect_dispatch(request, job_card_id):
 
 @login_required
 @permission_required('can_approve_dispatch')
+def dispatch_dc_create(request):
+    """Make one delivery challan covering several job cards: one DC number, a date, and a line per job card."""
+    from core.dc import next_dc_no
+
+    def _lines_from_post():
+        ids = request.POST.getlist('job_card[]')
+        qtys = request.POST.getlist('dispatch_qty[]')
+        lines = []
+        for index, raw_id in enumerate(ids):
+            raw_id = (raw_id or '').strip()
+            raw_qty = (qtys[index] if index < len(qtys) else '').replace(',', '').strip()
+            if raw_id or raw_qty:
+                lines.append((raw_id, raw_qty))
+        return lines
+
+    posted_lines = []
+    dc_no = (request.GET.get('dc_no') or '').strip()
+    dispatch_date = timezone.now().date()
+    if request.method == 'POST':
+        dc_no = (request.POST.get('dc_no') or '').strip()
+        posted_lines = _lines_from_post()
+        try:
+            if not dc_no:
+                raise ValueError('DC number is required.')
+            try:
+                dispatch_date = datetime.strptime(request.POST.get('dispatch_date') or '', '%Y-%m-%d').date()
+            except ValueError:
+                raise ValueError('Dispatch date is required.')
+            if not posted_lines:
+                raise ValueError('Add at least one job card with a quantity.')
+            seen = set()
+            prepared = []
+            for number, (raw_id, raw_qty) in enumerate(posted_lines, start=1):
+                if not raw_id:
+                    raise ValueError(f'Line {number}: choose a job card.')
+                if raw_id in seen:
+                    raise ValueError(f'Line {number}: the same job card is listed twice on this DC.')
+                seen.add(raw_id)
+                try:
+                    qty = int(raw_qty)
+                except ValueError:
+                    raise ValueError(f'Line {number}: enter the quantity as a whole number.')
+                if qty <= 0:
+                    raise ValueError(f'Line {number}: quantity must be greater than 0.')
+                job_card = _dispatchable_job_cards_queryset().filter(pk=raw_id).first()
+                if job_card is None:
+                    raise ValueError(f'Line {number}: that job card is not available for dispatch.')
+                if not (job_card.PO_No or '').strip():
+                    raise ValueError(f'Line {number} ({job_card.job_card_no}): PO number is required before dispatch. Link PO to this job first.')
+                prepared.append((number, job_card, qty))
+
+            created = []
+            with transaction.atomic():
+                for number, job_card, qty in prepared:
+                    try:
+                        record = Dispatch.objects.create(job_card=job_card, dc_no=dc_no, dispatch_date=dispatch_date, dispatch_qty=qty)
+                    except ValidationError as exc:
+                        detail = ' '.join(exc.messages)
+                        raise ValueError(f'Line {number} ({job_card.job_card_no}): {detail}')
+                    record.created_by = request.user
+                    record.save(update_fields=['created_by'])
+                    log_change('dispatch', record, {}, request.user, 'create', 'Initial entry created (DC form)')
+                    created.append(record)
+            messages.success(request, f'DC {dc_no} saved with {len(created)} job card{"s" if len(created) != 1 else ""}.')
+            return redirect(f"{reverse('dispatch_dc_create')}?created={quote(dc_no)}")
+        except ValueError as exc:
+            messages.error(request, f'Nothing was saved. {exc}')
+        except Exception as exc:  # noqa: BLE001 - shown on the form rather than a 500 page
+            messages.error(request, f'Nothing was saved. Error: {exc}')
+
+    existing = []
+    if request.method != 'POST' and dc_no:
+        existing = list(Dispatch.objects.filter(is_active=True, dc_no__iexact=dc_no).select_related('job_card').order_by('id'))
+    created_dc = (request.GET.get('created') or '').strip()
+    if request.method != 'POST' and not dc_no:
+        dc_no = next_dc_no()
+
+    wanted = {raw_id for raw_id, _ in posted_lines if raw_id.isdigit()}
+    prefill = (request.GET.get('job_card') or '').strip()
+    if prefill.isdigit() and request.method != 'POST':
+        wanted.add(prefill)
+        posted_lines = [(prefill, '')]
+    info = {}
+    if wanted:
+        for card in _dispatchable_job_cards_queryset().filter(pk__in=wanted):
+            info[str(card.id)] = _build_dispatch_job_card_info(card)
+            info[str(card.id)]['label'] = f'{card.job_card_no} - {card.SKU}'
+    rows = [{'id': raw_id, 'qty': raw_qty} for raw_id, raw_qty in posted_lines]
+    return render(request, 'dispatch_dc_create.html', {
+        'dc_no': dc_no, 'dispatch_date': dispatch_date, 'rows_json': json.dumps(rows), 'info_json': json.dumps(info),
+        'created_dc': created_dc, 'existing_lines': existing,
+        'next_dc_no': next_dc_no() if request.method == 'POST' else dc_no,
+    })
+
+
+@login_required
+@permission_required('can_approve_dispatch')
 def dispatch_entry(request):
     """Dispatch entry form"""
     view_id = (request.GET.get('view') or '').strip()
@@ -591,7 +691,6 @@ def dispatch_entry(request):
             dc_no = (request.POST.get('dc_no') or '').strip()
             dispatch_date_raw = request.POST.get('dispatch_date')
             dispatch_qty = int(request.POST.get('dispatch_qty') or 0)
-            foc_qty = int(request.POST.get('foc_qty') or 0)
 
             if edit_record and not change_reason:
                 raise ValueError('Change reason is required when editing dispatch')
@@ -599,10 +698,8 @@ def dispatch_entry(request):
                 raise ValueError('Job card is required')
             if not dc_no:
                 raise ValueError('DC / DR number is required')
-            if foc_qty < 0 or dispatch_qty < 0:
-                raise ValueError('Quantities cannot be negative')
-            if dispatch_qty <= 0 and foc_qty <= 0:
-                raise ValueError('Dispatch quantity must be greater than 0 (or enter an FOC quantity)')
+            if dispatch_qty <= 0:
+                raise ValueError('Dispatch quantity must be greater than 0')
 
             job_card = get_active_record_or_404(JobCard, job_card_id)
             if not (job_card.PO_No or '').strip():
@@ -614,7 +711,6 @@ def dispatch_entry(request):
                 'dc_no': dc_no,
                 'dispatch_date': dispatch_date,
                 'dispatch_qty': dispatch_qty,
-                'foc_qty': foc_qty,
             }
 
             if edit_record:
