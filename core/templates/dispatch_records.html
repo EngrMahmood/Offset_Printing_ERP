@@ -623,7 +623,7 @@
 
                                             {% if user.profile.can_approve_dispatch and row.dc_no %}
 
-                                            <a href="{% url 'dispatch_entry' %}?dc_no={{ row.dc_no|urlencode }}&job_card={{ row.job_card_id }}" class="erp-btn erp-btn-primary" title="Add another SKU on DC {{ row.dc_no }}">Add SKU</a>
+                                            <a href="{% url 'dispatch_dc_create' %}?dc_no={{ row.dc_no|urlencode }}" class="erp-btn erp-btn-primary" title="Add more job cards to DC {{ row.dc_no }}">Add job cards</a>
 
                                             {% endif %}
 
