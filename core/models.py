@@ -1628,6 +1628,23 @@ class Dispatch(models.Model):
                     'Use a different DC number or edit the existing entry.'
                 )
 
+        # One DC covers one PO (department and destination follow that PO). Only checked when the line is new or is
+        # being moved to another DC / job card, so older challans that already mix POs stay editable.
+        if dc_no and self.job_card_id and 'dc_no' not in errors:
+            stored = Dispatch.objects.filter(pk=self.pk).values('dc_no', 'job_card_id').first() if self.pk else None
+            moved = stored is None or stored['job_card_id'] != self.job_card_id or (stored['dc_no'] or '').strip().lower() != dc_no.lower()
+            if moved:
+                own_po = str(self.job_card.PO_No or '').strip().lower()
+                others = Dispatch.objects.filter(is_active=True, dc_no__iexact=dc_no).exclude(pk=self.pk).select_related('job_card')
+                for other in others:
+                    other_po = str(other.job_card.PO_No or '').strip()
+                    if other_po.lower() != own_po:
+                        errors['dc_no'] = (
+                            f'DC No "{dc_no}" is for PO {other_po or "(none)"}. Job Card {self.job_card.job_card_no} '
+                            f'is on PO {self.job_card.PO_No or "(none)"}: one DC can carry only one PO. Use a new DC number.'
+                        )
+                        break
+
         if self.job_card and self.job_card.workflow_status not in JOB_CARD_DISPATCHABLE_STATUSES:
             errors['job_card'] = (
                 'Dispatch can only be created after the Job Card has entered production execution.'

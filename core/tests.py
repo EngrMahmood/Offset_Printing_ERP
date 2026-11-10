@@ -686,12 +686,23 @@ class DispatchFeatureTests(TestCase):
         response = self.client.get(reverse('dispatch_entry'))
         self.assertContains(response, 'PP-0001-')
 
-    def _second_job_card(self, order_qty=50):
+    def _second_job_card(self, order_qty=50, po='PO-1001'):
         return JobCard.objects.create(
             job_card_no='JC-03-26-0002', SKU='SKU-DISP-2', order_qty=order_qty, ups=5, is_print_job=False,
-            status='in_production', po_date=date(2026, 1, 1), PO_No='PO-1002', destination='Other Corp',
+            status='in_production', po_date=date(2026, 1, 1), PO_No=po, destination='Other Corp',
             total_sheet_quantity=10, total_colors=4, plate_set_no='PLATE-2', machine_name=self.machine,
         )
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_one_dc_carries_only_one_po(self, _perm):
+        other = self._second_job_card(po='PO-9999')
+        self.client.login(username='dispatch_user', password='testpass')
+        response = self.client.post(reverse('dispatch_dc_create'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': '2026-01-03',
+            'job_card[]': [self.job_card.id, other.id], 'dispatch_qty[]': ['60', '20'],
+        })
+        self.assertContains(response, 'only one PO')
+        self.assertEqual(Dispatch.objects.filter(dc_no='PP-0001-26').count(), 0)
 
     @mock.patch.object(UserProfile, '_has_permission', return_value=True)
     def test_one_dc_can_carry_several_job_cards(self, _perm):
@@ -748,7 +759,7 @@ class DispatchFeatureTests(TestCase):
         other = self._dc_with_two_lines()
         third = JobCard.objects.create(
             job_card_no='JC-03-26-0003', SKU='SKU-DISP-3', order_qty=40, ups=5, is_print_job=False, status='in_production',
-            po_date=date(2026, 1, 1), PO_No='PO-1003', destination='Third Corp', total_sheet_quantity=10, total_colors=4,
+            po_date=date(2026, 1, 1), PO_No='PO-1001', destination='Third Corp', total_sheet_quantity=10, total_colors=4,
             plate_set_no='PLATE-3', machine_name=self.machine)
         page = self.client.get(reverse('dispatch_dc_edit'), {'dc_no': 'PP-0001-26'})
         self.assertContains(page, 'Reason for the change')
