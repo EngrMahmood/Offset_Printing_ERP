@@ -734,6 +734,89 @@ class DispatchFeatureTests(TestCase):
         self.assertContains(response, 'listed twice')
         self.assertEqual(Dispatch.objects.count(), 0)
 
+    def _dc_with_two_lines(self):
+        other = self._second_job_card()
+        self.client.login(username='dispatch_user', password='testpass')
+        self.client.post(reverse('dispatch_dc_create'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': timezone.now().date().isoformat(),
+            'job_card[]': [self.job_card.id, other.id], 'dispatch_qty[]': ['60', '20'],
+        })
+        return other
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_edit_dc_changes_quantity_date_and_adds_a_job_card(self, _perm):
+        other = self._dc_with_two_lines()
+        third = JobCard.objects.create(
+            job_card_no='JC-03-26-0003', SKU='SKU-DISP-3', order_qty=40, ups=5, is_print_job=False, status='in_production',
+            po_date=date(2026, 1, 1), PO_No='PO-1003', destination='Third Corp', total_sheet_quantity=10, total_colors=4,
+            plate_set_no='PLATE-3', machine_name=self.machine)
+        page = self.client.get(reverse('dispatch_dc_edit'), {'dc_no': 'PP-0001-26'})
+        self.assertContains(page, 'Reason for the change')
+        self.assertContains(page, 'PP-0001-26')
+        ids = list(Dispatch.objects.filter(dc_no='PP-0001-26').order_by('id').values_list('id', flat=True))
+        response = self.client.post(reverse('dispatch_dc_edit'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': (timezone.now().date() + timedelta(days=1)).isoformat(), 'change_reason': 'Customer asked for more',
+            'line_id[]': [ids[0], ids[1], ''], 'job_card[]': [self.job_card.id, other.id, third.id], 'dispatch_qty[]': ['70', '20', '15'],
+        })
+        self.assertEqual(response.status_code, 302)
+        tomorrow = (timezone.now().date() + timedelta(days=1)).isoformat()
+        lines = {l.job_card.job_card_no: (l.dispatch_qty, str(l.dispatch_date)) for l in Dispatch.objects.filter(dc_no='PP-0001-26', is_active=True)}
+        self.assertEqual(lines, {'JC-03-26-0001': (70, tomorrow), 'JC-03-26-0002': (20, tomorrow), 'JC-03-26-0003': (15, tomorrow)})
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_edit_dc_needs_a_reason_and_a_bad_line_changes_nothing(self, _perm):
+        other = self._dc_with_two_lines()
+        ids = list(Dispatch.objects.filter(dc_no='PP-0001-26').order_by('id').values_list('id', flat=True))
+        no_reason = self.client.post(reverse('dispatch_dc_edit'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': timezone.now().date().isoformat(), 'change_reason': '',
+            'line_id[]': ids, 'job_card[]': [self.job_card.id, other.id], 'dispatch_qty[]': ['61', '20'],
+        })
+        self.assertContains(no_reason, 'Change reason is required')
+        too_many = self.client.post(reverse('dispatch_dc_edit'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': timezone.now().date().isoformat(), 'change_reason': 'fix',
+            'line_id[]': ids, 'job_card[]': [self.job_card.id, other.id], 'dispatch_qty[]': ['61', '500'],     # 500 is more than the order
+        })
+        self.assertContains(too_many, 'Nothing was changed')
+        self.assertEqual(sorted(Dispatch.objects.filter(dc_no='PP-0001-26').values_list('dispatch_qty', flat=True)), [20, 60])
+        self.assertContains(too_many, '"qty": "500"')                                                          # typed values come back
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_edit_dc_can_take_a_job_card_off_but_not_all_of_them(self, _perm):
+        other = self._dc_with_two_lines()
+        ids = list(Dispatch.objects.filter(dc_no='PP-0001-26').order_by('id').values_list('id', flat=True))
+        ok = self.client.post(reverse('dispatch_dc_edit'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': timezone.now().date().isoformat(), 'change_reason': 'Second job not ready',
+            'line_id[]': [ids[0]], 'job_card[]': [self.job_card.id], 'dispatch_qty[]': ['60'],
+        })
+        self.assertEqual(ok.status_code, 302)
+        self.assertEqual(list(Dispatch.objects.filter(dc_no='PP-0001-26', is_active=True).values_list('id', flat=True)), [ids[0]])
+        self.assertFalse(Dispatch.objects.get(pk=ids[1]).is_active)            # archived, not erased
+        empty = self.client.post(reverse('dispatch_dc_edit'), {
+            'dc_no': 'PP-0001-26', 'dispatch_date': timezone.now().date().isoformat(), 'change_reason': 'x', 'line_id[]': [], 'job_card[]': [], 'dispatch_qty[]': [],
+        })
+        self.assertContains(empty, 'at least one job card')
+
+    @mock.patch.object(UserProfile, '_has_permission', return_value=True)
+    def test_long_item_names_wrap_and_stay_on_one_a4_sheet(self, _perm):
+        import io as _io
+        import pdfplumber
+        long_sku = 'CUTTINGHANDFEEDWOODENDIEBABYSWADDLESIZE8INCHX3INCH2UPFRONTBACKMATTVARNISH'      # no spaces, longer than the item column
+        self.job_card.SKU = long_sku
+        self.job_card.save(update_fields=['SKU'])
+        Dispatch.objects.create(job_card=self.job_card, dc_no='PP-0009-26', dispatch_date=timezone.now().date(), dispatch_qty=60, created_by=self.user)
+        from core.dc import build_dc_pdf
+        pdf = build_dc_pdf('PP-0009-26')
+        with pdfplumber.open(_io.BytesIO(pdf)) as doc:
+            self.assertEqual(len(doc.pages), 1)                                   # both copies on the one sheet
+            page = doc.pages[0]
+            self.assertAlmostEqual(page.width, 595.28, delta=1)                   # A4 portrait, not enlarged
+            self.assertAlmostEqual(page.height, 841.89, delta=1)
+            text = page.extract_text().replace('\n', '')
+        self.assertIn('CUTTINGHANDFEEDWOODEN', text)
+        self.assertIn('VARNISH', text)                                           # the end of the name is printed, not cut off
+        self.assertEqual(text.count('STORE COPY'), 1)
+        self.assertEqual(text.count('DEPART COPY'), 1)
+
     @mock.patch.object(UserProfile, '_has_permission', return_value=True)
     def test_dc_pdf_prints_both_copies(self, _perm):
         Dispatch.objects.create(job_card=self.job_card, dc_no='PP-4848-26', dispatch_date=timezone.now().date(), dispatch_qty=60, created_by=self.user)

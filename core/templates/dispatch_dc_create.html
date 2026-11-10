@@ -1,9 +1,9 @@
 {% extends 'theme/base.html' %}
 {% load static %}
 
-{% block title %}New Delivery Challan - Offset ERP{% endblock %}
-{% block header_title %}New Delivery Challan (DC){% endblock %}
-{% block header_subtitle %}Put one or more job cards on a single DC, then print it.{% endblock %}
+{% block title %}{% if edit_mode %}Edit{% else %}New{% endif %} Delivery Challan - Offset ERP{% endblock %}
+{% block header_title %}{% if edit_mode %}Edit Delivery Challan {{ dc_no }}{% else %}New Delivery Challan (DC){% endif %}{% endblock %}
+{% block header_subtitle %}{% if edit_mode %}Change quantities or the date, take job cards off, or add more. A reason is required.{% else %}Put one or more job cards on a single DC, then print it.{% endif %}{% endblock %}
 
 {% block extra_head %}
 <style>
@@ -16,9 +16,12 @@
     .dc-table .num { text-align:right; white-space:nowrap; }
     .dc-search-wrap { position:relative; min-width:260px; }
     .dc-results { position:absolute; z-index:30; left:0; right:0; top:100%; background:#fff; border:1px solid #c9d3df; border-radius:8px; max-height:260px; overflow:auto; box-shadow:0 8px 20px rgba(15,23,42,.15); display:none; }
-    .dc-results div { padding:8px 10px; cursor:pointer; border-bottom:1px solid #eef2f7; }
+    .dc-results div { padding:8px 10px; cursor:pointer; border-bottom:1px solid #eef2f7; overflow-wrap:anywhere; }
     .dc-results div:hover { background:#f1f6ff; }
     .dc-results small { color:#64748b; display:block; }
+    .dc-item { margin-top:4px; font-size:12px; color:#334155; overflow-wrap:anywhere; word-break:break-word; line-height:1.35; }
+    .dc-table .c-po { white-space:nowrap; }
+    .dc-table .c-dept, .dc-table .c-dest { overflow-wrap:break-word; min-width:110px; }
     .dc-warn { color:#b91c1c; font-size:12px; margin-top:3px; }
     .dc-muted { color:#64748b; font-size:12px; }
     .dc-total td { font-weight:700; background:#f6f8fb; border-top:2px solid #d6dee8; }
@@ -37,6 +40,7 @@
     <div class="dc-banner">
         <div><strong>DC {{ created_dc }} is saved.</strong> Print it now, or start the next DC below.</div>
         <a href="{% url 'dispatch_dc_pdf' %}?dc_no={{ created_dc|urlencode }}" target="_blank" class="erp-btn erp-btn-primary"><i class="fas fa-print"></i> Print DC {{ created_dc }}</a>
+        <a href="{% url 'dispatch_dc_edit' %}?dc_no={{ created_dc|urlencode }}" class="erp-btn erp-btn-secondary"><i class="fas fa-pen-to-square"></i> Edit DC</a>
         <a href="{% url 'dispatch_records' %}?dc_no={{ created_dc|urlencode }}" class="erp-btn erp-btn-secondary">View in records</a>
     </div>
     {% endif %}
@@ -49,7 +53,7 @@
         </ol>
     </div>
 
-    <form method="POST" action="{% url 'dispatch_dc_create' %}" id="dc_form" autocomplete="off">
+    <form method="POST" action="{% if edit_mode %}{% url 'dispatch_dc_edit' %}{% else %}{% url 'dispatch_dc_create' %}{% endif %}" id="dc_form" autocomplete="off">
         {% csrf_token %}
 
         <div class="erp-card-shell">
@@ -57,10 +61,11 @@
             <div class="dc-head-grid">
                 <div class="erp-form-field">
                     <label for="dc_no">DC number <span class="required">*</span></label>
-                    <input id="dc_no" name="dc_no" class="erp-input" value="{{ dc_no }}" required>
+                    <input id="dc_no" name="dc_no" class="erp-input" value="{{ dc_no }}" required {% if edit_mode %}readonly{% endif %}>
                     <p class="erp-help-text">
+                        {% if edit_mode %}The DC number cannot be changed here.{% else %}
                         Filled in automatically{% if next_dc_no %} (next is <strong>{{ next_dc_no }}</strong>){% endif %}.
-                        Only change it to add more job cards to a DC that already exists.
+                        Only change it to add more job cards to a DC that already exists.{% endif %}
                     </p>
                 </div>
                 <div class="erp-form-field">
@@ -87,7 +92,7 @@
                     <thead>
                         <tr>
                             <th>#</th>
-                            <th>Job card (type JC no, SKU or PO)</th>
+                            <th>Job card{% if not edit_mode %} (type JC no, SKU or PO){% endif %} and item</th>
                             <th>PO</th>
                             <th>Department</th>
                             <th>Destination</th>
@@ -106,11 +111,21 @@
                     </tfoot>
                 </table>
             </div>
+            {% if edit_mode %}<p class="erp-help-text" style="margin-top:8px;">Use &times; to take a job card off this DC (it is archived with your reason, not erased). Use "Add job card" to put another on it.</p>{% endif %}
             <p class="erp-help-text" style="margin-top:8px;">Quantity is in the job's own unit (pieces, rims, books or boxes), as in the normal dispatch form. The balance shown is what is still left of the order.</p>
         </div>
 
+        {% if edit_mode %}
+        <div class="erp-card-shell" style="margin-top:14px;">
+            <div class="erp-form-field">
+                <label for="change_reason">Reason for the change <span class="required">*</span></label>
+                <textarea id="change_reason" name="change_reason" rows="2" class="erp-textarea" required>{{ change_reason }}</textarea>
+            </div>
+        </div>
+        {% endif %}
+
         <div class="sticky-actions" style="margin-top:12px;">
-            <button type="submit" class="erp-btn erp-btn-primary"><i class="fas fa-save"></i> Save DC</button>
+            <button type="submit" class="erp-btn erp-btn-primary"><i class="fas fa-save"></i> {% if edit_mode %}Save changes{% else %}Save DC{% endif %}</button>
             <a href="{% url 'dispatch_records' %}" class="erp-btn erp-btn-secondary">Cancel</a>
         </div>
     </form>
@@ -120,6 +135,7 @@
 (function () {
     var info = {{ info_json|safe }};
     var initialRows = {{ rows_json|safe }};
+    var EDIT = {{ edit_mode|yesno:'true,false' }};
     var body = document.getElementById('dc_rows');
     var SEARCH_URL = "{% url 'dispatch_job_card_search' %}";
     var nf = new Intl.NumberFormat();
@@ -145,6 +161,10 @@
     }
 
     function fill(row, data) {
+        var norm = function (t) { return String(t || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+        var sku = data && data.sku && data.sku !== '-' ? data.sku : '';
+        var item = data ? (sku + (data.job_name && norm(data.job_name) !== norm(sku) ? '  |  ' + data.job_name : '')) : '';
+        row.querySelector('.dc-item').textContent = item;
         row.querySelector('.c-po').textContent = data ? data.po_no : '';
         row.querySelector('.c-dept').textContent = data ? data.department : '';
         row.querySelector('.c-dest').textContent = data ? data.destination : '';
@@ -182,8 +202,10 @@
         var row = document.createElement('tr');
         row.innerHTML =
             '<td class="line-no"></td>' +
-            '<td><div class="dc-search-wrap"><input type="text" class="erp-input jc-search" placeholder="Type JC no, SKU or PO...">' +
-            '<input type="hidden" name="job_card[]" class="jc-id"><div class="dc-results"></div></div></td>' +
+            '<td><div class="dc-search-wrap">' + (EDIT ? '<input type="hidden" name="line_id[]" class="line-id">' : '') +
+            '<input type="text" class="erp-input jc-search" placeholder="Type JC no, SKU or PO...">' +
+            '<input type="hidden" name="job_card[]" class="jc-id"><div class="dc-results"></div></div>' +
+            '<div class="dc-item"></div></td>' +
             '<td class="c-po"></td><td class="c-dept"></td><td class="c-dest"></td>' +
             '<td class="num c-left"></td>' +
             '<td class="num"><input type="number" name="dispatch_qty[]" min="1" class="erp-input qty" style="width:130px;text-align:right;"><div class="dc-warn"></div></td>' +
@@ -222,9 +244,14 @@
             renumber();
         });
 
+        if (EDIT && initial && initial.line_id) {
+            row.querySelector('.line-id').value = initial.line_id;
+            search.readOnly = true;
+            search.title = 'To use a different job card, take this one off and add the other.';
+        }
         if (initial && initial.id && info[initial.id]) {
             row.querySelector('.jc-id').value = initial.id;
-            search.value = info[initial.id].label || info[initial.id].job_card_no;
+            search.value = info[initial.id].job_card_no || info[initial.id].label;
             fill(row, info[initial.id]);
         }
         if (initial && initial.qty) { row.querySelector('.qty').value = initial.qty; check(row); }

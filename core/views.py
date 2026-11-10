@@ -509,6 +509,7 @@ def _build_dispatch_job_card_info(job_card, edit_record_id=None):
         'job_card_no': job_card.job_card_no,
         'sku': job_card.SKU or '-',
         'customer': job_card.destination or '-',
+        'job_name': (job_card.planning_job.job_name if job_card.planning_job_id else '') or '',
         'destination': job_card.destination or '-',
         'department': (job_card.department.name if job_card.department_id else (getattr(job_card.planning_job, 'department', '') if job_card.planning_job else '')) or '-',
         'po_no': job_card.PO_No or '-',
@@ -576,6 +577,159 @@ def qr_redirect_dispatch(request, job_card_id):
     return redirect(f"{reverse('dispatch_entry')}?job_card={job_card_id}")
 
 
+def _dc_qty(number, raw_qty):
+    try:
+        qty = int(str(raw_qty or '').replace(',', '').strip())
+    except ValueError:
+        raise ValueError(f'Line {number}: enter the quantity as a whole number.')
+    if qty <= 0:
+        raise ValueError(f'Line {number}: quantity must be greater than 0.')
+    return qty
+
+
+def _dc_new_line(number, raw_id, raw_qty):
+    """Validate one new DC line from the form: returns (job_card, qty) or raises ValueError naming the line."""
+    raw_id = (raw_id or '').strip()
+    if not raw_id:
+        raise ValueError(f'Line {number}: choose a job card.')
+    qty = _dc_qty(number, raw_qty)
+    job_card = _dispatchable_job_cards_queryset().filter(pk=raw_id).first() if raw_id.isdigit() else None
+    if job_card is None:
+        raise ValueError(f'Line {number}: that job card is not available for dispatch.')
+    if not (job_card.PO_No or '').strip():
+        raise ValueError(f'Line {number} ({job_card.job_card_no}): PO number is required before dispatch. Link PO to this job first.')
+    return job_card, qty
+
+
+def _dc_line_info(card, line_id=None):
+    data = _build_dispatch_job_card_info(card, line_id)
+    data['label'] = f'{card.job_card_no} - {card.SKU}'
+    data['job_name'] = (card.planning_job.job_name if card.planning_job_id else '') or ''
+    return data
+
+
+@login_required
+@permission_required('can_approve_dispatch')
+def dispatch_dc_edit(request):
+    """Edit a whole delivery challan: change the date and quantities, take job cards off it, add more.
+    Every change is written to the audit trail with the reason given."""
+    dc_no = (request.GET.get('dc_no') or request.POST.get('dc_no') or '').strip()
+    lines = list(
+        Dispatch.objects.filter(is_active=True, dc_no__iexact=dc_no)
+        .select_related('job_card', 'job_card__planning_job', 'created_by').order_by('id')
+    ) if dc_no else []
+    if not lines:
+        messages.error(request, f'No active dispatch lines found for DC "{dc_no}".')
+        return redirect('dispatch_records')
+    dc_no = lines[0].dc_no
+    by_id = {str(line.id): line for line in lines}
+
+    locked = [line for line in lines if not ensure_edit_lock_allowed(request, 'dispatch', line)]
+    if locked:
+        return redirect('dispatch_records')
+
+    dispatch_date = min(line.dispatch_date for line in lines)
+    posted = None
+    if request.method == 'POST':
+        ids = request.POST.getlist('line_id[]')
+        cards = request.POST.getlist('job_card[]')
+        qtys = request.POST.getlist('dispatch_qty[]')
+        posted = []
+        for index in range(max(len(ids), len(cards), len(qtys))):
+            row = ((ids[index] if index < len(ids) else '').strip(), (cards[index] if index < len(cards) else '').strip(),
+                   (qtys[index] if index < len(qtys) else '').strip())
+            if any(row):
+                posted.append(row)
+        try:
+            reason = (request.POST.get('change_reason') or '').strip()
+            if not reason:
+                raise ValueError('Change reason is required when editing a DC.')
+            try:
+                dispatch_date = datetime.strptime(request.POST.get('dispatch_date') or '', '%Y-%m-%d').date()
+            except ValueError:
+                raise ValueError('Dispatch date is required.')
+
+            seen = set()
+            keep, new_lines = [], []
+            for number, (line_id, card_id, raw_qty) in enumerate(posted, start=1):
+                if line_id:
+                    line = by_id.get(line_id)
+                    if line is None:
+                        raise ValueError(f'Line {number}: that DC line no longer exists. Reload the page.')
+                    qty = _dc_qty(number, raw_qty)
+                    if line.job_card_id in seen:
+                        raise ValueError(f'Line {number}: the same job card is listed twice on this DC.')
+                    seen.add(line.job_card_id)
+                    keep.append((line, qty))
+                else:
+                    job_card, qty = _dc_new_line(number, card_id, raw_qty)
+                    if job_card.pk in seen:
+                        raise ValueError(f'Line {number}: the same job card is listed twice on this DC.')
+                    seen.add(job_card.pk)
+                    new_lines.append((number, job_card, qty))
+            removed = [line for line in lines if str(line.id) not in {row[0] for row in posted if row[0]}]
+            if not keep and not new_lines:
+                raise ValueError('A DC needs at least one job card. To cancel the whole DC, archive its lines from the dispatch records.')
+            if removed and not user_can_archive_records(request.user):
+                raise ValueError('You do not have permission to take job cards off a DC. Ask an administrator.')
+
+            changed = 0
+            with transaction.atomic():
+                for line, qty in keep:
+                    if qty != line.dispatch_qty or dispatch_date != line.dispatch_date:
+                        before = build_audit_snapshot('dispatch', line)
+                        line.dispatch_qty, line.dispatch_date = qty, dispatch_date
+                        try:
+                            line.save()
+                        except ValidationError as exc:
+                            raise ValueError(f'{line.job_card.job_card_no}: {" ".join(exc.messages)}')
+                        log_change('dispatch', line, before, request.user, 'update', reason)
+                        changed += 1
+                for line in removed:
+                    archive_record('dispatch', line, request.user, f'Taken off DC {dc_no}: {reason}')
+                    changed += 1
+                for number, job_card, qty in new_lines:
+                    try:
+                        record = Dispatch.objects.create(job_card=job_card, dc_no=dc_no, dispatch_date=dispatch_date, dispatch_qty=qty)
+                    except ValidationError as exc:
+                        raise ValueError(f'Line {number} ({job_card.job_card_no}): {" ".join(exc.messages)}')
+                    record.created_by = request.user
+                    record.save(update_fields=['created_by'])
+                    log_change('dispatch', record, {}, request.user, 'create', f'Added to DC {dc_no}: {reason}')
+                    changed += 1
+            if changed:
+                messages.success(request, f'DC {dc_no} updated ({changed} change{"s" if changed != 1 else ""}).')
+            else:
+                messages.success(request, f'No changes detected on DC {dc_no}.')
+            return redirect(f"{reverse('dispatch_dc_create')}?created={quote(dc_no)}")
+        except ValueError as exc:
+            messages.error(request, f'Nothing was changed. {exc}')
+        except Exception as exc:  # noqa: BLE001 - shown on the form rather than a 500 page
+            messages.error(request, f'Nothing was changed. Error: {exc}')
+
+    info, rows = {}, []
+    line_ids = {}
+    if posted is None:
+        for line in lines:
+            info[str(line.job_card_id)] = _dc_line_info(line.job_card, line.id)
+            rows.append({'line_id': str(line.id), 'id': str(line.job_card_id), 'qty': str(line.dispatch_qty)})
+    else:
+        for line_id, card_id, qty in posted:
+            if line_id and line_id in by_id:
+                line = by_id[line_id]
+                info[str(line.job_card_id)] = _dc_line_info(line.job_card, line.id)
+                rows.append({'line_id': line_id, 'id': str(line.job_card_id), 'qty': qty})
+            else:
+                rows.append({'line_id': '', 'id': card_id, 'qty': qty})
+        for card in _dispatchable_job_cards_queryset().filter(pk__in=[r['id'] for r in rows if not r['line_id'] and r['id'].isdigit()]):
+            info[str(card.id)] = _dc_line_info(card)
+    return render(request, 'dispatch_dc_create.html', {
+        'edit_mode': True, 'dc_no': dc_no, 'dispatch_date': dispatch_date, 'rows_json': json.dumps(rows),
+        'info_json': json.dumps(info), 'created_dc': '', 'existing_lines': [], 'next_dc_no': '',
+        'change_reason': (request.POST.get('change_reason') or '') if posted is not None else '',
+    })
+
+
 @login_required
 @permission_required('can_approve_dispatch')
 def dispatch_dc_create(request):
@@ -611,22 +765,10 @@ def dispatch_dc_create(request):
             seen = set()
             prepared = []
             for number, (raw_id, raw_qty) in enumerate(posted_lines, start=1):
-                if not raw_id:
-                    raise ValueError(f'Line {number}: choose a job card.')
-                if raw_id in seen:
+                job_card, qty = _dc_new_line(number, raw_id, raw_qty)
+                if job_card.pk in seen:
                     raise ValueError(f'Line {number}: the same job card is listed twice on this DC.')
-                seen.add(raw_id)
-                try:
-                    qty = int(raw_qty)
-                except ValueError:
-                    raise ValueError(f'Line {number}: enter the quantity as a whole number.')
-                if qty <= 0:
-                    raise ValueError(f'Line {number}: quantity must be greater than 0.')
-                job_card = _dispatchable_job_cards_queryset().filter(pk=raw_id).first()
-                if job_card is None:
-                    raise ValueError(f'Line {number}: that job card is not available for dispatch.')
-                if not (job_card.PO_No or '').strip():
-                    raise ValueError(f'Line {number} ({job_card.job_card_no}): PO number is required before dispatch. Link PO to this job first.')
+                seen.add(job_card.pk)
                 prepared.append((number, job_card, qty))
 
             created = []
@@ -663,8 +805,7 @@ def dispatch_dc_create(request):
     info = {}
     if wanted:
         for card in _dispatchable_job_cards_queryset().filter(pk__in=wanted):
-            info[str(card.id)] = _build_dispatch_job_card_info(card)
-            info[str(card.id)]['label'] = f'{card.job_card_no} - {card.SKU}'
+            info[str(card.id)] = _dc_line_info(card)
     rows = [{'id': raw_id, 'qty': raw_qty} for raw_id, raw_qty in posted_lines]
     return render(request, 'dispatch_dc_create.html', {
         'dc_no': dc_no, 'dispatch_date': dispatch_date, 'rows_json': json.dumps(rows), 'info_json': json.dumps(info),
