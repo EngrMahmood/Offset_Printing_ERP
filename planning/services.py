@@ -1326,6 +1326,90 @@ def create_sibling_form_planning_job(source_job, *, material='', form_label='', 
     return sibling
 
 
+REPRINT_COPIED_FIELDS = SIBLING_FORM_COPIED_FIELDS + [
+    'material', 'color_spec', 'ups', 'purchase_sheet_ups', 'plate_set_no', 'pkt_value', 'remarks', 'form_label',
+]
+REPRINTABLE_CARD_STATUSES = {'in_production', 'completed', 'closed'}
+
+
+def reprint_remaining_qty(job):
+    """What is still missing for the order: order quantity minus what has been packed."""
+    card = getattr(job, 'job_card', None)
+    if not card:
+        return 0
+    return max(int(card.order_qty or 0) - int(card.total_packed_pcs or 0), 0)
+
+
+def reprint_blockers(job):
+    """Reasons this job cannot be reprinted right now (empty list = it can)."""
+    blockers = []
+    card = getattr(job, 'job_card', None)
+    if job.is_cancelled or not job.is_active:
+        blockers.append('This job is cancelled or archived.')
+    if card is None or card.workflow_status not in REPRINTABLE_CARD_STATUSES:
+        blockers.append('A reprint can be raised once the job is in production.')
+    open_reprint = job.reprints.filter(is_active=True, is_cancelled=False).first()
+    if open_reprint:
+        blockers.append(f'Already reprinted as {open_reprint.jc_number}.')
+    if card is not None and reprint_remaining_qty(job) <= 0:
+        blockers.append('Nothing is left to reprint: the packed quantity already covers the order.')
+    return blockers
+
+
+def create_reprint_job(job, *, actor, reason, qty=None):
+    """Reprint the unfinished quantity of `job` (high wastage) as a new job that goes through the normal approval chain
+    like any repeat job: the same SKU, PO and specs, order quantity = what is still missing, JC number `<base>.N`.
+    The original job card is short-closed (remaining quantity recorded, link to the reprint) so it stops showing as pending.
+    Returns the new PlanningJob."""
+    from django.core.exceptions import ValidationError
+    from core.jobcard_service import close_job_card_manually
+
+    reason = (reason or '').strip()
+    if not reason:
+        raise ValidationError({'reason': 'A reason for the reprint is required.'})
+    blockers = reprint_blockers(job)
+    if blockers:
+        raise ValidationError({'__all__': blockers})
+    remaining = reprint_remaining_qty(job)
+    qty = remaining if qty in (None, '') else int(qty)
+    if qty <= 0 or qty > remaining:
+        raise ValidationError({'qty': f'Reprint quantity must be between 1 and {remaining:,} (order minus packed).'})
+
+    root = job.parent_planning_job or job
+    base_jc_number = re.sub(r'\.\d+$', '', root.jc_number)
+    with transaction.atomic():
+        defaults = {field: getattr(job, field) for field in REPRINT_COPIED_FIELDS}
+        note = f'REPRINT of {job.jc_number}: {reason}'
+        defaults['requirement'] = f'{note} | {job.requirement}' if (job.requirement or '').strip() else note
+        defaults.update({
+            'order_qty': qty,
+            'repeat_flag': 'Repeat',
+            'status': 'draft',
+            'planning_stage': '',
+            'reprint_of': job,
+            'reprint_reason': reason,
+            'parent_planning_job': None,
+            'created_by': actor,
+        })
+        new_job = PlanningJob.objects.create(jc_number=allocate_child_jc_number(base_jc_number), **defaults)
+
+        card = job.job_card
+        short_note = f'Short-closed for reprint {new_job.jc_number}: {reason}'
+        if card.workflow_status in ('in_production', 'completed'):
+            close_job_card_manually(card, actor, short_note)
+            card.refresh_from_db()
+        card.short_close_closed_qty = remaining
+        card.short_close_wastage_qty = remaining
+        card.short_close_closed_by = actor
+        card.short_close_closed_at = timezone.now()
+        card.short_close_close_reason = short_note
+        card.save(update_fields=[
+            'short_close_closed_qty', 'short_close_wastage_qty', 'short_close_closed_by',
+            'short_close_closed_at', 'short_close_close_reason',
+        ])
+    return new_job
+
+
 def _planning_status_filter_values(status):
     normalized_status = _normalize_status(status, default='')
     if not normalized_status:
@@ -1597,7 +1681,7 @@ def _build_job_card_pdf_bytes(job, scan_url):
          _format_job_value(f"{merge['total_sheet_ups']} (this SKU: {merge['allocated_ups']})" if merge else job.ups),
          Paragraph('PRINT SHEETS', label_style), _format_job_value(job.print_sheets)],
         [Paragraph('ACTUAL SHEETS', label_style),
-         _format_job_value(f"{merge['run_sheets']} (combined run)" if merge else job.calculated_sheets_required),
+         _format_job_value(f"{merge['total_run_sheets']} (combined run incl. wastage)" if merge else job.calculated_sheets_required),
          Paragraph('WASTAGE', label_style), _format_job_value(job.wastage_sheets)],
         [Paragraph('PURCHASE ORIGIN', label_style), _format_job_value(job.purchase_material_origin), Paragraph('PURCHASE SHEET SIZE', label_style), _format_job_value(job.purchase_sheet_size)],
         [Paragraph('PURCHASE SHEET UPS', label_style), _format_job_value(job.purchase_sheet_ups), Paragraph('PURCHASE REQ', label_style), _format_job_value(job.purchase_sheet_required)],

@@ -33,7 +33,7 @@ def ai_features(request):
     return {'ask_ai_widget_enabled': enabled}
 
 
-_REPOST_SKIP = ('csrfmiddlewaretoken', 'password', 'pass', 'token')
+_REPOST_SKIP = ('csrfmiddlewaretoken', 'password', 'secret', 'token')
 
 
 def form_repost(request):
@@ -49,4 +49,5 @@ def form_repost(request):
         data[key] = values if (key.endswith('[]') or len(values) > 1) else values[0]
     if not data:
         return {}
-    return {'repost_json': json.dumps({'path': request.path, 'data': data})}
+    # A dict, not a JSON string: the template's json_script encodes it once (a string would be encoded twice and unreadable).
+    return {'repost_json': {'path': request.path, 'data': data, 'errors': getattr(request, 'field_errors', None) or {}}}

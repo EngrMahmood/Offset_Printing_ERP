@@ -31,6 +31,7 @@ from core.models import (
     Sorter,
 )
 from core.merge_sheets import standalone_sheets_expr
+from core.form_errors import FieldError, remember_field_errors
 from production.printing_completion import guard_completed_entry
 
 logger = logging.getLogger(__name__)
@@ -460,6 +461,19 @@ def printing_production_entry(request):
                 elif tdelta.total_seconds() < 0:
                     raise ValueError('End time cannot be earlier than start time')
 
+            # Everything the user left out or got wrong is collected first, so all of it is shown in red at once.
+            problems = {}
+            if not (operator_id or '').strip():
+                problems['operator'] = 'Select the operator.'
+            if not (supervisor_id or '').strip():
+                problems['supervisor'] = 'Select the supervisor.'
+            if not (shift or '').strip():
+                problems['shift'] = 'Select the shift.'
+            if waste_sheets_val > 0 and not (waste_reason or '').strip():
+                problems['waste_reason'] = 'Select the reason for the waste sheets.'
+            if (waste_reason or '').strip() == 'other' and not waste_reason_other.strip():
+                problems['waste_reason_other'] = 'Describe the other waste reason.'
+
             downtime_entries = []
             max_rows = max(len(downtime_categories), len(downtime_minutes_rows), len(downtime_notes))
             for idx in range(max_rows):
@@ -471,21 +485,30 @@ def printing_production_entry(request):
                     continue
 
                 if not category:
-                    raise ValueError('Downtime category is required for each downtime row')
+                    problems[f'downtime_category[]#{idx}'] = 'Select the downtime reason for this row.'
 
                 try:
                     minutes = float(minute_raw or 0)
                 except ValueError:
-                    raise ValueError('Downtime minutes must be numeric')
+                    problems[f'downtime_minutes_detail[]#{idx}'] = 'Downtime minutes must be a number.'
+                    continue
 
                 if minutes <= 0:
-                    raise ValueError('Downtime minutes must be greater than 0 for each downtime row')
+                    problems[f'downtime_minutes_detail[]#{idx}'] = 'Enter the downtime minutes (more than 0).'
+                    continue
+                if not category:
+                    continue
 
                 downtime_entries.append({
                     'category': category,
                     'minutes': minutes,
                     'note': note or None,
                 })
+
+            if not downtime_entries and legacy_downtime_val > 0 and not (downtime_category or '').strip():
+                problems['downtime_category'] = 'Select the downtime reason.'
+            if problems:
+                raise FieldError(problems)
 
             downtime_val = float(sum(item['minutes'] for item in downtime_entries)) if downtime_entries else legacy_downtime_val
             primary_downtime_category = downtime_entries[0]['category'] if downtime_entries else downtime_category
@@ -521,15 +544,15 @@ def printing_production_entry(request):
             if waste_sheets_val < 0:
                 raise ValueError('Waste sheets cannot be negative')
             if not intermediate_pass and output_sheets_val <= 0:
-                raise ValueError('Good sheets must be greater than 0 for the final print pass')
+                raise FieldError({'output_sheets': 'Good sheets must be greater than 0 for the final print pass.'})
             if downtime_val > 0 and not primary_downtime_category:
                 raise ValueError('Downtime category is required when downtime is greater than 0')
             if waste_sheets_val > 0 and not waste_reason:
                 raise ValueError('Waste reason is required when waste sheets are greater than 0')
             if impressions_val <= 0:
-                raise ValueError('Impressions must be greater than 0')
+                raise FieldError({'impressions': 'Impressions must be greater than 0.'})
             if waste_sheets_val < 0:
-                raise ValueError('Waste sheets cannot be negative')
+                raise FieldError({'waste_sheets': 'Waste sheets cannot be negative.'})
 
             if machine_override and machine_id:
                 machine = get_object_or_404(Machine, pk=machine_id)
@@ -689,8 +712,10 @@ def printing_production_entry(request):
                 error_message = '; '.join(error_parts)
             else:
                 error_message = ' '.join(str(msg) for msg in getattr(e, 'messages', [str(e)]))
+            remember_field_errors(request, e)
             messages.error(request, f'Error saving production data: {error_message}')
         except Exception as e:
+            remember_field_errors(request, e)
             messages.error(request, f'Error saving production data: {str(e)}')
 
     job_cards = list(printing_job_cards_queryset(edit_record)[:200])

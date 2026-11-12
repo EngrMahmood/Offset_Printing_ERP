@@ -64,6 +64,37 @@
     {% endif %}
     {% endwith %}
 
+    {% if job.reprint_of %}
+    <div class="erp-alert" style="background:#e8f1fb;border:1px solid #9ec5ee;padding:10px 14px;border-radius:8px;margin-bottom:12px;">
+        <strong>REPRINT of <a href="{% url 'planning:job_detail' job.reprint_of_id %}">{{ job.reprint_of.jc_number }}</a>.</strong>
+        {{ job.reprint_reason }}
+        <div>Order quantity here is what was still missing on the original (order minus packed). It follows the normal approval steps like any repeat job.</div>
+    </div>
+    {% endif %}
+    {% for rp in reprints %}
+    <div class="erp-alert" style="background:#fff4e0;border:1px solid #f0c36d;padding:10px 14px;border-radius:8px;margin-bottom:12px;">
+        <strong>SHORT-CLOSED — reprinted as <a href="{% url 'planning:job_detail' rp.id %}">{{ rp.jc_number }}</a></strong>
+        for {{ rp.order_qty|default:0 }} pieces. {{ rp.reprint_reason }}
+    </div>
+    {% endfor %}
+    {% if can_raise_reprint and job.job_card and not job.reprints.exists %}
+    <div class="erp-card" style="padding:12px 14px;margin-bottom:12px;">
+        <strong>Reprint remaining quantity (high wastage)</strong>
+        {% if reprint_blockers %}
+            <div class="erp-muted" style="margin-top:4px;">{% for b in reprint_blockers %}{{ b }} {% endfor %}</div>
+        {% else %}
+        <form method="post" action="{% url 'planning:job_reprint' job.id %}" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:6px;"
+              onsubmit="return confirm('Create the reprint and short-close {{ job.jc_number }}?');">
+            {% csrf_token %}
+            <label>Quantity to reprint<br><input type="number" name="reprint_qty" value="{{ reprint_remaining }}" min="1" max="{{ reprint_remaining }}" style="width:130px;"></label>
+            <label style="flex:1;min-width:240px;">Reason<br><input type="text" name="reprint_reason" required style="width:100%;" placeholder="e.g. high wastage on press, colour issue"></label>
+            <button type="submit" class="erp-btn erp-btn-primary">Reprint remaining</button>
+        </form>
+        <div class="erp-muted" style="margin-top:4px;">Still missing: {{ reprint_remaining }} (order minus packed). Creates a new job card {{ job.jc_number }}.N that goes through QC and approval like a repeat job; this job card is short-closed and linked to it.</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
     <div id="sku-duplicate-alert">
         {% include 'planning/includes/sku_duplicate_alert.html' %}
     </div>

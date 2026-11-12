@@ -7,6 +7,8 @@ import json
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.core.exceptions import ValidationError
+
+from core.form_errors import FieldError, remember_field_errors
 from django.db import transaction
 from django.db.models import Exists, OuterRef, Prefetch, Q
 from django.http import JsonResponse
@@ -206,6 +208,15 @@ def packing_production_entry(request):
     if request.method == 'POST' and not is_view_mode:
         try:
             change_reason = (request.POST.get('change_reason') or '').strip()
+            problems = {}
+            if not (request.POST.get('job_card') or '').strip():
+                problems['job_card'] = 'Select the job card.'
+            if not (request.POST.get('shift') or '').strip():
+                problems['shift'] = 'Select the shift.'
+            if not (request.POST.get('sorter') or '').strip():
+                problems['sorter'] = 'Select the sorter.'
+            if problems:
+                raise FieldError(problems)
             job_card = get_active_record_or_404(JobCard, request.POST.get('job_card'))
             if job_card.is_print_job and not job_card.printing_productions.exists():
                 raise ValueError('Selected job card has no printing entry yet. Log printing production first.')
@@ -221,9 +232,9 @@ def packing_production_entry(request):
             if not shift:
                 raise ValueError('Shift is required.')
             if packing_qty < 0 or sorting_waste_qty < 0:
-                raise ValueError('Quantities cannot be negative.')
+                raise FieldError({'packing_qty': 'Quantities cannot be negative.'})
             if packing_qty == 0 and sorting_waste_qty == 0:
-                raise ValueError('Enter packing qty and/or sorting waste qty.')
+                raise FieldError({'packing_qty': 'Enter the packing qty and/or the sorting waste qty.'})
 
             payload = {
                 'entry_type': 'packing',
@@ -278,8 +289,10 @@ def packing_production_entry(request):
                 )
             else:
                 error_message = ' '.join(str(m) for m in getattr(e, 'messages', [str(e)]))
+            remember_field_errors(request, e)
             messages.error(request, f'Error saving packing data: {error_message}')
         except Exception as e:
+            remember_field_errors(request, e)
             messages.error(request, f'Error saving packing data: {str(e)}')
 
     job_cards = list(_packing_eligible_job_cards_queryset(edit_record).order_by('-created_at')[:200])

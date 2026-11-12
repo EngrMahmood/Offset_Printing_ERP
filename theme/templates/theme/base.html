@@ -266,7 +266,7 @@
     {% endif %}
     {% endif %}
     {% block extra_js %}{% endblock %}
-    {% if repost_json %}{{ repost_json|json_script:"repost-data" }}<script src="{% static 'theme/js/form_repost.js' %}?v=1"></script>{% endif %}
+    {% if repost_json %}{{ repost_json|json_script:"repost-data" }}<script src="{% static 'theme/js/form_repost.js' %}?v=2"></script>{% endif %}
     <script src="{% static 'production/js/production_entry.js' %}?v=14"></script>
     <script>
         if ('serviceWorker' in navigator) {

@@ -108,6 +108,14 @@ def _active_job_on_other_po(sku, exclude_po=None) -> bool:
     return qs.exists()
 
 
+def _other_po_jobs_all_cancelled(sku, exclude_po=None) -> bool:
+    """The SKU's jobs on other POs exist and every one was cancelled/terminated: that WO is no evidence of production."""
+    qs = PlanningJob.objects.filter(sku__iexact=sku)
+    if exclude_po:
+        qs = qs.exclude(po_number__iexact=exclude_po)
+    return qs.exists() and not qs.filter(is_cancelled=False).exists()
+
+
 def build_sku_doc_index():
     """Precompute {sku_key: [(created_at, doc_id, po_number_norm), ...]} across every
     PO/WO document, sorted earliest-first, for _earlier_po_has_sku() to consult.
@@ -197,7 +205,10 @@ def classify_po_line(
     if _prior_production_on_other_po(sku, exclude_po=po_number):
         return ('Repeat', 'prior_production')
 
-    if _earlier_po_has_sku(sku, po_number, po_doc_created_at, po_doc_id, sku_doc_index=sku_doc_index):
+    if (
+        _earlier_po_has_sku(sku, po_number, po_doc_created_at, po_doc_id, sku_doc_index=sku_doc_index)
+        and not _other_po_jobs_all_cancelled(sku, po_number)
+    ):
         return ('Repeat', 'concurrent_po')
 
     if _active_job_on_other_po(sku, exclude_po=po_number):
@@ -265,6 +276,24 @@ def repeat_flag_value_for_po_line(
         existing_job=existing_job,
         sku_doc_index=sku_doc_index,
     ) else 'Repeat'
+
+
+def refresh_stale_repeat_flag(job, *, save=True) -> bool:
+    """A draft job that was flagged Repeat because of history that no longer holds (the earlier WO was terminated,
+    nothing was ever produced) goes back to New, so it can go through master entry and plate making normally.
+    Jobs that reached QC / production, and jobs with an approved master recipe, are never touched."""
+    if not job or (job.repeat_flag or '').strip().lower() != 'repeat':
+        return False
+    if is_job_repeat_classification_locked(job) or job.approved_sku_recipe:
+        return False
+    recipe = SkuRecipe.objects.filter(sku__iexact=job.sku).first()
+    label, _reason = classify_po_line(job.sku, job.po_number, recipe=recipe)
+    if label != 'New':
+        return False
+    job.repeat_flag = 'New'
+    if save:
+        job.save(update_fields=['repeat_flag', 'updated_at'])
+    return True
 
 
 PLATE_MAKING_STAGES = frozenset({'new_plate_making', 'repeat_plate_making'})

@@ -104,6 +104,7 @@ from .forms import PlanningJobEditForm, PlanningJobFinalizationForm, SkuRecipeFo
 from .services import (
     _user_is_admin, _planning_status_filter_values, _parse_date_filter,
     cancel_planning_job, request_job_cancellation, approve_job_cancellation,
+    create_reprint_job, reprint_blockers, reprint_remaining_qty,
     _build_job_card_pdf_bytes, build_job_card_merge_context,
     _sku_key, _missing_required_master_fields,
     _sync_new_sku_requirement, _build_recipe_map, _to_optional_positive_int,
@@ -1796,6 +1797,33 @@ def import_planning_sheet(request):
 
 
 @login_required
+@require_POST
+def planning_job_reprint(request, job_id):
+    """Reprint what is still missing on a high-wastage job: a new job (JC `<base>.N`) through the normal approvals;
+    the original job card is short-closed and linked to it."""
+    job = get_object_or_404(PlanningJob, id=job_id)
+    if not (_user_can_cancel_planning_job(request.user) or _user_is_admin(request.user)):
+        messages.error(request, 'You do not have permission to raise a reprint.')
+        return redirect('planning:job_detail', job_id=job.id)
+    try:
+        new_job = create_reprint_job(
+            job, actor=request.user, reason=request.POST.get('reprint_reason'), qty=request.POST.get('reprint_qty'),
+        )
+    except ValidationError as exc:
+        _report_validation_error(request, exc, prefix=job.jc_number)
+        return redirect('planning:job_detail', job_id=job.id)
+    except ValueError:
+        messages.error(request, f'{job.jc_number}: enter the reprint quantity as a whole number.')
+        return redirect('planning:job_detail', job_id=job.id)
+    messages.success(
+        request,
+        f'Reprint {new_job.jc_number} created for {new_job.order_qty:,} pieces. {job.jc_number} is short-closed. '
+        f'Send the new job through the normal approval steps.',
+    )
+    return redirect('planning:job_detail', job_id=new_job.id)
+
+
+@login_required
 def planning_job_detail(request, job_id):
     job = get_object_or_404(
         PlanningJob.objects.prefetch_related('print_runs', 'dispatch_runs'),
@@ -1942,6 +1970,10 @@ def planning_job_detail(request, job_id):
             'total_sorting_waste_qty': total_sorting_waste_qty,
             'wastage_metrics': wastage_metrics,
             'sku_duplicate_alert': sku_duplicate_alert,
+            'reprint_blockers': reprint_blockers(job),
+            'reprint_remaining': reprint_remaining_qty(job),
+            'can_raise_reprint': _user_can_cancel_planning_job(request.user) or _user_is_admin(request.user),
+            'reprints': list(job.reprints.filter(is_active=True).order_by('id')),
         },
     )
 
@@ -4460,6 +4492,9 @@ def pending_sku_master_entry(request):
                         )
 
                 if job:
+                    from planning.sku_classification import refresh_stale_repeat_flag
+
+                    refresh_stale_repeat_flag(job)      # a terminated earlier WO must not keep the SKU flagged Repeat
                     if (job.repeat_flag or '').strip() != 'New' and not job.approved_sku_recipe:
                         messages.error(
                             request,

@@ -209,6 +209,8 @@ class EntryFormFlowTests(TestCase):
         UserPermissionOverride.objects.get_or_create(user=self.supervisor, permission=permission, defaults={'granted': True})
         self.client.force_login(self.supervisor)
         self.operator = Operator.objects.create(name='Op One')
+        from core.models import Supervisor
+        self.sup = Supervisor.objects.create(name='Sup One')
         self.card = make_card(make_job('PC5', 1000, sku='SKU-FORM'))
         self.card.total_sheet_quantity = 260
         self.card.production_tolerance_percent = 5
@@ -216,7 +218,7 @@ class EntryFormFlowTests(TestCase):
 
     def post(self, good, waste=0, remarks='', status='completed'):
         data = {
-            'job_card': self.card.id, 'operator': self.operator.id, 'shift': 'A', 'date': '2026-10-27',
+            'job_card': self.card.id, 'operator': self.operator.id, 'supervisor': self.sup.id, 'shift': 'A', 'date': '2026-10-27',
             'impressions': good + waste, 'output_sheets': good, 'waste_sheets': waste, 'print_pass_number': 1,
             'status': status, 'remarks': remarks, 'planned_time': 0, 'run_time': 0,
         }

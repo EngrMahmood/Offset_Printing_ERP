@@ -116,6 +116,15 @@ class PlanningJob(models.Model):
         blank=True,
         help_text="Name of this form/ply within its group, e.g. 'White', 'Pink', 'Cover'.",
     )
+    reprint_of = models.ForeignKey(
+        'self',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='reprints',
+        help_text='Set when this job reprints the unfinished quantity of an earlier job (short-closed because of high wastage).',
+    )
+    reprint_reason = models.TextField(blank=True)
     UNIT_TYPE_CHOICES = [
         ('pcs', 'Pieces'),
         ('rim', 'Rims'),
@@ -1472,11 +1481,11 @@ class MergeGroup(models.Model):
         return self.status in {'layout_approved', 'artwork_requested', 'artwork_ready', 'layout_done'}
 
     def combined_impressions(self):
-        """Impressions for the whole combined run = run sheets × print passes."""
+        """Impressions for the whole combined run = (run sheets + combined wastage) × print passes."""
         passes = 1
         if self.lead_job and self.lead_job.print_passes:
             passes = self.lead_job.print_passes
-        return (self.run_sheets or 0) * passes
+        return self.total_run_sheets * passes
 
     @property
     def total_run_sheets(self):
