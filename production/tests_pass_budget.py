@@ -71,3 +71,14 @@ class OrdinaryTwoPassJobTests(TestCase):
         validate_print_pass_number(card, 2, new_impressions=260)
         with self.assertRaises(ValueError):
             validate_print_pass_number(card, 2, new_impressions=300)
+
+
+class MergedLeadSheetTargetTests(MergedLeadPassBudgetTests):
+    def test_good_sheet_target_and_sheet_budget_are_the_combined_run(self):
+        self.entry(1, 5000, waste_sheets=0, output_sheets=0)
+        self.entry(2, 5000, output_sheets=4980, waste_sheets=20)
+        info = build_pass_tracking_info(self.card)
+        self.assertEqual(info['good_sheets_target'], 5000)                       # not the standalone ~1,562
+        self.assertEqual(info['sheets_allowed'], int(round(5005 * 1.05)))        # 5,255
+        self.assertEqual(info['sheets_used'], 5000)                              # good + waste actually run
+        self.assertEqual(info['sheets_remaining'], 255)

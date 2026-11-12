@@ -362,6 +362,19 @@ def build_pass_tracking_info(job_card, exclude_production_id=None):
     sheets_allowed = int(job_card.total_sheets_allowed_with_tolerance or 0)
     sheets_remaining = max(0, sheets_allowed - sheets_used)
     good_sheets_target = int(round(job_card.required_sheets or 0))
+    group = merge_lead_group(job_card)
+    if group:
+        # The operator enters the whole combined run on the lead: its sheet budget, target and sheets used are the run's
+        # sheets as they went through the press (not the lead's own standalone plan).
+        tolerance = float(job_card.production_tolerance_percent or 0) / 100
+        sheets_allowed = int(round(group.total_run_sheets * (1 + tolerance)))
+        run_qs = job_card.productions.filter(is_active=True, entry_type='printing', merge_parent__isnull=True)
+        if exclude_production_id:
+            run_qs = run_qs.exclude(pk=exclude_production_id)
+        totals = run_qs.aggregate(output=Sum('output_sheets'), waste=Sum('waste_sheets'))
+        sheets_used = int(totals['output'] or 0) + int(totals['waste'] or 0)
+        sheets_remaining = max(0, sheets_allowed - sheets_used)
+        good_sheets_target = int(group.run_sheets)
 
     pass_rows = []
     for pass_no in range(1, total_passes + 1):
