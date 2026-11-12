@@ -248,7 +248,20 @@ def effective_print_pass_number(production_row, total_passes):
     return total_passes
 
 
+def merge_lead_group(job_card):
+    """The open combined-layout group this card LEADS, else None. The lead prints the whole combined run, so its press
+    impressions are the run's sheets, not the sheets of its own standalone plan."""
+    planning_job = job_card.planning_job
+    item = planning_job.active_merge_item if planning_job else None
+    if item and item.is_lead and item.merge_group.run_sheets:
+        return item.merge_group
+    return None
+
+
 def get_per_pass_impression_budget(job_card):
+    group = merge_lead_group(job_card)
+    if group:
+        return int(group.total_run_sheets)          # run sheets + the combined wastage, for every pass
     total_passes = get_job_card_pass_count(job_card)
     if total_passes <= 1:
         return int(job_card.total_impressions_required or 0)
@@ -339,6 +352,9 @@ def build_pass_tracking_info(job_card, exclude_production_id=None):
     budget = get_per_pass_impression_budget(job_card)
     usage = get_pass_impression_usage(job_card, exclude_production_id)
     allowed_total = int(job_card.total_impressions_allowed_with_tolerance or 0)
+    if merge_lead_group(job_card):
+        tolerance = float(job_card.production_tolerance_percent or 0) / 100
+        allowed_total = int(round(budget * total_passes * (1 + tolerance)))
     total_used = sum(usage.values())
     sheets_basis = get_sheets_per_pass_basis(job_card)
 
@@ -396,7 +412,7 @@ def build_pass_tracking_info(job_card, exclude_production_id=None):
     }
 
 
-def validate_print_pass_number(job_card, pass_number, exclude_production_id=None):
+def validate_print_pass_number(job_card, pass_number, exclude_production_id=None, new_impressions=None):
     total_passes = get_job_card_pass_count(job_card)
     if pass_number < 1 or pass_number > total_passes:
         raise ValueError(f'Print pass must be between 1 and {total_passes} for this job.')
@@ -411,6 +427,18 @@ def validate_print_pass_number(job_card, pass_number, exclude_production_id=None
                 raise ValueError(
                     f'Log Pass {pass_number - 1} impressions before starting Pass {pass_number}.'
                 )
+            # A sheet can only go through pass N if it already went through pass N-1: a new entry may not take the
+            # pass beyond what the previous pass recorded (within the job's tolerance). Edits stay correctable.
+            if exclude_production_id is None and new_impressions:
+                previous = usage.get(pass_number - 1, 0)
+                tolerance = float(job_card.production_tolerance_percent or 0) / 100
+                ceiling = int(previous * (1 + tolerance))
+                if usage.get(pass_number, 0) + int(new_impressions) > ceiling:
+                    raise ValueError(
+                        f'Pass {pass_number} would reach {usage.get(pass_number, 0) + int(new_impressions):,} impressions but Pass '
+                        f'{pass_number - 1} only has {previous:,} recorded. Sheets cannot go through Pass {pass_number} before '
+                        f'Pass {pass_number - 1}: complete or correct the Pass {pass_number - 1} entry first.'
+                    )
         # Block logging a NEW entry onto a non-final pass that is already
         # complete (its per-pass budget is used up) — the operator should move
         # to the next pass. Edits (exclude_production_id set) are never blocked

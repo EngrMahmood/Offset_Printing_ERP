@@ -518,11 +518,15 @@ def printing_production_entry(request):
                 print_pass_number = int(print_pass_number_raw or 1)
             except (TypeError, ValueError):
                 raise ValueError('Print pass is required.')
-            pass_meta = validate_print_pass_number(
-                job_card,
-                print_pass_number,
-                exclude_production_id=edit_record.pk if edit_record else None,
-            )
+            try:
+                pass_meta = validate_print_pass_number(
+                    job_card,
+                    print_pass_number,
+                    exclude_production_id=edit_record.pk if edit_record else None,
+                    new_impressions=impressions_val,
+                )
+            except ValueError as exc:
+                raise FieldError({'print_pass_number': str(exc)})
             intermediate_pass = pass_meta['intermediate_pass']
             if intermediate_pass:
                 output_sheets_val = 0
