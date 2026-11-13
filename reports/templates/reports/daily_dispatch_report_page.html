@@ -1,0 +1,64 @@
+{% extends 'theme/base.html' %}
+{% load humanize %}
+
+{% block title %}Daily Packing & Dispatch Report — Reports{% endblock %}
+{% block header_title %}Daily Packing & Dispatch Report{% endblock %}
+{% block header_subtitle %}{{ data.date_label }} · offset jobs{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dd-bar { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 14px; }
+    .dd-bar label { display: flex; flex-direction: column; font-size: 12px; color: #475569; gap: 3px; }
+    .dd-bar input { min-height: 38px; padding: 0 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+    .dd-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; margin-bottom: 14px; overflow-x: auto; }
+    .dd-card h3 { margin: 0; padding: 10px 14px; font-size: 14px; color: #fff; background: #1f3864; }
+    .dd-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    .dd-table th, .dd-table td { padding: 6px 10px; border-bottom: 1px solid #f1f5f9; text-align: right; font-variant-numeric: tabular-nums; }
+    .dd-table th:first-child, .dd-table td:first-child, .dd-table th:nth-child(2), .dd-table td:nth-child(2) { text-align: left; }
+    .dd-table thead th { background: #f8fafc; font-size: 12px; color: #475569; }
+    .dd-table tr.total td { font-weight: 700; background: #eef2ff; }
+    .dd-note { font-size: 12px; color: #64748b; padding: 8px 14px 12px; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="erp-page-stack">
+    <section class="erp-section-shell">
+        <form method="get" class="dd-bar">
+            <label>Date <input type="date" name="date" value="{{ date_value }}"></label>
+            <label>Flexo / other packed (manual) <input type="number" min="0" name="pack" value="{{ data.manual.pack }}"></label>
+            <label>Flexo / other dispatched (manual) <input type="number" min="0" name="disp" value="{{ data.manual.disp }}"></label>
+            <button type="submit" class="erp-btn">Show</button>
+            <a class="erp-btn erp-btn-secondary" href="{% url 'reports:daily_dispatch_report_excel' %}?{{ qs }}">Download Excel</a>
+        </form>
+
+        <div class="dd-card">
+            <h3>Daily Packing Report — {{ data.date_label }}</h3>
+            <table class="dd-table">
+                <thead><tr><th>S.No</th><th>Items</th><th>Quantity Produced Pcs</th><th>Wastage Pcs</th><th>Wastage (%)</th></tr></thead>
+                <tbody>
+                {% for r in data.packing_table %}<tr><td>{{ r.no }}</td><td>{{ r.item }}</td><td>{{ r.qty|intcomma }}</td><td>{{ r.waste|intcomma }}</td><td>{{ r.pct }}%</td></tr>{% endfor %}
+                <tr class="total"><td colspan="2">Total</td><td>{{ data.packing_total.qty|intcomma }}</td><td>{{ data.packing_total.waste|intcomma }}</td><td>{{ data.packing_total.pct }}%</td></tr>
+                <tr><td colspan="2">Flexo / other items (manual)</td><td>{{ data.manual.pack|intcomma }}</td><td></td><td></td></tr>
+                <tr class="total"><td colspan="2">Grand total</td><td>{{ data.packing_grand|intcomma }}</td><td></td><td></td></tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="dd-card">
+            <h3>Daily Dispatch Summary — {{ data.date_label }}</h3>
+            <table class="dd-table">
+                <thead><tr><th>S.No</th><th>Items</th><th>Quantity Dispatched Pcs</th><th>Wastage Pcs</th><th>Wastage (%)</th><th>Cost (PKR)</th><th>Physical Waste</th></tr></thead>
+                <tbody>
+                {% for r in data.dispatch_table %}<tr><td>{{ r.no }}</td><td>{{ r.item }}</td><td>{{ r.qty|intcomma }}</td><td>{{ r.waste|intcomma }}</td><td>{{ r.pct }}%</td><td>{{ r.cost|intcomma }}</td><td>{{ r.physical|intcomma }}</td></tr>{% endfor %}
+                <tr class="total"><td colspan="2">Total</td><td>{{ data.dispatch_total.qty|intcomma }}</td><td>{{ data.dispatch_total.waste|intcomma }}</td><td>{{ data.dispatch_total.pct }}%</td><td>{{ data.dispatch_total.cost|intcomma }}</td><td>{{ data.dispatch_total.physical|intcomma }}</td></tr>
+                <tr><td colspan="2">Flexo / other items (manual)</td><td>{{ data.manual.disp|intcomma }}</td><td colspan="4"></td></tr>
+                <tr class="total"><td colspan="2">Grand total</td><td>{{ data.dispatch_grand|intcomma }}</td><td colspan="4"></td></tr>
+                </tbody>
+            </table>
+            <div class="dd-note">Wastage Pcs is the gap between the order quantity and what was dispatched, counted on the dispatch that closes the job (a job still being delivered in parts shows 0). Physical Waste is what the sorters reported for that job, shown on the same line. Cost uses the job's piece cost.</div>
+        </div>
+        <p class="dd-note">Packing lines: {{ data.packing_data|length }} · Dispatch lines: {{ data.dispatch_data|length }} (full lines are in the Excel download, sheets Packing Report and Dispatch Report).</p>
+    </section>
+</div>
+{% endblock %}

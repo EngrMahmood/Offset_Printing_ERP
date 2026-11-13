@@ -33,6 +33,56 @@ def _hourly_report_allowed(request):
     return report is not None and _has_access(request, report.permissions)
 
 
+def _daily_dispatch_context(request):
+    import datetime
+
+    from django.utils import timezone
+
+    from reports.daily_dispatch_report import build_daily_report
+
+    try:
+        day = datetime.date.fromisoformat(request.GET.get('date', ''))
+    except ValueError:
+        day = timezone.localdate()
+    manual = {'pack': request.GET.get('pack'), 'disp': request.GET.get('disp')}
+    return build_daily_report(day, manual)
+
+
+def daily_dispatch_report_page(request):
+    """Daily Packing & Dispatch Report for one date, with an Excel download in the e-mailed layout."""
+    if not request.user.is_authenticated:
+        return redirect('login')
+    if not _report_allowed(request, 'daily-dispatch-report'):
+        return HttpResponseForbidden("You don't have access to this report.")
+    data = _daily_dispatch_context(request)
+    return render(request, 'reports/daily_dispatch_report_page.html', {
+        'report': registry.get('daily-dispatch-report'), 'data': data, 'date_value': data['date'].isoformat(),
+        'qs': request.GET.urlencode(),
+    })
+
+
+def daily_dispatch_report_excel(request):
+    from reports.daily_dispatch_report import render_xlsx
+
+    if not request.user.is_authenticated:
+        return redirect('login')
+    if not _report_allowed(request, 'daily-dispatch-report'):
+        return HttpResponseForbidden("You don't have access to this report.")
+    data = _daily_dispatch_context(request)
+    response = HttpResponse(
+        render_xlsx(data), content_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+    )
+    response['Content-Disposition'] = f'attachment; filename="Daily Packing & Dispatch Report {data["date"]:%Y-%m-%d}.xlsx"'
+    return response
+
+
+def _report_allowed(request, slug):
+    from reports.report_engine.engine import _has_access
+
+    report = registry.get(slug)
+    return report is not None and _has_access(request, report.permissions)
+
+
 def hourly_report_page(request):
     """Hourly Report: live snapshot of printing, packing, dispatch and planning, with a WhatsApp share button."""
     from django.utils import timezone

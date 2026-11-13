@@ -354,6 +354,25 @@ registry.register(
 
 registry.register(
     ReportDefinition(
+        slug='daily-dispatch-report',
+        title='Daily Packing & Dispatch Report',
+        description='The daily e-mailed sheet: packing and dispatch by item for a date (offset), with the packing and dispatch data sheets, downloadable as Excel.',
+        department='production',
+        permissions=('core.view_reports',),
+        filters=(),
+        supported_exports=(),
+        supported_charts=(),
+        drilldown_support=False,
+        cache_timeout=30,
+        icon='fa-truck',
+        category='execution',
+        navigation_group='operations',
+        executor=lambda request, filters: {},
+    )
+)
+
+registry.register(
+    ReportDefinition(
         slug='plates-pending',
         title='Plates Pending',
         description='Open plate requests (draft / sent to vendor / received) with vendor name and days pending.',
