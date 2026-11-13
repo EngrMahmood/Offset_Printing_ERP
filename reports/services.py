@@ -111,6 +111,12 @@ REPORT_CATALOG = [
         'focus': 'Execution',
     },
     {
+        'key': 'daily-dispatch-report',
+        'title': 'Daily Packing & Dispatch Report',
+        'description': 'Packing and dispatch by item for a date (offset), with the packing and dispatch data sheets, as an Excel download.',
+        'focus': 'Execution',
+    },
+    {
         'key': 'operator-efficiency',
         'title': 'Operator Efficiency',
         'description': 'Ranking of press operators by impressions, speed, waste and lost time against operators on the same machines, with a notice-board print.',
